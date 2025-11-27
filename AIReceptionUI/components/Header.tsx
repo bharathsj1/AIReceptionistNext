@@ -25,16 +25,16 @@ export default function Header() {
   }, [pathname, params]);
 
   return (
-    <header className="sticky top-0 z-20 border-b border-white/10 bg-[#08061a]/80 backdrop-blur">
+    <header className="absolute top-0 z-30 w-full bg-transparent">
       <div className="container mx-auto flex items-center justify-between gap-4 px-4 py-4">
-        <Link href="/" className="text-xl font-extrabold">
+        <Link href="/" className="text-xl font-extrabold text-slate-900">
           SmartConnect4U
         </Link>
         <nav>
-          <ul className="flex items-center gap-4 text-sm font-semibold text-white/70">
+          <ul className="flex items-center gap-4 text-sm font-semibold text-slate-800">
             {navLinks.map((link) => (
               <li key={link.label}>
-                <Link href={link.href} className="hover:text-white">
+                <Link href={link.href} className="hover:text-slate-950">
                   {link.label}
                 </Link>
               </li>
@@ -42,14 +42,20 @@ export default function Header() {
           </ul>
         </nav>
         <div className="flex items-center gap-2 text-sm font-bold">
-          <Link className="rounded-xl border border-white/10 px-3 py-2 text-white/80 hover:text-white" href="/login">
+          <Link
+            className="rounded-xl border border-slate-200 bg-white/70 px-3 py-2 text-slate-800 backdrop-blur hover:text-slate-950"
+            href="/login"
+          >
             Login
           </Link>
-          <Link className="rounded-xl border border-white/10 px-3 py-2 text-white/80 hover:text-white" href="/#contact">
+          <Link
+            className="rounded-xl border border-slate-200 bg-white/70 px-3 py-2 text-slate-800 backdrop-blur hover:text-slate-950"
+            href="/#contact"
+          >
             Chat with Us
           </Link>
           <Link
-            className="rounded-xl bg-gradient-to-r from-indigo-400 via-sky-400 to-emerald-300 px-4 py-2 text-black shadow-lg"
+            className="rounded-xl bg-slate-900 px-4 py-2 text-white shadow-lg hover:bg-slate-800"
             href="/#contact"
           >
             Get Started

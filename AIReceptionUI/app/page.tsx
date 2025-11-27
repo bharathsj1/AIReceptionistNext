@@ -7,6 +7,7 @@ import Hero from '@/components/Hero';
 import SectionShell from '@/components/SectionShell';
 import Pricing from '@/components/Pricing';
 import ContactForm from '@/components/ContactForm';
+import ReceptionistAnimation from '@/components/ReceptionistAnimation';
 
 const services = [
   {
@@ -74,6 +75,26 @@ export default function HomePage() {
     <>
       <Header />
       <Hero />
+      <section className="container mx-auto px-4 py-12">
+        <div className="grid items-center gap-10 md:grid-cols-2">
+          <div className="flex justify-center">
+            <ReceptionistAnimation />
+          </div>
+          <div className="space-y-4">
+            <h2 className="text-3xl font-bold">A live, always-on receptionist</h2>
+            <p className="text-white/70">
+              See how your AI receptionist greets callers, confirms details, and books appointments without missing a beat.
+              The animation shows the breathing idle state, gentle phone motion, and live speech bubble updates that cycle
+              through real responses.
+            </p>
+            <ul className="space-y-2 text-white/80">
+              <li>• Friendly, on-brand tone for every call</li>
+              <li>• Subtle screen glow and handset motion to show active engagement</li>
+              <li>• Smooth looping animation that stays lightweight and performant</li>
+            </ul>
+          </div>
+        </div>
+      </section>
       <main className="space-y-16">
         <SectionShell id="services" title="AI business support that handles the admin you shouldn’t have to">
           <div className="grid gap-6 md:grid-cols-3">
