@@ -32,12 +32,12 @@
 
 .scene {
   position: relative;
-  width: 380px;
+  width: 320px;
   max-width: 100%;
-  height: 280px;
+  height: 240px;
   display: grid;
   place-items: center;
-  margin-left: -28px;
+  margin-left: -12px;
 }
 
 .desk {
@@ -60,8 +60,8 @@
 }
 
 .head {
-  width: 68px;
-  height: 68px;
+  width: 58px;
+  height: 58px;
   border-radius: 50%;
   background: #fff3ec;
   position: relative;
@@ -90,8 +90,8 @@
   position: absolute;
   right: -14px;
   top: 22px;
-  width: 26px;
-  height: 32px;
+  width: 22px;
+  height: 28px;
   border-radius: 12px;
   background: #34d399;
   transform-origin: top left;
@@ -110,8 +110,8 @@
 }
 
 .body {
-  width: 120px;
-  height: 100px;
+  width: 108px;
+  height: 92px;
   border-radius: 18px;
   background: linear-gradient(135deg, #a5b4fc 0%, #60a5fa 100%);
   position: relative;

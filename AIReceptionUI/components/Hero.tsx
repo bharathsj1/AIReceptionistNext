@@ -1,56 +1,94 @@
 import React from 'react';
+import styles from './Hero.module.css';
 
 export default function Hero() {
+  const chatLines = [
+    'Hi there! I see you’re calling about scheduling.',
+    'Absolutely—I can book that for you now.',
+    'Does tomorrow at 3 PM work for you?',
+    'Great, you’re all set. Anything else you need?',
+  ];
+
   return (
-    <section className="relative overflow-hidden py-20" id="home">
-      <div className="container mx-auto grid items-center gap-10 px-4 md:grid-cols-2">
-        <div className="space-y-4">
-          <div className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-white/70">
-            AI business support
+    <section className={styles.hero} id="home">
+      <div className={styles.cloud} />
+      <div className={styles.heroInner}>
+        <div className="space-y-3">
+          <div className={styles.badge}>
+            <span aria-hidden>🔒</span>
+            <span>HIPAA Compliant AI Receptionist</span>
           </div>
-          <p className="text-sm text-white/60">
-            Keywords: AI business support, AI tools for business automation, AI for small businesses, AI voice agent
-            services, AI bookkeeping
-          </p>
-          <h1 className="text-4xl font-extrabold leading-tight">
-            AI tools for business automation that work like part of your team.
+          <h1 className={styles.heading}>
+            Never Miss a Call. Never <em>Lose</em> a Client with Our AI Assistants
           </h1>
-          <p className="text-lg text-white/70">
-            Turn your missed calls, messages and social posts into automated tasks that run in the background — so you
-            can focus on running the business.
+          <p className={styles.lead}>
+            Our AI assistants instantly answer calls, schedule appointments, reduce missed leads, and maximize your
+            client retention effortlessly.
           </p>
-          <div className="flex flex-wrap gap-3">
-            <a
-              className="rounded-xl bg-gradient-to-r from-indigo-400 via-sky-400 to-emerald-300 px-4 py-3 text-sm font-bold text-black shadow-lg"
-              href="#services"
-            >
-              See how it works
+          <div className={styles.ctaRow}>
+            <a className={styles.ctaPrimary} href="#contact">
+              Start Free Trial →
             </a>
-            <a className="rounded-xl border border-white/10 px-4 py-3 text-sm font-bold text-white" href="#packages">
-              Discover packages
+            <a className={styles.ctaSecondary} href="#packages">
+              Book a Demo
             </a>
           </div>
         </div>
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-5 shadow-2xl">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-[0.08em] text-white/60">Always-on support</p>
-              <h3 className="text-xl font-semibold">Work runs while you focus</h3>
-            </div>
-            <span className="rounded-full bg-emerald-400/20 px-3 py-1 text-xs font-semibold text-emerald-200">Live</span>
-          </div>
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            {[
-              { label: 'No fixed contracts', desc: 'Predictable monthly fees. Scale up or down.' },
-              { label: 'Big savings', desc: 'Skip extra recruitment, training and payroll.' },
-              { label: 'Hands-free', desc: 'AI handles the admin, messages and follow ups.' },
-              { label: 'Works 24/7', desc: 'Always on, no breaks, no missed opportunities.' },
-            ].map((item) => (
-              <div key={item.label} className="rounded-xl border border-white/10 bg-white/5 p-3">
-                <p className="text-base font-bold">{item.label}</p>
-                <p className="text-sm text-white/70">{item.desc}</p>
+
+        <div className={styles.scene} aria-hidden>
+          <div className={styles.glass}>
+            <div className={styles.mic}>
+              <div className={styles.micIcon} />
+              <div className={styles.waves}>
+                <span className={styles.waveLine} />
+                <span className={styles.waveLine} />
+                <span className={styles.waveLine} />
               </div>
-            ))}
+            </div>
+            <div className={styles.nowPlaying}>
+              <div className={styles.callName}>Black Marvin</div>
+              <div className={styles.callTime}>4:38</div>
+            </div>
+
+            <div className={`${styles.badgeCall} ${styles.left}`}>
+              <div className={styles.avatar}>
+                <div className={styles.avatarHair} />
+                <div className={styles.avatarFace} />
+              </div>
+              <div className={styles.callText}>
+                <span className={styles.callLabel}>Mobile</span>
+                <span className={styles.callSub}>Veres Panna</span>
+                <div className={styles.callIcons}>
+                  <span className={`${styles.icon} ${styles.call}`}>📞</span>
+                  <span className={`${styles.icon} ${styles.video}`}>🎥</span>
+                  <span className={`${styles.icon} ${styles.mute}`}>🔇</span>
+                </div>
+              </div>
+            </div>
+
+            <div className={styles.chatStream}>
+              {chatLines.map((line) => (
+                <div key={line} className={styles.chatLine}>
+                  {line}
+                </div>
+              ))}
+            </div>
+
+            <div className={`${styles.badgeCall} ${styles.right}`}>
+              <div className={styles.avatar}>
+                <div className={styles.avatarHair} />
+                <div className={styles.avatarFace} />
+              </div>
+              <div className={styles.callText}>
+                <span className={styles.callLabel}>Mobile</span>
+                <span className={styles.callSub}>Veres Panna</span>
+                <div className={styles.callIcons}>
+                  <span className={`${styles.icon} ${styles.call}`}>📞</span>
+                  <span className={`${styles.icon} ${styles.video}`}>🎥</span>
+                  <span className={`${styles.icon} ${styles.mute}`}>🔇</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
