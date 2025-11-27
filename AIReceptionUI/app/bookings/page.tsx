@@ -1,10 +1,11 @@
 'use client';
 
+import { Suspense } from 'react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import BookingsList from '@/components/BookingsList';
 
-export default function BookingsPage() {
+function BookingsPageContent() {
   return (
     <>
       <Header />
@@ -16,5 +17,13 @@ export default function BookingsPage() {
       </main>
       <Footer />
     </>
+  );
+}
+
+export default function BookingsPage() {
+  return (
+    <Suspense fallback={null}>
+      <BookingsPageContent />
+    </Suspense>
   );
 }

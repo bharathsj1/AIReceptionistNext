@@ -2,9 +2,9 @@
 
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
-import React, { useState } from 'react';
+import React, { Suspense, useState } from 'react';
 
-export default function LoginPage() {
+function LoginPageContent() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
@@ -72,5 +72,13 @@ export default function LoginPage() {
       </main>
       <Footer />
     </>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginPageContent />
+    </Suspense>
   );
 }

@@ -1,10 +1,11 @@
 'use client';
 
+import { Suspense } from 'react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import SignupForm from '@/components/SignupForm';
 
-export default function CreateAccountPage() {
+function CreateAccountPageContent() {
   return (
     <>
       <Header />
@@ -43,5 +44,13 @@ export default function CreateAccountPage() {
       </main>
       <Footer />
     </>
+  );
+}
+
+export default function CreateAccountPage() {
+  return (
+    <Suspense fallback={null}>
+      <CreateAccountPageContent />
+    </Suspense>
   );
 }

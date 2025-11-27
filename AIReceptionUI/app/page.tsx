@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { Suspense } from 'react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import Hero from '@/components/Hero';
@@ -69,7 +69,7 @@ const benefits = [
   },
 ];
 
-export default function HomePage() {
+function HomePageContent() {
   return (
     <>
       <Header />
@@ -135,5 +135,13 @@ export default function HomePage() {
       </main>
       <Footer />
     </>
+  );
+}
+
+export default function HomePage() {
+  return (
+    <Suspense fallback={null}>
+      <HomePageContent />
+    </Suspense>
   );
 }

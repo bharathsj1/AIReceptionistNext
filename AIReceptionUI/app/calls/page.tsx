@@ -1,10 +1,11 @@
 'use client';
 
+import { Suspense } from 'react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import CallsList from '@/components/CallsList';
 
-export default function CallsPage() {
+function CallsPageContent() {
   return (
     <>
       <Header />
@@ -16,5 +17,13 @@ export default function CallsPage() {
       </main>
       <Footer />
     </>
+  );
+}
+
+export default function CallsPage() {
+  return (
+    <Suspense fallback={null}>
+      <CallsPageContent />
+    </Suspense>
   );
 }

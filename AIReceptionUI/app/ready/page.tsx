@@ -1,10 +1,11 @@
 'use client';
 
+import { Suspense } from 'react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import ReadyForm from '@/components/ReadyForm';
 
-export default function ReadyPage() {
+function ReadyPageContent() {
   return (
     <>
       <Header />
@@ -15,5 +16,13 @@ export default function ReadyPage() {
       </main>
       <Footer />
     </>
+  );
+}
+
+export default function ReadyPage() {
+  return (
+    <Suspense fallback={null}>
+      <ReadyPageContent />
+    </Suspense>
   );
 }

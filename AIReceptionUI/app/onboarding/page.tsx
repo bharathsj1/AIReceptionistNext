@@ -1,10 +1,11 @@
 'use client';
 
+import { Suspense } from 'react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import OnboardingProgress from '@/components/OnboardingProgress';
 
-export default function OnboardingPage() {
+function OnboardingPageContent() {
   return (
     <>
       <Header />
@@ -18,5 +19,13 @@ export default function OnboardingPage() {
       </main>
       <Footer />
     </>
+  );
+}
+
+export default function OnboardingPage() {
+  return (
+    <Suspense fallback={null}>
+      <OnboardingPageContent />
+    </Suspense>
   );
 }

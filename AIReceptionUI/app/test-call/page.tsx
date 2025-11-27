@@ -1,10 +1,11 @@
 'use client';
 
+import { Suspense } from 'react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import TestCallCard from '@/components/TestCallCard';
 
-export default function TestCallPage() {
+function TestCallPageContent() {
   return (
     <>
       <Header />
@@ -15,5 +16,13 @@ export default function TestCallPage() {
       </main>
       <Footer />
     </>
+  );
+}
+
+export default function TestCallPage() {
+  return (
+    <Suspense fallback={null}>
+      <TestCallPageContent />
+    </Suspense>
   );
 }
