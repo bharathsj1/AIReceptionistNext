@@ -2,7 +2,7 @@
 
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
-import React, { useMemo } from 'react';
+import React, { Suspense, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 
 const plans = {
@@ -13,6 +13,14 @@ const plans = {
 };
 
 export default function PaymentPage() {
+  return (
+    <Suspense fallback={null}>
+      <PaymentContent />
+    </Suspense>
+  );
+}
+
+function PaymentContent() {
   const params = useSearchParams();
   const planKey = (params.get('plan') || 'gold').toLowerCase();
   const plan = useMemo(() => plans[planKey as keyof typeof plans] || plans.gold, [planKey]);
