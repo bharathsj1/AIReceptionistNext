@@ -1,0 +1,12 @@
+{
+  "name": "ai-receptionist-func",
+  "version": "1.0.0",
+  "description": "Service files for AI receptionist Azure Functions (Python). Minimal package manifest to satisfy npm tooling.",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "test": "echo \"No JS tests configured\""
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}
