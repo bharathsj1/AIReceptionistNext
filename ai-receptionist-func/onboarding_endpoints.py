@@ -1,20 +1,16 @@
 import json
 import logging
-import uuid
 from typing import Dict, Tuple
 from urllib.parse import parse_qs, urlparse
 
 import azure.functions as func
-import httpx
 from twilio.rest import Client as TwilioClient
 from function_app import app
 
 from crawler_endpoints import crawl_site
-from services.ultravox_agent_builder import build_ultravox_agent_payload
+from services.ultravox_service import create_ultravox_agent, create_ultravox_call, list_ultravox_agents
 from shared.config import get_required_setting, get_setting
 from shared.db import Client, PhoneNumber, SessionLocal, init_db
-
-ULTRAVOX_BASE_URL = "https://api.ultravox.ai/api"
 
 logger = logging.getLogger(__name__)
 
@@ -34,86 +30,36 @@ def get_site_summary(website_url: str, max_pages: int = 3) -> Tuple[str, str]:
     return name_guess, summary
 
 
-def create_ultravox_agent(business_name: str, website_url: str, summary: str) -> str:
-    """Create an Ultravox agent and return its ID. Retries with a unique suffix if the name already exists."""
-    api_key = get_required_setting("ULTRAVOX_API_KEY")
-    payload = build_ultravox_agent_payload("Test", website_url, summary)
-
-    headers = {
-        "X-API-Key": api_key,
-        "Content-Type": "application/json",
-    }
-
-    with httpx.Client(timeout=20) as client:
-        response = client.post(f"{ULTRAVOX_BASE_URL}/agents", headers=headers, json=payload)
-        if response.status_code == 400 and "already exists" in response.text.lower():
-            # Add a short suffix to avoid name collisions while keeping within 64 chars.
-            suffix = uuid.uuid4().hex[:6]
-            payload = build_ultravox_agent_payload(
-                business_name,
-                website_url,
-                summary,
-                agent_name_override=f"{business_name} AI Receptionist-{suffix}",
-            )
-            response = client.post(f"{ULTRAVOX_BASE_URL}/agents", headers=headers, json=payload)
-
-    if response.status_code >= 300:
-        logger.error(
-            "Ultravox agent creation failed: %s - %s",
-            response.status_code,
-            response.text,
-        )
-        raise RuntimeError(f"Ultravox agent creation failed ({response.status_code}): {response.text}")
-
-    data = response.json()
-    agent_id = data.get("id") or data.get("agentId") or data.get("agent_id") or data.get("agent", {}).get("id")
-    if not agent_id:
-        logger.error("Ultravox agent creation response missing id: %s", response.text)
-        raise RuntimeError(f"Ultravox agent creation returned no id: {response.text}")
-    return agent_id
-
-
-def create_ultravox_call(agent_id: str, caller_number: str) -> str:
-    """Create an Ultravox call and return joinUrl."""
-    api_key = get_required_setting("ULTRAVOX_API_KEY")
-    headers = {
-        "X-API-Key": api_key,
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "medium": {"twilio": {}},
-        "firstSpeakerSettings": {"agent": {}},
-        "templateContext": {"user": {"phone_number": caller_number}},
-    }
-
-    with httpx.Client(timeout=20) as client:
-        response = client.post(f"{ULTRAVOX_BASE_URL}/agents/{agent_id}/calls", headers=headers, json=payload)
-    if response.status_code >= 300:
-        logger.error("Ultravox call creation failed: %s - %s", response.status_code, response.text)
-        raise RuntimeError("Failed to create Ultravox call")
-
-    data = response.json()
-    join_url = data.get("joinUrl") or data.get("join_url")
-    if not join_url:
-        logger.error("Ultravox call response missing joinUrl: %s", data)
-        raise RuntimeError("Ultravox call response missing joinUrl")
-    return join_url
-
-
 def purchase_twilio_number(twilio_client: TwilioClient, webhook_base: str, country: str) -> Dict[str, str]:
-    """Buy a Twilio number and configure its voice webhook."""
+    """
+    Buy a Twilio number and configure its voice webhook.
+    On trial accounts (only one number allowed), reuses the existing number if purchase fails.
+    """
+    webhook_url = webhook_base.rstrip("/") + "/api/twilio/incoming"
     available = twilio_client.available_phone_numbers(country).local.list(voice_enabled=True, limit=1)
     if not available:
         raise RuntimeError(f"No Twilio numbers available for purchase in {country}")
 
     chosen = available[0]
-    webhook_url = webhook_base.rstrip("/") + "/api/twilio/incoming"
-    purchased = twilio_client.incoming_phone_numbers.create(
-        phone_number=chosen.phone_number,
-        voice_url=webhook_url,
-        voice_method="POST",
-    )
-    return {"phone_number": purchased.phone_number, "sid": purchased.sid}
+    try:
+        purchased = twilio_client.incoming_phone_numbers.create(
+            phone_number=chosen.phone_number,
+            voice_url=webhook_url,
+            voice_method="POST",
+        )
+        return {"phone_number": purchased.phone_number, "sid": purchased.sid}
+    except Exception as exc:  # pylint: disable=broad-except
+        error_text = str(exc)
+        if "Trial accounts are allowed only one Twilio number" not in error_text:
+            raise
+        # Trial restriction hit: try to reuse the existing active number.
+        existing_numbers = twilio_client.incoming_phone_numbers.list(limit=1)
+        if not existing_numbers:
+            raise RuntimeError("Twilio trial account has no existing number to reuse") from exc
+        existing = existing_numbers[0]
+        # Ensure webhook is configured to our function endpoint.
+        existing.update(voice_url=webhook_url, voice_method="POST")
+        return {"phone_number": existing.phone_number, "sid": existing.sid}
 
 
 def get_twilio_client() -> TwilioClient:
@@ -121,6 +67,36 @@ def get_twilio_client() -> TwilioClient:
     account_sid = get_required_setting("TWILIO_ACCOUNT_SID")
     auth_token = get_required_setting("TWILIO_AUTH_TOKEN")
     return TwilioClient(account_sid, auth_token)
+
+
+@app.function_name(name="UltravoxAgents")
+@app.route(route="ultravox/agents", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+def ultravox_agents(req: func.HttpRequest) -> func.HttpResponse:
+    """List available Ultravox agents (simple helper endpoint)."""
+    limit_param = req.params.get("limit")
+    try:
+        limit = int(limit_param) if limit_param else 20
+    except ValueError:
+        return func.HttpResponse(
+            json.dumps({"error": "Invalid 'limit' parameter"}),
+            status_code=400,
+            mimetype="application/json",
+        )
+
+    try:
+        agents = list_ultravox_agents(limit=limit)
+        return func.HttpResponse(
+            json.dumps({"agents": agents}),
+            status_code=200,
+            mimetype="application/json",
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.error("Failed to list Ultravox agents: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "Failed to list Ultravox agents", "details": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+        )
 
 
 @app.function_name(name="ClientsProvision")
