@@ -6,5 +6,7 @@ azure-functions
 httpx
 requests
 beautifulsoup4
+sqlalchemy
+twilio
+psycopg2-binary
 tqdm>=4.66.0
-
