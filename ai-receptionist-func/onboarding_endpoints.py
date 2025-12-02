@@ -242,14 +242,26 @@ def twilio_incoming(req: func.HttpRequest) -> func.HttpResponse:
     logger.info("TwilioIncoming invoked. Headers=%s RawBody=%s", dict(req.headers), raw_body)
 
     params = parse_qs(raw_body)
-    to_number = params.get("To", [None])[0]
-    from_number = params.get("From", [None])[0]
+
+    def _first_non_empty(keys):
+        for key in keys:
+            val = params.get(key, [None])[0]
+            if val:
+                return val
+        return None
+
+    # Twilio can send To/From for PSTN and Called/Caller for client calls; normalize them.
+    to_number = _first_non_empty(["To", "Called"])
+    from_number = _first_non_empty(["From", "Caller"])
+
+    logger.info("TwilioIncoming normalized params. To=%s From=%s RawParams=%s", to_number, from_number, params)
 
     if not to_number:
+        logger.error("TwilioIncoming: missing 'To' or 'Called' in request body: %s", params)
         return func.HttpResponse(
-            json.dumps({"error": "Missing 'To' number"}),
-            status_code=400,
-            mimetype="application/json",
+            '<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="alice">Configuration error: no destination number was provided.</Say></Response>',
+            status_code=200,
+            mimetype="text/xml",
         )
 
     db = SessionLocal()
