@@ -35,7 +35,7 @@ def purchase_twilio_number(twilio_client: TwilioClient, webhook_base: str, count
     Buy a Twilio number and configure its voice webhook.
     On trial accounts (only one number allowed), reuses the existing number if purchase fails.
     """
-    webhook_url = webhook_base.rstrip("/") + "/api/twilio/incoming"
+    webhook_url = _build_twilio_voice_webhook(webhook_base)
     available = twilio_client.available_phone_numbers(country).local.list(voice_enabled=True, limit=1)
     if not available:
         raise RuntimeError(f"No Twilio numbers available for purchase in {country}")
@@ -60,6 +60,18 @@ def purchase_twilio_number(twilio_client: TwilioClient, webhook_base: str, count
         # Ensure webhook is configured to our function endpoint.
         existing.update(voice_url=webhook_url, voice_method="POST")
         return {"phone_number": existing.phone_number, "sid": existing.sid}
+
+
+def _build_twilio_voice_webhook(webhook_base: str) -> str:
+    """
+    Normalize the Twilio voice webhook URL to end with /api/twilio/incoming exactly once.
+    Prevents accidental duplication like .../api/twilio/incoming/api/twilio/incoming.
+    """
+    base = (webhook_base or "").rstrip("/")
+    suffix = "/api/twilio/incoming"
+    if base.endswith(suffix):
+        base = base[: -len(suffix)]
+    return base.rstrip("/") + suffix
 
 
 def get_twilio_client() -> TwilioClient:
