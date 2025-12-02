@@ -50,8 +50,6 @@ def purchase_twilio_number(twilio_client: TwilioClient, webhook_base: str, count
         return {"phone_number": purchased.phone_number, "sid": purchased.sid}
     except Exception as exc:  # pylint: disable=broad-except
         error_text = str(exc)
-        if "Trial accounts are allowed only one Twilio number" not in error_text:
-            raise
         # Trial restriction hit: try to reuse the existing active number.
         existing_numbers = twilio_client.incoming_phone_numbers.list(limit=1)
         if not existing_numbers:
