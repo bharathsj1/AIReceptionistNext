@@ -71,8 +71,8 @@ def create_ultravox_agent(business_name: str, website_url: str, summary: str) ->
 def create_ultravox_call(agent_id: str, caller_number: str) -> str:
     """Create an Ultravox call and return joinUrl."""
     payload = {
-        # Align with Ultravox call schema: specify inbound Twilio stream explicitly.
-        "medium": {"twilio": {"incoming": {}}},
+        # Minimal Twilio medium for inbound Streams; no unsupported "incoming" field.
+        "medium": {"twilio": {}},
         "firstSpeakerSettings": {"agent": {}},
         "recordingEnabled": True,
     }
