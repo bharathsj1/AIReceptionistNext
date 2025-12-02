@@ -239,6 +239,8 @@ def twilio_incoming(req: func.HttpRequest) -> func.HttpResponse:
     except Exception:  # pylint: disable=broad-except
         raw_body = ""
 
+    logger.info("TwilioIncoming invoked. Headers=%s RawBody=%s", dict(req.headers), raw_body)
+
     params = parse_qs(raw_body)
     to_number = params.get("To", [None])[0]
     from_number = params.get("From", [None])[0]
@@ -256,6 +258,7 @@ def twilio_incoming(req: func.HttpRequest) -> func.HttpResponse:
             db.query(PhoneNumber).filter_by(twilio_phone_number=to_number, is_active=True).one_or_none()
         )
         if not phone_record:
+            logger.error("TwilioIncoming: no phone record for To=%s", to_number)
             return func.HttpResponse(
                 json.dumps({"error": "No client found for this number"}),
                 status_code=404,
@@ -264,6 +267,9 @@ def twilio_incoming(req: func.HttpRequest) -> func.HttpResponse:
 
         client_record: Client = db.query(Client).filter_by(id=phone_record.client_id).one()
         if not client_record.ultravox_agent_id:
+            logger.error(
+                "TwilioIncoming: missing Ultravox agent id for client_id=%s To=%s", client_record.id, to_number
+            )
             return func.HttpResponse(
                 json.dumps({"error": "Client is missing an Ultravox agent"}),
                 status_code=500,
@@ -279,6 +285,15 @@ def twilio_incoming(req: func.HttpRequest) -> func.HttpResponse:
                 status_code=500,
                 mimetype="application/json",
             )
+
+        logger.info(
+            "TwilioIncoming success. To=%s From=%s client_id=%s agent_id=%s join_url=%s",
+            to_number,
+            from_number,
+            client_record.id,
+            client_record.ultravox_agent_id,
+            join_url,
+        )
 
         twiml = (
             '<?xml version="1.0" encoding="UTF-8"?>'
