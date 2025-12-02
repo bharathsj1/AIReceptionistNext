@@ -73,8 +73,10 @@ def create_ultravox_call(agent_id: str, caller_number: str) -> str:
     payload = {
         "medium": {"twilio": {}},
         "firstSpeakerSettings": {"agent": {}},
-        "templateContext": {"user": {"phone_number": caller_number}},
     }
+    # Ultravox schema allows templateContext with known keys; avoid arbitrary nesting.
+    if caller_number:
+        payload["templateContext"] = {"customerName": caller_number}
 
     with httpx.Client(timeout=20) as client:
         response = client.post(f"{ULTRAVOX_BASE_URL}/agents/{agent_id}/calls", headers=_headers(), json=payload)
