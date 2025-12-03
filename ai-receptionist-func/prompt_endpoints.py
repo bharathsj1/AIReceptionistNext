@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
 import azure.functions as func
 import httpx
@@ -9,6 +9,35 @@ from function_app import app
 from shared.config import get_required_setting, get_setting
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_site_text(body: Dict[str, Any]) -> Optional[str]:
+    """
+    Accept either raw website_text or a crawl payload with pages.
+    Returns a single text blob or None.
+    """
+    website_text = body.get("website_text")
+    if isinstance(website_text, str) and website_text.strip():
+        return website_text.strip()
+
+    pages = body.get("pages")
+    if isinstance(pages, list) and pages:
+        chunks: List[str] = []
+        for page in pages:
+            if not isinstance(page, dict):
+                continue
+            title = page.get("title") or ""
+            content = page.get("content") or ""
+            snippet = f"{title}\n{content}".strip()
+            if snippet:
+                chunks.append(snippet)
+            combined = "\n\n".join(chunks)
+            if len(combined) > 15000:
+                break
+        combined = "\n\n".join(chunks).strip()
+        if combined:
+            return combined
+    return None
 
 
 def _build_prompt_payload(website_text: str, business_name: Optional[str]) -> Dict[str, Any]:
@@ -172,19 +201,25 @@ def _generate_prompt(website_text: str, business_name: Optional[str]) -> str:
 def create_ultravox_prompt(req: func.HttpRequest) -> func.HttpResponse:
     """
     Generate a natural Ultravox system prompt from website text using OpenAI.
-    Body: { "website_text": "...", "business_name": "Optional Name" }
+    Body:
+    {
+      "website_text": "...",           # optional if pages provided
+      "business_name": "Optional Name",
+      "pages": [ { "url": "...", "title": "...", "content": "..." } ]  # optional
+    }
     """
     try:
         body = req.get_json()
     except ValueError:
         body = None
+    body = body or {}
 
-    website_text = (body or {}).get("website_text")
-    business_name = (body or {}).get("business_name")
+    website_text = _extract_site_text(body)
+    business_name = body.get("business_name")
 
     if not website_text or not isinstance(website_text, str):
         return func.HttpResponse(
-            json.dumps({"error": "website_text is required and must be a string"}),
+            json.dumps({"error": "website_text or pages is required"}),
             status_code=400,
             mimetype="application/json",
         )

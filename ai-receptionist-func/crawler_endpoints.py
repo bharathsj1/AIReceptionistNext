@@ -12,7 +12,6 @@ import httpx
 from bs4 import BeautifulSoup
 
 from function_app import app
-from shared.db import Client, SessionLocal
 
 EXCLUDED_SCHEMES: Tuple[str, ...] = ("mailto:", "tel:", "javascript:")
 REMOVABLE_TAGS: Tuple[str, ...] = ("script", "style", "nav", "footer", "header", "aside")
@@ -177,13 +176,6 @@ def write_kb_file(pages: Iterable[Dict[str, str]], output_path: Path = OUTPUT_PA
     print(f"[done] Wrote {len(entries)} pages to {output_path}")
 
 
-def write_kb_db(client: Client, pages: List[Dict[str, str]]) -> None:
-    """
-    Persist crawled pages JSON into the client's website_data column.
-    """
-    client.website_data = json.dumps(pages, ensure_ascii=False)
-
-
 # ---------------------------------------------------------------------------
 # Azure Function endpoint
 # ---------------------------------------------------------------------------
@@ -198,11 +190,10 @@ def crawl_kb_api(req: func.HttpRequest) -> func.HttpResponse:
     {
       "url": "https://example.com",
       "max_pages": 50,               # optional
-      "client_email": "user@example.com" # optional; used to pick the Client row
+      "client_email": "user@example.com" # optional; ignored in DB-less mode
     }
 
-    Crawls the website starting from 'url', stores knowledge in the matching Client.website_data,
-    and returns a JSON summary.
+    Crawls the website starting from 'url' and returns the knowledge in the response payload.
     """
     try:
         body = req.get_json()
@@ -214,7 +205,7 @@ def crawl_kb_api(req: func.HttpRequest) -> func.HttpResponse:
 
     url = body.get("url")
     max_pages_raw = body.get("max_pages")
-    client_email = body.get("client_email")
+    # client_email is ignored now that we return data directly
 
     # --- validate url ---
     if not url or not isinstance(url, str) or not url.startswith(("http://", "https://")):
@@ -246,38 +237,11 @@ def crawl_kb_api(req: func.HttpRequest) -> func.HttpResponse:
             mimetype="application/json",
         )
 
-    # --- persist to DB ---
-    db = SessionLocal()
-    try:
-        client_row: Optional[Client] = None
-        if client_email and isinstance(client_email, str):
-            client_row = db.query(Client).filter_by(email=client_email).one_or_none()
-        if not client_row:
-            client_row = db.query(Client).filter_by(website_url=url).one_or_none()
-        if not client_row:
-            return func.HttpResponse(
-                json.dumps({"error": "No matching client found for provided email or url"}),
-                status_code=404,
-                mimetype="application/json",
-            )
-
-        write_kb_db(client_row, pages)
-        db.commit()
-    except Exception as exc:  # pragma: no cover - defensive
-        db.rollback()
-        return func.HttpResponse(
-            json.dumps({"error": f"Failed to persist knowledge: {exc}"}),
-            status_code=500,
-            mimetype="application/json",
-        )
-    finally:
-        db.close()
-
     payload = {
         "start_url": url,
         "max_pages": max_pages,
         "pages_crawled": len(pages),
-        "stored_in_client": True,
+        "pages": pages,
     }
 
     return func.HttpResponse(
