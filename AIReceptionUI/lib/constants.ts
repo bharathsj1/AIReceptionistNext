@@ -1,4 +1,4 @@
-const DEFAULT_CRAWL_KB = 'http://localhost:7071/api/crawl-kb';
+const DEFAULT_CRAWL_KB = 'https://aireceptionist-func.azurewebsites.net/api/crawl-kb';
 
 export const API_ENDPOINTS = {
   crawlKb: process.env.NEXT_PUBLIC_CRAWL_API || DEFAULT_CRAWL_KB,

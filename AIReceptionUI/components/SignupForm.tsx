@@ -17,28 +17,8 @@ export default function SignupForm() {
       return;
     }
     setPending(true);
-    setStatus('Analyzing your website…');
-    try {
-      const res = await fetch(API_ENDPOINTS.crawlKb, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: website }),
-      });
-      if (!res.ok) throw new Error('Unable to analyze site');
-      const data = await res.json();
-      const crawlResult = { website, data };
-      try {
-        sessionStorage.setItem('crawlResult', JSON.stringify(crawlResult));
-      } catch (storageErr) {
-        console.warn('Could not cache crawl result in session storage', storageErr);
-      }
-      setStatus(`Website analyzed! ${data.pages || 0} pages added.`);
-      setTimeout(() => router.push(`/onboarding?website=${encodeURIComponent(website)}`), 600);
-    } catch (err: any) {
-      setStatus(err.message || 'Something went wrong. Please try again.');
-    } finally {
-      setPending(false);
-    }
+    setStatus('Redirecting to setup…');
+    setTimeout(() => router.push(`/onboarding?website=${encodeURIComponent(website)}`), 150);
   };
 
   return (
@@ -62,7 +42,7 @@ export default function SignupForm() {
         disabled={pending}
         className="w-full rounded-xl bg-gradient-to-r from-indigo-400 via-sky-400 to-emerald-300 px-4 py-3 text-sm font-bold text-black shadow-lg disabled:opacity-60"
       >
-        {pending ? 'Analyzing…' : 'Continue →'}
+        {pending ? 'Redirecting…' : 'Continue →'}
       </button>
     </form>
   );
