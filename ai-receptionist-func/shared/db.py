@@ -10,6 +10,8 @@ from sqlalchemy import (
     String,
     Text,
     create_engine,
+    inspect,
+    text,
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, scoped_session, sessionmaker
@@ -43,6 +45,7 @@ class Client(Base):
     name = Column(String, nullable=True)
     ultravox_agent_id = Column(String, nullable=True)
     notes = Column(Text, nullable=True)
+    website_data = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -65,6 +68,19 @@ class PhoneNumber(Base):
 def init_db() -> None:
     """Create tables if they do not exist."""
     Base.metadata.create_all(bind=engine)
+    _ensure_optional_columns()
+
+
+def _ensure_optional_columns() -> None:
+    """
+    Add optional columns that may not exist in already-deployed databases.
+    Safe to run repeatedly; uses conditional ALTER TABLE.
+    """
+    inspector = inspect(engine)
+    with engine.begin() as conn:
+        client_columns = {col["name"] for col in inspector.get_columns("clients")}
+        if "website_data" not in client_columns:
+            conn.execute(text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS website_data TEXT"))
 
 
 def get_db() -> Generator:

@@ -12,6 +12,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from function_app import app
+from shared.db import Client, SessionLocal
 
 EXCLUDED_SCHEMES: Tuple[str, ...] = ("mailto:", "tel:", "javascript:")
 REMOVABLE_TAGS: Tuple[str, ...] = ("script", "style", "nav", "footer", "header", "aside")
@@ -176,6 +177,13 @@ def write_kb_file(pages: Iterable[Dict[str, str]], output_path: Path = OUTPUT_PA
     print(f"[done] Wrote {len(entries)} pages to {output_path}")
 
 
+def write_kb_db(client: Client, pages: List[Dict[str, str]]) -> None:
+    """
+    Persist crawled pages JSON into the client's website_data column.
+    """
+    client.website_data = json.dumps(pages, ensure_ascii=False)
+
+
 # ---------------------------------------------------------------------------
 # Azure Function endpoint
 # ---------------------------------------------------------------------------
@@ -190,10 +198,10 @@ def crawl_kb_api(req: func.HttpRequest) -> func.HttpResponse:
     {
       "url": "https://example.com",
       "max_pages": 50,               # optional
-      "file_name": "website_kb.txt"  # optional
+      "client_email": "user@example.com" # optional; used to pick the Client row
     }
 
-    Crawls the website starting from 'url', writes a KB text file under ./data,
+    Crawls the website starting from 'url', stores knowledge in the matching Client.website_data,
     and returns a JSON summary.
     """
     try:
@@ -206,7 +214,7 @@ def crawl_kb_api(req: func.HttpRequest) -> func.HttpResponse:
 
     url = body.get("url")
     max_pages_raw = body.get("max_pages")
-    file_name = body.get("file_name")
+    client_email = body.get("client_email")
 
     # --- validate url ---
     if not url or not isinstance(url, str) or not url.startswith(("http://", "https://")):
@@ -228,15 +236,7 @@ def crawl_kb_api(req: func.HttpRequest) -> func.HttpResponse:
             mimetype="application/json",
         )
 
-    # --- determine output path ---
-    if file_name and isinstance(file_name, str):
-        safe_name = file_name.strip() or "website_knowledge.txt"
-    else:
-        safe_name = "website_knowledge.txt"
-
-    output_path = OUTPUT_PATH.parent / safe_name
-
-    # --- run crawl + write file ---
+    # --- run crawl ---
     try:
         pages = crawl_site(url, max_pages=max_pages)
     except Exception as exc:  # pragma: no cover - defensive
@@ -246,20 +246,38 @@ def crawl_kb_api(req: func.HttpRequest) -> func.HttpResponse:
             mimetype="application/json",
         )
 
+    # --- persist to DB ---
+    db = SessionLocal()
     try:
-        write_kb_file(pages, output_path=output_path)
+        client_row: Optional[Client] = None
+        if client_email and isinstance(client_email, str):
+            client_row = db.query(Client).filter_by(email=client_email).one_or_none()
+        if not client_row:
+            client_row = db.query(Client).filter_by(website_url=url).one_or_none()
+        if not client_row:
+            return func.HttpResponse(
+                json.dumps({"error": "No matching client found for provided email or url"}),
+                status_code=404,
+                mimetype="application/json",
+            )
+
+        write_kb_db(client_row, pages)
+        db.commit()
     except Exception as exc:  # pragma: no cover - defensive
+        db.rollback()
         return func.HttpResponse(
-            json.dumps({"error": f"Failed to write knowledge file: {exc}"}),
+            json.dumps({"error": f"Failed to persist knowledge: {exc}"}),
             status_code=500,
             mimetype="application/json",
         )
+    finally:
+        db.close()
 
     payload = {
         "start_url": url,
         "max_pages": max_pages,
         "pages_crawled": len(pages),
-        "output_path": str(output_path),
+        "stored_in_client": True,
     }
 
     return func.HttpResponse(
