@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { API_ENDPOINTS } from '@/lib/constants';
 
 export default function ContactForm() {
   const [status, setStatus] = useState<string | null>(null);
@@ -12,7 +13,7 @@ export default function ContactForm() {
     setPending(true);
     setStatus(null);
     try {
-      const res = await fetch('http://localhost:8000/api/demo-requests', {
+      const res = await fetch(API_ENDPOINTS.demoRequest, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),

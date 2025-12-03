@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { API_ENDPOINTS, UI_TEXT } from '@/lib/constants';
 
 export default function SignupForm() {
   const router = useRouter();
@@ -18,13 +19,19 @@ export default function SignupForm() {
     setPending(true);
     setStatus('Analyzing your website…');
     try {
-      const res = await fetch('http://localhost:5001/api/scrape', {
+      const res = await fetch(API_ENDPOINTS.crawlKb, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: website }),
       });
       if (!res.ok) throw new Error('Unable to analyze site');
       const data = await res.json();
+      const crawlResult = { website, data };
+      try {
+        sessionStorage.setItem('crawlResult', JSON.stringify(crawlResult));
+      } catch (storageErr) {
+        console.warn('Could not cache crawl result in session storage', storageErr);
+      }
       setStatus(`Website analyzed! ${data.pages || 0} pages added.`);
       setTimeout(() => router.push(`/onboarding?website=${encodeURIComponent(website)}`), 600);
     } catch (err: any) {
@@ -41,7 +48,7 @@ export default function SignupForm() {
           <span className="text-lg text-white/60">🌐</span>
           <input
             className="w-full bg-transparent px-3 py-3 text-white outline-none"
-            placeholder="https://yourwebsite.com"
+            placeholder={UI_TEXT.websitePlaceholder}
             type="url"
             value={website}
             onChange={(e) => setWebsite(e.target.value)}

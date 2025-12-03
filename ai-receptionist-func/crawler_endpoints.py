@@ -60,6 +60,32 @@ def clean_text(html: str) -> Tuple[str, str]:
     return title, content
 
 
+def extract_important_content(
+    raw_content: str,
+    global_seen: Set[str],
+    min_len: int = 40,
+    max_paragraphs: int = 40,
+) -> List[str]:
+    """
+    Extract meaningful, non-duplicate paragraphs from raw content.
+    - Drop paragraphs shorter than min_len.
+    - Deduplicate across the entire crawl using global_seen.
+    - Limit to max_paragraphs per page.
+    """
+    paragraphs: List[str] = []
+    for paragraph in raw_content.split("\n"):
+        para = paragraph.strip()
+        if len(para) < min_len:
+            continue
+        if para in global_seen:
+            continue
+        global_seen.add(para)
+        paragraphs.append(para)
+        if len(paragraphs) >= max_paragraphs:
+            break
+    return paragraphs
+
+
 def fetch_page(client: httpx.Client, url: str) -> str:
     """Fetch a single HTML page or raise RuntimeError with details."""
     try:
@@ -87,6 +113,7 @@ def crawl_site(start_url: str, max_pages: int = DEFAULT_MAX_PAGES) -> List[Dict[
     queue: Deque[str] = deque([start_url])
     visited: Set[str] = set()
     pages: List[Dict[str, str]] = []
+    global_seen: Set[str] = set()
 
     headers = {
         "User-Agent": USER_AGENT,
@@ -108,11 +135,16 @@ def crawl_site(start_url: str, max_pages: int = DEFAULT_MAX_PAGES) -> List[Dict[
                 continue
 
             title, content = clean_text(html)
+            meaningful = extract_important_content(content, global_seen)
+            if not meaningful:
+                # Skip pages with no new content
+                continue
+
             pages.append(
                 {
                     "url": current_url,
                     "title": title,
-                    "content": content,
+                    "content": "\n".join(meaningful),
                 }
             )
 
@@ -158,11 +190,10 @@ def crawl_kb_api(req: func.HttpRequest) -> func.HttpResponse:
     {
       "url": "https://example.com",
       "max_pages": 50,               # optional
-      "file_name": "website_kb.txt"  # optional
+      "client_email": "user@example.com" # optional; ignored in DB-less mode
     }
 
-    Crawls the website starting from 'url', writes a KB text file under ./data,
-    and returns a JSON summary.
+    Crawls the website starting from 'url' and returns the knowledge in the response payload.
     """
     try:
         body = req.get_json()
@@ -174,7 +205,7 @@ def crawl_kb_api(req: func.HttpRequest) -> func.HttpResponse:
 
     url = body.get("url")
     max_pages_raw = body.get("max_pages")
-    file_name = body.get("file_name")
+    # client_email is ignored now that we return data directly
 
     # --- validate url ---
     if not url or not isinstance(url, str) or not url.startswith(("http://", "https://")):
@@ -196,15 +227,7 @@ def crawl_kb_api(req: func.HttpRequest) -> func.HttpResponse:
             mimetype="application/json",
         )
 
-    # --- determine output path ---
-    if file_name and isinstance(file_name, str):
-        safe_name = file_name.strip() or "website_knowledge.txt"
-    else:
-        safe_name = "website_knowledge.txt"
-
-    output_path = OUTPUT_PATH.parent / safe_name
-
-    # --- run crawl + write file ---
+    # --- run crawl ---
     try:
         pages = crawl_site(url, max_pages=max_pages)
     except Exception as exc:  # pragma: no cover - defensive
@@ -214,20 +237,11 @@ def crawl_kb_api(req: func.HttpRequest) -> func.HttpResponse:
             mimetype="application/json",
         )
 
-    try:
-        write_kb_file(pages, output_path=output_path)
-    except Exception as exc:  # pragma: no cover - defensive
-        return func.HttpResponse(
-            json.dumps({"error": f"Failed to write knowledge file: {exc}"}),
-            status_code=500,
-            mimetype="application/json",
-        )
-
     payload = {
         "start_url": url,
         "max_pages": max_pages,
         "pages_crawled": len(pages),
-        "output_path": str(output_path),
+        "pages": pages,
     }
 
     return func.HttpResponse(
