@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { API_ENDPOINTS } from '@/lib/constants';
 
 export default function ReadyForm() {
   const [email, setEmail] = useState('');
@@ -20,7 +21,7 @@ export default function ReadyForm() {
     setPending(true);
     setStatus('Creating your trial account…');
     try {
-      const res = await fetch('http://localhost:5001/api/trial', {
+      const res = await fetch(API_ENDPOINTS.trial, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
