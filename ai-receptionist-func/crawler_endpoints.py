@@ -60,6 +60,32 @@ def clean_text(html: str) -> Tuple[str, str]:
     return title, content
 
 
+def extract_important_content(
+    raw_content: str,
+    global_seen: Set[str],
+    min_len: int = 40,
+    max_paragraphs: int = 40,
+) -> List[str]:
+    """
+    Extract meaningful, non-duplicate paragraphs from raw content.
+    - Drop paragraphs shorter than min_len.
+    - Deduplicate across the entire crawl using global_seen.
+    - Limit to max_paragraphs per page.
+    """
+    paragraphs: List[str] = []
+    for paragraph in raw_content.split("\n"):
+        para = paragraph.strip()
+        if len(para) < min_len:
+            continue
+        if para in global_seen:
+            continue
+        global_seen.add(para)
+        paragraphs.append(para)
+        if len(paragraphs) >= max_paragraphs:
+            break
+    return paragraphs
+
+
 def fetch_page(client: httpx.Client, url: str) -> str:
     """Fetch a single HTML page or raise RuntimeError with details."""
     try:
@@ -87,6 +113,7 @@ def crawl_site(start_url: str, max_pages: int = DEFAULT_MAX_PAGES) -> List[Dict[
     queue: Deque[str] = deque([start_url])
     visited: Set[str] = set()
     pages: List[Dict[str, str]] = []
+    global_seen: Set[str] = set()
 
     headers = {
         "User-Agent": USER_AGENT,
@@ -108,11 +135,16 @@ def crawl_site(start_url: str, max_pages: int = DEFAULT_MAX_PAGES) -> List[Dict[
                 continue
 
             title, content = clean_text(html)
+            meaningful = extract_important_content(content, global_seen)
+            if not meaningful:
+                # Skip pages with no new content
+                continue
+
             pages.append(
                 {
                     "url": current_url,
                     "title": title,
-                    "content": content,
+                    "content": "\n".join(meaningful),
                 }
             )
 

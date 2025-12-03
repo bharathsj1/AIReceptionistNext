@@ -13,3 +13,4 @@ import booking_endpoints  # noqa
 import health_endpoints  # noqa
 import crawler_endpoints  # noqa
 import onboarding_endpoints  # noqa
+import prompt_endpoints  # noqa
