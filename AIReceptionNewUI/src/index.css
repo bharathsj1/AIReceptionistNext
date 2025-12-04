@@ -267,16 +267,79 @@ body {
   padding: 12px 14px;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.1);
+  animation: pop-in 260ms ease;
 }
 
 .status.success {
   border-color: #2ec495;
-  color: #b9f4df;
+  color: #0b120f;
+  background: linear-gradient(120deg, #b8f7e2, #8de6ff, #b8f7e2);
+  background-size: 200% 200%;
+  animation: shimmer 3s linear infinite, pop-in 260ms ease;
 }
 
 .status.error {
   border-color: #ff7b7b;
   color: #ffb1b1;
+}
+
+.loader-wrap {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  justify-items: start;
+}
+
+.loader {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.loader span {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: linear-gradient(140deg, #7bc6ff, #7b9dff);
+  animation: pulse 900ms ease-in-out infinite;
+}
+
+.loader span:nth-child(2) {
+  animation-delay: 120ms;
+}
+
+.loader span:nth-child(3) {
+  animation-delay: 240ms;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(0.7);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 1;
+  }
+}
+
+@keyframes pop-in {
+  0% {
+    transform: translateY(6px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
 }
 
 @media (max-width: 900px) {

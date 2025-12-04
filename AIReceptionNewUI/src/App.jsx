@@ -1,18 +1,17 @@
 import { useMemo, useState } from "react";
+import API_URLS from "./config/urls";
 
 const STAGES = {
   LANDING: "landing",
   CRAWL: "crawl"
 };
 
-// Use a relative path so Vite dev proxy can avoid CORS locally.
-const endpoint = "/api/crawl-kb";
-
 export default function App() {
   const [stage, setStage] = useState(STAGES.LANDING);
   const [url, setUrl] = useState("");
   const [status, setStatus] = useState("idle");
   const [responseMessage, setResponseMessage] = useState("");
+  const [showLoader, setShowLoader] = useState(false);
 
   const heroCtas = useMemo(
     () => [
@@ -34,9 +33,10 @@ export default function App() {
 
     setStatus("loading");
     setResponseMessage("");
+    setShowLoader(true);
 
     try {
-      const res = await fetch(endpoint, {
+      const res = await fetch(API_URLS.crawlKnowledgeBase, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -50,8 +50,7 @@ export default function App() {
         throw new Error(errorText || "Request failed");
       }
 
-      const text = await res.text();
-      setResponseMessage(text || "Crawl request sent successfully.");
+      setResponseMessage("All website data loaded fine.");
       setStatus("success");
     } catch (error) {
       setStatus("error");
@@ -59,6 +58,7 @@ export default function App() {
         error?.message || "Unable to send request. Please try again."
       );
     }
+    setShowLoader(false);
   };
 
   return (
@@ -142,10 +142,21 @@ export default function App() {
                   {status === "loading" ? "Sending..." : "Send to AI Reception"}
                 </button>
               </div>
-              <p className="hint">POST to {endpoint}</p>
+              <p className="hint">POST to {API_URLS.crawlKnowledgeBase}</p>
             </form>
 
-            {responseMessage && (
+            {showLoader && (
+              <div className="loader-wrap">
+                <div className="loader">
+                  <span />
+                  <span />
+                  <span />
+                </div>
+                <p className="hint">Sending request…</p>
+              </div>
+            )}
+
+            {!showLoader && responseMessage && (
               <div className={`status ${status}`}>
                 {responseMessage}
               </div>
