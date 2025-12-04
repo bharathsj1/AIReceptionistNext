@@ -97,11 +97,25 @@ export default function App() {
     setResponseMessage("");
     setShowLoader(false);
     setEmail("");
+    setUrl("");
     setCrawlData(null);
     setSystemPrompt("");
     setProvisionData(null);
     setLoadingPhase("crawl");
     setStage(STAGES.CRAWL_FORM);
+  };
+
+  const handleGoHome = () => {
+    setStatus("idle");
+    setResponseMessage("");
+    setShowLoader(false);
+    setEmail("");
+    setUrl("");
+    setCrawlData(null);
+    setSystemPrompt("");
+    setProvisionData(null);
+    setLoadingPhase("crawl");
+    setStage(STAGES.LANDING);
   };
 
   const handleEmailSubmit = async (event) => {
@@ -188,7 +202,9 @@ export default function App() {
     <div className="page">
       <div className="background-glow" />
       <header className="top-bar">
-        <div className="logo">AI Reception</div>
+        <button className="logo" type="button" onClick={handleGoHome}>
+          AI Reception
+        </button>
         <button className="ghost">Docs</button>
       </header>
 
@@ -325,14 +341,6 @@ export default function App() {
               </div>
             )}
 
-            <div className="actions">
-              <button className="primary" onClick={handleNewUrl} disabled={status === "loading"}>
-                Send another URL
-              </button>
-              <button className="ghost" onClick={() => setStage(STAGES.LANDING)} disabled={status === "loading"}>
-                Back to landing
-              </button>
-            </div>
           </section>
         ) : stage === STAGES.EMAIL_CAPTURE ? (
           <section className="form-card">
@@ -405,14 +413,6 @@ export default function App() {
                 {responseMessage}
               </div>
             )}
-            <div className="actions">
-              <button className="primary" onClick={handleNewUrl}>
-                Send another URL
-              </button>
-              <button className="ghost" onClick={() => setStage(STAGES.LANDING)}>
-                Back to landing
-              </button>
-            </div>
           </section>
         )}
       </main>

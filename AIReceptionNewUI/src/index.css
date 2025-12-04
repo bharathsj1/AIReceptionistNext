@@ -50,6 +50,11 @@ body {
   font-weight: 700;
   letter-spacing: 0.04em;
   color: #b3c4ff;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: 16px;
 }
 
 .content {
@@ -327,22 +332,25 @@ body {
   position: absolute;
   inset: -20%;
   pointer-events: none;
-  background: repeating-linear-gradient(
+  background:
+    linear-gradient(115deg, rgba(123, 198, 255, 0.18), transparent 55%),
+    linear-gradient(245deg, rgba(94, 242, 195, 0.18), transparent 55%),
+    repeating-linear-gradient(
       125deg,
-      rgba(123, 198, 255, 0.16),
-      rgba(123, 198, 255, 0.16) 16px,
-      transparent 16px,
-      transparent 32px
+      rgba(123, 198, 255, 0.2),
+      rgba(123, 198, 255, 0.2) 12px,
+      transparent 12px,
+      transparent 28px
     ),
     repeating-linear-gradient(
       235deg,
-      rgba(94, 242, 195, 0.16),
-      rgba(94, 242, 195, 0.16) 16px,
-      transparent 16px,
-      transparent 32px
+      rgba(94, 242, 195, 0.2),
+      rgba(94, 242, 195, 0.2) 12px,
+      transparent 12px,
+      transparent 28px
     );
-  filter: blur(12px);
-  opacity: 0.45;
+  filter: blur(10px);
+  opacity: 0.55;
   mix-blend-mode: screen;
   animation: drift 14s linear infinite;
 }
@@ -354,6 +362,18 @@ body {
 .ribbon.right {
   transform: rotate(8deg);
   animation-duration: 18s;
+}
+
+.celebrate::after {
+  content: "";
+  position: absolute;
+  inset: -30% -10%;
+  background: radial-gradient(circle at 30% 40%, rgba(255, 255, 255, 0.12), transparent 45%),
+    radial-gradient(circle at 70% 60%, rgba(123, 198, 255, 0.18), transparent 50%);
+  opacity: 0.7;
+  filter: blur(22px);
+  animation: shimmer-sweep 9s ease-in-out infinite alternate;
+  pointer-events: none;
 }
 
 .light-beam {
@@ -533,6 +553,15 @@ body {
   }
   100% {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes shimmer-sweep {
+  0% {
+    transform: translate3d(-6%, -4%, 0);
+  }
+  100% {
+    transform: translate3d(6%, 4%, 0);
   }
 }
 
