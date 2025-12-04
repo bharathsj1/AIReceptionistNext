@@ -201,6 +201,17 @@ export default function App() {
   return (
     <div className="page">
       <div className="background-glow" />
+      <div className="spline-feature" aria-hidden="true">
+        <div className="spline-shell">
+          <iframe
+            title="Reactive Orb"
+            src="https://my.spline.design/reactiveorb-8Sy2jyFguISa8oMBMTW2UZLH/"
+            loading="lazy"
+            allow="fullscreen; autoplay; xr-spatial-tracking"
+          />
+          <div className="spline-overlay" />
+        </div>
+      </div>
       <header className="top-bar">
         <button className="logo" type="button" onClick={handleGoHome}>
           AI Reception
