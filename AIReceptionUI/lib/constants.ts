@@ -1,5 +1,7 @@
+const DEFAULT_CRAWL_KB = 'https://aireceptionist-func.azurewebsites.net/api/crawl-kb';
+
 export const API_ENDPOINTS = {
-  crawlKb: 'https://aireceptionist-func.azurewebsites.net/api/crawl-kb',
+  crawlKb: process.env.NEXT_PUBLIC_CRAWL_API || DEFAULT_CRAWL_KB,
   demoRequest: 'http://localhost:8000/api/demo-requests',
   trial: 'http://localhost:5001/api/trial',
 };

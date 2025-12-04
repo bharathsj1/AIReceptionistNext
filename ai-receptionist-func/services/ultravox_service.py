@@ -22,12 +22,22 @@ def _headers() -> Dict[str, str]:
     }
 
 
-def create_ultravox_agent(business_name: str, website_url: str, summary: str) -> str:
+def create_ultravox_agent(
+    business_name: str,
+    website_url: str,
+    summary: str,
+    system_prompt_override: str | None = None,
+) -> str:
     """
     Create an Ultravox agent and return its ID.
     Retries once with a unique suffix if the name already exists.
     """
-    payload = build_ultravox_agent_payload(business_name, website_url, summary)
+    payload = build_ultravox_agent_payload(
+        business_name,
+        website_url,
+        summary,
+        system_prompt_override=system_prompt_override,
+    )
 
     with httpx.Client(timeout=20) as client:
         response = client.post(f"{ULTRAVOX_BASE_URL}/agents", headers=_headers(), json=payload)
@@ -39,6 +49,7 @@ def create_ultravox_agent(business_name: str, website_url: str, summary: str) ->
                 website_url,
                 summary,
                 agent_name_override=f"{business_name} AI Receptionist-{suffix}",
+                system_prompt_override=system_prompt_override,
             )
             response = client.post(f"{ULTRAVOX_BASE_URL}/agents", headers=_headers(), json=payload)
 
@@ -76,9 +87,6 @@ def create_ultravox_call(agent_id: str, caller_number: str) -> str:
         "firstSpeakerSettings": {"agent": {}},
         "recordingEnabled": True,
     }
-    # Ultravox schema allows templateContext with known keys; avoid arbitrary nesting.
-    if caller_number:
-        payload["templateContext"] = {"customerName": caller_number}
 
     with httpx.Client(timeout=20) as client:
         response = client.post(f"{ULTRAVOX_BASE_URL}/agents/{agent_id}/calls", headers=_headers(), json=payload)

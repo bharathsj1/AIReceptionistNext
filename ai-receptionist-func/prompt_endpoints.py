@@ -9,7 +9,7 @@ from function_app import app
 from shared.config import get_required_setting, get_setting
 
 logger = logging.getLogger(__name__)
-
+ 
 
 def _extract_site_text(body: Dict[str, Any]) -> Optional[str]:
     """

@@ -10,27 +10,60 @@ export default function OnboardingProgress() {
   const website = params.get('website') || undefined;
   const [active, setActive] = useState(0);
   const [crawlSummary, setCrawlSummary] = useState<{ website?: string; pages?: number } | null>(null);
+  const [crawlMessage, setCrawlMessage] = useState<string | null>(null);
+  const [crawlState, setCrawlState] = useState<'idle' | 'running' | 'success' | 'error'>('idle');
+
+  // Use the new proxy API route
+  const crawlKbEndpoint = '/api/crawl-kb';
 
   useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem('crawlResult');
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        setCrawlSummary({ website: parsed?.website || website, pages: parsed?.data?.pages });
+    if (!website || crawlState !== 'idle') return;
+    const controller = new AbortController();
+    const runCrawl = async () => {
+      setCrawlState('running');
+      setCrawlMessage('Reading your website…');
+      try {
+        const res = await fetch(crawlKbEndpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: website }),
+          signal: controller.signal,
+        });
+        if (!res.ok) throw new Error('Unable to analyze site');
+        const data = await res.json();
+        const pages = typeof data?.pages === 'number' ? data.pages : undefined;
+        const summary = { website, pages };
+        setCrawlSummary(summary);
+        setCrawlMessage(`Website analyzed${pages ? ` (${pages} pages)` : ''}.`);
+        setCrawlState('success');
+        try {
+          sessionStorage.setItem('crawlResult', JSON.stringify({ website, data }));
+        } catch (storageErr) {
+          console.warn('Could not cache crawl result in session storage', storageErr);
+        }
+      } catch (err: any) {
+        if (controller.signal.aborted) return;
+        setCrawlState('error');
+        setCrawlMessage(err?.message || 'Something went wrong while analyzing your site.');
       }
-    } catch (err) {
-      console.warn('Unable to load crawl result', err);
-    }
-  }, [website]);
+    };
+    runCrawl();
+    return () => controller.abort();
+  }, [website, crawlState]);
 
   useEffect(() => {
-    if (active >= ONBOARDING_STEPS.length) {
-      setTimeout(() => router.push(`/ready${website ? `?website=${encodeURIComponent(website)}` : ''}`), 700);
-      return;
+    const lastStepIndex = ONBOARDING_STEPS.length - 1;
+    if (active >= lastStepIndex) {
+      if (crawlState === 'running') return;
+      const timer = setTimeout(() => router.push(`/ready${website ? `?website=${encodeURIComponent(website)}` : ''}`), 700);
+      return () => clearTimeout(timer);
     }
-    const timer = setTimeout(() => setActive((i) => i + 1), 900);
+    const timer = setTimeout(
+      () => setActive((i) => Math.min(i + 1, lastStepIndex)),
+      900,
+    );
     return () => clearTimeout(timer);
-  }, [active, router, website]);
+  }, [active, router, website, crawlState]);
 
   return (
     <div>
@@ -40,10 +73,12 @@ export default function OnboardingProgress() {
           style={{ width: `${Math.min(100, ((active + 1) / ONBOARDING_STEPS.length) * 100)}%` }}
         />
       </div>
-      {crawlSummary && (
+      {(crawlMessage || crawlSummary) && (
         <p className="mt-2 text-xs text-white/60">
-          Using crawl for {crawlSummary.website || 'your site'}
-          {typeof crawlSummary.pages === 'number' ? ` (${crawlSummary.pages} pages)` : ''}.
+          {crawlMessage ||
+            `Using crawl for ${crawlSummary?.website || 'your site'}${
+              typeof crawlSummary?.pages === 'number' ? ` (${crawlSummary.pages} pages)` : ''
+            }.`}
         </p>
       )}
       <ul className="mt-4 space-y-3">
