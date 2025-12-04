@@ -240,14 +240,16 @@ export default function App() {
                 <span className="dot green" />
               </div>
               <div className="panel-body">
-                <h3>24/7 AI Reception</h3>
-                <p>
-                  Preview the onboarding flow and send a crawl request to your
-                  AI receptionist.
-                </p>
-                <button className="primary full" onClick={() => setStage(STAGES.CRAWL_FORM)}>
-                  Start with your URL
-                </button>
+                <div className="panel-copy">
+                  <h3>24/7 AI Reception</h3>
+                  <p>
+                    Preview the onboarding flow and send a crawl request to your
+                    AI receptionist.
+                  </p>
+                  <button className="primary full" onClick={() => setStage(STAGES.CRAWL_FORM)}>
+                    Start with your URL
+                  </button>
+                </div>
               </div>
             </div>
           </section>
