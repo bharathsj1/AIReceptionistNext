@@ -16,12 +16,23 @@ export default function App() {
   const [responseMessage, setResponseMessage] = useState("");
   const [showLoader, setShowLoader] = useState(false);
   const [email, setEmail] = useState("");
+  const [crawlData, setCrawlData] = useState(null);
+  const [systemPrompt, setSystemPrompt] = useState("");
+  const [loadingPhase, setLoadingPhase] = useState("crawl");
+  const [provisionData, setProvisionData] = useState(null);
   const loadingSteps = useMemo(
-    () => [
-      "Packaging your website URL",
-      "Notifying AI Reception service",
-      "Crawling and ingesting content"
-    ],
+    () => ({
+      crawl: [
+        "Packaging your website URL",
+        "Notifying AI Reception service",
+        "Crawling and ingesting content"
+      ],
+      provision: [
+        "Building Ultravox prompt",
+        "Provisioning AI reception client",
+        "Finalizing setup"
+      ]
+    }),
     []
   );
 
@@ -46,6 +57,7 @@ export default function App() {
     setStatus("loading");
     setResponseMessage("");
     setShowLoader(true);
+    setLoadingPhase("crawl");
     setStage(STAGES.LOADING);
 
     try {
@@ -63,6 +75,11 @@ export default function App() {
         throw new Error(errorText || "Request failed");
       }
 
+      const data = await res
+        .json()
+        .catch(async () => ({ raw: await res.text() }));
+
+      setCrawlData(data);
       setResponseMessage("All website data loaded fine.");
       setStatus("success");
       setStage(STAGES.EMAIL_CAPTURE);
@@ -80,12 +97,91 @@ export default function App() {
     setResponseMessage("");
     setShowLoader(false);
     setEmail("");
+    setCrawlData(null);
+    setSystemPrompt("");
+    setProvisionData(null);
+    setLoadingPhase("crawl");
     setStage(STAGES.CRAWL_FORM);
   };
 
-  const handleEmailSubmit = (event) => {
+  const handleEmailSubmit = async (event) => {
     event.preventDefault();
-    setStage(STAGES.COMPLETE);
+    setStatus("loading");
+    setResponseMessage("");
+    setShowLoader(true);
+    setLoadingPhase("provision");
+    setStage(STAGES.LOADING);
+
+    try {
+      const promptPayload = {
+        business_name: crawlData?.business_name || "Horizon Property Group",
+        pages:
+          crawlData?.pages ||
+          crawlData?.data ||
+          crawlData?.raw ||
+          []
+      };
+
+      const promptRes = await fetch(API_URLS.ultravoxPrompt, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        mode: "cors",
+        body: JSON.stringify(promptPayload)
+      });
+
+      if (!promptRes.ok) {
+        const promptText = await promptRes.text();
+        throw new Error(promptText || "Failed to generate Ultravox prompt");
+      }
+
+      const promptData = await promptRes
+        .json()
+        .catch(async () => ({ prompt: await promptRes.text() }));
+      const derivedPrompt =
+        promptData?.system_prompt ||
+        promptData?.prompt ||
+        promptData?.message ||
+        promptData?.raw ||
+        "Your custom Ultravox system prompt here...";
+
+      setSystemPrompt(derivedPrompt);
+
+      const provisionPayload = {
+        email,
+        website_url: url,
+        system_prompt: derivedPrompt
+      };
+
+      const provisionRes = await fetch(API_URLS.provisionClient, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        mode: "cors",
+        body: JSON.stringify(provisionPayload)
+      });
+
+      if (!provisionRes.ok) {
+        const provText = await provisionRes.text();
+        throw new Error(provText || "Failed to provision client");
+      }
+
+      const provData = await provisionRes
+        .json()
+        .catch(async () => ({ raw: await provisionRes.text() }));
+
+      setProvisionData(provData);
+      setStatus("success");
+      setResponseMessage("Your AI receptionist is ready!");
+      setStage(STAGES.COMPLETE);
+    } catch (error) {
+      setStatus("error");
+      setResponseMessage(
+        error?.message ||
+          "Unable to finish setup. Please try again."
+      );
+      setStage(STAGES.COMPLETE);
+    } finally {
+      setShowLoader(false);
+    }
   };
 
   return (
@@ -181,15 +277,19 @@ export default function App() {
             <div className="progress-header">
               <p className="eyebrow">AI Reception</p>
               <h2>
-                {status === "loading"
+                {status === "loading" && loadingPhase === "crawl"
                   ? "Sending to AI Reception"
+                  : status === "loading" && loadingPhase === "provision"
+                  ? "Finalizing your AI reception setup"
                   : status === "success"
                   ? "All website data loaded fine"
-                  : "Unable to send request"}
+                  : "Unable to complete request"}
               </h2>
               <p className="lead narrow">
-                {status === "loading"
+                {status === "loading" && loadingPhase === "crawl"
                   ? "We are dispatching your URL and preparing the crawl."
+                  : status === "loading" && loadingPhase === "provision"
+                  ? "Generating your Ultravox prompt and provisioning the client."
                   : status === "success"
                   ? "Your site was ingested successfully. You can send another URL anytime."
                   : responseMessage || "Please try again with a valid URL."}
@@ -204,7 +304,7 @@ export default function App() {
                   <span />
                 </div>
                 <ul className="loading-steps">
-                  {loadingSteps.map((step, index) => (
+                  {(loadingSteps[loadingPhase] || []).map((step, index) => (
                     <li key={step}>
                       <div className="bar">
                         <div
@@ -267,12 +367,44 @@ export default function App() {
           <section className="progress-card">
             <div className="progress-header">
               <p className="eyebrow">All set</p>
-              <h2>Thanks! We’ll reach out shortly.</h2>
+              <h2>
+                {status === "success"
+                  ? "Congratulations! Your AI receptionist is live."
+                  : "We could not finish setup"}
+              </h2>
               <p className="lead narrow">
-                Your crawl has been queued and linked to {email || "your email"}.
-                You can return to the landing page or send another URL.
+                {status === "success"
+                  ? `Linked to ${email || "your email"}.`
+                  : responseMessage || "Please try again or adjust your inputs."}
               </p>
             </div>
+            {status === "success" && (
+              <div className="celebrate">
+                <div className="light-beam" aria-hidden="true" />
+                <div className="orb one" aria-hidden="true" />
+                <div className="orb two" aria-hidden="true" />
+                <div className="ribbon left" aria-hidden="true" />
+                <div className="ribbon right" aria-hidden="true" />
+                <div className="ready-card">
+                  <p className="eyebrow">AI receptionist ready</p>
+                  <h3>{provisionData?.name || "Your AI Reception"}</h3>
+                  <p className="lead">
+                    You can start connecting callers and visitors.
+                  </p>
+                  {provisionData?.phone_number && (
+                    <div className="big-number">{provisionData.phone_number}</div>
+                  )}
+                  <div className="badge">
+                    {responseMessage || "Your AI receptionist is ready!"}
+                  </div>
+                </div>
+              </div>
+            )}
+            {status !== "success" && responseMessage && (
+              <div className={`status ${status}`}>
+                {responseMessage}
+              </div>
+            )}
             <div className="actions">
               <button className="primary" onClick={handleNewUrl}>
                 Send another URL

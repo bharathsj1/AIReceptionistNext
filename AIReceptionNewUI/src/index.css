@@ -283,6 +283,110 @@ body {
   color: #ffb1b1;
 }
 
+.celebrate {
+  position: relative;
+  overflow: hidden;
+  border-radius: 18px;
+  padding: 18px;
+  background: radial-gradient(circle at 20% 30%, rgba(123, 198, 255, 0.18), rgba(11, 15, 26, 0.7)),
+    radial-gradient(circle at 80% 20%, rgba(46, 255, 199, 0.18), rgba(11, 15, 26, 0.6)),
+    rgba(11, 15, 26, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 24px 46px rgba(0, 0, 0, 0.35);
+}
+
+.ready-card h3 {
+  margin: 6px 0 6px;
+  animation: float-up 600ms ease;
+}
+
+.ready-card .badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-top: 10px;
+  background: linear-gradient(120deg, #b8f7e2, #8de6ff, #b8f7e2);
+  color: #0b120f;
+  border-radius: 14px;
+  font-weight: 700;
+  animation: shimmer 3s linear infinite, pulse-soft 1600ms ease-in-out infinite;
+}
+
+.big-number {
+  margin: 12px 0;
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #e9f7ff;
+  text-shadow: 0 8px 18px rgba(0, 0, 0, 0.35);
+  animation: pop-bounce 900ms ease, glow 2.4s ease-in-out infinite;
+}
+
+.ribbon {
+  position: absolute;
+  inset: -20%;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+      125deg,
+      rgba(123, 198, 255, 0.16),
+      rgba(123, 198, 255, 0.16) 16px,
+      transparent 16px,
+      transparent 32px
+    ),
+    repeating-linear-gradient(
+      235deg,
+      rgba(94, 242, 195, 0.16),
+      rgba(94, 242, 195, 0.16) 16px,
+      transparent 16px,
+      transparent 32px
+    );
+  filter: blur(12px);
+  opacity: 0.45;
+  mix-blend-mode: screen;
+  animation: drift 14s linear infinite;
+}
+
+.ribbon.left {
+  transform: rotate(-6deg);
+}
+
+.ribbon.right {
+  transform: rotate(8deg);
+  animation-duration: 18s;
+}
+
+.light-beam {
+  position: absolute;
+  inset: -40%;
+  background: conic-gradient(from 90deg, rgba(123, 198, 255, 0.18), transparent, rgba(94, 242, 195, 0.16));
+  filter: blur(40px);
+  animation: spin 18s linear infinite;
+  pointer-events: none;
+}
+
+.orb {
+  position: absolute;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(123, 198, 255, 0.4), transparent);
+  filter: blur(10px);
+  pointer-events: none;
+  animation: float 6s ease-in-out infinite alternate;
+}
+
+.orb.one {
+  top: -20px;
+  right: 12%;
+}
+
+.orb.two {
+  bottom: -10px;
+  left: 10%;
+  animation-delay: 1.2s;
+}
+
 .loader-wrap {
   display: grid;
   gap: 6px;
@@ -411,6 +515,74 @@ body {
   }
   100% {
     background-position: 200% 50%;
+  }
+}
+
+@keyframes drift {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 120px 160px;
+  }
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes float-up {
+  0% {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes pop-bounce {
+  0% {
+    transform: scale(0.85);
+  }
+  40% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes glow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(123, 198, 255, 0.28);
+  }
+  50% {
+    box-shadow: 0 0 24px 4px rgba(123, 198, 255, 0.35);
+  }
+}
+
+@keyframes pulse-soft {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.04);
+  }
+}
+
+@keyframes float {
+  0% {
+    transform: translateY(0);
+  }
+  100% {
+    transform: translateY(-10px);
   }
 }
 
