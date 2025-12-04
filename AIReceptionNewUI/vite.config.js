@@ -4,7 +4,7 @@ import react from "@vitejs/plugin-react";
 // Vite configuration for a simple React SPA
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
-  const functionHost = env.VITE_FUNCTION_HOST || "https://aireceptionist-func.azurewebsites.net";
+  const functionHost = env.VITE_FUNCTION_HOST || "http://localhost:7071";
 
   return {
     plugins: [react()],

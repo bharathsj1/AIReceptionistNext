@@ -122,6 +122,7 @@ def clients_provision(req: func.HttpRequest) -> func.HttpResponse:
 
     email = body.get("email") if isinstance(body, dict) else None
     website_url = body.get("website_url") if isinstance(body, dict) else None
+    system_prompt = body.get("system_prompt") if isinstance(body, dict) else None
 
     if not email or not website_url:
         return func.HttpResponse(
@@ -155,8 +156,13 @@ def clients_provision(req: func.HttpRequest) -> func.HttpResponse:
         if not client_record.ultravox_agent_id:
             agent_name = name_guess or email
             try:
-                # Payload builder includes a tailored Bolton Properties demo prompt when applicable.
-                agent_id = create_ultravox_agent(agent_name, website_url, summary)
+                # Payload builder includes overrides when provided.
+                agent_id = create_ultravox_agent(
+                    agent_name,
+                    website_url,
+                    summary,
+                    system_prompt_override=system_prompt if isinstance(system_prompt, str) else None,
+                )
             except Exception as exc:  # pylint: disable=broad-except
                 logger.error("Ultravox agent creation failed: %s", exc)
                 return func.HttpResponse(

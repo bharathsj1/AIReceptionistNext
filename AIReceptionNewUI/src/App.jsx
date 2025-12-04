@@ -3,7 +3,10 @@ import API_URLS from "./config/urls";
 
 const STAGES = {
   LANDING: "landing",
-  CRAWL: "crawl"
+  CRAWL_FORM: "crawlForm",
+  LOADING: "loading",
+  EMAIL_CAPTURE: "emailCapture",
+  COMPLETE: "complete"
 };
 
 export default function App() {
@@ -12,6 +15,15 @@ export default function App() {
   const [status, setStatus] = useState("idle");
   const [responseMessage, setResponseMessage] = useState("");
   const [showLoader, setShowLoader] = useState(false);
+  const [email, setEmail] = useState("");
+  const loadingSteps = useMemo(
+    () => [
+      "Packaging your website URL",
+      "Notifying AI Reception service",
+      "Crawling and ingesting content"
+    ],
+    []
+  );
 
   const heroCtas = useMemo(
     () => [
@@ -34,6 +46,7 @@ export default function App() {
     setStatus("loading");
     setResponseMessage("");
     setShowLoader(true);
+    setStage(STAGES.LOADING);
 
     try {
       const res = await fetch(API_URLS.crawlKnowledgeBase, {
@@ -52,6 +65,7 @@ export default function App() {
 
       setResponseMessage("All website data loaded fine.");
       setStatus("success");
+      setStage(STAGES.EMAIL_CAPTURE);
     } catch (error) {
       setStatus("error");
       setResponseMessage(
@@ -59,6 +73,19 @@ export default function App() {
       );
     }
     setShowLoader(false);
+  };
+
+  const handleNewUrl = () => {
+    setStatus("idle");
+    setResponseMessage("");
+    setShowLoader(false);
+    setEmail("");
+    setStage(STAGES.CRAWL_FORM);
+  };
+
+  const handleEmailSubmit = (event) => {
+    event.preventDefault();
+    setStage(STAGES.COMPLETE);
   };
 
   return (
@@ -88,7 +115,7 @@ export default function App() {
                 ))}
               </ul>
               <div className="actions">
-                <button className="primary" onClick={() => setStage(STAGES.CRAWL)}>
+                <button className="primary" onClick={() => setStage(STAGES.CRAWL_FORM)}>
                   Launch console
                 </button>
                 <button className="ghost">Watch demo</button>
@@ -106,13 +133,13 @@ export default function App() {
                   Preview the onboarding flow and send a crawl request to your
                   AI receptionist.
                 </p>
-                <button className="primary full" onClick={() => setStage(STAGES.CRAWL)}>
+                <button className="primary full" onClick={() => setStage(STAGES.CRAWL_FORM)}>
                   Start with your URL
                 </button>
               </div>
             </div>
           </section>
-        ) : (
+        ) : stage === STAGES.CRAWL_FORM ? (
           <section className="form-card">
             <div>
               <p className="eyebrow">Connect your site</p>
@@ -145,26 +172,115 @@ export default function App() {
               <p className="hint">POST to {API_URLS.crawlKnowledgeBase}</p>
             </form>
 
-            {showLoader && (
-              <div className="loader-wrap">
-                <div className="loader">
+            <button className="ghost small" onClick={() => setStage(STAGES.LANDING)}>
+              ← Back to landing
+            </button>
+          </section>
+        ) : stage === STAGES.LOADING ? (
+          <section className="progress-card">
+            <div className="progress-header">
+              <p className="eyebrow">AI Reception</p>
+              <h2>
+                {status === "loading"
+                  ? "Sending to AI Reception"
+                  : status === "success"
+                  ? "All website data loaded fine"
+                  : "Unable to send request"}
+              </h2>
+              <p className="lead narrow">
+                {status === "loading"
+                  ? "We are dispatching your URL and preparing the crawl."
+                  : status === "success"
+                  ? "Your site was ingested successfully. You can send another URL anytime."
+                  : responseMessage || "Please try again with a valid URL."}
+              </p>
+            </div>
+
+            {status === "loading" && (
+              <div className="loading-block">
+                <div className="loader large">
                   <span />
                   <span />
                   <span />
                 </div>
-                <p className="hint">Sending request…</p>
+                <ul className="loading-steps">
+                  {loadingSteps.map((step, index) => (
+                    <li key={step}>
+                      <div className="bar">
+                        <div
+                          className="bar-fill"
+                          style={{ animationDelay: `${index * 160}ms` }}
+                        />
+                      </div>
+                      <span>{step}</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
 
-            {!showLoader && responseMessage && (
+            {status !== "loading" && responseMessage && (
               <div className={`status ${status}`}>
                 {responseMessage}
               </div>
             )}
 
-            <button className="ghost small" onClick={() => setStage(STAGES.LANDING)}>
-              ← Back to landing
+            <div className="actions">
+              <button className="primary" onClick={handleNewUrl} disabled={status === "loading"}>
+                Send another URL
+              </button>
+              <button className="ghost" onClick={() => setStage(STAGES.LANDING)} disabled={status === "loading"}>
+                Back to landing
+              </button>
+            </div>
+          </section>
+        ) : stage === STAGES.EMAIL_CAPTURE ? (
+          <section className="form-card">
+            <div>
+              <p className="eyebrow">Success</p>
+              <h2>All website data loaded fine</h2>
+              <p className="lead narrow">
+                Share an email to receive your AI reception report and next steps.
+              </p>
+            </div>
+            <form className="url-form" onSubmit={handleEmailSubmit}>
+              <label htmlFor="email">Work email</label>
+              <div className="input-row">
+                <input
+                  id="email"
+                  type="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  required
+                />
+                <button className="primary" type="submit">
+                  Continue
+                </button>
+              </div>
+            </form>
+            <button className="ghost small" onClick={handleNewUrl}>
+              ← Send a different URL
             </button>
+          </section>
+        ) : (
+          <section className="progress-card">
+            <div className="progress-header">
+              <p className="eyebrow">All set</p>
+              <h2>Thanks! We’ll reach out shortly.</h2>
+              <p className="lead narrow">
+                Your crawl has been queued and linked to {email || "your email"}.
+                You can return to the landing page or send another URL.
+              </p>
+            </div>
+            <div className="actions">
+              <button className="primary" onClick={handleNewUrl}>
+                Send another URL
+              </button>
+              <button className="ghost" onClick={() => setStage(STAGES.LANDING)}>
+                Back to landing
+              </button>
+            </div>
           </section>
         )}
       </main>
