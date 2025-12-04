@@ -33,18 +33,20 @@ jobs:
                return await coredemo.getIDToken()
            result-encoding: string
       - name: Build And Deploy
+        env:
+          VITE_API_PROXY_BASE: https://aireceptionist-func.azurewebsites.net/api
+          VITE_FUNCTION_HOST: https://aireceptionist-func.azurewebsites.net
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1
         with:
-          azure_static_web_apps_api_token: ${{ secrets.AIRECEPTIONIST_STATIC_WEB }}
+          azure_static_web_apps_api_token: ${{ secrets.AIRECEPTIONIST_STATIC_WEB }} # or your actual secret
           action: "upload"
-          ###### Repository/Build Configurations - These values can be configured to match your app requirements. ######
-          # For more information regarding Static Web App workflow configurations, please visit: https://aka.ms/swaworkflowconfig
-          app_location: "./AIReceptionNewUI" # App source code path
-          api_location: ""                   # no API
-          output_location: "dist"  
+          app_location: "./AIReceptionNewUI"
+          api_location: ""
+          output_location: "dist"
           app_build_command: "npm install && npm run build"
           github_id_token: ${{ steps.idtoken.outputs.result }}
+
           ###### End of Repository/Build Configurations ######
 
   close_pull_request_job:
