@@ -36,6 +36,20 @@ SessionLocal = scoped_session(
 Base = declarative_base()
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, unique=True, nullable=False, index=True)
+    password_hash = Column(String, nullable=False)
+    reset_token = Column(String, nullable=True)
+    reset_token_expires = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    clients = relationship("Client", back_populates="user")
+
+
 class Client(Base):
     __tablename__ = "clients"
 
@@ -46,9 +60,11 @@ class Client(Base):
     ultravox_agent_id = Column(String, nullable=True)
     notes = Column(Text, nullable=True)
     website_data = Column(Text, nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    user = relationship("User", back_populates="clients")
     phone_numbers = relationship("PhoneNumber", back_populates="client")
 
 
@@ -81,6 +97,8 @@ def _ensure_optional_columns() -> None:
         client_columns = {col["name"] for col in inspector.get_columns("clients")}
         if "website_data" not in client_columns:
             conn.execute(text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS website_data TEXT"))
+        if "user_id" not in client_columns:
+            conn.execute(text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS user_id INTEGER"))
 
 
 def get_db() -> Generator:

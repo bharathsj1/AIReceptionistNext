@@ -14,3 +14,4 @@ import health_endpoints  # noqa
 import crawler_endpoints  # noqa
 import onboarding_endpoints  # noqa
 import prompt_endpoints  # noqa
+import auth_endpoints  # noqa

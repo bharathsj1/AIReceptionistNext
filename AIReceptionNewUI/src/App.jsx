@@ -4,6 +4,7 @@ import ThreeHero from "./components/ThreeHero";
 
 const STAGES = {
   LANDING: "landing",
+  LOGIN: "login",
   CRAWL_FORM: "crawlForm",
   LOADING: "loading",
   EMAIL_CAPTURE: "emailCapture",
@@ -119,6 +120,23 @@ export default function App() {
     setStage(STAGES.LANDING);
   };
 
+  const handleLoginSubmit = (event) => {
+    event.preventDefault();
+    setStatus("loading");
+    setResponseMessage("");
+
+    setTimeout(() => {
+      setStatus("success");
+      setResponseMessage("Logged in (demo).");
+    }, 800);
+  };
+
+  const goToCrawl = () => {
+    setStage(STAGES.CRAWL_FORM);
+    setStatus("idle");
+    setResponseMessage("");
+  };
+
   const handleEmailSubmit = async (event) => {
     event.preventDefault();
     setStatus("loading");
@@ -226,6 +244,9 @@ export default function App() {
           <button type="button" className="nav-link">Pricing</button>
         </nav>
         <div className="header-actions">
+          <button className="ghost" type="button" onClick={() => setStage(STAGES.LOGIN)}>
+            Login
+          </button>
           <button className="ghost" type="button">Find a plan</button>
           <button className="primary" type="button" onClick={() => setStage(STAGES.CRAWL_FORM)}>
             Try for free
@@ -246,8 +267,8 @@ export default function App() {
                 <button className="primary" onClick={() => setStage(STAGES.CRAWL_FORM)}>
                   Try for free
                 </button>
-                <button className="ghost" onClick={() => setStage(STAGES.CRAWL_FORM)}>
-                  Book a demo
+                <button className="ghost" onClick={() => setStage(STAGES.LOGIN)}>
+                  Login
                 </button>
               </div>
             </div>
@@ -272,42 +293,106 @@ export default function App() {
               <span>GitHub</span>
             </div>
           </section>
-        ) : stage === STAGES.CRAWL_FORM ? (
-          <section className="form-card">
-            <div>
-              <p className="eyebrow">Connect your site</p>
-              <h2>Share a URL to start the crawl</h2>
-              <p className="lead narrow">
-                We will send the address to the AI receptionist service running
-                locally so it can begin ingesting your content.
-              </p>
-            </div>
-
-            <form className="url-form" onSubmit={handleSubmit}>
-              <label htmlFor="url">Website address</label>
-              <div className="input-row">
+        ) : stage === STAGES.LOGIN ? (
+          <section className="login-layout">
+            <div className="form-card login-card">
+              <div>
+                <p className="eyebrow">Welcome back</p>
+                <h2>Login to AI Receptionist</h2>
+                <p className="lead narrow">
+                  Access your concierge dashboard and manage your reception flows.
+                </p>
+              </div>
+              <form className="url-form" onSubmit={handleLoginSubmit}>
+                <label htmlFor="login-email">Email</label>
                 <input
-                  id="url"
-                  type="url"
-                  placeholder="https://www.example.com/"
-                  value={url}
-                  onChange={(event) => setUrl(event.target.value)}
+                  id="login-email"
+                  type="email"
+                  placeholder="you@example.com"
                   required
                 />
-                <button
-                  className="primary"
-                  type="submit"
-                  disabled={status === "loading"}
-                >
-                  {status === "loading" ? "Sending..." : "Send to AI Reception"}
+                <label htmlFor="login-password">Password</label>
+                <input
+                  id="login-password"
+                  type="password"
+                  placeholder="••••••••"
+                  required
+                />
+                <button className="primary full" type="submit" disabled={status === "loading"}>
+                  {status === "loading" ? "Signing in..." : "Login"}
+                </button>
+              </form>
+              <div className="link-row">
+                <button className="text-link" type="button">
+                  Forgot password?
+                </button>
+                <button className="text-link" type="button" onClick={goToCrawl}>
+                  Create an account
                 </button>
               </div>
-              <p className="hint">POST to {API_URLS.crawlKnowledgeBase}</p>
-            </form>
+              {responseMessage && <div className={`status ${status}`}>{responseMessage}</div>}
+            </div>
+            <aside className="login-aside">
+              <p className="eyebrow">How it works</p>
+              <h3>AI Reception, on autopilot</h3>
+              <ul>
+                <li>Drop your website URL, we ingest your content in seconds.</li>
+                <li>Generate conversational prompts tailored to your brand.</li>
+                <li>Route real leads via voice, chat, or hand-offs to your team.</li>
+              </ul>
+              <p className="hint">New here? Hit Create an account to start with your URL.</p>
+            </aside>
+          </section>
+        ) : stage === STAGES.CRAWL_FORM ? (
+          <section className="crawl-layout">
+            <div className="form-card">
+              <div>
+                <p className="eyebrow">Connect your site</p>
+                <h2>Share a URL to start the crawl</h2>
+                <p className="lead narrow">
+                  We will send the address to the AI receptionist service running
+                  locally so it can begin ingesting your content.
+                </p>
+              </div>
 
-            <button className="ghost small" onClick={() => setStage(STAGES.LANDING)}>
-              ← Back to landing
-            </button>
+              <form className="url-form crawl-form" onSubmit={handleSubmit}>
+                <label htmlFor="url">Website address</label>
+                <div className="input-row">
+                  <input
+                    id="url"
+                    type="url"
+                    placeholder="https://www.example.com/"
+                    value={url}
+                    onChange={(event) => setUrl(event.target.value)}
+                    required
+                  />
+                  <button
+                    className="primary"
+                    type="submit"
+                    disabled={status === "loading"}
+                  >
+                    {status === "loading" ? "Sending..." : "Send to AI Reception"}
+                  </button>
+                </div>
+                <p className="hint">POST to {API_URLS.crawlKnowledgeBase}</p>
+              </form>
+
+              <button className="ghost small" onClick={() => setStage(STAGES.LANDING)}>
+                ← Back to landing
+              </button>
+            </div>
+            <aside className="crawl-aside">
+              <p className="eyebrow">What happens next</p>
+              <h3>We ingest and wire your concierge</h3>
+              <ul>
+                <li>Fetch your pages and structure them for AI-ready knowledge.</li>
+                <li>Generate a tailored prompt that mirrors your brand voice.</li>
+                <li>Provision the receptionist to greet, route, and capture leads.</li>
+              </ul>
+              <p className="hint">
+                Need a new account? Use the login page “Create an account” link to jump here automatically.
+              </p>
+            </aside>
           </section>
         ) : stage === STAGES.LOADING ? (
           <section className="progress-card">

@@ -279,7 +279,7 @@ body {
 .url-form {
   margin-top: 22px;
   display: grid;
-  gap: 12px;
+  gap: 8px;
 }
 
 .url-form label {
@@ -296,13 +296,61 @@ body {
 
 .input-row input {
   flex: 1;
-  min-width: 220px;
-  padding: 12px 14px;
-  border-radius: 12px;
+  min-width: 260px;
+  padding: 20px 16px;
+  border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: rgba(255, 255, 255, 0.05);
   color: #e9ecf2;
   outline: none;
+  font-size: 16px;
+}
+
+.crawl-form .input-row input {
+  height: 34px;
+  line-height: 34px;
+  padding: 14px 16px;
+}
+
+.crawl-layout {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 24px;
+  align-items: start;
+}
+
+.crawl-layout .form-card {
+  margin: 0;
+}
+
+.crawl-aside {
+  background: rgba(12, 16, 30, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  padding: 22px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+}
+
+.crawl-aside h3 {
+  margin: 6px 0 10px;
+}
+
+.crawl-aside ul {
+  padding-left: 18px;
+  margin: 0 0 12px;
+  color: #cfd8ff;
+  line-height: 1.6;
+}
+
+.crawl-aside .hint {
+  margin-top: 4px;
+}
+
+@media (max-width: 900px) {
+  .crawl-layout {
+    grid-template-columns: 1fr;
+  }
 }
 
 .input-row input:focus {
@@ -310,6 +358,80 @@ body {
   box-shadow: 0 0 0 2px rgba(123, 198, 255, 0.3);
 }
 
+.login-card {
+  margin-top: 18px;
+  max-width: 520px;
+}
+
+.login-card .url-form {
+  margin-top: 18px;
+  gap: 16px;
+}
+
+.login-card input {
+  width: 100%;
+  height: 34px;
+  line-height: 34px;
+}
+
+.link-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.text-link {
+  background: none;
+  border: none;
+  color: #a7c7ff;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.login-layout {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 24px;
+  align-items: start;
+  margin-top: 20px;
+}
+
+.login-aside {
+  background: rgba(12, 16, 30, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  padding: 22px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+}
+
+.login-aside h3 {
+  margin: 6px 0 10px;
+}
+
+.login-aside ul {
+  padding-left: 18px;
+  margin: 0 0 12px;
+  color: #cfd8ff;
+  line-height: 1.6;
+}
+
+.login-aside .hint {
+  margin-top: 4px;
+}
+
+@media (max-width: 900px) {
+  .login-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .login-card {
+    max-width: none;
+  }
+}
 .hint {
   color: #7f8aa7;
   margin: 0;
