@@ -15,3 +15,4 @@ import crawler_endpoints  # noqa
 import onboarding_endpoints  # noqa
 import prompt_endpoints  # noqa
 import auth_endpoints  # noqa
+import dashboard_endpoints  # noqa
