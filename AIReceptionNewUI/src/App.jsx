@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import API_URLS from "./config/urls";
+import ThreeHero from "./components/ThreeHero";
 
 const STAGES = {
   LANDING: "landing",
@@ -201,67 +202,74 @@ export default function App() {
   return (
     <div className="page">
       <div className="background-glow" />
-      <div className="spline-feature" aria-hidden="true">
-        <div className="spline-shell">
-          <iframe
-            title="Reactive Orb"
-            src="https://my.spline.design/reactiveorb-8Sy2jyFguISa8oMBMTW2UZLH/"
-            loading="lazy"
-            allow="fullscreen; autoplay; xr-spatial-tracking"
-          />
-          <div className="spline-overlay" />
-        </div>
-      </div>
       <header className="top-bar">
-        <button className="logo" type="button" onClick={handleGoHome}>
-          AI Reception
-        </button>
-        <button className="ghost">Docs</button>
+        <div
+          className="brand"
+          onClick={handleGoHome}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              handleGoHome();
+            }
+          }}
+          role="button"
+          tabIndex={0}
+        >
+          <span className="brand-mark">AI</span>
+          <span className="brand-name">Reception</span>
+        </div>
+        <nav className="nav-links" aria-label="Primary">
+          <button type="button" className="nav-link">Overview</button>
+          <button type="button" className="nav-link">Benefits</button>
+          <button type="button" className="nav-link">Customers</button>
+          <button type="button" className="nav-link">Products</button>
+          <button type="button" className="nav-link">Pricing</button>
+        </nav>
+        <div className="header-actions">
+          <button className="ghost" type="button">Find a plan</button>
+          <button className="primary" type="button" onClick={() => setStage(STAGES.CRAWL_FORM)}>
+            Try for free
+          </button>
+        </div>
       </header>
 
       <main className="content">
         {stage === STAGES.LANDING ? (
           <section className="hero">
             <div className="hero-copy">
-              <p className="eyebrow">Smart concierge for your site</p>
-              <h1>
-                Welcome every visitor <span>with AI precision</span>
-              </h1>
+              <p className="eyebrow">AI support suite</p>
+              <h1>Build faster, together.</h1>
               <p className="lead">
-                Plug in your website, and our AI receptionist greets guests,
-                answers questions, and routes real leads to your team
-                instantly.
+                Design, build, debug and ship your next AI receptionist in one suite.
               </p>
-              <ul className="points">
-                {heroCtas.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-              <div className="actions">
+              <div className="actions hero-actions">
                 <button className="primary" onClick={() => setStage(STAGES.CRAWL_FORM)}>
-                  Launch console
+                  Try for free
                 </button>
-                <button className="ghost">Watch demo</button>
+                <button className="ghost" onClick={() => setStage(STAGES.CRAWL_FORM)}>
+                  Book a demo
+                </button>
               </div>
             </div>
-            <div className="hero-panel">
-              <div className="panel-header">
-                <span className="dot red" />
-                <span className="dot amber" />
-                <span className="dot green" />
-              </div>
-              <div className="panel-body">
-                <div className="panel-copy">
-                  <h3>24/7 AI Reception</h3>
-                  <p>
-                    Preview the onboarding flow and send a crawl request to your
-                    AI receptionist.
-                  </p>
-                  <button className="primary full" onClick={() => setStage(STAGES.CRAWL_FORM)}>
-                    Start with your URL
-                  </button>
-                </div>
-              </div>
+            <div className="hero-visual" aria-hidden="true">
+              <ThreeHero />
+            </div>
+          </section>
+        ) : null}
+
+        {stage === STAGES.LANDING ? (
+          <section className="logo-row" aria-label="Trusted by">
+            <div className="logo-track">
+              <span>AMD</span>
+              <span>Canon</span>
+              <span>Unity</span>
+              <span>JetBrains</span>
+              <span>GitHub</span>
+              <span>AMD</span>
+              <span>Canon</span>
+              <span>Unity</span>
+              <span>JetBrains</span>
+              <span>GitHub</span>
             </div>
           </section>
         ) : stage === STAGES.CRAWL_FORM ? (
