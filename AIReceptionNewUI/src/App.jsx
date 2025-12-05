@@ -176,6 +176,19 @@ export default function App() {
     setCalendarLoading(false);
   };
 
+  const handleGoToDashboard = () => {
+    setActiveTab("dashboard");
+    setIsLoggedIn(true);
+    setUser((current) => {
+      if (current) return current;
+      return {
+        name: provisionData?.name || email || "You",
+        email: email || provisionData?.email || "user@example.com"
+      };
+    });
+    setStage(STAGES.DASHBOARD);
+  };
+
   const handleEmailSubmit = async (event) => {
     event.preventDefault();
     setStatus("loading");
@@ -1042,6 +1055,14 @@ export default function App() {
                   <div className="badge">
                     {responseMessage || "Your AI receptionist is ready!"}
                   </div>
+                </div>
+                <div className="button-row ready-actions">
+                  <button className="ghost small" type="button" onClick={handleGoHome}>
+                    ← Back to home
+                  </button>
+                  <button className="primary" type="button" onClick={handleGoToDashboard}>
+                    Go to dashboard
+                  </button>
                 </div>
               </div>
             )}

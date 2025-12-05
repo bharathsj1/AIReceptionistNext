@@ -1062,6 +1062,10 @@ body {
   box-shadow: 0 24px 46px rgba(0, 0, 0, 0.35);
 }
 
+.ready-actions {
+  margin-top: 14px;
+}
+
 .ready-card h3 {
   margin: 6px 0 6px;
   animation: float-up 600ms ease;
