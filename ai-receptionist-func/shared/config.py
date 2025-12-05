@@ -21,3 +21,18 @@ def get_database_url() -> str:
     Defaults to a local SQLite file for development if not provided.
     """
     return os.getenv("DATABASE_URL") or os.getenv("POSTGRES_CONNECTION_STRING") or "sqlite:///./data/app.db"
+
+
+def get_google_oauth_settings() -> dict:
+    """
+    Centralized helper for Google OAuth env vars.
+    """
+    return {
+        "client_id": os.getenv("GOOGLE_CLIENT_ID", ""),
+        "client_secret": os.getenv("GOOGLE_CLIENT_SECRET", ""),
+        "redirect_uri": os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:5173"),
+        "scopes": os.getenv(
+            "GOOGLE_SCOPES",
+            "https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile",
+        ),
+    }

@@ -7,7 +7,10 @@ const API_PROXY_BASE =
 export const API_URLS = {
   crawlKnowledgeBase: `${API_PROXY_BASE}/crawl-kb`,
   ultravoxPrompt: `${API_PROXY_BASE}/ultravox/prompt`,
-  provisionClient: `${API_PROXY_BASE}/clients/provision`
+  provisionClient: `${API_PROXY_BASE}/clients/provision`,
+  googleAuthUrl: `${API_PROXY_BASE}/auth/google/url`,
+  googleAuthCallback: `${API_PROXY_BASE}/auth/google/callback`,
+  calendarEvents: `${API_PROXY_BASE}/calendar/events`
 };
 
 export default API_URLS;
