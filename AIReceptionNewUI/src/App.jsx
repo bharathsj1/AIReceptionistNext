@@ -470,6 +470,33 @@ export default function App() {
                       </div>
                     </div>
                   </div>
+
+                  <div className="card-grid metrics">
+                    <div className="metric-card">
+                      <div>
+                        <p className="hint">Total Calls</p>
+                        <div className="metric-value">0</div>
+                        <p className="hint">Last 14 days</p>
+                      </div>
+                      <div className="metric-icon">📞</div>
+                    </div>
+                    <div className="metric-card">
+                      <div>
+                        <p className="hint">Average Call Length</p>
+                        <div className="metric-value">0:00</div>
+                        <p className="hint">Last 14 days</p>
+                      </div>
+                      <div className="metric-icon">⏱</div>
+                    </div>
+                    <div className="metric-card">
+                      <div>
+                        <p className="hint">Total Minutes</p>
+                        <div className="metric-value">0</div>
+                        <p className="hint">Last 14 days</p>
+                      </div>
+                      <div className="metric-icon">⏲</div>
+                    </div>
+                  </div>
                 </>
               )}
 

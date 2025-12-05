@@ -614,6 +614,10 @@ body {
   grid-template-columns: 1.1fr 0.9fr;
 }
 
+.card-grid.metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .empty-state {
   padding: 20px;
   text-align: center;
@@ -623,6 +627,27 @@ body {
 .empty-state .icon {
   font-size: 28px;
   margin-bottom: 6px;
+}
+
+.metric-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.metric-value {
+  font-size: 28px;
+  font-weight: 800;
+  color: #e9f7ff;
+  line-height: 1.1;
+}
+
+.metric-icon {
+  font-size: 26px;
 }
 
 .pill {
@@ -645,6 +670,10 @@ body {
 @media (max-width: 900px) {
   .card-grid,
   .card-grid.wide {
+    grid-template-columns: 1fr;
+  }
+
+  .card-grid.metrics {
     grid-template-columns: 1fr;
   }
 }
