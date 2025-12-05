@@ -1,5 +1,7 @@
+import hashlib
 import json
 import logging
+import secrets
 from typing import Dict, Tuple
 from urllib.parse import parse_qs, urlparse
 
@@ -10,7 +12,7 @@ from function_app import app
 from crawler_endpoints import crawl_site
 from services.ultravox_service import create_ultravox_agent, create_ultravox_call, list_ultravox_agents
 from shared.config import get_required_setting, get_setting
-from shared.db import Client, PhoneNumber, SessionLocal, init_db
+from shared.db import Client, PhoneNumber, SessionLocal, User, init_db
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +79,31 @@ def get_twilio_client() -> TwilioClient:
     account_sid = get_required_setting("TWILIO_ACCOUNT_SID")
     auth_token = get_required_setting("TWILIO_AUTH_TOKEN")
     return TwilioClient(account_sid, auth_token)
+
+
+def _hash_password(password: str) -> str:
+    salt = secrets.token_hex(16)
+    hashed = hashlib.sha256((salt + password).encode("utf-8")).hexdigest()
+    return f"{salt}${hashed}"
+
+
+def _ensure_user_with_temp_password(db, email: str) -> Tuple[User, str | None]:
+    """
+    Find or create a user for the given email.
+    Always issue a fresh temporary password and update the hash,
+    so it can be shared with the user for login.
+    """
+    user = db.query(User).filter_by(email=email).one_or_none()
+    temp_password = secrets.token_urlsafe(10)
+    hashed = _hash_password(temp_password)
+    if user:
+        user.password_hash = hashed
+        return user, temp_password
+    # New user
+    user = User(email=email, password_hash=hashed)
+    db.add(user)
+    db.flush()
+    return user, temp_password
 
 
 @app.function_name(name="UltravoxAgents")
@@ -153,6 +180,10 @@ def clients_provision(req: func.HttpRequest) -> func.HttpResponse:
             db.add(client_record)
             db.flush()
 
+        # Ensure a user exists; create with a temporary password if new.
+        user, temp_password = _ensure_user_with_temp_password(db, email)
+        client_record.user_id = user.id
+
         if not client_record.ultravox_agent_id:
             agent_name = name_guess or email
             try:
@@ -213,6 +244,7 @@ def clients_provision(req: func.HttpRequest) -> func.HttpResponse:
             "client_id": client_record.id,
             "name": client_record.name,
             "email": client_record.email,
+            "temp_password": temp_password,
             "website_url": client_record.website_url,
             "ultravox_agent_id": client_record.ultravox_agent_id,
             "phone_number": phone_record.twilio_phone_number,
