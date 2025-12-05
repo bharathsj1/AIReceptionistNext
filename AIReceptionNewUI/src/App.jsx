@@ -508,6 +508,12 @@ export default function App() {
                   {provisionData?.phone_number && (
                     <div className="big-number">{provisionData.phone_number}</div>
                   )}
+                  {provisionData?.temp_password && (
+                    <div className="credential">
+                      <span className="label">Temp password</span>
+                      <span className="value">{provisionData.temp_password}</span>
+                    </div>
+                  )}
                   <div className="badge">
                     {responseMessage || "Your AI receptionist is ready!"}
                   </div>

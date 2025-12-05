@@ -90,13 +90,17 @@ def _hash_password(password: str) -> str:
 def _ensure_user_with_temp_password(db, email: str) -> Tuple[User, str | None]:
     """
     Find or create a user for the given email.
-    If created, generate a temporary password and return it.
+    Always issue a fresh temporary password and update the hash,
+    so it can be shared with the user for login.
     """
     user = db.query(User).filter_by(email=email).one_or_none()
-    if user:
-        return user, None
     temp_password = secrets.token_urlsafe(10)
-    user = User(email=email, password_hash=_hash_password(temp_password))
+    hashed = _hash_password(temp_password)
+    if user:
+        user.password_hash = hashed
+        return user, temp_password
+    # New user
+    user = User(email=email, password_hash=hashed)
     db.add(user)
     db.flush()
     return user, temp_password
