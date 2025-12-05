@@ -9,6 +9,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    LargeBinary,
     create_engine,
     inspect,
     text,
@@ -82,6 +83,27 @@ class PhoneNumber(Base):
     client = relationship("Client", back_populates="phone_numbers")
 
 
+class GoogleToken(Base):
+    """
+    Stores OAuth tokens for Google access.
+    """
+
+    __tablename__ = "google_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    access_token = Column(Text, nullable=False)
+    refresh_token = Column(Text, nullable=True)
+    scope = Column(Text, nullable=True)
+    token_type = Column(String, nullable=True)
+    expires_at = Column(DateTime, nullable=True)
+    id_token = Column(LargeBinary, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = relationship("User")
+
+
 def init_db() -> None:
     """Create tables if they do not exist."""
     Base.metadata.create_all(bind=engine)
@@ -104,6 +126,28 @@ def _ensure_optional_columns() -> None:
         user_columns = {col["name"] for col in inspector.get_columns("users")}
         if "is_admin" not in user_columns:
             conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE"))
+
+        existing_tables = inspector.get_table_names()
+        if "google_tokens" not in existing_tables:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS google_tokens (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL,
+                        access_token TEXT NOT NULL,
+                        refresh_token TEXT,
+                        scope TEXT,
+                        token_type VARCHAR,
+                        expires_at DATETIME,
+                        id_token BLOB,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY(user_id) REFERENCES users (id)
+                    )
+                    """
+                )
+            )
 
 
 def get_db() -> Generator:

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import API_URLS from "./config/urls";
 import ThreeHero from "./components/ThreeHero";
 
@@ -29,9 +29,18 @@ export default function App() {
     escalation: "Forward complex questions to the human team.",
     faq: "Hours: 9-6pm PT\nSupport: support@example.com"
   });
+  const [user, setUser] = useState(null);
   const aiNumber = provisionData?.phone_number || "+1 (555) 123-4567";
   const recentCalls = [];
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [dateRange, setDateRange] = useState("Last 14 days");
+  const ranges = ["Last 7 days", "Last 14 days", "Last 30 days", "Last 90 days"];
+  const [calendarStatus, setCalendarStatus] = useState(null);
+  const [calendarEvents, setCalendarEvents] = useState([]);
+  const [calendarLoading, setCalendarLoading] = useState(false);
+  const [calendarError, setCalendarError] = useState("");
+  const googleStateRef = useRef(null);
   const loadingSteps = useMemo(
     () => ({
       crawl: [
@@ -139,6 +148,7 @@ export default function App() {
       setStatus("success");
       setResponseMessage("Logged in (demo).");
       setStage(STAGES.DASHBOARD);
+      setIsLoggedIn(true);
     }, 800);
   };
 
@@ -146,6 +156,24 @@ export default function App() {
     setStage(STAGES.CRAWL_FORM);
     setStatus("idle");
     setResponseMessage("");
+  };
+
+  const handleLogout = () => {
+    setIsLoggedIn(false);
+    setStage(STAGES.LANDING);
+    setStatus("idle");
+    setResponseMessage("");
+    setUser(null);
+    setCrawlData(null);
+    setSystemPrompt("");
+    setProvisionData(null);
+    setEmail("");
+    setUrl("");
+    setLoadingPhase("crawl");
+    setCalendarStatus(null);
+    setCalendarEvents([]);
+    setCalendarError("");
+    setCalendarLoading(false);
   };
 
   const handleEmailSubmit = async (event) => {
@@ -228,6 +256,134 @@ export default function App() {
     }
   };
 
+  const loadCalendarEvents = useCallback(
+    async (emailAddress = user?.email) => {
+      if (!emailAddress) return;
+      setCalendarLoading(true);
+      setCalendarError("");
+      try {
+        const res = await fetch(
+          `${API_URLS.calendarEvents}?email=${encodeURIComponent(emailAddress)}`
+        );
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || "Unable to fetch calendar events");
+        }
+        const data = await res.json();
+        setCalendarEvents(data?.events || []);
+        setCalendarStatus("Google");
+      } catch (error) {
+        setCalendarError(error?.message || "Unable to load events");
+      } finally {
+        setCalendarLoading(false);
+      }
+    },
+    [user?.email]
+  );
+
+  const setLoggedInFromOAuth = useCallback(
+    (payload) => {
+      setUser({
+        id: payload?.user_id,
+        email: payload?.email,
+        name: payload?.profile?.name || payload?.email
+      });
+      setIsLoggedIn(true);
+      setStage(STAGES.DASHBOARD);
+      setCalendarStatus("Google");
+    },
+    [setUser]
+  );
+
+  const completeGoogleAuth = useCallback(
+    async (code, state) => {
+      setStatus("loading");
+      setResponseMessage("");
+      try {
+        const res = await fetch(API_URLS.googleAuthCallback, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code, state })
+        });
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || "Google authentication failed");
+        }
+        const data = await res.json();
+        setLoggedInFromOAuth(data);
+        setResponseMessage("Google account connected.");
+        setStatus("success");
+        await loadCalendarEvents(data?.email);
+      } catch (error) {
+        setStatus("error");
+        setResponseMessage(error?.message || "Google auth failed");
+      }
+    },
+    [loadCalendarEvents, setLoggedInFromOAuth]
+  );
+
+  const beginGoogleLogin = async () => {
+    setStatus("loading");
+    setResponseMessage("");
+    try {
+      const res = await fetch(API_URLS.googleAuthUrl);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Unable to start Google sign-in");
+      }
+      const data = await res.json();
+      googleStateRef.current = data?.state;
+      const popup = window.open(
+        data?.auth_url,
+        "google-oauth",
+        "width=520,height=640"
+      );
+      if (!popup) {
+        throw new Error("Please allow pop-ups to sign in with Google.");
+      }
+    } catch (error) {
+      setStatus("error");
+      setResponseMessage(error?.message || "Google sign-in blocked");
+    }
+  };
+
+  useEffect(() => {
+    const handler = (event) => {
+      const payload = event.data || {};
+      if (!payload?.user_id || !payload?.email) return;
+      if (googleStateRef.current && payload?.state && payload.state !== googleStateRef.current) {
+        return;
+      }
+      setLoggedInFromOAuth(payload);
+      setStatus("success");
+      setResponseMessage("Google account connected.");
+      loadCalendarEvents(payload?.email);
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, [loadCalendarEvents, setLoggedInFromOAuth]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
+    const state = params.get("state");
+    if (code) {
+      completeGoogleAuth(code, state);
+      params.delete("code");
+      params.delete("state");
+      const newUrl =
+        window.location.pathname +
+        (params.toString() ? `?${params.toString()}` : "");
+      window.history.replaceState({}, document.title, newUrl);
+    }
+  }, [completeGoogleAuth]);
+
+  const handleCalendarDisconnect = () => {
+    setCalendarStatus(null);
+    setCalendarEvents([]);
+    setCalendarError("");
+  };
+
   return (
     <div className="page">
       <div className="background-glow" />
@@ -255,13 +411,15 @@ export default function App() {
           <button type="button" className="nav-link">Pricing</button>
         </nav>
         <div className="header-actions">
-          <button className="ghost" type="button" onClick={() => setStage(STAGES.LOGIN)}>
-            Login
-          </button>
-          <button className="ghost" type="button">Find a plan</button>
-          <button className="primary" type="button" onClick={() => setStage(STAGES.CRAWL_FORM)}>
-            Try for free
-          </button>
+          {isLoggedIn ? (
+            <button className="ghost" type="button" onClick={handleLogout}>
+              Logout
+            </button>
+          ) : (
+            <button className="ghost" type="button" onClick={() => setStage(STAGES.LOGIN)}>
+              Login
+            </button>
+          )}
         </div>
       </header>
 
@@ -333,6 +491,14 @@ export default function App() {
                   {status === "loading" ? "Signing in..." : "Login"}
                 </button>
               </form>
+              <div className="oauth-buttons">
+                <div className="divider">
+                  <span>or</span>
+                </div>
+                <button className="oauth-button google" type="button" onClick={beginGoogleLogin} disabled={status === "loading"}>
+                  <span className="icon">🔐</span> Continue with Google
+                </button>
+              </div>
               <div className="link-row">
                 <button className="text-link" type="button">
                   Forgot password?
@@ -387,21 +553,36 @@ export default function App() {
               <div className="nav-user">
                 <div className="avatar">U</div>
                 <div>
-                  <div className="nav-user-name">You</div>
-                  <div className="hint">user@example.com</div>
+                  <div className="nav-user-name">{user?.name || "You"}</div>
+                  <div className="hint">{user?.email || "user@example.com"}</div>
                 </div>
               </div>
             </aside>
             <div className="dash-main">
               <div className="dash-topbar">
-                <div className="pill info-pill">Limited time: lock in 20% off forever</div>
                 <div className="top-actions">
-                  <button className="ghost small">Last 14 days</button>
+                  <div className="dropdown">
+                    <button className="ghost small dropdown-toggle">
+                      <span role="img" aria-label="calendar">📅</span> {dateRange}
+                    </button>
+                    <div className="dropdown-menu">
+                      {ranges.map((range) => (
+                        <button
+                          key={range}
+                          className={`dropdown-item ${range === dateRange ? "active" : ""}`}
+                          onClick={() => setDateRange(range)}
+                        >
+                          {range}
+                          {range === dateRange && <span className="check">✓</span>}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <div className="ai-number">
                     <span className="label">AI Number</span>
-                    <span className="value">{aiNumber}</span>
+                    <span className="value number-link">{aiNumber}</span>
+                    <span className="status-dot" aria-label="online" />
                   </div>
-                  <button className="primary small">Upgrade</button>
                 </div>
               </div>
 
@@ -584,10 +765,85 @@ export default function App() {
               {activeTab === "bookings" && (
                 <div className="card">
                   <h3>Bookings</h3>
-                  <div className="empty-state">
-                    <div className="icon">📅</div>
-                    <p>Your bookings will appear here.</p>
-                  </div>
+                  <p className="hint">Connect your calendar so your AI Receptionist can share availability and take bookings.</p>
+                  {!calendarStatus ? (
+                    <div className="calendar-connect">
+                      <div className="calendar-header">
+                        <div className="bubble">💬</div>
+                        <div>
+                          <h4>Your AI Receptionist takes messages</h4>
+                          <p className="hint">
+                            Your AI gathers customer details and lets them know you'll get back to them. You then call or text them back yourself.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="calendar-body">
+                        <h4>Ready to connect your calendar?</h4>
+                        <p className="lead narrow">
+                          Use Google to authenticate and we will pull a read-only view of your upcoming events.
+                        </p>
+                        <div className="calendar-options">
+                          <button className="calendar-card" onClick={beginGoogleLogin} disabled={status === "loading"}>
+                            <span className="icon">📆</span>
+                            <span className="title">Connect Google Calendar</span>
+                          </button>
+                          <button className="calendar-card" disabled>
+                            <span className="icon">📧</span>
+                            <span className="title">Outlook (soon)</span>
+                          </button>
+                        </div>
+                        <p className="hint">Takes about 30 seconds</p>
+                        {calendarError && <div className="status error inline">{calendarError}</div>}
+                      </div>
+                      <div className="calendar-footnotes">
+                        <span>🔒 Read-only. Your AI can check availability but cannot modify your calendar.</span>
+                        <span>👁 Private. Only free/busy status is visible, not event details.</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="calendar-success">
+                      <div className="bubble success">✓</div>
+                      <div>
+                        <h4>Connected to {calendarStatus}</h4>
+                        <p className="hint">Your AI can now share availability and accept bookings.</p>
+                        {calendarLoading ? (
+                          <div className="loader small calendar-loader">
+                            <span />
+                            <span />
+                            <span />
+                          </div>
+                        ) : calendarEvents.length === 0 ? (
+                          <div className="empty-state">
+                            <div className="icon">🗓</div>
+                            <p>No upcoming events found.</p>
+                          </div>
+                        ) : (
+                          <div className="calendar-events">
+                            {calendarEvents.map((event) => (
+                              <div className="event-row" key={event.id}>
+                                <div>
+                                  <div className="event-title">{event.summary || "No title"}</div>
+                                  <div className="hint">
+                                    {event.start?.dateTime || event.start?.date} → {event.end?.dateTime || event.end?.date}
+                                  </div>
+                                </div>
+                                <div className="pill">Google</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="calendar-actions">
+                        <button className="ghost small" onClick={() => loadCalendarEvents()}>
+                          Refresh
+                        </button>
+                        <button className="ghost small" onClick={handleCalendarDisconnect}>
+                          Disconnect
+                        </button>
+                      </div>
+                      {calendarError && <div className="status error inline">{calendarError}</div>}
+                    </div>
+                  )}
                 </div>
               )}
 
