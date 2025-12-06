@@ -399,7 +399,9 @@ def auth_google_callback(req: func.HttpRequest) -> func.HttpResponse:
     db = SessionLocal()
     try:
         user = db.query(User).filter_by(email=email).one_or_none()
+        is_new_user = False
         if not user:
+            is_new_user = True
             temp_password = secrets.token_urlsafe(12)
             user = User(email=email, password_hash=_hash_password(temp_password))
             db.add(user)
@@ -446,6 +448,7 @@ def auth_google_callback(req: func.HttpRequest) -> func.HttpResponse:
             "user_id": user.id,
             "email": user.email,
             "state": state,
+            "is_new_user": is_new_user,
             "token": {
                 "expires_at": expires_at.isoformat() if expires_at else None,
                 "has_refresh": bool(refresh_token),

@@ -303,16 +303,29 @@ export default function App() {
 
   const setLoggedInFromOAuth = useCallback(
     (payload) => {
+      const isNewUser = Boolean(payload?.is_new_user);
       setUser({
         id: payload?.user_id,
         email: payload?.email,
         name: payload?.profile?.name || payload?.email
       });
       setIsLoggedIn(true);
+
+      if (isNewUser) {
+        setEmail(payload?.email || "");
+        setStage(STAGES.CRAWL_FORM);
+        setStatus("idle");
+        setResponseMessage("Welcome! Enter your website to finish setup.");
+        setCalendarStatus(null);
+        setCalendarEvents([]);
+        setCalendarError("");
+        return;
+      }
+
       setStage(STAGES.DASHBOARD);
       setCalendarStatus("Google");
     },
-    [setUser]
+    [setCalendarError, setCalendarEvents, setCalendarStatus, setEmail, setResponseMessage, setStatus, setUser]
   );
 
   const completeGoogleAuth = useCallback(
@@ -330,10 +343,13 @@ export default function App() {
           throw new Error(text || "Google authentication failed");
         }
         const data = await res.json();
+        const isNewUser = Boolean(data?.is_new_user);
         setLoggedInFromOAuth(data);
         setResponseMessage("Google account connected.");
         setStatus("success");
-        await loadCalendarEvents(data?.email);
+        if (!isNewUser) {
+          await loadCalendarEvents(data?.email);
+        }
       } catch (error) {
         setStatus("error");
         setResponseMessage(error?.message || "Google auth failed");
@@ -374,10 +390,13 @@ export default function App() {
       if (googleStateRef.current && payload?.state && payload.state !== googleStateRef.current) {
         return;
       }
+      const isNewUser = Boolean(payload?.is_new_user);
       setLoggedInFromOAuth(payload);
       setStatus("success");
       setResponseMessage("Google account connected.");
-      loadCalendarEvents(payload?.email);
+      if (!isNewUser) {
+        loadCalendarEvents(payload?.email);
+      }
     };
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
@@ -1054,33 +1073,46 @@ export default function App() {
 
           </section>
         ) : stage === STAGES.EMAIL_CAPTURE ? (
-          <section className="form-card">
-            <div>
-              <p className="eyebrow">Success</p>
-              <h2>All website data loaded fine</h2>
-              <p className="lead narrow">
-                Share an email to receive your AI reception report and next steps.
-              </p>
-            </div>
-            <form className="url-form" onSubmit={handleEmailSubmit}>
-              <label htmlFor="email">Work email</label>
-              <div className="input-row">
-                <input
-                  id="email"
-                  type="email"
-                  placeholder="you@example.com"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  required
-                />
-                <button className="primary" type="submit">
-                  Continue
-                </button>
+          <section className="email-capture-layout">
+            <div className="form-card">
+              <div>
+                <p className="eyebrow">Success</p>
+                <h2>All website data loaded fine</h2>
+                <p className="lead narrow">
+                  Share an email to receive your AI reception report and next steps.
+                </p>
               </div>
-            </form>
-            <button className="ghost small" onClick={handleNewUrl}>
-              ← Send a different URL
-            </button>
+              <form className="url-form" onSubmit={handleEmailSubmit}>
+                <label htmlFor="email">Work email</label>
+                <div className="input-row">
+                  <input
+                    id="email"
+                    type="email"
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    required
+                  />
+                  <button className="primary" type="submit">
+                    Continue
+                  </button>
+                </div>
+              </form>
+              <button className="ghost small" onClick={handleNewUrl}>
+                ← Send a different URL
+              </button>
+            </div>
+
+            <aside className="info-card">
+              <p className="eyebrow">What happens next</p>
+              <h3>We’ll use your email to:</h3>
+              <ul>
+                <li>Send your crawl summary and the AI receptionist prompt.</li>
+                <li>Provision your dashboard with the website you just shared.</li>
+                <li>Share booking and calendar setup instructions.</li>
+              </ul>
+              <div className="pill note">We’ll only contact you about this setup.</div>
+            </aside>
           </section>
         ) : (
           <section className="progress-card">
