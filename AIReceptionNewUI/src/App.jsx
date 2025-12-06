@@ -19,6 +19,8 @@ export default function App() {
   const [responseMessage, setResponseMessage] = useState("");
   const [showLoader, setShowLoader] = useState(false);
   const [email, setEmail] = useState("");
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
   const [crawlData, setCrawlData] = useState(null);
   const [systemPrompt, setSystemPrompt] = useState("");
   const [loadingPhase, setLoadingPhase] = useState("crawl");
@@ -143,17 +145,44 @@ export default function App() {
     setStage(STAGES.LANDING);
   };
 
-  const handleLoginSubmit = (event) => {
+  const handleLoginSubmit = async (event) => {
     event.preventDefault();
     setStatus("loading");
     setResponseMessage("");
 
-    setTimeout(() => {
-      setStatus("success");
-      setResponseMessage("Logged in (demo).");
-      setStage(STAGES.DASHBOARD);
+    try {
+      const res = await fetch(API_URLS.authLogin, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: loginEmail.trim(), password: loginPassword })
+      });
+      const text = await res.text();
+      let data = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = { raw: text };
+      }
+
+      if (!res.ok) {
+        throw new Error(data?.error || data?.details || "Login failed");
+      }
+
+      setUser({
+        id: data?.user_id,
+        email: data?.email,
+        name: data?.email
+      });
+      setEmail(data?.email || "");
       setIsLoggedIn(true);
-    }, 800);
+      setActiveTab("dashboard");
+      setStage(STAGES.DASHBOARD);
+      setStatus("success");
+      setResponseMessage("Logged in successfully.");
+    } catch (error) {
+      setStatus("error");
+      setResponseMessage(error?.message || "Login failed");
+    }
   };
 
   const goToCrawl = () => {
@@ -168,6 +197,8 @@ export default function App() {
     setStatus("idle");
     setResponseMessage("");
     setUser(null);
+    setLoginEmail("");
+    setLoginPassword("");
     setCrawlData(null);
     setSystemPrompt("");
     setProvisionData(null);
@@ -180,6 +211,7 @@ export default function App() {
     setCalendarLoading(false);
     if (typeof window !== "undefined") {
       window.localStorage.removeItem(STORAGE_KEY);
+      window.history.pushState({ stage: STAGES.LANDING }, "", "/");
     }
   };
 
@@ -439,6 +471,39 @@ export default function App() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    const path = window.location.pathname || "";
+    const isDashboardPath = path === "/dashboard" || path.endsWith("/dashboard");
+    if (!isDashboardPath) return;
+
+    const hasSession = isLoggedIn || Boolean(user?.email);
+    if (hasSession) {
+      setStage(STAGES.DASHBOARD);
+      setActiveTab("dashboard");
+      return;
+    }
+
+    setStage(STAGES.LOGIN);
+    setStatus("idle");
+    setResponseMessage("");
+    window.history.replaceState({ stage: STAGES.LOGIN }, "", "/login");
+  }, [isLoggedIn, user]);
+
+  // Ensure logged-in users retain access to dashboard across refreshes
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    if (stage === STAGES.DASHBOARD) return;
+    setStage(STAGES.DASHBOARD);
+    setActiveTab("dashboard");
+    if (typeof window !== "undefined") {
+      const path = window.location.pathname || "";
+      if (path !== "/dashboard") {
+        window.history.replaceState({ stage: STAGES.DASHBOARD }, "", "/dashboard");
+      }
+    }
+  }, [isLoggedIn, stage]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
     try {
       const payload = {
         stage,
@@ -577,6 +642,8 @@ export default function App() {
                   id="login-email"
                   type="email"
                   placeholder="you@example.com"
+                  value={loginEmail}
+                  onChange={(event) => setLoginEmail(event.target.value)}
                   required
                 />
                 <label htmlFor="login-password">Password</label>
@@ -584,6 +651,8 @@ export default function App() {
                   id="login-password"
                   type="password"
                   placeholder="••••••••"
+                  value={loginPassword}
+                  onChange={(event) => setLoginPassword(event.target.value)}
                   required
                 />
                 <button className="primary full" type="submit" disabled={status === "loading"}>
