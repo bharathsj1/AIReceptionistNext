@@ -41,6 +41,10 @@ export default function App() {
   const [calendarLoading, setCalendarLoading] = useState(false);
   const [calendarError, setCalendarError] = useState("");
   const googleStateRef = useRef(null);
+  const suppressHistoryRef = useRef(false);
+  const hasMountedHistoryRef = useRef(false);
+  const hasLoadedPersistedRef = useRef(false);
+  const STORAGE_KEY = "ai-reception-app-state";
   const loadingSteps = useMemo(
     () => ({
       crawl: [
@@ -174,6 +178,9 @@ export default function App() {
     setCalendarEvents([]);
     setCalendarError("");
     setCalendarLoading(false);
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(STORAGE_KEY);
+    }
   };
 
   const handleGoToDashboard = () => {
@@ -390,6 +397,66 @@ export default function App() {
       window.history.replaceState({}, document.title, newUrl);
     }
   }, [completeGoogleAuth]);
+
+  useEffect(() => {
+    if (hasLoadedPersistedRef.current) return;
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+      if (saved.stage) setStage(saved.stage);
+      if (saved.isLoggedIn) setIsLoggedIn(true);
+      if (saved.user) setUser(saved.user);
+      if (saved.email) setEmail(saved.email);
+      if (saved.provisionData) setProvisionData(saved.provisionData);
+      if (saved.activeTab) setActiveTab(saved.activeTab);
+    } catch (error) {
+      console.error("Failed to load persisted state", error);
+    } finally {
+      hasLoadedPersistedRef.current = true;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const payload = {
+        stage,
+        isLoggedIn,
+        user,
+        email,
+        provisionData,
+        activeTab
+      };
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    } catch (error) {
+      console.error("Failed to persist state", error);
+    }
+  }, [stage, isLoggedIn, user, email, provisionData, activeTab]);
+
+  useEffect(() => {
+    if (!hasMountedHistoryRef.current) {
+      window.history.replaceState({ stage }, "");
+      hasMountedHistoryRef.current = true;
+      return;
+    }
+    if (suppressHistoryRef.current) {
+      suppressHistoryRef.current = false;
+      return;
+    }
+    window.history.pushState({ stage }, "");
+  }, [stage]);
+
+  useEffect(() => {
+    const handlePopState = (event) => {
+      const nextStage = event.state?.stage || STAGES.LANDING;
+      suppressHistoryRef.current = true;
+      setStage(nextStage);
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   const handleCalendarDisconnect = () => {
     setCalendarStatus(null);
