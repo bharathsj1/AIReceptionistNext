@@ -6,6 +6,8 @@ export default function DashboardScreen({
   setDateRange,
   aiNumber,
   recentCalls,
+  callsPage,
+  setCallsPage,
   user,
   agentDetails,
   setAgentDetails,
@@ -17,8 +19,32 @@ export default function DashboardScreen({
   loadCalendarEvents,
   handleCalendarDisconnect,
   beginGoogleLogin,
-  status
+  status,
+  onRangeChange,
+  dateRanges
 }) {
+  const pageSize = 10;
+  const totalPages = Math.max(1, Math.ceil((recentCalls?.length || 0) / pageSize));
+  const safePage = Math.min(Math.max(callsPage || 1, 1), totalPages);
+  const pagedCalls = recentCalls.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  const formatDuration = (seconds) => {
+    if (!seconds && seconds !== 0) return "—";
+    const mins = Math.floor(Number(seconds) / 60);
+    const secs = Number(seconds) % 60;
+    return `${mins}m ${secs}s`;
+  };
+
+  const formatDate = (iso) => {
+    if (!iso) return "—";
+    try {
+      const d = new Date(iso);
+      return d.toLocaleString();
+    } catch {
+      return iso;
+    }
+  };
+
   return (
     <section className="dashboard-shell">
       <aside className="dash-nav">
@@ -60,23 +86,23 @@ export default function DashboardScreen({
       <div className="dash-main">
         <div className="dash-topbar">
           <div className="top-actions">
-            <div className="dropdown">
-              <button className="ghost small dropdown-toggle">
-                <span role="img" aria-label="calendar">📅</span> {dateRange}
-              </button>
-              <div className="dropdown-menu">
-                {ranges.map((range) => (
-                  <button
-                    key={range}
-                    className={`dropdown-item ${range === dateRange ? "active" : ""}`}
-                    onClick={() => setDateRange(range)}
-                  >
-                    {range}
-                    {range === dateRange && <span className="check">✓</span>}
-                  </button>
-                ))}
-              </div>
-            </div>
+                  <div className="dropdown">
+                    <button className="ghost small dropdown-toggle">
+                      <span role="img" aria-label="calendar">📅</span> {dateRange}
+                    </button>
+                    <div className="dropdown-menu">
+                      {dateRanges.map((range) => (
+                        <button
+                          key={range.label}
+                          className={`dropdown-item ${range.label === dateRange ? "active" : ""}`}
+                          onClick={() => onRangeChange(range)}
+                        >
+                          {range.label}
+                          {range.label === dateRange && <span className="check">✓</span>}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
             <div className="ai-number">
               <span className="label">AI Number</span>
               <span className="value number-link">{aiNumber}</span>
@@ -105,31 +131,50 @@ export default function DashboardScreen({
               <div className="table">
                 <div className="table-head">
                   <span>Start Time</span>
-                  <span>Caller</span>
-                  <span>Phone</span>
+                  <span>From</span>
+                  <span>To</span>
                   <span>Duration</span>
-                  <span>Call Reason</span>
-                  <span>Lead Score</span>
-                  <span>Action</span>
+                  <span>Status</span>
+                  <span>Direction</span>
                 </div>
                 {recentCalls.length === 0 ? (
                   <div className="table-empty">
                     No calls yet — incoming calls will appear here.
                   </div>
                 ) : (
-                  recentCalls.map((call) => (
-                    <div className="table-row" key={call.id}>
-                      <span>{call.startTime}</span>
-                      <span>{call.caller}</span>
-                      <span>{call.phone}</span>
-                      <span>{call.duration}</span>
-                      <span>{call.reason}</span>
-                      <span>{call.score}</span>
-                      <button className="ghost small">View</button>
+                  pagedCalls.map((call) => (
+                    <div className="table-row" key={call.sid}>
+                      <span>{formatDate(call.start_time)}</span>
+                      <span>{call.from || "—"}</span>
+                      <span>{call.to || "—"}</span>
+                      <span>{formatDuration(call.duration)}</span>
+                      <span>{call.status || "—"}</span>
+                      <span>{call.direction || "—"}</span>
                     </div>
                   ))
                 )}
               </div>
+              {recentCalls.length > pageSize && (
+                <div className="pagination">
+                  <button
+                    className="ghost small"
+                    disabled={safePage <= 1}
+                    onClick={() => setCallsPage(safePage - 1)}
+                  >
+                    ← Prev
+                  </button>
+                  <span className="hint">
+                    Page {safePage} of {totalPages}
+                  </span>
+                  <button
+                    className="ghost small"
+                    disabled={safePage >= totalPages}
+                    onClick={() => setCallsPage(safePage + 1)}
+                  >
+                    Next →
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="card-grid">
@@ -250,14 +295,48 @@ export default function DashboardScreen({
             <div className="table">
               <div className="table-head">
                 <span>Start Time</span>
-                <span>Caller</span>
-                <span>Phone</span>
+                <span>From</span>
+                <span>To</span>
                 <span>Duration</span>
-                <span>Reason</span>
-                <span>Outcome</span>
+                <span>Status</span>
+                <span>Direction</span>
               </div>
-              <div className="table-empty">No calls yet.</div>
+              {recentCalls.length === 0 ? (
+                <div className="table-empty">No calls yet.</div>
+              ) : (
+                pagedCalls.map((call) => (
+                  <div className="table-row" key={call.sid}>
+                    <span>{formatDate(call.start_time)}</span>
+                    <span>{call.from || "—"}</span>
+                    <span>{call.to || "—"}</span>
+                    <span>{formatDuration(call.duration)}</span>
+                    <span>{call.status || "—"}</span>
+                    <span>{call.direction || "—"}</span>
+                  </div>
+                ))
+              )}
             </div>
+            {recentCalls.length > pageSize && (
+              <div className="pagination">
+                <button
+                  className="ghost small"
+                  disabled={safePage <= 1}
+                  onClick={() => setCallsPage(safePage - 1)}
+                >
+                  ← Prev
+                </button>
+                <span className="hint">
+                  Page {safePage} of {totalPages}
+                </span>
+                <button
+                  className="ghost small"
+                  disabled={safePage >= totalPages}
+                  onClick={() => setCallsPage(safePage + 1)}
+                >
+                  Next →
+                </button>
+              </div>
+            )}
           </div>
         )}
 

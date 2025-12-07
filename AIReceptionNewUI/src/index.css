@@ -492,6 +492,17 @@ body {
   color: #7bc6ff;
 }
 
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.pagination .hint {
+  color: #cfd6e9;
+}
+
 .dashboard-grid {
   display: grid;
   grid-template-columns: 1.1fr 0.9fr;

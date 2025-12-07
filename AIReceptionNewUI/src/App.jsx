@@ -31,6 +31,7 @@ export default function App() {
   const [systemPrompt, setSystemPrompt] = useState("");
   const [loadingPhase, setLoadingPhase] = useState("crawl");
   const [provisionData, setProvisionData] = useState(null);
+  const [phoneNumbers, setPhoneNumbers] = useState([]);
   const [agentDetails, setAgentDetails] = useState({
     agentName: "Ultravox Concierge",
     greeting: "Hi, I'm your AI receptionist. How can I help today?",
@@ -38,17 +39,38 @@ export default function App() {
     faq: "Hours: 9-6pm PT\nSupport: support@example.com"
   });
   const [user, setUser] = useState(null);
-  const aiNumber = provisionData?.phone_number || "+1 (555) 123-4567";
-  const recentCalls = [];
+  const aiNumber =
+    (phoneNumbers?.[0]?.phone_number ||
+      phoneNumbers?.[0] ||
+      provisionData?.phone_number ||
+      (provisionData?.phone_numbers || [])[0]?.phone_number ||
+      (provisionData?.phone_numbers || [])[0] ||
+      null) || "+1 (555) 123-4567";
+  const [recentCalls, setRecentCalls] = useState([]);
+  const [callsPage, setCallsPage] = useState(1);
   const [activeTab, setActiveTab] = useState("dashboard");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [dateRange, setDateRange] = useState("Last 14 days");
-  const ranges = ["Last 7 days", "Last 14 days", "Last 30 days", "Last 90 days"];
+  const dateRanges = useMemo(
+    () => [
+      { label: "Last 1 day", days: 1 },
+      { label: "Last 7 days", days: 7 },
+      { label: "Last 14 days", days: 14 },
+      { label: "Last 30 days", days: 30 }
+    ],
+    []
+  );
+  const [dateRange, setDateRange] = useState(dateRanges[1].label);
   const [calendarStatus, setCalendarStatus] = useState(null);
   const [calendarEvents, setCalendarEvents] = useState([]);
   const [calendarLoading, setCalendarLoading] = useState(false);
   const [calendarError, setCalendarError] = useState("");
   const googleStateRef = useRef(null);
+  const [clientData, setClientData] = useState(null);
+
+  const getSelectedDays = useCallback(() => {
+    const match = dateRanges.find((r) => r.label === dateRange);
+    return match?.days || 7;
+  }, [dateRange, dateRanges]);
   const suppressHistoryRef = useRef(false);
   const hasMountedHistoryRef = useRef(false);
   const hasLoadedPersistedRef = useRef(false);
@@ -208,6 +230,8 @@ export default function App() {
     setCrawlData(null);
     setSystemPrompt("");
     setProvisionData(null);
+    setPhoneNumbers([]);
+    setClientData(null);
     setEmail("");
     setUrl("");
     setLoadingPhase("crawl");
@@ -334,6 +358,56 @@ export default function App() {
         setCalendarError(error?.message || "Unable to load events");
       } finally {
         setCalendarLoading(false);
+      }
+    },
+    [user?.email]
+  );
+
+  const loadCallLogs = useCallback(
+    async (emailAddress = user?.email, daysOverride = null) => {
+      if (!emailAddress) return;
+      try {
+        const days = typeof daysOverride === "number" ? daysOverride : getSelectedDays();
+        const res = await fetch(
+          `${API_URLS.dashboardCalls}?email=${encodeURIComponent(emailAddress)}&days=${days}`
+        );
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || "Unable to fetch call logs");
+        }
+        const data = await res.json();
+        setRecentCalls(data?.calls || []);
+        setCallsPage(1);
+      } catch (error) {
+        console.error("Failed to load calls", error);
+        setRecentCalls([]);
+      }
+    },
+    [user?.email, getSelectedDays]
+  );
+
+  const loadDashboard = useCallback(
+    async (emailAddress = user?.email) => {
+      if (!emailAddress) return;
+      try {
+        const res = await fetch(`${API_URLS.dashboard}?email=${encodeURIComponent(emailAddress)}`);
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || "Unable to load dashboard");
+        }
+        const data = await res.json();
+        setClientData(data?.client || null);
+        const phones = data?.phone_numbers || [];
+        setPhoneNumbers(Array.isArray(phones) ? phones : []);
+        // persist provision data extras if available
+        setProvisionData((prev) => ({
+          ...(prev || {}),
+          phone_numbers: phones,
+          phone_number: phones?.[0]?.phone_number || prev?.phone_number
+        }));
+      } catch (error) {
+        console.error("Failed to load dashboard", error);
+        setPhoneNumbers([]);
       }
     },
     [user?.email]
@@ -467,6 +541,7 @@ export default function App() {
       if (saved.user) setUser(saved.user);
       if (saved.email) setEmail(saved.email);
       if (saved.provisionData) setProvisionData(saved.provisionData);
+      if (saved.phoneNumbers) setPhoneNumbers(saved.phoneNumbers);
       if (saved.activeTab) setActiveTab(saved.activeTab);
     } catch (error) {
       console.error("Failed to load persisted state", error);
@@ -509,6 +584,12 @@ export default function App() {
   }, [isLoggedIn, stage]);
 
   useEffect(() => {
+    if (stage !== STAGES.DASHBOARD) return;
+    loadDashboard();
+    loadCallLogs();
+  }, [stage, loadCallLogs, loadDashboard]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
     try {
       const payload = {
@@ -517,13 +598,14 @@ export default function App() {
         user,
         email,
         provisionData,
+        phoneNumbers,
         activeTab
       };
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     } catch (error) {
       console.error("Failed to persist state", error);
     }
-  }, [stage, isLoggedIn, user, email, provisionData, activeTab]);
+  }, [stage, isLoggedIn, user, email, provisionData, phoneNumbers, activeTab]);
 
   useEffect(() => {
     if (!hasMountedHistoryRef.current) {
@@ -620,11 +702,17 @@ export default function App() {
           <DashboardScreen
             activeTab={activeTab}
             setActiveTab={setActiveTab}
-            ranges={ranges}
             dateRange={dateRange}
             setDateRange={setDateRange}
+            dateRanges={dateRanges}
+            onRangeChange={(range) => {
+              setDateRange(range.label);
+              loadCallLogs(user?.email, range.days);
+            }}
             aiNumber={aiNumber}
             recentCalls={recentCalls}
+            callsPage={callsPage}
+            setCallsPage={setCallsPage}
             user={user}
             agentDetails={agentDetails}
             setAgentDetails={setAgentDetails}
