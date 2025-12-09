@@ -4,6 +4,7 @@ import secrets
 import hashlib
 from datetime import datetime, timedelta
 from typing import Optional, Tuple
+from urllib.parse import parse_qs
 
 import azure.functions as func
 import requests
@@ -278,14 +279,47 @@ def auth_forgot_password(req: func.HttpRequest) -> func.HttpResponse:
 
 
 @app.function_name(name="AuthResetPassword")
-@app.route(route="auth/reset-password", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+@app.route(route="auth/reset-password", methods=["POST", "GET"], auth_level=func.AuthLevel.ANONYMOUS)
 def auth_reset_password(req: func.HttpRequest) -> func.HttpResponse:
+    if req.method == "GET":
+        token = req.params.get("token")
+        if not token:
+            return func.HttpResponse(
+                "Token is required to reset your password.",
+                status_code=400,
+                mimetype="text/plain",
+            )
+        html = f"""
+        <!doctype html>
+        <html>
+        <head><title>Reset Password</title></head>
+        <body>
+            <h2>Reset your password</h2>
+            <form method="POST" action="">
+                <input type="hidden" name="token" value="{token}">
+                <label for="new_password">New password</label>
+                <input id="new_password" type="password" name="new_password" required>
+                <button type="submit">Reset password</button>
+            </form>
+        </body>
+        </html>
+        """
+        return func.HttpResponse(html, status_code=200, mimetype="text/html")
+
+    token = None
+    new_password = None
     try:
         body = req.get_json()
+        token = (body or {}).get("token")
+        new_password = (body or {}).get("new_password")
     except ValueError:
-        body = None
-    token = (body or {}).get("token")
-    new_password = (body or {}).get("new_password")
+        try:
+            form_data = parse_qs(req.get_body().decode("utf-8"))
+            token = (form_data.get("token") or [None])[0]
+            new_password = (form_data.get("new_password") or [None])[0]
+        except Exception:  # pylint: disable=broad-except
+            token = None
+            new_password = None
     if not token or not new_password:
         return func.HttpResponse(
             json.dumps({"error": "token and new_password are required"}),

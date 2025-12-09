@@ -7,6 +7,7 @@ import CrawlFormScreen from "./screens/CrawlFormScreen";
 import LoadingScreen from "./screens/LoadingScreen";
 import EmailCaptureScreen from "./screens/EmailCaptureScreen";
 import CompleteScreen from "./screens/CompleteScreen";
+import ResetPasswordScreen from "./screens/ResetPasswordScreen";
 
 const STAGES = {
   LANDING: "landing",
@@ -15,7 +16,8 @@ const STAGES = {
   CRAWL_FORM: "crawlForm",
   LOADING: "loading",
   EMAIL_CAPTURE: "emailCapture",
-  COMPLETE: "complete"
+  COMPLETE: "complete",
+  RESET_PASSWORD: "resetPassword"
 };
 
 export default function App() {
@@ -23,10 +25,12 @@ export default function App() {
   const [url, setUrl] = useState("");
   const [status, setStatus] = useState("idle");
   const [responseMessage, setResponseMessage] = useState("");
+  const [responseLink, setResponseLink] = useState(null);
   const [showLoader, setShowLoader] = useState(false);
   const [email, setEmail] = useState("");
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
+  const [resetToken, setResetToken] = useState("");
   const [crawlData, setCrawlData] = useState(null);
   const [systemPrompt, setSystemPrompt] = useState("");
   const [loadingPhase, setLoadingPhase] = useState("crawl");
@@ -100,17 +104,36 @@ export default function App() {
     []
   );
 
+  // Detect reset token from query string so reset links land on the styled screen.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("reset_token");
+    if (token) {
+      setResetToken(token);
+      setStage(STAGES.RESET_PASSWORD);
+      setStatus("idle");
+      setResponseMessage("");
+      setResponseLink(null);
+      // Remove the token from the URL to avoid accidental reuse.
+      const url = new URL(window.location.href);
+      url.searchParams.delete("reset_token");
+      window.history.replaceState({}, document.title, url.toString());
+    }
+  }, []);
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     const trimmed = url.trim();
 
     if (!trimmed) {
       setResponseMessage("Please enter a website address first.");
+      setResponseLink(null);
       return;
     }
 
     setStatus("loading");
     setResponseMessage("");
+    setResponseLink(null);
     setShowLoader(true);
     setLoadingPhase("crawl");
     setStage(STAGES.LOADING);
@@ -150,6 +173,7 @@ export default function App() {
   const handleNewUrl = () => {
     setStatus("idle");
     setResponseMessage("");
+    setResponseLink(null);
     setShowLoader(false);
     setEmail("");
     setUrl("");
@@ -163,6 +187,7 @@ export default function App() {
   const handleGoHome = () => {
     setStatus("idle");
     setResponseMessage("");
+    setResponseLink(null);
     setShowLoader(false);
     setEmail("");
     setUrl("");
@@ -177,6 +202,7 @@ export default function App() {
     event.preventDefault();
     setStatus("loading");
     setResponseMessage("");
+    setResponseLink(null);
 
     try {
       const res = await fetch(API_URLS.authLogin, {
@@ -210,6 +236,107 @@ export default function App() {
     } catch (error) {
       setStatus("error");
       setResponseMessage(error?.message || "Login failed");
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    const targetEmail = (loginEmail || email || "").trim();
+    if (!targetEmail) {
+      setStatus("error");
+      setResponseMessage("Enter your email first to reset your password.");
+      setResponseLink(null);
+      return;
+    }
+
+    setStatus("loading");
+    setResponseMessage("");
+    setResponseLink(null);
+    try {
+      const res = await fetch(API_URLS.authForgotPassword, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: targetEmail })
+      });
+      const text = await res.text();
+      let data = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = { raw: text };
+      }
+
+      if (!res.ok) {
+        throw new Error(data?.error || data?.details || text || "Password reset failed");
+      }
+
+      const resetLink = data?.reset_link || data?.reset_password_url;
+      setStatus("success");
+      setResponseMessage(
+        resetLink
+          ? `Password reset link generated for ${targetEmail}.`
+          : data?.message || "If the account exists, a reset link will be sent."
+      );
+      const normalized = normalizeResetLink(resetLink);
+      setResponseLink(normalized);
+    } catch (error) {
+      setStatus("error");
+      setResponseMessage(error?.message || "Unable to process password reset.");
+      setResponseLink(null);
+    }
+  };
+
+  const handleResetPasswordSubmit = async (newPassword) => {
+    if (!resetToken) {
+      setStatus("error");
+      setResponseMessage("Reset token missing. Request a new reset link.");
+      setResponseLink(null);
+      return;
+    }
+
+    setStatus("loading");
+    setResponseMessage("");
+    setResponseLink(null);
+    try {
+      const res = await fetch(API_URLS.authResetPassword, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: resetToken, new_password: newPassword })
+      });
+      const text = await res.text();
+      let data = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = { raw: text };
+      }
+
+      if (!res.ok) {
+        throw new Error(data?.error || data?.details || text || "Reset failed");
+      }
+
+      setStatus("success");
+      setResponseMessage("Password reset successful. Please log in with your new password.");
+      setResponseLink(null);
+      setResetToken("");
+      setStage(STAGES.LOGIN);
+    } catch (error) {
+      setStatus("error");
+      setResponseMessage(error?.message || "Unable to reset password.");
+      setResponseLink(null);
+    }
+  };
+
+  const normalizeResetLink = (rawLink) => {
+    if (!rawLink) return null;
+    try {
+      const url = new URL(rawLink, window.location.origin);
+      const token = url.searchParams.get("token");
+      if (token) {
+        return `${window.location.origin}?reset_token=${token}`;
+      }
+      return url.toString();
+    } catch {
+      return rawLink;
     }
   };
 
@@ -262,6 +389,7 @@ export default function App() {
     event.preventDefault();
     setStatus("loading");
     setResponseMessage("");
+    setResponseLink(null);
     setShowLoader(true);
     setLoadingPhase("provision");
     setStage(STAGES.LOADING);
@@ -315,7 +443,21 @@ export default function App() {
 
       if (!provisionRes.ok) {
         const provText = await provisionRes.text();
-        throw new Error(provText || "Failed to provision client");
+        let parsed = {};
+        try {
+          parsed = provText ? JSON.parse(provText) : {};
+        } catch {
+          parsed = {};
+        }
+        const message =
+          parsed?.message ||
+          parsed?.error ||
+          parsed?.details ||
+          provText ||
+          "Failed to provision client";
+        const err = new Error(message);
+        err.resetLink = parsed?.reset_password_url || parsed?.reset_link || null;
+        throw err;
       }
 
       const provData = await provisionRes
@@ -325,6 +467,7 @@ export default function App() {
       setProvisionData(provData);
       setStatus("success");
       setResponseMessage("Your AI receptionist is ready!");
+      setResponseLink(null);
       setStage(STAGES.COMPLETE);
     } catch (error) {
       setStatus("error");
@@ -332,7 +475,14 @@ export default function App() {
         error?.message ||
           "Unable to finish setup. Please try again."
       );
-      setStage(STAGES.COMPLETE);
+      const hasResetLink = Boolean(error?.resetLink);
+      setResponseLink(normalizeResetLink(error?.resetLink) || null);
+      if (hasResetLink) {
+        setLoginEmail(email || loginEmail);
+        setStage(STAGES.LOGIN);
+      } else {
+        setStage(STAGES.COMPLETE);
+      }
     } finally {
       setShowLoader(false);
     }
@@ -640,28 +790,32 @@ export default function App() {
     <div className="page">
       <div className="background-glow" />
       <header className="top-bar">
-        <div
-          className="brand"
-          onClick={handleGoHome}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" || event.key === " ") {
-              event.preventDefault();
-              handleGoHome();
-            }
-          }}
-          role="button"
-          tabIndex={0}
-        >
-          <span className="brand-mark">AI</span>
-          <span className="brand-name">Reception</span>
+        <div className="header-left">
+          <div
+            className="brand"
+            onClick={handleGoHome}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                handleGoHome();
+              }
+            }}
+            role="button"
+            tabIndex={0}
+          >
+            <span className="brand-mark">AI</span>
+            <span className="brand-name">Reception</span>
+          </div>
+          {stage !== STAGES.DASHBOARD && (
+            <nav className="nav-links" aria-label="Primary">
+              <button type="button" className="nav-link">Overview</button>
+              <button type="button" className="nav-link">Benefits</button>
+              <button type="button" className="nav-link">Customers</button>
+              <button type="button" className="nav-link">Products</button>
+              <button type="button" className="nav-link">Pricing</button>
+            </nav>
+          )}
         </div>
-        <nav className="nav-links" aria-label="Primary">
-          <button type="button" className="nav-link">Overview</button>
-          <button type="button" className="nav-link">Benefits</button>
-          <button type="button" className="nav-link">Customers</button>
-          <button type="button" className="nav-link">Products</button>
-          <button type="button" className="nav-link">Pricing</button>
-        </nav>
         <div className="header-actions">
           {isLoggedIn ? (
             <button className="ghost" type="button" onClick={handleLogout}>
@@ -689,12 +843,22 @@ export default function App() {
             loginPassword={loginPassword}
             status={status}
             responseMessage={responseMessage}
+            responseLink={responseLink}
             onLoginSubmit={handleLoginSubmit}
             onEmailChange={setLoginEmail}
             onPasswordChange={setLoginPassword}
             onGoogleLogin={beginGoogleLogin}
             onCreateAccount={goToCrawl}
-            onForgotPassword={() => {}}
+            onForgotPassword={handleForgotPassword}
+          />
+        )}
+
+        {stage === STAGES.RESET_PASSWORD && (
+          <ResetPasswordScreen
+            status={status}
+            responseMessage={responseMessage}
+            onSubmit={handleResetPasswordSubmit}
+            onBackToLogin={() => setStage(STAGES.LOGIN)}
           />
         )}
 
@@ -763,6 +927,7 @@ export default function App() {
           <CompleteScreen
             status={status}
             responseMessage={responseMessage}
+            responseLink={responseLink}
             provisionData={provisionData}
             email={email}
             onGoHome={handleGoHome}

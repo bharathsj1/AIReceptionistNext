@@ -36,3 +36,19 @@ def get_google_oauth_settings() -> dict:
             "https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile",
         ),
     }
+
+
+def get_smtp_settings() -> dict:
+    """
+    SMTP settings for transactional email (temp password, etc).
+    Values are optional; caller should decide whether to require them.
+    """
+    return {
+        "host": os.getenv("SMTP_HOST"),
+        "port": int(os.getenv("SMTP_PORT", "587")) if os.getenv("SMTP_PORT") else None,
+        "username": os.getenv("SMTP_USERNAME"),
+        "password": os.getenv("SMTP_PASSWORD"),
+        "from_email": os.getenv("SMTP_FROM_EMAIL") or os.getenv("SMTP_USERNAME"),
+        "use_tls": os.getenv("SMTP_USE_TLS", "true").lower() != "false",
+        "use_ssl": os.getenv("SMTP_USE_SSL", "false").lower() == "true",
+    }

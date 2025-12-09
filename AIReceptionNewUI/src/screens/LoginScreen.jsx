@@ -3,6 +3,7 @@ export default function LoginScreen({
   loginPassword,
   status,
   responseMessage,
+  responseLink,
   onLoginSubmit,
   onEmailChange,
   onPasswordChange,
@@ -64,7 +65,16 @@ export default function LoginScreen({
             Create an account
           </button>
         </div>
-        {responseMessage && <div className={`status ${status}`}>{responseMessage}</div>}
+        {responseMessage && (
+          <div className={`status ${status}`}>
+            <div>{responseMessage}</div>
+            {responseLink && (
+              <a href={responseLink} target="_blank" rel="noreferrer">
+                Reset your password
+              </a>
+            )}
+          </div>
+        )}
       </div>
       <aside className="login-aside">
         <p className="eyebrow">How it works</p>

@@ -9,6 +9,8 @@ export const API_URLS = {
   ultravoxPrompt: `${API_PROXY_BASE}/ultravox/prompt`,
   provisionClient: `${API_PROXY_BASE}/clients/provision`,
   authLogin: `${API_PROXY_BASE}/auth/login`,
+  authForgotPassword: `${API_PROXY_BASE}/auth/forgot-password`,
+  authResetPassword: `${API_PROXY_BASE}/auth/reset-password`,
   dashboard: `${API_PROXY_BASE}/dashboard`,
   googleAuthUrl: `${API_PROXY_BASE}/auth/google/url`,
   googleAuthCallback: `${API_PROXY_BASE}/auth/google/callback`,

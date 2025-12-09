@@ -2,6 +2,9 @@ import hashlib
 import json
 import logging
 import secrets
+import smtplib
+import ssl
+from datetime import datetime, timedelta
 from typing import Dict, Tuple
 from urllib.parse import parse_qs, urlparse
 
@@ -9,9 +12,10 @@ import azure.functions as func
 from twilio.rest import Client as TwilioClient
 from function_app import app
 
+from auth_endpoints import _generate_reset_token  # pylint: disable=protected-access
 from crawler_endpoints import crawl_site
 from services.ultravox_service import create_ultravox_agent, create_ultravox_call, list_ultravox_agents
-from shared.config import get_required_setting, get_setting
+from shared.config import get_required_setting, get_setting, get_smtp_settings
 from shared.db import Client, PhoneNumber, SessionLocal, User, init_db
 
 logger = logging.getLogger(__name__)
@@ -106,6 +110,76 @@ def _ensure_user_with_temp_password(db, email: str) -> Tuple[User, str | None]:
     return user, temp_password
 
 
+def _send_temp_password_email(email: str, temp_password: str, phone_number: str | None, website_url: str | None) -> bool:
+    """
+    Send a simple email with the temporary password.
+    Returns True on success, False on failure.
+    """
+    smtp = get_smtp_settings()
+    if not smtp.get("host") or not smtp.get("username") or not smtp.get("password"):
+        logger.warning("SMTP not configured; skipping temp password email.")
+        return False
+
+    subject = "Your AI Receptionist account is ready"
+    phone_line = f"Your AI number: {phone_number}" if phone_number else "Your AI number will follow shortly."
+    body = (
+        f"Hi,\n\n"
+        f"Your AI receptionist has been provisioned for {website_url or 'your site'}.\n"
+        f"Temporary password: {temp_password}\n"
+        f"{phone_line}\n\n"
+        "Use this password to sign in and complete setup. Please change it after logging in.\n\n"
+        "Thanks,\nAI Receptionist Team\n"
+    )
+    message = f"From: {smtp['from_email']}\r\nTo: {email}\r\nSubject: {subject}\r\n\r\n{body}"
+
+    host = smtp["host"]
+    use_tls = smtp.get("use_tls", True)
+    use_ssl = smtp.get("use_ssl", False)
+    port = smtp.get("port")
+
+    # Choose sensible defaults if no port provided.
+    if port is None:
+        port = 465 if use_ssl else (587 if use_tls else 25)
+
+    def _send():
+        if use_ssl:
+            context = ssl.create_default_context()
+            with smtplib.SMTP_SSL(host, port, context=context) as server:
+                code, capabilities = server.ehlo()
+                logger.debug("SMTP EHLO (SSL) response code: %s, capabilities: %s", code, capabilities)
+                if smtp.get("username") and not server.has_extn("auth"):
+                    raise RuntimeError("SMTP AUTH not supported on this endpoint/port.")
+                if smtp.get("username"):
+                    server.login(smtp["username"], smtp["password"])
+                server.sendmail(smtp["from_email"], [email], message.encode("utf-8"))
+        else:
+            context = ssl.create_default_context() if use_tls else None
+            with smtplib.SMTP(host, port) as server:
+                code, capabilities = server.ehlo()
+                logger.debug("SMTP EHLO response code: %s, capabilities: %s", code, capabilities)
+                if use_tls:
+                    server.starttls(context=context)
+                    code_tls, capabilities_tls = server.ehlo()
+                    logger.debug("SMTP EHLO after STARTTLS code: %s, capabilities: %s", code_tls, capabilities_tls)
+                if smtp.get("username") and not server.has_extn("auth"):
+                    raise RuntimeError("SMTP AUTH not supported on this endpoint/port.")
+                if smtp.get("username"):
+                    server.login(smtp["username"], smtp["password"])
+                server.sendmail(smtp["from_email"], [email], message.encode("utf-8"))
+
+    try:
+        _send()
+        return True
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.warning("First attempt to send temp password email failed: %s", exc)
+        try:
+            _send()  # Retry once in case of transient disconnects.
+            return True
+        except Exception as exc2:  # pylint: disable=broad-except
+            logger.error("Failed to send temp password email after retry: %s", exc2)
+            return False
+
+
 @app.function_name(name="UltravoxAgents")
 @app.route(route="ultravox/agents", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
 def ultravox_agents(req: func.HttpRequest) -> func.HttpResponse:
@@ -160,6 +234,31 @@ def clients_provision(req: func.HttpRequest) -> func.HttpResponse:
 
     db = SessionLocal()
     try:
+        # If a user already exists, stop provisioning and guide them to login/reset.
+        existing_user = db.query(User).filter_by(email=email).one_or_none()
+        if existing_user:
+            token = _generate_reset_token()
+            existing_user.reset_token = token
+            existing_user.reset_token_expires = datetime.utcnow() + timedelta(hours=1)
+            db.commit()
+            reset_link = f"{req.url.replace('/clients/provision', '/auth/reset-password')}?token={token}"
+            message = (
+                f"User already exists for {email}. Please login with this email. "
+                f"If you forgot your password, reset it here: {reset_link}"
+            )
+            return func.HttpResponse(
+                json.dumps(
+                    {
+                        "error": "user_exists",
+                        "message": message,
+                        "email": email,
+                        "reset_password_url": reset_link,
+                    }
+                ),
+                status_code=409,
+                mimetype="application/json",
+            )
+
         name_guess, summary = get_site_summary(website_url)
     except Exception as exc:  # pylint: disable=broad-except
         logger.error("Failed to crawl site: %s", exc)
@@ -240,6 +339,15 @@ def clients_provision(req: func.HttpRequest) -> func.HttpResponse:
 
         db.commit()
 
+        email_sent = False
+        if temp_password:
+            email_sent = _send_temp_password_email(
+                email=email,
+                temp_password=temp_password,
+                phone_number=phone_record.twilio_phone_number if phone_record else None,
+                website_url=client_record.website_url,
+            )
+
         response_payload = {
             "client_id": client_record.id,
             "name": client_record.name,
@@ -249,6 +357,7 @@ def clients_provision(req: func.HttpRequest) -> func.HttpResponse:
             "ultravox_agent_id": client_record.ultravox_agent_id,
             "phone_number": phone_record.twilio_phone_number,
             "twilio_sid": phone_record.twilio_sid,
+            "email_sent": email_sent,
         }
         return func.HttpResponse(json.dumps(response_payload), status_code=200, mimetype="application/json")
     except Exception as exc:  # pylint: disable=broad-except

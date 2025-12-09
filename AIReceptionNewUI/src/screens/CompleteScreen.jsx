@@ -1,6 +1,7 @@
 export default function CompleteScreen({
   status,
   responseMessage,
+  responseLink,
   provisionData,
   email,
   onGoHome,
@@ -59,7 +60,12 @@ export default function CompleteScreen({
       )}
       {status !== "success" && responseMessage && (
         <div className={`status ${status}`}>
-          {responseMessage}
+          <div>{responseMessage}</div>
+          {responseLink && (
+            <a href={responseLink} target="_blank" rel="noreferrer">
+              Reset your password
+            </a>
+          )}
         </div>
       )}
     </section>
