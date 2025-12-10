@@ -8,6 +8,7 @@ import LoadingScreen from "./screens/LoadingScreen";
 import EmailCaptureScreen from "./screens/EmailCaptureScreen";
 import CompleteScreen from "./screens/CompleteScreen";
 import ResetPasswordScreen from "./screens/ResetPasswordScreen";
+import PaymentScreen from "./screens/PaymentScreen";
 
 const STAGES = {
   LANDING: "landing",
@@ -17,7 +18,8 @@ const STAGES = {
   LOADING: "loading",
   EMAIL_CAPTURE: "emailCapture",
   COMPLETE: "complete",
-  RESET_PASSWORD: "resetPassword"
+  RESET_PASSWORD: "resetPassword",
+  PAYMENT: "payment"
 };
 
 export default function App() {
@@ -54,6 +56,7 @@ export default function App() {
   const [callsPage, setCallsPage] = useState(1);
   const [activeTab, setActiveTab] = useState("dashboard");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState(null);
   const dateRanges = useMemo(
     () => [
       { label: "Last 1 day", days: 1 },
@@ -195,8 +198,10 @@ export default function App() {
     setSystemPrompt("");
     setProvisionData(null);
     setLoadingPhase("crawl");
+    setSelectedPlan(null);
     setStage(STAGES.LANDING);
   };
+
 
   const handleLoginSubmit = async (event) => {
     event.preventDefault();
@@ -383,6 +388,16 @@ export default function App() {
       };
     });
     setStage(STAGES.DASHBOARD);
+  };
+
+  const handleSelectPlan = (planId) => {
+    setSelectedPlan(planId);
+    setStage(STAGES.PAYMENT);
+  };
+
+  const handlePaymentSubmit = () => {
+    setResponseMessage("We received your details and will confirm shortly.");
+    setStage(STAGES.LANDING);
   };
 
   const handleEmailSubmit = async (event) => {
@@ -834,6 +849,7 @@ export default function App() {
           <LandingScreen
             onTry={() => setStage(STAGES.CRAWL_FORM)}
             onLogin={() => setStage(STAGES.LOGIN)}
+            onSelectPlan={handleSelectPlan}
           />
         )}
 
@@ -932,6 +948,14 @@ export default function App() {
             email={email}
             onGoHome={handleGoHome}
             onGoToDashboard={handleGoToDashboard}
+          />
+        )}
+
+        {stage === STAGES.PAYMENT && (
+          <PaymentScreen
+            planId={selectedPlan}
+            onBack={handleGoHome}
+            onSubmit={handlePaymentSubmit}
           />
         )}
       </main>

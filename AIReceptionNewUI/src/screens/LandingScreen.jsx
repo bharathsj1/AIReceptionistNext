@@ -1,7 +1,8 @@
 import ThreeHero from "../components/ThreeHero";
+import PricingPackages from "../components/PricingPackages";
 import UltravoxDemo from "../components/UltravoxDemo";
 
-export default function LandingScreen({ onTry, onLogin }) {
+export default function LandingScreen({ onTry, onLogin, onSelectPlan }) {
   return (
     <>
       <section className="hero">
@@ -11,37 +12,18 @@ export default function LandingScreen({ onTry, onLogin }) {
           <p className="lead">
             Design, build, debug and ship your next AI receptionist in one suite.
           </p>
-          <div className="actions hero-actions">
-            <button className="primary" onClick={onTry}>
-              Try for free
-            </button>
-            <button className="ghost" onClick={onLogin}>
-              Login
-            </button>
-          </div>
         </div>
         <div className="hero-visual" aria-hidden="true">
           <ThreeHero />
         </div>
       </section>
 
-      <section className="logo-row" aria-label="Trusted by">
-        <div className="logo-track">
-          <span>AMD</span>
-          <span>Canon</span>
-          <span>Unity</span>
-          <span>JetBrains</span>
-          <span>GitHub</span>
-          <span>AMD</span>
-          <span>Canon</span>
-          <span>Unity</span>
-          <span>JetBrains</span>
-          <span>GitHub</span>
-        </div>
+      <section className="mt-28 md:mt-36">
+        <UltravoxDemo />
       </section>
 
-      <section className="mt-12 md:mt-16">
-        <UltravoxDemo />
+      <section className="mt-16 md:mt-20">
+        <PricingPackages onSelectPackage={onSelectPlan} />
       </section>
     </>
   );
