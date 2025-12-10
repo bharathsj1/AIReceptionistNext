@@ -10,7 +10,7 @@ from shared.config import get_required_setting
 
 logger = logging.getLogger(__name__)
 
-AGENT_ID = "0a6ea934-ddea-4819-a3a4-ab7475b1366e"
+DEFAULT_AGENT_ID = "0a6ea934-ddea-4819-a3a4-ab7475b1366e"
 ULTRAVOX_API_BASE = "https://api.ultravox.ai/api"
 
 
@@ -45,7 +45,20 @@ def create_ultravox_demo_call(req: func.HttpRequest) -> func.HttpResponse:
             mimetype="application/json",
         )
 
-    url = f"{ULTRAVOX_API_BASE}/agents/{AGENT_ID}/calls"
+    try:
+        body = req.get_json()
+    except ValueError:
+        body = {}
+
+    agent_id = None
+    if isinstance(body, dict):
+        agent_id = body.get("agentId") or body.get("agent_id")
+        if agent_id is not None and not isinstance(agent_id, str):
+            agent_id = None
+
+    agent_id = agent_id or DEFAULT_AGENT_ID
+
+    url = f"{ULTRAVOX_API_BASE}/agents/{agent_id}/calls"
     payload = _build_payload()
     headers = {
         "Content-Type": "application/json",

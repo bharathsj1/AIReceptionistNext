@@ -20,6 +20,11 @@ type TranscriptItem = {
   isFinal: boolean;
 };
 
+type AgentOption = {
+  id: string;
+  name: string;
+};
+
 const statusCopy: Record<CallStatus, string> = {
   idle: "Ready to start",
   connecting: "Connecting…",
@@ -43,10 +48,26 @@ const statusTone: Record<CallStatus, string> = {
 };
 
 export default function UltravoxDemo() {
+  const agentOptions: AgentOption[] = [
+    {
+      id: import.meta.env.VITE_ULTRAVOX_AGENT_DEMO1_ID ?? "0a6ea934-ddea-4819-a3a4-ab7475b1366e",
+      name: "Demo 1"
+    },
+    {
+      id: import.meta.env.VITE_ULTRAVOX_AGENT_DEMO2_ID ?? "",
+      name: "Demo 2"
+    },
+    {
+      id: import.meta.env.VITE_ULTRAVOX_AGENT_DEMO3_ID ?? "",
+      name: "Demo 3"
+    }
+  ];
+
   const [status, setStatus] = useState<CallStatus>("idle");
   const [isInCall, setIsInCall] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [transcripts, setTranscripts] = useState<TranscriptItem[]>([]);
+  const [selectedAgent, setSelectedAgent] = useState<AgentOption>(agentOptions[0]);
   const sessionRef = useRef<UltravoxSession | null>(null);
 
   useEffect(() => {
@@ -104,11 +125,22 @@ export default function UltravoxDemo() {
       return;
     }
 
+    if (!selectedAgent?.id) {
+      setError("Agent is not configured. Please set an Ultravox agent ID for this demo.");
+      return;
+    }
+
     setError(null);
     setStatus("connecting");
     setIsInCall(true);
     try {
-      const res = await fetch("/api/ultravox-demo-call", { method: "POST" });
+      const res = await fetch("/api/ultravox-demo-call", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ agentId: selectedAgent.id })
+      });
       if (!res.ok) {
         throw new Error("Failed to start Ultravox call");
       }
@@ -240,6 +272,33 @@ export default function UltravoxDemo() {
           <p className="mt-1 text-sm text-slate-600">
             Click the button and speak — our Ultravox agent will respond in real-time.
           </p>
+
+          <div className="mt-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+              Choose a demo agent
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {agentOptions.map((agent) => {
+                const isActive = selectedAgent.id === agent.id && selectedAgent.name === agent.name;
+                return (
+                  <button
+                    key={agent.name}
+                    type="button"
+                onClick={() => setSelectedAgent(agent)}
+                    disabled={isInCall && !isActive}
+                    className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1 ${
+                      isActive
+                        ? "border-indigo-200 bg-indigo-50 text-indigo-700 shadow-sm"
+                        : "border-slate-200 bg-white text-slate-700 hover:border-indigo-200 hover:text-indigo-700"
+                    } ${isInCall && !isActive ? "opacity-60" : ""}`}
+                  >
+                    <span className="h-2 w-2 rounded-full bg-indigo-500" />
+                    {agent.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
           <div className="mt-6 flex flex-col items-center gap-4">
             <div className="flex flex-wrap items-center justify-center gap-3">
