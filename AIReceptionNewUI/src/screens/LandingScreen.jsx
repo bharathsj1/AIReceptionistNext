@@ -1,4 +1,5 @@
 import ThreeHero from "../components/ThreeHero";
+import UltravoxDemo from "../components/UltravoxDemo";
 
 export default function LandingScreen({ onTry, onLogin }) {
   return (
@@ -37,6 +38,10 @@ export default function LandingScreen({ onTry, onLogin }) {
           <span>JetBrains</span>
           <span>GitHub</span>
         </div>
+      </section>
+
+      <section className="mt-12 md:mt-16">
+        <UltravoxDemo />
       </section>
     </>
   );

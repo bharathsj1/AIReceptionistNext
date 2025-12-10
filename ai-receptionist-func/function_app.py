@@ -16,3 +16,4 @@ import onboarding_endpoints  # noqa
 import prompt_endpoints  # noqa
 import auth_endpoints  # noqa
 import dashboard_endpoints  # noqa
+import ultravox_demo_endpoints  # noqa
