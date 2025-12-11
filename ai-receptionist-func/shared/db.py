@@ -46,6 +46,8 @@ class User(Base):
     reset_token = Column(String, nullable=True)
     reset_token_expires = Column(DateTime, nullable=True)
     is_admin = Column(Boolean, default=False)
+    business_name = Column(String, nullable=True)
+    business_number = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -62,6 +64,8 @@ class Client(Base):
     ultravox_agent_id = Column(String, nullable=True)
     notes = Column(Text, nullable=True)
     website_data = Column(Text, nullable=True)
+    business_name = Column(String, nullable=True)
+    business_phone = Column(String, nullable=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -81,6 +85,40 @@ class PhoneNumber(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     client = relationship("Client", back_populates="phone_numbers")
+
+
+class Subscription(Base):
+    __tablename__ = "subscriptions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, nullable=False, index=True)
+    plan_id = Column(String, nullable=False)
+    price_id = Column(String, nullable=True)
+    stripe_customer_id = Column(String, nullable=False)
+    stripe_subscription_id = Column(String, nullable=False, unique=True, index=True)
+    status = Column(String, nullable=False)
+    current_period_end = Column(DateTime, nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    payments = relationship("Payment", back_populates="subscription")
+    user = relationship("User")
+
+
+class Payment(Base):
+    __tablename__ = "payments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    subscription_id = Column(Integer, ForeignKey("subscriptions.id"), nullable=False)
+    stripe_invoice_id = Column(String, nullable=True, index=True)
+    stripe_payment_intent_id = Column(String, nullable=True, index=True)
+    amount = Column(Integer, nullable=False)
+    currency = Column(String, nullable=False, default="usd")
+    status = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    subscription = relationship("Subscription", back_populates="payments")
 
 
 class GoogleToken(Base):
@@ -122,10 +160,18 @@ def _ensure_optional_columns() -> None:
             conn.execute(text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS website_data TEXT"))
         if "user_id" not in client_columns:
             conn.execute(text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS user_id INTEGER"))
+        if "business_name" not in client_columns:
+            conn.execute(text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS business_name VARCHAR"))
+        if "business_phone" not in client_columns:
+            conn.execute(text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS business_phone VARCHAR"))
 
         user_columns = {col["name"] for col in inspector.get_columns("users")}
         if "is_admin" not in user_columns:
             conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE"))
+        if "business_name" not in user_columns:
+            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS business_name VARCHAR"))
+        if "business_number" not in user_columns:
+            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS business_number VARCHAR"))
 
         existing_tables = inspector.get_table_names()
         if "google_tokens" not in existing_tables:
@@ -144,6 +190,57 @@ def _ensure_optional_columns() -> None:
                         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                         FOREIGN KEY(user_id) REFERENCES users (id)
+                    )
+                    """
+                )
+            )
+
+        if "subscriptions" not in existing_tables:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS subscriptions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        email VARCHAR NOT NULL,
+                        plan_id VARCHAR NOT NULL,
+                        price_id VARCHAR,
+                        user_id INTEGER,
+                        stripe_customer_id VARCHAR NOT NULL,
+                        stripe_subscription_id VARCHAR NOT NULL UNIQUE,
+                        status VARCHAR NOT NULL,
+                        current_period_end DATETIME,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY(user_id) REFERENCES users (id)
+                    )
+                    """
+                )
+            )
+        else:
+            sub_columns = {col["name"] for col in inspector.get_columns("subscriptions")}
+            if "price_id" not in sub_columns:
+                conn.execute(
+                    text("ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS price_id VARCHAR")
+                )
+            if "user_id" not in sub_columns:
+                conn.execute(
+                    text("ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id)")
+                )
+
+        if "payments" not in existing_tables:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS payments (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        subscription_id INTEGER NOT NULL,
+                        stripe_invoice_id VARCHAR,
+                        stripe_payment_intent_id VARCHAR,
+                        amount INTEGER NOT NULL,
+                        currency VARCHAR NOT NULL DEFAULT 'usd',
+                        status VARCHAR NOT NULL,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY(subscription_id) REFERENCES subscriptions (id)
                     )
                     """
                 )

@@ -5,7 +5,8 @@ export default function CompleteScreen({
   provisionData,
   email,
   onGoHome,
-  onGoToDashboard
+  onGoToDashboard,
+  onStartCrawl
 }) {
   return (
     <section className="progress-card">
@@ -13,12 +14,12 @@ export default function CompleteScreen({
         <p className="eyebrow">All set</p>
         <h2>
           {status === "success"
-            ? "Congratulations! Your AI receptionist is live."
+            ? "Welcome to Advanced Voice AI Receptionist"
             : "We could not finish setup"}
         </h2>
         <p className="lead narrow">
           {status === "success"
-            ? `Linked to ${email || "your email"}.`
+            ? responseMessage || "Your payment was successful and your AI receptionist is ready."
             : responseMessage || "Please try again or adjust your inputs."}
         </p>
       </div>
@@ -52,8 +53,8 @@ export default function CompleteScreen({
             <button className="ghost small" type="button" onClick={onGoHome}>
               ← Back to home
             </button>
-            <button className="primary" type="button" onClick={onGoToDashboard}>
-              Go to dashboard
+            <button className="primary" type="button" onClick={onStartCrawl}>
+              Get started
             </button>
           </div>
         </div>

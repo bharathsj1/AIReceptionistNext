@@ -230,6 +230,178 @@ def auth_login(req: func.HttpRequest) -> func.HttpResponse:
         db.close()
 
 
+@app.function_name(name="AuthEmailExists")
+@app.route(route="auth/email-exists", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+def auth_email_exists(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Check if a user with the given email already exists.
+    Query param: ?email=<email>
+    """
+    email = req.params.get("email")
+    if not email:
+        return func.HttpResponse(
+            json.dumps({"error": "email is required"}),
+            status_code=400,
+            mimetype="application/json",
+        )
+    db = SessionLocal()
+    try:
+        existing = db.query(User).filter_by(email=email).one_or_none()
+        return func.HttpResponse(
+            json.dumps({"exists": existing is not None}),
+            status_code=200,
+            mimetype="application/json",
+        )
+    finally:
+        db.close()
+
+
+@app.function_name(name="ClientBusinessDetails")
+@app.route(route="clients/business-details", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+def client_business_details(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Create or update a client with business name/phone after signup.
+    Payload: { email, businessName, businessPhone, websiteUrl? }
+    """
+    try:
+        body = req.get_json()
+    except ValueError:
+        body = None
+    email = (body or {}).get("email")
+    business_name = (body or {}).get("businessName")
+    business_phone = (body or {}).get("businessPhone")
+    website_url = (body or {}).get("websiteUrl") or "pending"
+
+    if not email or not business_name or not business_phone:
+        return func.HttpResponse(
+            json.dumps({"error": "email, businessName, and businessPhone are required"}),
+            status_code=400,
+            mimetype="application/json",
+        )
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter_by(email=email).one_or_none()
+        if user:
+            user.business_name = business_name
+            user.business_number = business_phone
+            db.flush()
+        client = db.query(Client).filter_by(email=email).one_or_none()
+        if client:
+            client.business_name = business_name
+            client.business_phone = business_phone
+            client.name = business_name
+            client.user_id = user.id if user else client.user_id
+            db.commit()
+            return func.HttpResponse(
+                json.dumps({"client_id": client.id, "email": client.email}),
+                status_code=200,
+                mimetype="application/json",
+            )
+
+        client = Client(
+            email=email,
+            website_url=website_url,
+            name=business_name,
+            business_name=business_name,
+            business_phone=business_phone,
+            user_id=user.id if user else None,
+        )
+        db.add(client)
+        db.commit()
+        return func.HttpResponse(
+            json.dumps({"client_id": client.id, "email": client.email}),
+            status_code=201,
+            mimetype="application/json",
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        db.rollback()
+        logger.error("Failed to save client details: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "Failed to save client details", "details": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+        )
+    finally:
+        db.close()
+
+
+@app.function_name(name="UserByEmail")
+@app.route(route="auth/user-by-email", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+def user_by_email(req: func.HttpRequest) -> func.HttpResponse:
+    """Return user fields including business name/number."""
+    email = req.params.get("email")
+    if not email:
+        return func.HttpResponse(
+            json.dumps({"error": "email is required"}),
+            status_code=400,
+            mimetype="application/json",
+        )
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter_by(email=email).one_or_none()
+        if not user:
+            return func.HttpResponse(
+                json.dumps({"error": "not found"}),
+                status_code=404,
+                mimetype="application/json",
+            )
+        payload = {
+            "user_id": user.id,
+            "email": user.email,
+            "business_name": user.business_name,
+            "business_number": user.business_number,
+        }
+        return func.HttpResponse(
+            json.dumps(payload),
+            status_code=200,
+            mimetype="application/json",
+        )
+    finally:
+        db.close()
+
+@app.function_name(name="ClientByEmail")
+@app.route(route="clients/by-email", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+def client_by_email(req: func.HttpRequest) -> func.HttpResponse:
+    """Return client profile by email, including business fields."""
+    email = req.params.get("email")
+    if not email:
+        return func.HttpResponse(
+            json.dumps({"error": "email is required"}),
+            status_code=400,
+            mimetype="application/json",
+        )
+    db = SessionLocal()
+    try:
+        client = db.query(Client).filter_by(email=email).one_or_none()
+        if not client:
+            return func.HttpResponse(
+                json.dumps({"error": "not found"}),
+                status_code=404,
+                mimetype="application/json",
+            )
+        user = None
+        if client.user_id:
+            user = db.query(User).filter_by(id=client.user_id).one_or_none()
+        payload = {
+            "client_id": client.id,
+            "email": client.email,
+            "business_name": client.business_name,
+            "business_phone": client.business_phone,
+            "website_url": client.website_url,
+            "user_id": client.user_id,
+            "user_business_name": user.business_name if user else None,
+            "user_business_number": user.business_number if user else None,
+        }
+        return func.HttpResponse(
+            json.dumps(payload),
+            status_code=200,
+            mimetype="application/json",
+        )
+    finally:
+        db.close()
+
+
 @app.function_name(name="AuthForgotPassword")
 @app.route(route="auth/forgot-password", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
 def auth_forgot_password(req: func.HttpRequest) -> func.HttpResponse:

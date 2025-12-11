@@ -10,3 +10,4 @@ sqlalchemy
 twilio
 psycopg2-binary
 tqdm>=4.66.0
+stripe

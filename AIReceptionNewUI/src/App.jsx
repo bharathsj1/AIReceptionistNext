@@ -9,6 +9,10 @@ import EmailCaptureScreen from "./screens/EmailCaptureScreen";
 import CompleteScreen from "./screens/CompleteScreen";
 import ResetPasswordScreen from "./screens/ResetPasswordScreen";
 import PaymentScreen from "./screens/PaymentScreen";
+import PricingPackages from "./components/PricingPackages";
+import CreateAccountScreen from "./screens/CreateAccountScreen";
+import SignupSurveyScreen from "./screens/SignupSurveyScreen";
+import BusinessDetailsScreen from "./screens/BusinessDetailsScreen";
 
 const STAGES = {
   LANDING: "landing",
@@ -19,7 +23,11 @@ const STAGES = {
   EMAIL_CAPTURE: "emailCapture",
   COMPLETE: "complete",
   RESET_PASSWORD: "resetPassword",
-  PAYMENT: "payment"
+  PACKAGES: "packages",
+  PAYMENT: "payment",
+  SIGNUP: "signup",
+  SIGNUP_SURVEY: "signupSurvey",
+  BUSINESS_DETAILS: "businessDetails"
 };
 
 export default function App() {
@@ -73,6 +81,18 @@ export default function App() {
   const [calendarError, setCalendarError] = useState("");
   const googleStateRef = useRef(null);
   const [clientData, setClientData] = useState(null);
+  const [signupName, setSignupName] = useState("");
+  const [signupEmail, setSignupEmail] = useState("");
+  const [signupPassword, setSignupPassword] = useState("");
+  const [signupRole, setSignupRole] = useState("");
+  const [signupUseCase, setSignupUseCase] = useState("");
+  const [signupReferral, setSignupReferral] = useState("");
+  const [businessName, setBusinessName] = useState("");
+  const [businessPhone, setBusinessPhone] = useState("");
+  const [signupLoading, setSignupLoading] = useState(false);
+  const [signupError, setSignupError] = useState("");
+  const [businessLoading, setBusinessLoading] = useState(false);
+  const [businessError, setBusinessError] = useState("");
 
   const getSelectedDays = useCallback(() => {
     const match = dateRanges.find((r) => r.label === dateRange);
@@ -187,6 +207,20 @@ export default function App() {
     setStage(STAGES.CRAWL_FORM);
   };
 
+  const handleStartCrawlFlow = () => {
+    setStatus("idle");
+    setResponseMessage("");
+    setResponseLink(null);
+    setShowLoader(false);
+    setEmail(email || "");
+    setUrl("");
+    setCrawlData(null);
+    setSystemPrompt("");
+    setProvisionData(null);
+    setLoadingPhase("crawl");
+    setStage(STAGES.CRAWL_FORM);
+  };
+
   const handleGoHome = () => {
     setStatus("idle");
     setResponseMessage("");
@@ -227,17 +261,79 @@ export default function App() {
         throw new Error(data?.error || data?.details || "Login failed");
       }
 
+      const userEmail = data?.email || loginEmail.trim();
+      const displayName =
+        data?.name ||
+        (userEmail && userEmail.includes("@") ? userEmail.split("@")[0] : userEmail);
+
       setUser({
         id: data?.user_id,
-        email: data?.email,
-        name: data?.email
+        email: userEmail,
+        name: displayName
       });
-      setEmail(data?.email || "");
+      setEmail(userEmail || "");
+      setSignupEmail(userEmail || "");
+      setSignupName(displayName || "");
+
+      // Fetch user profile and client profile to decide where to resume.
+      let userProfile = null;
+      let clientProfile = null;
+      try {
+        const userRes = await fetch(
+          `/api/auth/user-by-email?email=${encodeURIComponent(userEmail)}`
+        );
+        if (userRes.ok) {
+          userProfile = await userRes.json().catch(() => null);
+        }
+        const clientRes = await fetch(
+          `/api/clients/by-email?email=${encodeURIComponent(userEmail)}`
+        );
+        if (clientRes.ok) {
+          clientProfile = await clientRes.json().catch(() => null);
+        }
+      } catch {
+        clientProfile = null;
+      }
+
+      if (clientProfile) {
+        setClientData(clientProfile);
+        setBusinessName(clientProfile.business_name || "");
+        setBusinessPhone(clientProfile.business_phone || "");
+      }
+
+      const businessNameFromProfile =
+        userProfile?.business_name ||
+        clientProfile?.business_name ||
+        clientProfile?.user_business_name ||
+        "";
+      const businessPhoneFromProfile =
+        userProfile?.business_number ||
+        clientProfile?.business_phone ||
+        clientProfile?.user_business_number ||
+        "";
+      const websiteUrlFromProfile = clientProfile?.website_url || "";
+      const missingBiz =
+        !businessNameFromProfile.trim() || !businessPhoneFromProfile.trim();
+      const missingWebsite =
+        !websiteUrlFromProfile || !String(websiteUrlFromProfile).trim() || websiteUrlFromProfile === "pending";
+
       setIsLoggedIn(true);
       setActiveTab("dashboard");
-      setStage(STAGES.DASHBOARD);
-      setStatus("success");
-      setResponseMessage("Logged in successfully.");
+      if (missingBiz) {
+        setStage(STAGES.BUSINESS_DETAILS);
+        setStatus("idle");
+        setResponseMessage("");
+      } else if (missingWebsite) {
+        setUrl("");
+        setStage(STAGES.CRAWL_FORM);
+        setStatus("idle");
+        setResponseMessage("");
+      } else {
+        setUrl(websiteUrlFromProfile || "");
+        setStage(STAGES.DASHBOARD);
+        setStatus("success");
+        setResponseMessage("Logged in successfully.");
+      }
     } catch (error) {
       setStatus("error");
       setResponseMessage(error?.message || "Login failed");
@@ -351,6 +447,99 @@ export default function App() {
     setResponseMessage("");
   };
 
+  const goToPackages = () => {
+    setStage(STAGES.PACKAGES);
+    setStatus("idle");
+    setResponseMessage("");
+  };
+
+  const goToSignup = () => {
+    setStage(STAGES.SIGNUP);
+    setStatus("idle");
+    setResponseMessage("");
+    setSignupError("");
+  };
+
+  const goToSignupSurvey = () => {
+    setStage(STAGES.SIGNUP_SURVEY);
+    setStatus("idle");
+    setResponseMessage("");
+    setSignupError("");
+  };
+
+  const goToBusinessDetails = () => {
+    setStage(STAGES.BUSINESS_DETAILS);
+    setStatus("idle");
+    setResponseMessage("");
+    setSignupError("");
+    setBusinessError("");
+  };
+
+  const handleCreateAccountSubmit = async ({ name, email, password }) => {
+    setSignupError("");
+    setSignupLoading(true);
+    try {
+      const res = await fetch("/api/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, name })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+      const msg =
+        res.status === 409
+          ? "Email is already registered. Please log in or use a different email."
+          : data?.error || "Signup failed";
+      setSignupError(msg);
+        return;
+      }
+      setSignupName(name);
+      setSignupEmail(email);
+      setSignupPassword(password);
+      goToBusinessDetails();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Signup failed. Please try again.";
+      setSignupError(msg);
+    } finally {
+      setSignupLoading(false);
+    }
+  };
+
+  const handleBusinessDetailsSubmit = async ({ businessName: nameInput, businessPhone: phoneInput }) => {
+    setBusinessError("");
+    if (!nameInput || !phoneInput) {
+      setBusinessError("Please add your business name and phone number.");
+      return;
+    }
+    setBusinessLoading(true);
+    try {
+      if (!signupEmail) {
+        throw new Error("Please create an account first.");
+      }
+      const res = await fetch("/api/clients/business-details", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: signupEmail,
+          businessName: nameInput,
+          businessPhone: phoneInput
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = data?.error || "Could not save business details.";
+        setBusinessError(msg);
+        return;
+      }
+      setStage(STAGES.CRAWL_FORM);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Could not save business details.";
+      setBusinessError(msg);
+    } finally {
+      setBusinessLoading(false);
+    }
+  };
+
   const handleLogout = () => {
     setIsLoggedIn(false);
     setStage(STAGES.LANDING);
@@ -396,8 +585,9 @@ export default function App() {
   };
 
   const handlePaymentSubmit = () => {
-    setResponseMessage("We received your details and will confirm shortly.");
-    setStage(STAGES.LANDING);
+    setResponseMessage("Payment successful.");
+    setStage(STAGES.COMPLETE);
+    setStatus("success");
   };
 
   const handleEmailSubmit = async (event) => {
@@ -737,6 +927,15 @@ export default function App() {
   // Ensure logged-in users retain access to dashboard across refreshes
   useEffect(() => {
     if (!isLoggedIn) return;
+    const onboardingStages = new Set([
+      STAGES.BUSINESS_DETAILS,
+      STAGES.CRAWL_FORM,
+      STAGES.SIGNUP,
+      STAGES.SIGNUP_SURVEY,
+      STAGES.PACKAGES,
+      STAGES.PAYMENT,
+    ]);
+    if (onboardingStages.has(stage)) return;
     if (stage === STAGES.DASHBOARD) return;
     setStage(STAGES.DASHBOARD);
     setActiveTab("dashboard");
@@ -764,13 +963,14 @@ export default function App() {
         email,
         provisionData,
         phoneNumbers,
-        activeTab
+        activeTab,
+        selectedPlan
       };
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     } catch (error) {
       console.error("Failed to persist state", error);
     }
-  }, [stage, isLoggedIn, user, email, provisionData, phoneNumbers, activeTab]);
+  }, [stage, isLoggedIn, user, email, provisionData, phoneNumbers, activeTab, selectedPlan]);
 
   useEffect(() => {
     if (!hasMountedHistoryRef.current) {
@@ -852,6 +1052,11 @@ export default function App() {
             onSelectPlan={handleSelectPlan}
           />
         )}
+        {stage === STAGES.PACKAGES && (
+          <section className="mt-10">
+            <PricingPackages onSelectPackage={handleSelectPlan} />
+          </section>
+        )}
 
         {stage === STAGES.LOGIN && (
           <LoginScreen
@@ -864,8 +1069,55 @@ export default function App() {
             onEmailChange={setLoginEmail}
             onPasswordChange={setLoginPassword}
             onGoogleLogin={beginGoogleLogin}
-            onCreateAccount={goToCrawl}
+            onCreateAccount={goToSignup}
             onForgotPassword={handleForgotPassword}
+          />
+        )}
+
+        {stage === STAGES.SIGNUP && (
+          <CreateAccountScreen
+            name={signupName}
+            email={signupEmail}
+            password={signupPassword}
+            onNameChange={setSignupName}
+            onEmailChange={setSignupEmail}
+            onPasswordChange={setSignupPassword}
+            onSubmit={handleCreateAccountSubmit}
+            onBackToLogin={() => setStage(STAGES.LOGIN)}
+            loading={signupLoading}
+            error={signupError}
+          />
+        )}
+
+        {stage === STAGES.SIGNUP_SURVEY && (
+          <SignupSurveyScreen
+            name={signupName}
+            role={signupRole}
+            useCase={signupUseCase}
+            referral={signupReferral}
+            onRoleChange={setSignupRole}
+            onUseCaseChange={setSignupUseCase}
+            onReferralChange={setSignupReferral}
+            onContinue={goToBusinessDetails}
+          />
+        )}
+
+        {stage === STAGES.BUSINESS_DETAILS && (
+          <BusinessDetailsScreen
+            userName={signupName}
+            name={businessName}
+            phone={businessPhone}
+            onNameChange={setBusinessName}
+            onPhoneChange={setBusinessPhone}
+            onContinue={() =>
+              handleBusinessDetailsSubmit({
+                businessName: businessName,
+                businessPhone: businessPhone
+              })
+            }
+            onBack={goToSignup}
+            loading={businessLoading}
+            error={businessError}
           />
         )}
 
@@ -916,6 +1168,7 @@ export default function App() {
             onSubmit={handleSubmit}
             onUrlChange={setUrl}
             onBack={() => setStage(STAGES.LANDING)}
+            onSkipWebsite={() => setStage(STAGES.PACKAGES)}
           />
         )}
 
@@ -948,6 +1201,7 @@ export default function App() {
             email={email}
             onGoHome={handleGoHome}
             onGoToDashboard={handleGoToDashboard}
+            onStartCrawl={handleStartCrawlFlow}
           />
         )}
 

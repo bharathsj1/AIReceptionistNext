@@ -966,6 +966,12 @@ body {
   width: 100%;
   height: 34px;
   line-height: 34px;
+  color: #0b1224;
+  background: #f8fafc;
+}
+
+.login-card input::placeholder {
+  color: #94a3b8;
 }
 
 .link-row {
@@ -1563,5 +1569,305 @@ body {
 
   .email-capture-layout {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Signup card */
+.signup-card-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 24px 0 40px;
+}
+
+.signup-modern-card {
+  width: 100%;
+  max-width: 780px;
+  background: rgba(255, 255, 255, 0.96);
+  border-radius: 24px;
+  padding: 32px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+}
+
+.signup-grid {
+  display: grid;
+  grid-template-columns: 1fr 0.9fr;
+  gap: 20px;
+}
+
+.signup-left {
+  display: grid;
+  gap: 12px;
+  color: #0b1224;
+}
+
+.signup-left h2,
+.signup-left p,
+.signup-left .lead,
+.signup-left .signup-label,
+.signup-left .tiny,
+.signup-left .hint-row {
+  color: #0b1224;
+}
+
+.signup-right {
+  background: linear-gradient(135deg, #2563eb, #3b82f6);
+  border-radius: 16px;
+  padding: 18px;
+  color: #f8fafc;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.signup-highlight h4 {
+  margin: 6px 0 10px;
+}
+
+.signup-highlight ul {
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.5;
+}
+
+.signup-form {
+  display: grid;
+  gap: 12px;
+}
+
+.signup-label {
+  display: grid;
+  gap: 6px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.signup-label input {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  outline: none;
+  transition: border 120ms ease, box-shadow 120ms ease;
+}
+
+.signup-label input:focus {
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+}
+
+.tiny {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.hint-row {
+  font-size: 14px;
+}
+
+@media (max-width: 900px) {
+  .signup-grid {
+    grid-template-columns: 1fr;
+  }
+  .signup-right {
+    order: -1;
+  }
+}
+
+/* Survey layout */
+.survey-layout {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  min-height: 70vh;
+  background: linear-gradient(90deg, #f9fafb 0%, #f1f5f9 50%, #2196f3 50%, #1d8fe2 100%);
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.25);
+}
+
+.survey-left {
+  padding: 32px;
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  background: #f9fafb;
+}
+
+.survey-right {
+  position: relative;
+  background: #2196f3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pulse-circle {
+  width: 320px;
+  height: 320px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #0b1a2d 0%, #0b1a2d 10%, rgba(0, 0, 0, 0.1) 45%, #2196f3 70%, #48a9f8 100%);
+}
+
+.brand-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 800;
+  color: #0b1a2d;
+}
+
+.brand-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3b82f6, #06b6d4);
+}
+
+.survey-field {
+  display: grid;
+  gap: 6px;
+}
+
+.survey-field label {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.survey-field select {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 14px;
+  outline: none;
+  background: white;
+}
+
+.survey-continue {
+  margin-top: 12px;
+  background: linear-gradient(135deg, #60a5fa, #2563eb);
+  border: none;
+  color: white;
+  padding: 12px 18px;
+  border-radius: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  width: 160px;
+  text-align: center;
+}
+
+.survey-continue:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@media (max-width: 900px) {
+  .survey-layout {
+    grid-template-columns: 1fr;
+  }
+  .survey-right {
+    display: none;
+  }
+}
+
+/* Business details */
+.business-layout {
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr;
+  min-height: 70vh;
+  background: linear-gradient(90deg, #f9fbff 0%, #f2f6ff 50%, #e9f1ff 50%, #e9f1ff 100%);
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.15);
+}
+
+.business-left {
+  padding: 32px;
+  display: grid;
+  gap: 16px;
+  align-content: start;
+  color: #0b1224;
+}
+
+.business-field {
+  display: grid;
+  gap: 6px;
+}
+
+.business-field input {
+  border: 1px solid #dbe3f0;
+  border-radius: 12px;
+  padding: 12px;
+  font-size: 15px;
+  outline: none;
+  color: #0b1224;
+  background: #ffffff;
+}
+
+.business-left label,
+.business-left h3,
+.business-left p {
+  color: #0b1224;
+}
+
+.char-count {
+  text-align: right;
+  font-size: 12px;
+  color: #475569;
+}
+
+.phone-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #dbe3f0;
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #f5f8ff;
+}
+
+.phone-input input {
+  border: none;
+  outline: none;
+  flex: 1;
+  background: transparent;
+  font-size: 15px;
+}
+
+.business-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.business-right {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #e9f1ff;
+  color: #0b1224;
+}
+
+.business-card {
+  width: 360px;
+  background: white;
+  border-radius: 18px;
+  padding: 18px;
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.12);
+  display: grid;
+  gap: 10px;
+  color: #0b1224;
+}
+
+.form-error {
+  margin-top: 6px;
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+@media (max-width: 900px) {
+  .business-layout {
+    grid-template-columns: 1fr;
+  }
+  .business-right {
+    display: none;
   }
 }

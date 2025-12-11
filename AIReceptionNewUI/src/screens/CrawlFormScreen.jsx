@@ -1,4 +1,12 @@
-export default function CrawlFormScreen({ url, status, responseMessage, onSubmit, onUrlChange, onBack }) {
+export default function CrawlFormScreen({
+  url,
+  status,
+  responseMessage,
+  onSubmit,
+  onUrlChange,
+  onBack,
+  onSkipWebsite
+}) {
   return (
     <section className="crawl-layout">
       <div className="form-card">
@@ -33,9 +41,15 @@ export default function CrawlFormScreen({ url, status, responseMessage, onSubmit
           <p className="hint">POST to /api/crawl-kb</p>
         </form>
 
-        <button className="ghost small" onClick={onBack}>
-          ← Back to landing
-        </button>
+        <div className="input-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+          <button className="ghost small" onClick={onBack}>
+            ← Back
+          </button>
+          <button type="button" className="ghost small" onClick={onSkipWebsite}>
+            I don't have a website
+          </button>
+        </div>
+
         {responseMessage && <div className={`status ${status}`}>{responseMessage}</div>}
       </div>
       <aside className="crawl-aside">
