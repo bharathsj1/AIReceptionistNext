@@ -9,6 +9,7 @@ import EmailCaptureScreen from "./screens/EmailCaptureScreen";
 import CompleteScreen from "./screens/CompleteScreen";
 import ResetPasswordScreen from "./screens/ResetPasswordScreen";
 import PaymentScreen from "./screens/PaymentScreen";
+import PaymentSuccessScreen from "./screens/PaymentSuccessScreen";
 import PricingPackages from "./components/PricingPackages";
 import CreateAccountScreen from "./screens/CreateAccountScreen";
 import SignupSurveyScreen from "./screens/SignupSurveyScreen";
@@ -25,6 +26,7 @@ const STAGES = {
   RESET_PASSWORD: "resetPassword",
   PACKAGES: "packages",
   PAYMENT: "payment",
+  PAYMENT_SUCCESS: "paymentSuccess",
   SIGNUP: "signup",
   SIGNUP_SURVEY: "signupSurvey",
   BUSINESS_DETAILS: "businessDetails"
@@ -93,6 +95,7 @@ export default function App() {
   const [signupError, setSignupError] = useState("");
   const [businessLoading, setBusinessLoading] = useState(false);
   const [businessError, setBusinessError] = useState("");
+  const [paymentInfo, setPaymentInfo] = useState(null);
 
   const getSelectedDays = useCallback(() => {
     const match = dateRanges.find((r) => r.label === dateRange);
@@ -182,8 +185,29 @@ export default function App() {
 
       setCrawlData(data);
       setResponseMessage("All website data loaded fine.");
+      // Persist website URL to clients table (best-effort)
+      const websiteUrl = trimmed;
+      const fallbackBusiness = businessName || data?.business_name || "Pending business";
+      const fallbackPhone = businessPhone || "+10000000000";
+      const payload = {
+        email: signupEmail || email || "",
+        businessName: fallbackBusiness,
+        businessPhone: fallbackPhone,
+        websiteUrl,
+        websiteData: data || {}
+      };
+      try {
+        await fetch("/api/clients/business-details", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+      } catch (persistErr) {
+        console.warn("Failed to save website URL", persistErr);
+      }
       setStatus("success");
-      setStage(STAGES.EMAIL_CAPTURE);
+      // After a successful crawl, send the user to package selection
+      setStage(STAGES.PACKAGES);
     } catch (error) {
       setStatus("error");
       setResponseMessage(
@@ -584,14 +608,35 @@ export default function App() {
     setStage(STAGES.PAYMENT);
   };
 
-  const handlePaymentSubmit = () => {
-    setResponseMessage("Payment successful.");
-    setStage(STAGES.COMPLETE);
+  const handlePaymentSubmit = async (info) => {
+    setPaymentInfo(info || null);
     setStatus("success");
+    setResponseMessage("Payment successful.");
+    setStage(STAGES.PAYMENT_SUCCESS);
   };
 
   const handleEmailSubmit = async (event) => {
     event.preventDefault();
+    await runProvisionFlow();
+  };
+
+  const runProvisionFlow = async () => {
+    const provisionEmail = signupEmail || email || loginEmail || "";
+    const provisionWebsite =
+      url ||
+      crawlData?.website_url ||
+      crawlData?.url ||
+      clientData?.website_url ||
+      "";
+
+    if (!provisionEmail || !provisionWebsite) {
+      setStatus("error");
+      setResponseMessage("Missing required fields: email and website URL.");
+      setResponseLink(null);
+      setShowLoader(false);
+      return;
+    }
+
     setStatus("loading");
     setResponseMessage("");
     setResponseLink(null);
@@ -634,8 +679,8 @@ export default function App() {
       setSystemPrompt(derivedPrompt);
 
       const provisionPayload = {
-        email,
-        website_url: url,
+        email: provisionEmail,
+        website_url: provisionWebsite,
         system_prompt: derivedPrompt
       };
 
@@ -670,10 +715,62 @@ export default function App() {
         .catch(async () => ({ raw: await provisionRes.text() }));
 
       setProvisionData(provData);
+      // Attempt to persist agent + number info
+      const agentId =
+        provData?.agent_id ||
+        provData?.agentId ||
+        provData?.ultravox_agent_id ||
+        null;
+      let aiNumber =
+        provData?.phone_number ||
+        provData?.phone ||
+        provData?.twilio_number ||
+        null;
+      if (!aiNumber) {
+        try {
+          const dashRes = await fetch(
+            `${API_URLS.dashboard}?email=${encodeURIComponent(provisionEmail)}`
+          );
+          const dashData = await dashRes.json().catch(() => ({}));
+          const phones = dashData?.phone_numbers || dashData?.numbers || [];
+          aiNumber =
+            phones?.[0]?.phone_number ||
+            phones?.[0]?.twilio_phone_number ||
+            phones?.[0] ||
+            aiNumber;
+        } catch (err) {
+          console.warn("Unable to fetch dashboard numbers", err);
+        }
+      }
+      if (agentId || aiNumber) {
+        try {
+          await fetch(API_URLS.dashboardAgent, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            mode: "cors",
+            body: JSON.stringify({
+              email: provisionEmail,
+              agent_id: agentId,
+              ai_number: aiNumber
+            })
+          });
+        } catch (err) {
+          console.warn("Failed to persist agent/number", err);
+        }
+      }
       setStatus("success");
       setResponseMessage("Your AI receptionist is ready!");
       setResponseLink(null);
-      setStage(STAGES.COMPLETE);
+      // Clear transient inputs for next run
+      setUrl("");
+      setCrawlData(null);
+      setBusinessName("");
+      setBusinessPhone("");
+      setSelectedPlan(null);
+      // Go straight to dashboard after provisioning completes
+      setActiveTab("dashboard");
+      setIsLoggedIn(true);
+      setStage(STAGES.DASHBOARD);
     } catch (error) {
       setStatus("error");
       setResponseMessage(
@@ -934,6 +1031,7 @@ export default function App() {
       STAGES.SIGNUP_SURVEY,
       STAGES.PACKAGES,
       STAGES.PAYMENT,
+      STAGES.PAYMENT_SUCCESS,
     ]);
     if (onboardingStages.has(stage)) return;
     if (stage === STAGES.DASHBOARD) return;
@@ -1054,7 +1152,7 @@ export default function App() {
         )}
         {stage === STAGES.PACKAGES && (
           <section className="mt-10">
-            <PricingPackages onSelectPackage={handleSelectPlan} />
+            <PricingPackages onSelectPackage={handleSelectPlan} showCrawlSuccess />
           </section>
         )}
 
@@ -1210,6 +1308,13 @@ export default function App() {
             planId={selectedPlan}
             onBack={handleGoHome}
             onSubmit={handlePaymentSubmit}
+            initialEmail={signupEmail || email}
+          />
+        )}
+        {stage === STAGES.PAYMENT_SUCCESS && (
+          <PaymentSuccessScreen
+            paymentInfo={paymentInfo}
+            onContinue={runProvisionFlow}
           />
         )}
       </main>

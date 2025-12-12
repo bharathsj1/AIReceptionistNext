@@ -234,31 +234,6 @@ def clients_provision(req: func.HttpRequest) -> func.HttpResponse:
 
     db = SessionLocal()
     try:
-        # If a user already exists, stop provisioning and guide them to login/reset.
-        existing_user = db.query(User).filter_by(email=email).one_or_none()
-        if existing_user:
-            token = _generate_reset_token()
-            existing_user.reset_token = token
-            existing_user.reset_token_expires = datetime.utcnow() + timedelta(hours=1)
-            db.commit()
-            reset_link = f"{req.url.replace('/clients/provision', '/auth/reset-password')}?token={token}"
-            message = (
-                f"User already exists for {email}. Please login with this email. "
-                f"If you forgot your password, reset it here: {reset_link}"
-            )
-            return func.HttpResponse(
-                json.dumps(
-                    {
-                        "error": "user_exists",
-                        "message": message,
-                        "email": email,
-                        "reset_password_url": reset_link,
-                    }
-                ),
-                status_code=409,
-                mimetype="application/json",
-            )
-
         name_guess, summary = get_site_summary(website_url)
     except Exception as exc:  # pylint: disable=broad-except
         logger.error("Failed to crawl site: %s", exc)
@@ -279,9 +254,9 @@ def clients_provision(req: func.HttpRequest) -> func.HttpResponse:
             db.add(client_record)
             db.flush()
 
-        # Ensure a user exists; create with a temporary password if new.
-        user, temp_password = _ensure_user_with_temp_password(db, email)
-        client_record.user_id = user.id
+        # Link to an existing user if present; do not create new accounts here.
+        user = db.query(User).filter_by(email=email).one_or_none()
+        client_record.user_id = user.id if user else client_record.user_id
 
         if not client_record.ultravox_agent_id:
             agent_name = name_guess or email
@@ -339,25 +314,14 @@ def clients_provision(req: func.HttpRequest) -> func.HttpResponse:
 
         db.commit()
 
-        email_sent = False
-        if temp_password:
-            email_sent = _send_temp_password_email(
-                email=email,
-                temp_password=temp_password,
-                phone_number=phone_record.twilio_phone_number if phone_record else None,
-                website_url=client_record.website_url,
-            )
-
         response_payload = {
             "client_id": client_record.id,
             "name": client_record.name,
             "email": client_record.email,
-            "temp_password": temp_password,
             "website_url": client_record.website_url,
             "ultravox_agent_id": client_record.ultravox_agent_id,
             "phone_number": phone_record.twilio_phone_number,
             "twilio_sid": phone_record.twilio_sid,
-            "email_sent": email_sent,
         }
         return func.HttpResponse(json.dumps(response_payload), status_code=200, mimetype="application/json")
     except Exception as exc:  # pylint: disable=broad-except

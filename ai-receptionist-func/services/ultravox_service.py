@@ -1,11 +1,11 @@
 import logging
+import re
 import time
-import uuid
 from typing import Dict, List
 
 import httpx
 
-from services.ultravox_agent_builder import build_ultravox_agent_payload
+from services.ultravox_agent_builder import _sanitize_name, build_ultravox_agent_payload  # pylint: disable=protected-access
 from shared.config import get_required_setting
 
 ULTRAVOX_BASE_URL = "https://api.ultravox.ai/api"
@@ -30,7 +30,7 @@ def create_ultravox_agent(
 ) -> str:
     """
     Create an Ultravox agent and return its ID.
-    Retries once with a unique suffix if the name already exists.
+    Retries once with a deterministic numeric suffix if the name already exists.
     """
     payload = build_ultravox_agent_payload(
         business_name,
@@ -42,13 +42,15 @@ def create_ultravox_agent(
     with httpx.Client(timeout=20) as client:
         response = client.post(f"{ULTRAVOX_BASE_URL}/agents", headers=_headers(), json=payload)
         if response.status_code == 400 and "already exists" in response.text.lower():
-            # Add a short suffix to avoid name collisions while keeping within 64 chars.
-            suffix = uuid.uuid4().hex[:6]
+            # Append _<existing_count> to avoid name collisions (e.g., Foo, Foo_1, Foo_2).
+            attempted_name = payload.get("name") or _sanitize_name(business_name)
+            existing_count = _count_existing_agents_with_base_name(attempted_name)
+            deduped_name = _build_deduped_agent_name(attempted_name, existing_count)
             payload = build_ultravox_agent_payload(
                 business_name,
                 website_url,
                 summary,
-                agent_name_override=f"{business_name} AI Receptionist-{suffix}",
+                agent_name_override=deduped_name,
                 system_prompt_override=system_prompt_override,
             )
             response = client.post(f"{ULTRAVOX_BASE_URL}/agents", headers=_headers(), json=payload)
@@ -139,3 +141,31 @@ def get_ultravox_agent(agent_id: str) -> Dict:
         raise RuntimeError(f"Failed to get Ultravox agent ({response.status_code}): {response.text}")
 
     return response.json()
+
+
+def _count_existing_agents_with_base_name(base_name: str) -> int:
+    """
+    Count agents that share the same base name (Foo or Foo_<n>), so we can pick the next suffix.
+    """
+    safe_base = _sanitize_name(base_name)
+    try:
+        agents = list_ultravox_agents(limit=200)
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.warning("Could not list Ultravox agents to resolve name collision: %s", exc)
+        return 0
+
+    pattern = re.compile(rf"^{re.escape(safe_base)}(?:_(\d+))?$")
+    return sum(1 for agent in agents if pattern.match(str(agent.get("name") or "")))
+
+
+def _build_deduped_agent_name(base_name: str, existing_count: int) -> str:
+    """
+    Append _<count> while staying within 64 chars and preserving the suffix.
+    """
+    safe_base = _sanitize_name(base_name)
+    suffix_num = existing_count if existing_count else 1
+    suffix = f"_{suffix_num}"
+    max_base_len = 64 - len(suffix)
+    truncated_base = safe_base[:max_base_len].rstrip("_-")
+    candidate = f"{truncated_base}{suffix}"
+    return _sanitize_name(candidate)

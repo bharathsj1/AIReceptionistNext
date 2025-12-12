@@ -55,7 +55,7 @@ const packages = [
   }
 ];
 
-export default function PricingPackages({ onSelectPackage, paymentBasePath = "/payment" }) {
+export default function PricingPackages({ onSelectPackage, paymentBasePath = "/payment", showCrawlSuccess = false }) {
   const handleSelect = (id) => {
     if (onSelectPackage) {
       onSelectPackage(id);
@@ -73,6 +73,12 @@ export default function PricingPackages({ onSelectPackage, paymentBasePath = "/p
       <div className="pointer-events-none absolute -right-24 bottom-0 h-56 w-56 rounded-full bg-amber-400/10 blur-3xl" />
 
       <div className="relative flex flex-col gap-2 text-center">
+        {showCrawlSuccess && (
+          <div className="mx-auto mb-4 inline-flex items-center gap-2 rounded-full border border-emerald-200/60 bg-emerald-400/15 px-4 py-2 text-sm font-semibold text-emerald-100 shadow">
+            <span className="h-2 w-2 rounded-full bg-emerald-300 shadow-[0_0_0_4px_rgba(74,222,128,0.25)]" />
+            Hurray! We’ve got all the data we need for your AI receptionist.
+          </div>
+        )}
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-indigo-200">
           Plans
         </p>

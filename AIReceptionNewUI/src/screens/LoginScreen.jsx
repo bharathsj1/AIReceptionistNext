@@ -7,7 +7,6 @@ export default function LoginScreen({
   onLoginSubmit,
   onEmailChange,
   onPasswordChange,
-  onGoogleLogin,
   onCreateAccount,
   onForgotPassword
 }) {
@@ -44,19 +43,6 @@ export default function LoginScreen({
             {status === "loading" ? "Signing in..." : "Login"}
           </button>
         </form>
-        <div className="oauth-buttons">
-          <div className="divider">
-            <span>or</span>
-          </div>
-          <button
-            className="oauth-button google"
-            type="button"
-            onClick={onGoogleLogin}
-            disabled={status === "loading"}
-          >
-            <span className="icon">🔐</span> Continue with Google
-          </button>
-        </div>
         <div className="link-row">
           <button className="text-link" type="button" onClick={onForgotPassword}>
             Forgot password?

@@ -54,7 +54,7 @@ const plans = {
   }
 };
 
-export default function PaymentScreen({ planId, onBack, onSubmit }) {
+export default function PaymentScreen({ planId, onBack, onSubmit, initialEmail = "" }) {
   const [clientSecret, setClientSecret] = useState("");
   const [subscriptionId, setSubscriptionId] = useState("");
   const [customerId, setCustomerId] = useState("");
@@ -62,7 +62,7 @@ export default function PaymentScreen({ planId, onBack, onSubmit }) {
   const [intentLoading, setIntentLoading] = useState(false);
   const [intentError, setIntentError] = useState(null);
   const [cardName, setCardName] = useState("");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(initialEmail);
   const [processing, setProcessing] = useState(false);
 
   const plan = useMemo(() => {
@@ -70,14 +70,16 @@ export default function PaymentScreen({ planId, onBack, onSubmit }) {
     return plans.gold;
   }, [planId]);
 
-  const stripePromise = useMemo(
-    () =>
-      loadStripe(
-        import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY ||
-          "pk_test_51SccVdGX99jB26LURq7OeFpXSa0qTSlzEf0bbSrznJgK0Z0lgJDltaJ6iVErFEvUEcABDPYm6F42V8QfVdpF0P1200htKKQ7Oo"
-      ),
-    []
+  const stripePromise = loadStripe(
+    import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY ||
+      "pk_test_51SccVdGX99jB26LURq7OeFpXSa0qTSlzEf0bbSrznJgK0Z0lgJDltaJ6iVErFEvUEcABDPYm6F42V8QfVdpF0P1200htKKQ7Oo"
   );
+
+  useEffect(() => {
+    if (initialEmail) {
+      setEmail(initialEmail);
+    }
+  }, [initialEmail]);
 
   useEffect(() => {
     if (!email) {
@@ -178,7 +180,14 @@ export default function PaymentScreen({ planId, onBack, onSubmit }) {
         </div>
 
         {clientSecret ? (
-          <Elements stripe={stripePromise} options={{ clientSecret, appearance: { theme: "stripe" } }}>
+          <Elements
+            stripe={stripePromise}
+            options={{
+              clientSecret,
+              appearance: { theme: "stripe" },
+              paymentMethodOrder: ["card"]
+            }}
+          >
             <PaymentForm
               email={email}
               setEmail={setEmail}
@@ -188,10 +197,11 @@ export default function PaymentScreen({ planId, onBack, onSubmit }) {
               planId={planId}
               processing={processing}
               setProcessing={setProcessing}
-              intentError={intentError}
-              subscriptionId={subscriptionId}
-              intentType={intentType}
-            />
+        intentError={intentError}
+        subscriptionId={subscriptionId}
+        customerId={customerId}
+        intentType={intentType}
+      />
           </Elements>
         ) : (
           <div className="rounded-2xl border border-white/10 bg-white p-5 shadow-lg">
@@ -232,7 +242,20 @@ export default function PaymentScreen({ planId, onBack, onSubmit }) {
   );
 }
 
-function PaymentForm({ email, setEmail, cardName, setCardName, onSubmit, planId, processing, setProcessing, intentError, subscriptionId, intentType }) {
+function PaymentForm({
+  email,
+  setEmail,
+  cardName,
+  setCardName,
+  onSubmit,
+  planId,
+  processing,
+  setProcessing,
+  intentError,
+  subscriptionId,
+  customerId,
+  intentType
+}) {
   const stripe = useStripe();
   const elements = useElements();
   const [error, setError] = useState(null);
@@ -281,13 +304,19 @@ function PaymentForm({ email, setEmail, cardName, setCardName, onSubmit, planId,
       return;
     }
 
+    let receiptUrl = null;
+    let invoiceUrl = null;
+
     if (subscriptionId) {
       try {
-        await fetch("/api/payments/confirm-subscription", {
+        const res = await fetch("/api/payments/confirm-subscription", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ subscriptionId, email, planId })
+          body: JSON.stringify({ subscriptionId, email, planId, customerId })
         });
+        const confirmData = await res.json().catch(() => ({}));
+        receiptUrl = confirmData?.receipt_url || confirmData?.invoice_pdf || null;
+        invoiceUrl = confirmData?.invoice_url || confirmData?.hosted_invoice_url || null;
       } catch (confirmErr) {
         console.error("Failed to confirm subscription status", confirmErr);
       }
@@ -295,7 +324,15 @@ function PaymentForm({ email, setEmail, cardName, setCardName, onSubmit, planId,
 
     setProcessing(false);
     if (onSubmit) {
-      onSubmit({ planId: planId || "gold", email, cardName });
+      onSubmit({
+        planId: planId || "gold",
+        email,
+        cardName,
+        subscriptionId,
+        customerId,
+        receiptUrl,
+        invoiceUrl
+      });
     }
   };
 

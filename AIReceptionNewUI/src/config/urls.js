@@ -15,7 +15,8 @@ export const API_URLS = {
   googleAuthUrl: `${API_PROXY_BASE}/auth/google/url`,
   googleAuthCallback: `${API_PROXY_BASE}/auth/google/callback`,
   calendarEvents: `${API_PROXY_BASE}/calendar/events`,
-  dashboardCalls: `${API_PROXY_BASE}/dashboard/calls`
+  dashboardCalls: `${API_PROXY_BASE}/dashboard/calls`,
+  dashboardAgent: `${API_PROXY_BASE}/dashboard/agent`
 };
 
 export default API_URLS;
