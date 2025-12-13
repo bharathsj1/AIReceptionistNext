@@ -166,6 +166,14 @@ html {
   user-select: none;
 }
 
+.brand-video {
+  width: 150px;
+  height: 54px;
+  display: block;
+  object-fit: contain;
+  border-radius: 12px;
+}
+
 .brand-mark {
   padding: 6px 10px;
   border-radius: 10px;
