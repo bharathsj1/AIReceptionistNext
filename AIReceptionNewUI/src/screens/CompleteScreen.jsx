@@ -19,7 +19,7 @@ export default function CompleteScreen({
         </h2>
         <p className="lead narrow">
           {status === "success"
-            ? responseMessage || "Your payment was successful and your AI receptionist is ready."
+            ? responseMessage || "Your payment was successful and your AI receptionist is ready. "
             : responseMessage || "Please try again or adjust your inputs."}
         </p>
       </div>
