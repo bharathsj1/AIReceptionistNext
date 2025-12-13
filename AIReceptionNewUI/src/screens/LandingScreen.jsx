@@ -8,8 +8,7 @@ export default function LandingScreen({ onTry, onLogin, onSelectPlan }) {
       <div className="nav-card screen-panel sticky-nav">
         <div className="nav-left">
           <div className="brand">
-            <span className="brand-mark">AI</span>
-            <span className="brand-name">Receptionist</span>
+            <span className="brand-name">SmartConnect4u</span>
           </div>
           <div className="nav-links">
             <button className="nav-link">Our purpose</button>
