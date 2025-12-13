@@ -28,4 +28,5 @@ export const API_URLS = {
   dashboardAgent: apiUrl("dashboard/agent")
 };
 
+
 export default API_URLS;
