@@ -127,7 +127,7 @@ Rules:
 - Output only the final Ultravox system prompt text.
 - Do NOT use markdown, bullet characters, asterisks, or numbered lists in the output itself.
 - Write as if these are the instructions the voice agent will follow at runtime.
-- Keep it under ~1200 words, but detailed enough to guide behavior.
+- Keep it under ~1200 words, but detailed enough to guide.
 """
 
     return {
