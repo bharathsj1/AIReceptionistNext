@@ -1,22 +1,31 @@
 // Central place for API URLs and future endpoints.
 // Use environment variables to override defaults when needed.
 
-const API_PROXY_BASE =
-  import.meta.env.VITE_API_PROXY_BASE ?? "/api";
+export const API_PROXY_BASE = import.meta.env.VITE_API_PROXY_BASE ?? "/api";
+export const apiUrl = (path) =>
+  `${API_PROXY_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
 
 export const API_URLS = {
-  crawlKnowledgeBase: `${API_PROXY_BASE}/crawl-kb`,
-  ultravoxPrompt: `${API_PROXY_BASE}/ultravox/prompt`,
-  provisionClient: `${API_PROXY_BASE}/clients/provision`,
-  authLogin: `${API_PROXY_BASE}/auth/login`,
-  authForgotPassword: `${API_PROXY_BASE}/auth/forgot-password`,
-  authResetPassword: `${API_PROXY_BASE}/auth/reset-password`,
-  dashboard: `${API_PROXY_BASE}/dashboard`,
-  googleAuthUrl: `${API_PROXY_BASE}/auth/google/url`,
-  googleAuthCallback: `${API_PROXY_BASE}/auth/google/callback`,
-  calendarEvents: `${API_PROXY_BASE}/calendar/events`,
-  dashboardCalls: `${API_PROXY_BASE}/dashboard/calls`,
-  dashboardAgent: `${API_PROXY_BASE}/dashboard/agent`
+  crawlKnowledgeBase: apiUrl("crawl-kb"),
+  ultravoxPrompt: apiUrl("ultravox/prompt"),
+  provisionClient: apiUrl("clients/provision"),
+  authSignup: apiUrl("auth/signup"),
+  authLogin: apiUrl("auth/login"),
+  authForgotPassword: apiUrl("auth/forgot-password"),
+  authResetPassword: apiUrl("auth/reset-password"),
+  authUserByEmail: apiUrl("auth/user-by-email"),
+  clientsByEmail: apiUrl("clients/by-email"),
+  clientsBusinessDetails: apiUrl("clients/business-details"),
+  paymentsCreateSubscription: apiUrl("payments/create-subscription"),
+  paymentsConfirmSubscription: apiUrl("payments/confirm-subscription"),
+  ultravoxVoices: apiUrl("ultravox-voices"),
+  ultravoxDemoCall: apiUrl("ultravox-demo-call"),
+  dashboard: apiUrl("dashboard"),
+  googleAuthUrl: apiUrl("auth/google/url"),
+  googleAuthCallback: apiUrl("auth/google/callback"),
+  calendarEvents: apiUrl("calendar/events"),
+  dashboardCalls: apiUrl("dashboard/calls"),
+  dashboardAgent: apiUrl("dashboard/agent")
 };
 
 export default API_URLS;

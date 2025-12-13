@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { UltravoxSession } from "ultravox-client";
+import API_URLS from "../config/urls.js";
 
 type CallStatus =
   | "idle"
@@ -126,7 +127,7 @@ export default function UltravoxDemo() {
       setVoicesLoading(true);
       setVoicesError(null);
       try {
-        const res = await fetch("/api/ultravox-voices");
+        const res = await fetch(API_URLS.ultravoxVoices);
         if (!res.ok) {
           throw new Error("Failed to load Ultravox voices");
         }
@@ -194,7 +195,7 @@ export default function UltravoxDemo() {
     setIsInCall(true);
     try {
       const voiceId = selectedVoice?.id;
-      const res = await fetch("/api/ultravox-demo-call", {
+      const res = await fetch(API_URLS.ultravoxDemoCall, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"

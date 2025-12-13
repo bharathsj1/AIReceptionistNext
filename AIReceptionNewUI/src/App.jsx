@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Lenis from "lenis";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
-import API_URLS from "./config/urls";
+import API_URLS from "./config/urls.js";
 import LandingScreen from "./screens/LandingScreen";
 import LoginScreen from "./screens/LoginScreen";
 import DashboardScreen from "./screens/DashboardScreen";
@@ -211,7 +211,7 @@ export default function App() {
         websiteData: data || {}
       };
       try {
-        await fetch("/api/clients/business-details", {
+        await fetch(API_URLS.clientsBusinessDetails, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
@@ -318,13 +318,13 @@ export default function App() {
       let clientProfile = null;
       try {
         const userRes = await fetch(
-          `/api/auth/user-by-email?email=${encodeURIComponent(userEmail)}`
+          `${API_URLS.authUserByEmail}?email=${encodeURIComponent(userEmail)}`
         );
         if (userRes.ok) {
           userProfile = await userRes.json().catch(() => null);
         }
         const clientRes = await fetch(
-          `/api/clients/by-email?email=${encodeURIComponent(userEmail)}`
+          `${API_URLS.clientsByEmail}?email=${encodeURIComponent(userEmail)}`
         );
         if (clientRes.ok) {
           clientProfile = await clientRes.json().catch(() => null);
@@ -517,7 +517,7 @@ export default function App() {
     setSignupError("");
     setSignupLoading(true);
     try {
-      const res = await fetch("/api/auth/signup", {
+      const res = await fetch(API_URLS.authSignup, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password, name })
@@ -554,7 +554,7 @@ export default function App() {
       if (!signupEmail) {
         throw new Error("Please create an account first.");
       }
-      const res = await fetch("/api/clients/business-details", {
+      const res = await fetch(API_URLS.clientsBusinessDetails, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

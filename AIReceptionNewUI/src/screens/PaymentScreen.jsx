@@ -6,6 +6,7 @@ import {
   useStripe
 } from "@stripe/react-stripe-js";
 import { loadStripe } from "@stripe/stripe-js";
+import API_URLS from "../config/urls.js";
 
 const plans = {
   bronze: {
@@ -91,7 +92,7 @@ export default function PaymentScreen({ planId, onBack, onSubmit, initialEmail =
       setIntentLoading(true);
       setIntentError(null);
       try {
-        const res = await fetch("/api/payments/create-subscription", {
+        const res = await fetch(API_URLS.paymentsCreateSubscription, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ planId: planId || "gold", email }),
@@ -309,7 +310,7 @@ function PaymentForm({
 
     if (subscriptionId) {
       try {
-        const res = await fetch("/api/payments/confirm-subscription", {
+        const res = await fetch(API_URLS.paymentsConfirmSubscription, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ subscriptionId, email, planId, customerId })
