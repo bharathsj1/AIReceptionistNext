@@ -1,0 +1,12 @@
+{
+  "routes": [
+    {
+      "route": "/api/*",
+      "rewrite": "https://aireceptionist-func.azurewebsites.net/api/{*path}"
+    }
+  ],
+  "navigationFallback": {
+    "rewrite": "/index.html",
+    "exclude": ["/api/*"]
+  }
+}
