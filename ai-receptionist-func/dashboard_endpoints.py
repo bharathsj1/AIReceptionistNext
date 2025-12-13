@@ -8,6 +8,7 @@ from onboarding_endpoints import get_twilio_client
 from datetime import datetime, timedelta, timezone
 from services.ultravox_service import get_ultravox_agent
 from shared.db import Client, PhoneNumber, SessionLocal, User
+from utils.cors import build_cors_headers
 
 logger = logging.getLogger(__name__)
 
@@ -19,18 +20,23 @@ def _find_client_and_user(db, email: str) -> tuple[Optional[Client], Optional[Us
 
 
 @app.function_name(name="DashboardGet")
-@app.route(route="dashboard", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+@app.route(route="dashboard", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def dashboard_get(req: func.HttpRequest) -> func.HttpResponse:
     """
     GET /api/dashboard?email=...
     Returns client, user, ultravoX agent info, and phone numbers for the given email.
     """
+    cors = build_cors_headers(req, ["GET", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
     email = req.params.get("email")
     if not email:
         return func.HttpResponse(
             json.dumps({"error": "email is required"}),
             status_code=400,
             mimetype="application/json",
+            headers=cors,
         )
 
     db = SessionLocal()
@@ -41,6 +47,7 @@ def dashboard_get(req: func.HttpRequest) -> func.HttpResponse:
                 json.dumps({"error": "Client not found"}),
                 status_code=404,
                 mimetype="application/json",
+                headers=cors,
             )
         phone_numbers = (
             db.query(PhoneNumber).filter_by(client_id=client.id, is_active=True).all()
@@ -76,19 +83,24 @@ def dashboard_get(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps(payload),
             status_code=200,
             mimetype="application/json",
+            headers=cors,
         )
     finally:
         db.close()
 
 
 @app.function_name(name="DashboardCallLogs")
-@app.route(route="dashboard/calls", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+@app.route(route="dashboard/calls", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def dashboard_call_logs(req: func.HttpRequest) -> func.HttpResponse:
     """
     GET /api/dashboard/calls?email=...&limit=...&days=...
     Fetch recent Twilio calls for the client's active phone numbers.
     Days filters by start_time >= now - days.
     """
+    cors = build_cors_headers(req, ["GET", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
     email = req.params.get("email")
     limit_param = req.params.get("limit")
     days_param = req.params.get("days")
@@ -97,6 +109,7 @@ def dashboard_call_logs(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": "email is required"}),
             status_code=400,
             mimetype="application/json",
+            headers=cors,
         )
     try:
         limit = min(int(limit_param), 50) if limit_param else 20
@@ -115,6 +128,7 @@ def dashboard_call_logs(req: func.HttpRequest) -> func.HttpResponse:
                 json.dumps({"error": "Client not found"}),
                 status_code=404,
                 mimetype="application/json",
+                headers=cors,
             )
 
         phone_numbers = (
@@ -125,6 +139,7 @@ def dashboard_call_logs(req: func.HttpRequest) -> func.HttpResponse:
                 json.dumps({"calls": []}),
                 status_code=200,
                 mimetype="application/json",
+                headers=cors,
             )
 
         numbers = [p.twilio_phone_number for p in phone_numbers]
@@ -183,19 +198,24 @@ def dashboard_call_logs(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"calls": calls[:limit]}),
             status_code=200,
             mimetype="application/json",
+            headers=cors,
         )
     finally:
         db.close()
 
 
 @app.function_name(name="DashboardUpdateAgent")
-@app.route(route="dashboard/agent", methods=["PUT"], auth_level=func.AuthLevel.ANONYMOUS)
+@app.route(route="dashboard/agent", methods=["PUT", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def dashboard_update_agent(req: func.HttpRequest) -> func.HttpResponse:
     """
     PUT /api/dashboard/agent
     Body: { "email": "...", "system_prompt": "...", "voice": "Jessica", "temperature": 0.4 }
     Updates the Ultravox agent callTemplate fields (simple PATCH).
     """
+    cors = build_cors_headers(req, ["PUT", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
     try:
         body = req.get_json()
     except ValueError:
@@ -209,6 +229,7 @@ def dashboard_update_agent(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": "email is required"}),
             status_code=400,
             mimetype="application/json",
+            headers=cors,
         )
 
     system_prompt = body.get("system_prompt")
@@ -223,6 +244,7 @@ def dashboard_update_agent(req: func.HttpRequest) -> func.HttpResponse:
                 json.dumps({"error": "Client or agent not found"}),
                 status_code=404,
                 mimetype="application/json",
+                headers=cors,
             )
 
         update_payload = {"callTemplate": {}}
@@ -238,6 +260,7 @@ def dashboard_update_agent(req: func.HttpRequest) -> func.HttpResponse:
                 json.dumps({"error": "No updatable fields provided"}),
                 status_code=400,
                 mimetype="application/json",
+                headers=cors,
             )
 
         from services.ultravox_service import _headers, ULTRAVOX_BASE_URL  # pylint: disable=protected-access
@@ -254,12 +277,14 @@ def dashboard_update_agent(req: func.HttpRequest) -> func.HttpResponse:
                 json.dumps({"error": "Ultravox update failed", "details": resp.text}),
                 status_code=500,
                 mimetype="application/json",
+                headers=cors,
             )
 
         return func.HttpResponse(
             json.dumps({"message": "Agent updated"}),
             status_code=200,
             mimetype="application/json",
+            headers=cors,
         )
     finally:
         db.close()

@@ -16,7 +16,7 @@ export default function CreateAccountScreen({
   };
 
   return (
-    <section className="signup-card-wrap">
+    <section className="signup-card-wrap screen-panel narrow">
       <div className="signup-modern-card">
         <div className="signup-grid">
           <div className="signup-left">

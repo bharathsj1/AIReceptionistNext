@@ -13,7 +13,7 @@ export default function BusinessDetailsScreen({
 }) {
   const welcomeName = userName || "there";
   return (
-    <section className="business-layout">
+    <section className="business-layout screen-panel">
       <div className="business-left">
         <div className="brand-row">
           <div className="brand-dot" />

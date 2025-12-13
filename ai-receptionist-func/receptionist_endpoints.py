@@ -1,12 +1,18 @@
 import logging
+
 import azure.functions as func
 from function_app import app
+from utils.cors import build_cors_headers
 
 
 @app.function_name(name="ReceptionistApi")
-@app.route(route="receptionist", auth_level=func.AuthLevel.ANONYMOUS)
+@app.route(route="receptionist", methods=["GET", "POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def receptionist_api(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("Receptionist endpoint called.")
+
+    cors = build_cors_headers(req, ["GET", "POST", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
 
     try:
         body = req.get_json()
@@ -16,7 +22,7 @@ def receptionist_api(req: func.HttpRequest) -> func.HttpResponse:
     message = (body or {}).get("message") or req.params.get("message")
 
     if not message:
-        return func.HttpResponse("Send me a 'message'.", status_code=200)
+        return func.HttpResponse("Send me a 'message'.", status_code=200, headers=cors)
 
     reply = f"AI Receptionist Response: {message}"
-    return func.HttpResponse(reply, status_code=200)
+    return func.HttpResponse(reply, status_code=200, headers=cors)

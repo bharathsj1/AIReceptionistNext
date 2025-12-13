@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from function_app import app
 from shared.config import get_required_setting
 from shared.db import SessionLocal, Subscription, Payment
+from utils.cors import build_cors_headers
 
 logger = logging.getLogger(__name__)
 
@@ -146,12 +147,16 @@ def _upsert_subscription_record(
 
 
 @app.function_name(name="CreateSubscription")
-@app.route(route="payments/create-subscription", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+@app.route(route="payments/create-subscription", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
     """
     Create a Stripe Subscription for the selected plan and return the client secret for payment confirmation.
     Expects JSON body: { "planId": "bronze" | "silver" | "gold", "email": "required" }
     """
+    cors = build_cors_headers(req, ["POST", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
     try:
         data = req.get_json()
     except ValueError:
@@ -166,6 +171,7 @@ def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": "Invalid or missing planId/email"}),
             status_code=400,
             mimetype="application/json",
+            headers=cors,
         )
 
     try:
@@ -238,6 +244,7 @@ def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": f"Failed to create subscription: {str(exc)}"}),
             status_code=500,
             mimetype="application/json",
+            headers=cors,
         )
 
     return func.HttpResponse(
@@ -252,16 +259,21 @@ def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
         ),
         status_code=200,
         mimetype="application/json",
+        headers=cors,
     )
 
 
 @app.function_name(name="ConfirmSubscription")
-@app.route(route="payments/confirm-subscription", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+@app.route(route="payments/confirm-subscription", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def confirm_subscription(req: func.HttpRequest) -> func.HttpResponse:
     """
     Confirm subscription status after payment on the client.
     Body: { "subscriptionId": "<stripe_subscription_id>", "email": "<email>", "planId": "<plan>" }
     """
+    cors = build_cors_headers(req, ["POST", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
     try:
         data = req.get_json()
     except ValueError:
@@ -276,6 +288,7 @@ def confirm_subscription(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": "subscriptionId, planId, and email are required"}),
             status_code=400,
             mimetype="application/json",
+            headers=cors,
         )
 
     try:
@@ -287,6 +300,7 @@ def confirm_subscription(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": "Failed to verify subscription"}),
             status_code=500,
             mimetype="application/json",
+            headers=cors,
         )
 
     status = subscription.status
@@ -357,22 +371,28 @@ def confirm_subscription(req: func.HttpRequest) -> func.HttpResponse:
         json.dumps({"status": status}),
         status_code=200,
         mimetype="application/json",
+        headers=cors,
     )
 
 
 @app.function_name(name="GetSubscriptionStatus")
-@app.route(route="subscriptions/status", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+@app.route(route="subscriptions/status", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def get_subscription_status(req: func.HttpRequest) -> func.HttpResponse:
     """
     Check subscription status by email.
     Query param: ?email=
     """
+    cors = build_cors_headers(req, ["GET", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
     email = req.params.get("email")
     if not email:
         return func.HttpResponse(
             json.dumps({"error": "email is required"}),
             status_code=400,
             mimetype="application/json",
+            headers=cors,
         )
     try:
         db = SessionLocal()
@@ -391,6 +411,6 @@ def get_subscription_status(req: func.HttpRequest) -> func.HttpResponse:
                 "planId": sub.plan_id,
                 "currentPeriodEnd": sub.current_period_end.isoformat() if sub.current_period_end else None,
             }
-        return func.HttpResponse(json.dumps(body), status_code=200, mimetype="application/json")
+        return func.HttpResponse(json.dumps(body), status_code=200, mimetype="application/json", headers=cors)
     finally:
         db.close()

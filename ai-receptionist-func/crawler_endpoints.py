@@ -12,6 +12,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from function_app import app
+from utils.cors import build_cors_headers
 
 EXCLUDED_SCHEMES: Tuple[str, ...] = ("mailto:", "tel:", "javascript:")
 REMOVABLE_TAGS: Tuple[str, ...] = ("script", "style", "nav", "footer", "header", "aside")
@@ -181,7 +182,7 @@ def write_kb_file(pages: Iterable[Dict[str, str]], output_path: Path = OUTPUT_PA
 # ---------------------------------------------------------------------------
 
 @app.function_name(name="CrawlerBuildKb")
-@app.route(route="crawl-kb", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+@app.route(route="crawl-kb", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def crawl_kb_api(req: func.HttpRequest) -> func.HttpResponse:
     """
     POST /api/crawl-kb
@@ -195,6 +196,23 @@ def crawl_kb_api(req: func.HttpRequest) -> func.HttpResponse:
 
     Crawls the website starting from 'url' and returns the knowledge in the response payload.
     """
+    cors = build_cors_headers(req, ["POST", "OPTIONS"])
+
+    if req.method == "OPTIONS":
+        return func.HttpResponse(
+            "",
+            status_code=204,
+            headers=cors,
+        )
+
+    def _json_response(payload: Dict[str, object], status_code: int) -> func.HttpResponse:
+        return func.HttpResponse(
+            json.dumps(payload),
+            status_code=status_code,
+            mimetype="application/json",
+            headers=cors,
+        )
+
     try:
         body = req.get_json()
     except ValueError:
@@ -209,11 +227,7 @@ def crawl_kb_api(req: func.HttpRequest) -> func.HttpResponse:
 
     # --- validate url ---
     if not url or not isinstance(url, str) or not url.startswith(("http://", "https://")):
-        return func.HttpResponse(
-            json.dumps({"error": "Missing or invalid 'url' field"}),
-            status_code=400,
-            mimetype="application/json",
-        )
+        return _json_response({"error": "Missing or invalid 'url' field"}, status_code=400)
 
     # --- validate / normalize max_pages ---
     try:
@@ -221,21 +235,13 @@ def crawl_kb_api(req: func.HttpRequest) -> func.HttpResponse:
         if max_pages <= 0:
             raise ValueError
     except ValueError:
-        return func.HttpResponse(
-            json.dumps({"error": "'max_pages' must be a positive integer"}),
-            status_code=400,
-            mimetype="application/json",
-        )
+        return _json_response({"error": "'max_pages' must be a positive integer"}, status_code=400)
 
     # --- run crawl ---
     try:
         pages = crawl_site(url, max_pages=max_pages)
     except Exception as exc:  # pragma: no cover - defensive
-        return func.HttpResponse(
-            json.dumps({"error": f"Failed to crawl site: {exc}"}),
-            status_code=500,
-            mimetype="application/json",
-        )
+        return _json_response({"error": f"Failed to crawl site: {exc}"}, status_code=500)
 
     payload = {
         "start_url": url,
@@ -244,8 +250,4 @@ def crawl_kb_api(req: func.HttpRequest) -> func.HttpResponse:
         "pages": pages,
     }
 
-    return func.HttpResponse(
-      json.dumps(payload),
-      status_code=200,
-      mimetype="application/json",
-    )
+    return _json_response(payload, status_code=200)

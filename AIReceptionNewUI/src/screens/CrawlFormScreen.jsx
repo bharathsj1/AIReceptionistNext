@@ -8,7 +8,7 @@ export default function CrawlFormScreen({
   onSkipWebsite
 }) {
   return (
-    <section className="crawl-layout">
+    <section className="crawl-layout screen-panel">
       <div className="form-card">
         <div>
           <p className="eyebrow">Connect your site</p>

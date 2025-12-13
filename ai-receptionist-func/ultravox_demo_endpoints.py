@@ -7,6 +7,7 @@ import httpx
 
 from function_app import app
 from shared.config import get_required_setting
+from utils.cors import build_cors_headers
 
 logger = logging.getLogger(__name__)
 
@@ -37,11 +38,15 @@ def _build_payload(voice_id: Optional[str] = None) -> Dict[str, Any]:
 
 
 @app.function_name(name="UltravoxDemoCall")
-@app.route(route="ultravox-demo-call", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+@app.route(route="ultravox-demo-call", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def create_ultravox_demo_call(req: func.HttpRequest) -> func.HttpResponse:
     """
     Create a demo Ultravox call and return the joinUrl for the web client.
     """
+    cors = build_cors_headers(req, ["POST", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
     try:
         api_key = get_required_setting("ULTRAVOX_API_KEY")
     except ValueError as exc:
@@ -50,6 +55,7 @@ def create_ultravox_demo_call(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": "Server is not configured with ULTRAVOX_API_KEY"}),
             status_code=500,
             mimetype="application/json",
+            headers=cors,
         )
 
     try:
@@ -85,6 +91,7 @@ def create_ultravox_demo_call(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": "Could not contact Ultravox API"}),
             status_code=500,
             mimetype="application/json",
+            headers=cors,
         )
 
     if resp.status_code >= 300:
@@ -93,6 +100,7 @@ def create_ultravox_demo_call(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": "Failed to start Ultravox demo call"}),
             status_code=500,
             mimetype="application/json",
+            headers=cors,
         )
 
     data = resp.json()
@@ -103,21 +111,27 @@ def create_ultravox_demo_call(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": "Ultravox joinUrl was missing in response"}),
             status_code=500,
             mimetype="application/json",
+            headers=cors,
         )
 
     return func.HttpResponse(
         json.dumps({"joinUrl": join_url}),
         status_code=200,
         mimetype="application/json",
+        headers=cors,
     )
 
 
 @app.function_name(name="UltravoxVoices")
-@app.route(route="ultravox-voices", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+@app.route(route="ultravox-voices", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def list_ultravox_voices(req: func.HttpRequest) -> func.HttpResponse:
     """
     Fetch available Ultravox voices for selection in the demo UI.
     """
+    cors = build_cors_headers(req, ["GET", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
     try:
         api_key = get_required_setting("ULTRAVOX_API_KEY")
     except ValueError as exc:
@@ -126,6 +140,7 @@ def list_ultravox_voices(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": "Server is not configured with ULTRAVOX_API_KEY"}),
             status_code=500,
             mimetype="application/json",
+            headers=cors,
         )
 
     url = f"{ULTRAVOX_API_BASE}/voices"
@@ -162,6 +177,7 @@ def list_ultravox_voices(req: func.HttpRequest) -> func.HttpResponse:
                         json.dumps({"error": "Failed to fetch Ultravox voices"}),
                         status_code=500,
                         mimetype="application/json",
+                        headers=cors,
                     )
 
                 try:
@@ -172,6 +188,7 @@ def list_ultravox_voices(req: func.HttpRequest) -> func.HttpResponse:
                         json.dumps({"error": "Invalid response from Ultravox voices API"}),
                         status_code=500,
                         mimetype="application/json",
+                        headers=cors,
                     )
 
                 items = extract_page_items(data)
@@ -195,10 +212,12 @@ def list_ultravox_voices(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": "Could not contact Ultravox API"}),
             status_code=500,
             mimetype="application/json",
+            headers=cors,
         )
 
     return func.HttpResponse(
         json.dumps({"voices": voices}),
         status_code=200,
         mimetype="application/json",
+        headers=cors,
     )

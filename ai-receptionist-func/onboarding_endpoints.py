@@ -17,6 +17,7 @@ from crawler_endpoints import crawl_site
 from services.ultravox_service import create_ultravox_agent, create_ultravox_call, list_ultravox_agents
 from shared.config import get_required_setting, get_setting, get_smtp_settings
 from shared.db import Client, PhoneNumber, SessionLocal, User, init_db
+from utils.cors import build_cors_headers
 
 logger = logging.getLogger(__name__)
 
@@ -181,9 +182,13 @@ def _send_temp_password_email(email: str, temp_password: str, phone_number: str 
 
 
 @app.function_name(name="UltravoxAgents")
-@app.route(route="ultravox/agents", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+@app.route(route="ultravox/agents", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def ultravox_agents(req: func.HttpRequest) -> func.HttpResponse:
     """List available Ultravox agents (simple helper endpoint)."""
+    cors = build_cors_headers(req, ["GET", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
     limit_param = req.params.get("limit")
     try:
         limit = int(limit_param) if limit_param else 20
@@ -192,6 +197,7 @@ def ultravox_agents(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": "Invalid 'limit' parameter"}),
             status_code=400,
             mimetype="application/json",
+            headers=cors,
         )
 
     try:
@@ -200,6 +206,7 @@ def ultravox_agents(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"agents": agents}),
             status_code=200,
             mimetype="application/json",
+            headers=cors,
         )
     except Exception as exc:  # pylint: disable=broad-except
         logger.error("Failed to list Ultravox agents: %s", exc)
@@ -207,15 +214,20 @@ def ultravox_agents(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": "Failed to list Ultravox agents", "details": str(exc)}),
             status_code=500,
             mimetype="application/json",
+            headers=cors,
         )
 
 
 @app.function_name(name="ClientsProvision")
-@app.route(route="clients/provision", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+@app.route(route="clients/provision", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def clients_provision(req: func.HttpRequest) -> func.HttpResponse:
     """
     Provision a client: crawl website, create Ultravox agent, buy Twilio number, and persist records.
     """
+    cors = build_cors_headers(req, ["POST", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
     try:
         body = req.get_json()
     except ValueError:
@@ -230,6 +242,7 @@ def clients_provision(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": "Missing required fields: email, website_url"}),
             status_code=400,
             mimetype="application/json",
+            headers=cors,
         )
 
     db = SessionLocal()
@@ -241,6 +254,7 @@ def clients_provision(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": f"Failed to crawl site: {exc}"}),
             status_code=500,
             mimetype="application/json",
+            headers=cors,
         )
 
     try:
@@ -279,6 +293,7 @@ def clients_provision(req: func.HttpRequest) -> func.HttpResponse:
                     ),
                     status_code=500,
                     mimetype="application/json",
+                    headers=cors,
                 )
             client_record.ultravox_agent_id = agent_id
 
@@ -302,15 +317,28 @@ def clients_provision(req: func.HttpRequest) -> func.HttpResponse:
                     ),
                     status_code=500,
                     mimetype="application/json",
+                    headers=cors,
                 )
 
-            phone_record = PhoneNumber(
-                client_id=client_record.id,
-                twilio_phone_number=purchased["phone_number"],
-                twilio_sid=purchased["sid"],
-                is_active=True,
-            )
-            db.add(phone_record)
+            # If the purchased number already exists, reuse the active record instead of inserting a duplicate.
+            existing_number = (
+                db.query(PhoneNumber)
+                .filter_by(twilio_phone_number=purchased["phone_number"], is_active=True)
+                .one_or_none()
+            ) or db.query(PhoneNumber).filter_by(twilio_phone_number=purchased["phone_number"]).one_or_none()
+            if existing_number:
+                phone_record = existing_number
+                phone_record.client_id = client_record.id
+                phone_record.is_active = True
+                phone_record.twilio_sid = purchased["sid"]
+            else:
+                phone_record = PhoneNumber(
+                    client_id=client_record.id,
+                    twilio_phone_number=purchased["phone_number"],
+                    twilio_sid=purchased["sid"],
+                    is_active=True,
+                )
+                db.add(phone_record)
 
         db.commit()
 
@@ -323,7 +351,7 @@ def clients_provision(req: func.HttpRequest) -> func.HttpResponse:
             "phone_number": phone_record.twilio_phone_number,
             "twilio_sid": phone_record.twilio_sid,
         }
-        return func.HttpResponse(json.dumps(response_payload), status_code=200, mimetype="application/json")
+        return func.HttpResponse(json.dumps(response_payload), status_code=200, mimetype="application/json", headers=cors)
     except Exception as exc:  # pylint: disable=broad-except
         db.rollback()
         logger.error("Provisioning failed: %s", exc)
@@ -331,18 +359,23 @@ def clients_provision(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": "Provisioning failed"}),
             status_code=500,
             mimetype="application/json",
+            headers=cors,
         )
     finally:
         db.close()
 
 
 @app.function_name(name="TwilioIncoming")
-@app.route(route="twilio/incoming", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+@app.route(route="twilio/incoming", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def twilio_incoming(req: func.HttpRequest) -> func.HttpResponse:
     """
     Handle inbound Twilio webhook and connect caller to Ultravox via Twilio Streams.
     TODO: add Twilio signature validation.
     """
+    cors = build_cors_headers(req, ["POST", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
     try:
         raw_body = req.get_body().decode("utf-8")
     except Exception:  # pylint: disable=broad-except
@@ -371,6 +404,7 @@ def twilio_incoming(req: func.HttpRequest) -> func.HttpResponse:
             '<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="alice">Configuration error: no destination number was provided.</Say></Response>',
             status_code=200,
             mimetype="text/xml",
+            headers=cors,
         )
 
     db = SessionLocal()
@@ -384,6 +418,7 @@ def twilio_incoming(req: func.HttpRequest) -> func.HttpResponse:
                 json.dumps({"error": "No client found for this number"}),
                 status_code=404,
                 mimetype="application/json",
+                headers=cors,
             )
 
         client_record: Client = db.query(Client).filter_by(id=phone_record.client_id).one()
@@ -395,6 +430,7 @@ def twilio_incoming(req: func.HttpRequest) -> func.HttpResponse:
                 json.dumps({"error": "Client is missing an Ultravox agent"}),
                 status_code=500,
                 mimetype="application/json",
+                headers=cors,
             )
 
         try:
@@ -405,6 +441,7 @@ def twilio_incoming(req: func.HttpRequest) -> func.HttpResponse:
                 json.dumps({"error": "Failed to create Ultravox call"}),
                 status_code=500,
                 mimetype="application/json",
+                headers=cors,
             )
 
         logger.info(
@@ -424,6 +461,6 @@ def twilio_incoming(req: func.HttpRequest) -> func.HttpResponse:
             "</Connect>"
             "</Response>"
         )
-        return func.HttpResponse(twiml, status_code=200, mimetype="text/xml")
+        return func.HttpResponse(twiml, status_code=200, mimetype="text/xml", headers=cors)
     finally:
         db.close()

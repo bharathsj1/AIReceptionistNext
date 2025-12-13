@@ -11,6 +11,7 @@ import requests
 from function_app import app
 from shared.config import get_google_oauth_settings
 from shared.db import SessionLocal, User, Client, GoogleToken
+from utils.cors import build_cors_headers
 
 logger = logging.getLogger(__name__)
 
@@ -130,8 +131,12 @@ def _get_calendar_events(access_token: str, max_results: int = 5) -> Tuple[Optio
 # ---------------------------------------------------------------------------
 
 @app.function_name(name="AuthSignup")
-@app.route(route="auth/signup", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+@app.route(route="auth/signup", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def auth_signup(req: func.HttpRequest) -> func.HttpResponse:
+    cors = build_cors_headers(req, ["POST", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
     try:
         body = req.get_json()
     except ValueError:
@@ -143,6 +148,7 @@ def auth_signup(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": "email and password are required"}),
             status_code=400,
             mimetype="application/json",
+            headers=cors,
         )
 
     db = SessionLocal()
@@ -153,6 +159,7 @@ def auth_signup(req: func.HttpRequest) -> func.HttpResponse:
                 json.dumps({"error": "User already exists"}),
                 status_code=409,
                 mimetype="application/json",
+                headers=cors,
             )
 
         user = User(email=email, password_hash=_hash_password(password))
@@ -169,6 +176,7 @@ def auth_signup(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"user_id": user.id, "email": user.email}),
             status_code=201,
             mimetype="application/json",
+            headers=cors,
         )
     except Exception as exc:  # pylint: disable=broad-except
         db.rollback()
@@ -177,14 +185,19 @@ def auth_signup(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": "Signup failed", "details": str(exc)}),
             status_code=500,
             mimetype="application/json",
+            headers=cors,
         )
     finally:
         db.close()
 
 
 @app.function_name(name="AuthLogin")
-@app.route(route="auth/login", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+@app.route(route="auth/login", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def auth_login(req: func.HttpRequest) -> func.HttpResponse:
+    cors = build_cors_headers(req, ["POST", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
     try:
         body = req.get_json()
     except ValueError:
@@ -196,6 +209,7 @@ def auth_login(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": "email and password are required"}),
             status_code=400,
             mimetype="application/json",
+            headers=cors,
         )
 
     db = SessionLocal()
@@ -206,6 +220,7 @@ def auth_login(req: func.HttpRequest) -> func.HttpResponse:
                 json.dumps({"error": "Invalid credentials"}),
                 status_code=401,
                 mimetype="application/json",
+                headers=cors,
             )
         client = db.query(Client).filter_by(email=email).one_or_none()
         return func.HttpResponse(
@@ -218,6 +233,7 @@ def auth_login(req: func.HttpRequest) -> func.HttpResponse:
             ),
             status_code=200,
             mimetype="application/json",
+            headers=cors,
         )
     except Exception as exc:  # pylint: disable=broad-except
         logger.error("Login failed: %s", exc)
@@ -225,24 +241,30 @@ def auth_login(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": "Login failed", "details": str(exc)}),
             status_code=500,
             mimetype="application/json",
+            headers=cors,
         )
     finally:
         db.close()
 
 
 @app.function_name(name="AuthEmailExists")
-@app.route(route="auth/email-exists", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+@app.route(route="auth/email-exists", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def auth_email_exists(req: func.HttpRequest) -> func.HttpResponse:
     """
     Check if a user with the given email already exists.
     Query param: ?email=<email>
     """
+    cors = build_cors_headers(req, ["GET", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
     email = req.params.get("email")
     if not email:
         return func.HttpResponse(
             json.dumps({"error": "email is required"}),
             status_code=400,
             mimetype="application/json",
+            headers=cors,
         )
     db = SessionLocal()
     try:
@@ -251,18 +273,23 @@ def auth_email_exists(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"exists": existing is not None}),
             status_code=200,
             mimetype="application/json",
+            headers=cors,
         )
     finally:
         db.close()
 
 
 @app.function_name(name="ClientBusinessDetails")
-@app.route(route="clients/business-details", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+@app.route(route="clients/business-details", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def client_business_details(req: func.HttpRequest) -> func.HttpResponse:
     """
     Create or update a client with business name/phone after signup.
     Payload: { email, businessName, businessPhone, websiteUrl? }
     """
+    cors = build_cors_headers(req, ["POST", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
     try:
         body = req.get_json()
     except ValueError:
@@ -277,6 +304,7 @@ def client_business_details(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": "email, businessName, and businessPhone are required"}),
             status_code=400,
             mimetype="application/json",
+            headers=cors,
         )
 
     db = SessionLocal()
@@ -297,6 +325,7 @@ def client_business_details(req: func.HttpRequest) -> func.HttpResponse:
                 json.dumps({"client_id": client.id, "email": client.email}),
                 status_code=200,
                 mimetype="application/json",
+                headers=cors,
             )
 
         client = Client(
@@ -313,6 +342,7 @@ def client_business_details(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"client_id": client.id, "email": client.email}),
             status_code=201,
             mimetype="application/json",
+            headers=cors,
         )
     except Exception as exc:  # pylint: disable=broad-except
         db.rollback()
@@ -321,21 +351,27 @@ def client_business_details(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": "Failed to save client details", "details": str(exc)}),
             status_code=500,
             mimetype="application/json",
+            headers=cors,
         )
     finally:
         db.close()
 
 
 @app.function_name(name="UserByEmail")
-@app.route(route="auth/user-by-email", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+@app.route(route="auth/user-by-email", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def user_by_email(req: func.HttpRequest) -> func.HttpResponse:
     """Return user fields including business name/number."""
+    cors = build_cors_headers(req, ["GET", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
     email = req.params.get("email")
     if not email:
         return func.HttpResponse(
             json.dumps({"error": "email is required"}),
             status_code=400,
             mimetype="application/json",
+            headers=cors,
         )
     db = SessionLocal()
     try:
@@ -345,6 +381,7 @@ def user_by_email(req: func.HttpRequest) -> func.HttpResponse:
                 json.dumps({"error": "not found"}),
                 status_code=404,
                 mimetype="application/json",
+                headers=cors,
             )
         payload = {
             "user_id": user.id,
@@ -356,20 +393,26 @@ def user_by_email(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps(payload),
             status_code=200,
             mimetype="application/json",
+            headers=cors,
         )
     finally:
         db.close()
 
 @app.function_name(name="ClientByEmail")
-@app.route(route="clients/by-email", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+@app.route(route="clients/by-email", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def client_by_email(req: func.HttpRequest) -> func.HttpResponse:
     """Return client profile by email, including business fields."""
+    cors = build_cors_headers(req, ["GET", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
     email = req.params.get("email")
     if not email:
         return func.HttpResponse(
             json.dumps({"error": "email is required"}),
             status_code=400,
             mimetype="application/json",
+            headers=cors,
         )
     db = SessionLocal()
     try:
@@ -379,6 +422,7 @@ def client_by_email(req: func.HttpRequest) -> func.HttpResponse:
                 json.dumps({"error": "not found"}),
                 status_code=404,
                 mimetype="application/json",
+                headers=cors,
             )
         user = None
         if client.user_id:
@@ -397,14 +441,19 @@ def client_by_email(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps(payload),
             status_code=200,
             mimetype="application/json",
+            headers=cors,
         )
     finally:
         db.close()
 
 
 @app.function_name(name="AuthForgotPassword")
-@app.route(route="auth/forgot-password", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+@app.route(route="auth/forgot-password", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def auth_forgot_password(req: func.HttpRequest) -> func.HttpResponse:
+    cors = build_cors_headers(req, ["POST", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
     try:
         body = req.get_json()
     except ValueError:
@@ -415,6 +464,7 @@ def auth_forgot_password(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": "email is required"}),
             status_code=400,
             mimetype="application/json",
+            headers=cors,
         )
 
     db = SessionLocal()
@@ -425,6 +475,7 @@ def auth_forgot_password(req: func.HttpRequest) -> func.HttpResponse:
                 json.dumps({"message": "If the account exists, a reset link will be sent."}),
                 status_code=200,
                 mimetype="application/json",
+                headers=cors,
             )
         token = _generate_reset_token()
         user.reset_token = token
@@ -437,6 +488,7 @@ def auth_forgot_password(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"message": "Reset link generated", "reset_link": reset_link}),
             status_code=200,
             mimetype="application/json",
+            headers=cors,
         )
     except Exception as exc:  # pylint: disable=broad-except
         db.rollback()
@@ -445,14 +497,19 @@ def auth_forgot_password(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": "Forgot password failed", "details": str(exc)}),
             status_code=500,
             mimetype="application/json",
+            headers=cors,
         )
     finally:
         db.close()
 
 
 @app.function_name(name="AuthResetPassword")
-@app.route(route="auth/reset-password", methods=["POST", "GET"], auth_level=func.AuthLevel.ANONYMOUS)
+@app.route(route="auth/reset-password", methods=["POST", "GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def auth_reset_password(req: func.HttpRequest) -> func.HttpResponse:
+    cors = build_cors_headers(req, ["GET", "POST", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
     if req.method == "GET":
         token = req.params.get("token")
         if not token:
@@ -460,6 +517,7 @@ def auth_reset_password(req: func.HttpRequest) -> func.HttpResponse:
                 "Token is required to reset your password.",
                 status_code=400,
                 mimetype="text/plain",
+                headers=cors,
             )
         html = f"""
         <!doctype html>
@@ -476,7 +534,7 @@ def auth_reset_password(req: func.HttpRequest) -> func.HttpResponse:
         </body>
         </html>
         """
-        return func.HttpResponse(html, status_code=200, mimetype="text/html")
+        return func.HttpResponse(html, status_code=200, mimetype="text/html", headers=cors)
 
     token = None
     new_password = None
@@ -497,6 +555,7 @@ def auth_reset_password(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": "token and new_password are required"}),
             status_code=400,
             mimetype="application/json",
+            headers=cors,
         )
 
     db = SessionLocal()
@@ -511,6 +570,7 @@ def auth_reset_password(req: func.HttpRequest) -> func.HttpResponse:
                 json.dumps({"error": "Invalid or expired token"}),
                 status_code=400,
                 mimetype="application/json",
+                headers=cors,
             )
 
         user.password_hash = _hash_password(new_password)
@@ -522,6 +582,7 @@ def auth_reset_password(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"message": "Password reset successful"}),
             status_code=200,
             mimetype="application/json",
+            headers=cors,
         )
     except Exception as exc:  # pylint: disable=broad-except
         db.rollback()
@@ -530,20 +591,26 @@ def auth_reset_password(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": "Reset password failed", "details": str(exc)}),
             status_code=500,
             mimetype="application/json",
+            headers=cors,
         )
     finally:
         db.close()
 
 
 @app.function_name(name="GoogleAuthUrl")
-@app.route(route="auth/google/url", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+@app.route(route="auth/google/url", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def auth_google_url(req: func.HttpRequest) -> func.HttpResponse:  # pylint: disable=unused-argument
+    cors = build_cors_headers(req, ["GET", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
     settings = get_google_oauth_settings()
     if not settings["client_id"] or not settings["client_secret"]:
         return func.HttpResponse(
             json.dumps({"error": "Google OAuth env vars missing"}),
             status_code=500,
             mimetype="application/json",
+            headers=cors,
         )
     state = secrets.token_urlsafe(16)
     url = _build_google_auth_url(state)
@@ -551,16 +618,21 @@ def auth_google_url(req: func.HttpRequest) -> func.HttpResponse:  # pylint: disa
         json.dumps({"auth_url": url, "state": state}),
         status_code=200,
         mimetype="application/json",
+        headers=cors,
     )
 
 
 @app.function_name(name="GoogleAuthCallback")
 @app.route(
     route="auth/google/callback",
-    methods=["GET", "POST"],
+    methods=["GET", "POST", "OPTIONS"],
     auth_level=func.AuthLevel.ANONYMOUS,
 )
 def auth_google_callback(req: func.HttpRequest) -> func.HttpResponse:
+    cors = build_cors_headers(req, ["GET", "POST", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
     code = req.params.get("code") or None
     state = req.params.get("state")
     if not code:
@@ -575,6 +647,7 @@ def auth_google_callback(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": "Missing code"}),
             status_code=400,
             mimetype="application/json",
+            headers=cors,
         )
 
     token_data, token_error = _exchange_code_for_tokens(code)
@@ -583,6 +656,7 @@ def auth_google_callback(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": "Failed to exchange code", "details": token_error}),
             status_code=400,
             mimetype="application/json",
+            headers=cors,
         )
 
     access_token = token_data.get("access_token")
@@ -598,6 +672,7 @@ def auth_google_callback(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": "Failed to fetch user profile", "details": profile_error}),
             status_code=400,
             mimetype="application/json",
+            headers=cors,
         )
 
     email = profile.get("email")
@@ -673,12 +748,13 @@ def auth_google_callback(req: func.HttpRequest) -> func.HttpResponse:
                 "</script>"
                 "<p>Google connected. You can close this tab.</p>"
             )
-            return func.HttpResponse(html, status_code=200, mimetype="text/html")
+            return func.HttpResponse(html, status_code=200, mimetype="text/html", headers=cors)
 
         return func.HttpResponse(
             json.dumps(payload),
             status_code=200,
             mimetype="application/json",
+            headers=cors,
         )
     except Exception as exc:  # pylint: disable=broad-except
         db.rollback()
@@ -687,14 +763,19 @@ def auth_google_callback(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": "Google auth failed", "details": str(exc)}),
             status_code=500,
             mimetype="application/json",
+            headers=cors,
         )
     finally:
         db.close()
 
 
 @app.function_name(name="CalendarEvents")
-@app.route(route="calendar/events", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+@app.route(route="calendar/events", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def calendar_events(req: func.HttpRequest) -> func.HttpResponse:
+    cors = build_cors_headers(req, ["GET", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
     email = req.params.get("email")
     user_id = req.params.get("user_id")
     max_results_param = req.params.get("max_results")
@@ -717,6 +798,7 @@ def calendar_events(req: func.HttpRequest) -> func.HttpResponse:
                 json.dumps({"error": "User not found"}),
                 status_code=404,
                 mimetype="application/json",
+                headers=cors,
             )
 
         token = (
@@ -730,6 +812,7 @@ def calendar_events(req: func.HttpRequest) -> func.HttpResponse:
                 json.dumps({"error": "No Google account connected"}),
                 status_code=404,
                 mimetype="application/json",
+                headers=cors,
             )
 
         access_token = token.access_token
@@ -741,6 +824,7 @@ def calendar_events(req: func.HttpRequest) -> func.HttpResponse:
                     json.dumps({"error": "Unable to refresh token", "details": refresh_error}),
                     status_code=401,
                     mimetype="application/json",
+                    headers=cors,
                 )
             access_token = refreshed.get("access_token") or access_token
             token.access_token = access_token
@@ -757,12 +841,14 @@ def calendar_events(req: func.HttpRequest) -> func.HttpResponse:
                 json.dumps({"error": "Failed to fetch calendar", "details": events_error}),
                 status_code=400,
                 mimetype="application/json",
+                headers=cors,
             )
 
         return func.HttpResponse(
             json.dumps({"events": events.get("items", []), "summary": events.get("summary"), "user": user.email}),
             status_code=200,
             mimetype="application/json",
+            headers=cors,
         )
     except Exception as exc:  # pylint: disable=broad-except
         logger.error("Calendar events failed: %s", exc)
@@ -770,6 +856,7 @@ def calendar_events(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": "Calendar fetch failed", "details": str(exc)}),
             status_code=500,
             mimetype="application/json",
+            headers=cors,
         )
     finally:
         db.close()

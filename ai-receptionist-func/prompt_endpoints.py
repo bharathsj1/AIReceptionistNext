@@ -7,6 +7,7 @@ import httpx
 
 from function_app import app
 from shared.config import get_required_setting, get_setting
+from utils.cors import build_cors_headers
 
 logger = logging.getLogger(__name__)
  
@@ -197,7 +198,7 @@ def _generate_prompt(website_text: str, business_name: Optional[str]) -> str:
 
 
 @app.function_name(name="UltravoxPrompt")
-@app.route(route="ultravox/prompt", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+@app.route(route="ultravox/prompt", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def create_ultravox_prompt(req: func.HttpRequest) -> func.HttpResponse:
     """
     Generate a natural Ultravox system prompt from website text using OpenAI.
@@ -208,6 +209,10 @@ def create_ultravox_prompt(req: func.HttpRequest) -> func.HttpResponse:
       "pages": [ { "url": "...", "title": "...", "content": "..." } ]  # optional
     }
     """
+    cors = build_cors_headers(req, ["POST", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
     try:
         body = req.get_json()
     except ValueError:
@@ -222,6 +227,7 @@ def create_ultravox_prompt(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": "website_text or pages is required"}),
             status_code=400,
             mimetype="application/json",
+            headers=cors,
         )
 
     try:
@@ -235,10 +241,12 @@ def create_ultravox_prompt(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": "Failed to generate prompt", "details": str(exc)}),
             status_code=500,
             mimetype="application/json",
+            headers=cors,
         )
 
     return func.HttpResponse(
         json.dumps({"prompt": prompt}),
         status_code=200,
         mimetype="application/json",
+        headers=cors,
     )

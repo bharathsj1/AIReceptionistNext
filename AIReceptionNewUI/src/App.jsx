@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Lenis from "lenis";
+import { gsap } from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
 import API_URLS from "./config/urls";
 import LandingScreen from "./screens/LandingScreen";
 import LoginScreen from "./screens/LoginScreen";
@@ -10,6 +13,7 @@ import CompleteScreen from "./screens/CompleteScreen";
 import ResetPasswordScreen from "./screens/ResetPasswordScreen";
 import PaymentScreen from "./screens/PaymentScreen";
 import PaymentSuccessScreen from "./screens/PaymentSuccessScreen";
+import StepIndicator from "./components/StepIndicator";
 import PricingPackages from "./components/PricingPackages";
 import CreateAccountScreen from "./screens/CreateAccountScreen";
 import SignupSurveyScreen from "./screens/SignupSurveyScreen";
@@ -31,6 +35,16 @@ const STAGES = {
   SIGNUP_SURVEY: "signupSurvey",
   BUSINESS_DETAILS: "businessDetails"
 };
+
+const ONBOARDING_STEPS = [
+  { id: STAGES.LOGIN, label: "Login" },
+  { id: STAGES.SIGNUP, label: "Create account" },
+  { id: STAGES.BUSINESS_DETAILS, label: "Business info" },
+  { id: STAGES.CRAWL_FORM, label: "Website crawl" },
+  { id: STAGES.PACKAGES, label: "Pick a plan" },
+  { id: STAGES.PAYMENT, label: "Payment" },
+  { id: STAGES.PAYMENT_SUCCESS, label: "Provisioning" }
+];
 
 export default function App() {
   const [stage, setStage] = useState(STAGES.LANDING);
@@ -615,6 +629,15 @@ export default function App() {
     setStage(STAGES.PAYMENT_SUCCESS);
   };
 
+  const currentStepIndex = ONBOARDING_STEPS.findIndex((s) => s.id === stage);
+  const progressPercent =
+    currentStepIndex >= 0 ? ((currentStepIndex + 1) / ONBOARDING_STEPS.length) * 100 : 0;
+  const isOnboardingStage = currentStepIndex >= 0;
+  const isLandingStage = stage === STAGES.LANDING;
+  const pageClassName = `page${isLandingStage ? " page-landing" : ""}`;
+  const pageContentClassName = `page-content${isLandingStage ? " page-content-landing" : ""}`;
+  const contentClassName = `content${isLandingStage ? " content-landing" : ""}`;
+
   const handleEmailSubmit = async (event) => {
     event.preventDefault();
     await runProvisionFlow();
@@ -1099,50 +1122,87 @@ export default function App() {
     setCalendarError("");
   };
 
-  return (
-    <div className="page">
-      <div className="background-glow" />
-      <header className="top-bar">
-        <div className="header-left">
-          <div
-            className="brand"
-            onClick={handleGoHome}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                handleGoHome();
-              }
-            }}
-            role="button"
-            tabIndex={0}
-          >
-            <span className="brand-mark">AI</span>
-            <span className="brand-name">Reception</span>
-          </div>
-          {stage !== STAGES.DASHBOARD && (
-            <nav className="nav-links" aria-label="Primary">
-              <button type="button" className="nav-link">Overview</button>
-              <button type="button" className="nav-link">Benefits</button>
-              <button type="button" className="nav-link">Customers</button>
-              <button type="button" className="nav-link">Products</button>
-              <button type="button" className="nav-link">Pricing</button>
-            </nav>
-          )}
-        </div>
-        <div className="header-actions">
-          {isLoggedIn ? (
-            <button className="ghost" type="button" onClick={handleLogout}>
-              Logout
-            </button>
-          ) : stage === STAGES.LANDING ? (
-            <button className="ghost" type="button" onClick={() => setStage(STAGES.LOGIN)}>
-              Login
-            </button>
-          ) : null}
-        </div>
-      </header>
+  useEffect(() => {
+    gsap.registerPlugin(ScrollTrigger);
+    const scroller = document.querySelector("[data-lenis-wrapper]");
+    const content = document.querySelector("[data-lenis-content]");
+    if (!scroller || !content) return;
 
-      <main className="content">
+    const lenis = new Lenis({
+      wrapper: scroller,
+      content,
+      duration: 1.1,
+      easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
+      smoothWheel: true,
+      smoothTouch: false,
+      wheelMultiplier: 1.05
+    });
+
+    ScrollTrigger.scrollerProxy(scroller, {
+      scrollTop(value) {
+        if (typeof value !== "undefined") {
+          lenis.scrollTo(value, { immediate: true });
+        }
+        return lenis.scroll;
+      },
+      getBoundingClientRect() {
+        return { top: 0, left: 0, width: window.innerWidth, height: window.innerHeight };
+      },
+      pinType: "transform"
+    });
+
+    ScrollTrigger.defaults({ scroller });
+
+    const syncLenis = (time) => {
+      lenis.raf(time * 1000);
+    };
+
+    gsap.ticker.add(syncLenis);
+    lenis.on("scroll", ScrollTrigger.update);
+
+    const sections = gsap.utils.toArray(".reveal-section");
+    gsap.set(sections, { opacity: 0, y: 40 });
+
+    const animations = sections.map((section) =>
+      gsap.to(section, {
+        opacity: 1,
+        y: 0,
+        duration: 1,
+        ease: "power3.out",
+        scrollTrigger: {
+          trigger: section,
+          start: "top 80%",
+          end: "top 30%",
+          toggleActions: "play none none reverse"
+        }
+      })
+    );
+
+    const onRefresh = () => lenis.resize();
+    ScrollTrigger.addEventListener("refresh", onRefresh);
+    ScrollTrigger.refresh();
+
+    return () => {
+      ScrollTrigger.removeEventListener("refresh", onRefresh);
+      animations.forEach((anim) => {
+        anim.scrollTrigger?.kill();
+        anim.kill();
+      });
+      gsap.ticker.remove(syncLenis);
+      lenis.destroy();
+    };
+  }, []);
+
+  return (
+    <div className={pageClassName} data-lenis-wrapper>
+      <div className={pageContentClassName} data-lenis-content>
+        <div className="background-glow" />
+        <main className={contentClassName}>
+        {isOnboardingStage && (
+          <div className="screen-panel narrow" style={{ marginBottom: 16 }}>
+            <StepIndicator steps={ONBOARDING_STEPS} currentStep={stage} />
+          </div>
+        )}
         {stage === STAGES.LANDING && (
           <LandingScreen
             onTry={() => setStage(STAGES.CRAWL_FORM)}
@@ -1151,72 +1211,80 @@ export default function App() {
           />
         )}
         {stage === STAGES.PACKAGES && (
-          <section className="mt-10">
+          <div className="shell-card screen-panel">
             <PricingPackages onSelectPackage={handleSelectPlan} showCrawlSuccess />
-          </section>
+          </div>
         )}
 
         {stage === STAGES.LOGIN && (
-          <LoginScreen
-            loginEmail={loginEmail}
-            loginPassword={loginPassword}
-            status={status}
-            responseMessage={responseMessage}
-            responseLink={responseLink}
-            onLoginSubmit={handleLoginSubmit}
-            onEmailChange={setLoginEmail}
-            onPasswordChange={setLoginPassword}
-            onGoogleLogin={beginGoogleLogin}
-            onCreateAccount={goToSignup}
-            onForgotPassword={handleForgotPassword}
-          />
+          <div className="shell-card screen-panel narrow">
+            <LoginScreen
+              loginEmail={loginEmail}
+              loginPassword={loginPassword}
+              status={status}
+              responseMessage={responseMessage}
+              responseLink={responseLink}
+              onLoginSubmit={handleLoginSubmit}
+              onEmailChange={setLoginEmail}
+              onPasswordChange={setLoginPassword}
+              onGoogleLogin={beginGoogleLogin}
+              onCreateAccount={goToSignup}
+              onForgotPassword={handleForgotPassword}
+            />
+          </div>
         )}
 
         {stage === STAGES.SIGNUP && (
-          <CreateAccountScreen
-            name={signupName}
-            email={signupEmail}
-            password={signupPassword}
-            onNameChange={setSignupName}
-            onEmailChange={setSignupEmail}
-            onPasswordChange={setSignupPassword}
-            onSubmit={handleCreateAccountSubmit}
-            onBackToLogin={() => setStage(STAGES.LOGIN)}
-            loading={signupLoading}
-            error={signupError}
-          />
+          <div className="shell-card screen-panel narrow">
+            <CreateAccountScreen
+              name={signupName}
+              email={signupEmail}
+              password={signupPassword}
+              onNameChange={setSignupName}
+              onEmailChange={setSignupEmail}
+              onPasswordChange={setSignupPassword}
+              onSubmit={handleCreateAccountSubmit}
+              onBackToLogin={() => setStage(STAGES.LOGIN)}
+              loading={signupLoading}
+              error={signupError}
+            />
+          </div>
         )}
 
         {stage === STAGES.SIGNUP_SURVEY && (
-          <SignupSurveyScreen
-            name={signupName}
-            role={signupRole}
-            useCase={signupUseCase}
-            referral={signupReferral}
-            onRoleChange={setSignupRole}
-            onUseCaseChange={setSignupUseCase}
-            onReferralChange={setSignupReferral}
-            onContinue={goToBusinessDetails}
-          />
+          <div className="shell-card screen-panel">
+            <SignupSurveyScreen
+              name={signupName}
+              role={signupRole}
+              useCase={signupUseCase}
+              referral={signupReferral}
+              onRoleChange={setSignupRole}
+              onUseCaseChange={setSignupUseCase}
+              onReferralChange={setSignupReferral}
+              onContinue={goToBusinessDetails}
+            />
+          </div>
         )}
 
         {stage === STAGES.BUSINESS_DETAILS && (
-          <BusinessDetailsScreen
-            userName={signupName}
-            name={businessName}
-            phone={businessPhone}
-            onNameChange={setBusinessName}
-            onPhoneChange={setBusinessPhone}
-            onContinue={() =>
-              handleBusinessDetailsSubmit({
-                businessName: businessName,
-                businessPhone: businessPhone
-              })
-            }
-            onBack={goToSignup}
-            loading={businessLoading}
-            error={businessError}
-          />
+          <div className="shell-card screen-panel">
+            <BusinessDetailsScreen
+              userName={signupName}
+              name={businessName}
+              phone={businessPhone}
+              onNameChange={setBusinessName}
+              onPhoneChange={setBusinessPhone}
+              onContinue={() =>
+                handleBusinessDetailsSubmit({
+                  businessName: businessName,
+                  businessPhone: businessPhone
+                })
+              }
+              onBack={goToSignup}
+              loading={businessLoading}
+              error={businessError}
+            />
+          </div>
         )}
 
         {stage === STAGES.RESET_PASSWORD && (
@@ -1259,24 +1327,28 @@ export default function App() {
         )}
 
         {stage === STAGES.CRAWL_FORM && (
-          <CrawlFormScreen
-            url={url}
-            status={status}
-            responseMessage={responseMessage}
-            onSubmit={handleSubmit}
-            onUrlChange={setUrl}
-            onBack={() => setStage(STAGES.LANDING)}
-            onSkipWebsite={() => setStage(STAGES.PACKAGES)}
-          />
+          <div className="shell-card screen-panel">
+            <CrawlFormScreen
+              url={url}
+              status={status}
+              responseMessage={responseMessage}
+              onSubmit={handleSubmit}
+              onUrlChange={setUrl}
+              onBack={() => setStage(STAGES.LANDING)}
+              onSkipWebsite={() => setStage(STAGES.PACKAGES)}
+            />
+          </div>
         )}
 
         {stage === STAGES.LOADING && (
-          <LoadingScreen
-            status={status}
-            loadingPhase={loadingPhase}
-            loadingSteps={loadingSteps}
-            responseMessage={responseMessage}
-          />
+          <div className="shell-card screen-panel">
+            <LoadingScreen
+              status={status}
+              loadingPhase={loadingPhase}
+              loadingSteps={loadingSteps}
+              responseMessage={responseMessage}
+            />
+          </div>
         )}
 
         {stage === STAGES.EMAIL_CAPTURE && (
@@ -1304,20 +1376,25 @@ export default function App() {
         )}
 
         {stage === STAGES.PAYMENT && (
-          <PaymentScreen
-            planId={selectedPlan}
-            onBack={handleGoHome}
-            onSubmit={handlePaymentSubmit}
-            initialEmail={signupEmail || email}
-          />
+          <div className="shell-card screen-panel">
+            <PaymentScreen
+              planId={selectedPlan}
+              onBack={handleGoHome}
+              onSubmit={handlePaymentSubmit}
+              initialEmail={signupEmail || email}
+            />
+          </div>
         )}
         {stage === STAGES.PAYMENT_SUCCESS && (
-          <PaymentSuccessScreen
-            paymentInfo={paymentInfo}
-            onContinue={runProvisionFlow}
-          />
+          <div className="shell-card screen-panel">
+            <PaymentSuccessScreen
+              paymentInfo={paymentInfo}
+              onContinue={runProvisionFlow}
+            />
+          </div>
         )}
-      </main>
+        </main>
+      </div>
     </div>
   );
 }

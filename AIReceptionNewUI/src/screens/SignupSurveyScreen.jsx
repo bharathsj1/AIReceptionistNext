@@ -15,7 +15,7 @@ export default function SignupSurveyScreen({
   const referrals = ["Search engine", "Friend/colleague", "Social media", "Partner/agency", "Other"];
 
   return (
-    <section className="survey-layout">
+    <section className="survey-layout screen-panel">
       <div className="survey-left">
         <div className="brand-row">
           <div className="brand-dot" />

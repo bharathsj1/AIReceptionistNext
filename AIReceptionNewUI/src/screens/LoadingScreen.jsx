@@ -1,6 +1,6 @@
 export default function LoadingScreen({ status, loadingPhase, loadingSteps, responseMessage }) {
   return (
-    <section className="progress-card">
+    <section className="progress-card screen-panel">
       <div className="progress-header">
         <p className="eyebrow">AI Reception</p>
         <h2>
