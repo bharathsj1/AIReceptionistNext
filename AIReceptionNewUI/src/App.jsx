@@ -1195,6 +1195,18 @@ export default function App() {
 
   return (
     <div className={pageClassName} data-lenis-wrapper>
+      <div className="page-video-bg" aria-hidden="true">
+        <video
+          className="page-video"
+          src="/Logo_noaudio.mp4"
+          autoPlay
+          loop
+          muted
+          playsInline
+          preload="auto"
+        />
+        <div className="page-video-overlay" />
+      </div>
       <div className={pageContentClassName} data-lenis-content>
         <div className="background-glow" />
         <main className={contentClassName}>
