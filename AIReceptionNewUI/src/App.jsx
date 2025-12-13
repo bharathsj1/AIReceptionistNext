@@ -637,6 +637,7 @@ export default function App() {
   const pageClassName = `page${isLandingStage ? " page-landing" : ""}`;
   const pageContentClassName = `page-content${isLandingStage ? " page-content-landing" : ""}`;
   const contentClassName = `content${isLandingStage ? " content-landing" : ""}`;
+  const showGlobalLogo = stage !== STAGES.LANDING;
 
   const handleEmailSubmit = async (event) => {
     event.preventDefault();
@@ -1207,6 +1208,13 @@ export default function App() {
         />
         <div className="page-video-overlay" />
       </div>
+      {showGlobalLogo && (
+        <header className="global-logo-bar">
+          <button className="logo-link" onClick={handleGoHome} aria-label="Go to home">
+            <span className="logo-text">SmartConnect4u</span>
+          </button>
+        </header>
+      )}
       <div className={pageContentClassName} data-lenis-content>
         <div className="background-glow" />
         <main className={contentClassName}>

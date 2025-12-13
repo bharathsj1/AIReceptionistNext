@@ -49,11 +49,8 @@ export default function DashboardScreen({
     <section className="dashboard-shell">
       <aside className="dash-nav">
         <div className="nav-brand">
-          <span className="brand-mark">AI</span>
-          <div>
-            <div className="brand-name">Reception</div>
-            <div className="tag pill">User</div>
-          </div>
+          <span className="brand-name">SmartConnect4u</span>
+          <div className="tag pill">User</div>
         </div>
         <nav className="nav-list">
           <button className={`nav-item ${activeTab === "dashboard" ? "active" : ""}`} onClick={() => setActiveTab("dashboard")}>
