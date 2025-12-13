@@ -273,8 +273,9 @@ html {
 }
 
 .hero-copy h1.hero-title.large {
-  font-size: 52px;
+  font-size: calc(52px * 0.6);
   line-height: 1.05;
+  font-weight: 300;
 }
 
 .cta-pill {
@@ -305,7 +306,7 @@ html {
 }
 
 .hero-centered-cta {
-  margin-top: 10px;
+  margin-top: -6px;
 }
 
 .eyebrow {
