@@ -1129,6 +1129,14 @@ export default function App() {
     const content = document.querySelector("[data-lenis-content]");
     if (!scroller || !content) return;
 
+    const isMobile = window.matchMedia("(max-width: 768px)").matches;
+    if (isMobile) {
+      scroller.style.position = "static";
+      scroller.style.overflow = "auto";
+      content.style.minHeight = "100%";
+      return;
+    }
+
     const lenis = new Lenis({
       wrapper: scroller,
       content,
