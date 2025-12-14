@@ -28,6 +28,22 @@ export default function DashboardScreen({
   const safePage = Math.min(Math.max(callsPage || 1, 1), totalPages);
   const pagedCalls = recentCalls.slice((safePage - 1) * pageSize, safePage * pageSize);
 
+  const impactStats = [
+    { label: "Response speed", value: "+60%", note: "Improvement after AI receptionist launch" },
+    { label: "Bookings secured", value: "99.9%", note: "Appointment success rate" },
+    { label: "Missed calls", value: "0", note: "Work missed this week" },
+    { label: "Lead capture", value: "3.2x", note: "More conversations routed to staff" }
+  ];
+
+  const impactTrend = [
+    { label: "Week 1", value: 48 },
+    { label: "Week 2", value: 55 },
+    { label: "Week 3", value: 61 },
+    { label: "Week 4", value: 64 },
+    { label: "Week 5", value: 68 },
+    { label: "Week 6", value: 72 }
+  ];
+
   const formatDuration = (seconds) => {
     if (!seconds && seconds !== 0) return "—";
     const mins = Math.floor(Number(seconds) / 60);
@@ -217,6 +233,51 @@ export default function DashboardScreen({
                   <p className="hint">Last 14 days</p>
                 </div>
                 <div className="metric-icon">⏲</div>
+              </div>
+            </div>
+
+            <div className="card impact-card">
+              <div className="card-header">
+                <div>
+                  <p className="eyebrow">AI Receptionist impact</p>
+                  <h3>Sample business growth view</h3>
+                  <p className="hint">How performance looks after adding the AI receptionist.</p>
+                </div>
+                <div className="pill">Sample data</div>
+              </div>
+              <div className="impact-grid">
+                <div className="impact-stats">
+                  {impactStats.map((stat) => (
+                    <div className="impact-stat" key={stat.label}>
+                      <div className="stat-top">
+                        <p className="hint">{stat.label}</p>
+                        <span className="stat-value">{stat.value}</span>
+                      </div>
+                      <p className="hint">{stat.note}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="impact-chart">
+                  <div className="chart-title">
+                    <span>6-week uplift</span>
+                    <span className="pill subtle">AI vs before</span>
+                  </div>
+                  <div className="chart-bars">
+                    {impactTrend.map((item) => (
+                      <div className="bar-row" key={item.label}>
+                        <span className="bar-label">{item.label}</span>
+                        <div className="bar-track">
+                          <div className="bar-fill" style={{ width: `${item.value}%` }} />
+                        </div>
+                        <span className="bar-value">{item.value}%</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="chart-footnotes">
+                    <span>• 99.9% appointment booking success rate recorded.</span>
+                    <span>• Zero missed work with AI handling off-hours calls.</span>
+                  </div>
+                </div>
               </div>
             </div>
           </>

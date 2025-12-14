@@ -26,11 +26,6 @@ type AgentOption = {
   name: string;
 };
 
-type VoiceOption = {
-  id: string;
-  name: string;
-};
-
 const statusCopy: Record<CallStatus, string> = {
   idle: "Ready to start",
   connecting: "Connecting…",
@@ -68,18 +63,14 @@ export default function UltravoxDemo() {
       name: "Demo 3"
     }
   ];
-  const defaultVoice: VoiceOption = { id: "", name: "Agent default" };
 
   const [status, setStatus] = useState<CallStatus>("idle");
   const [isInCall, setIsInCall] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [transcripts, setTranscripts] = useState<TranscriptItem[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<AgentOption>(agentOptions[0]);
-  const [voices, setVoices] = useState<VoiceOption[]>([]);
-  const [selectedVoice, setSelectedVoice] = useState<VoiceOption | null>(null);
-  const [voicesLoading, setVoicesLoading] = useState(false);
-  const [voicesError, setVoicesError] = useState<string | null>(null);
   const sessionRef = useRef<UltravoxSession | null>(null);
+  const transcriptRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -121,55 +112,6 @@ export default function UltravoxDemo() {
     };
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    const loadVoices = async () => {
-      setVoicesLoading(true);
-      setVoicesError(null);
-      try {
-        const res = await fetch(API_URLS.ultravoxVoices);
-        if (!res.ok) {
-          throw new Error("Failed to load Ultravox voices");
-        }
-        const data = await res.json();
-        const raw = Array.isArray(data?.voices)
-          ? data.voices
-          : Array.isArray(data)
-            ? data
-            : Array.isArray(data?.data)
-              ? data.data
-              : [];
-        const mapped: VoiceOption[] = raw
-          .map((v: any) => ({
-            id: v?.id || v?.voiceId || "",
-            name: v?.name || v?.displayName || v?.id || "Voice"
-          }))
-          .filter((v: VoiceOption) => v.id);
-        if (cancelled) return;
-
-        setVoices(mapped);
-        if (!selectedVoice) {
-          setSelectedVoice(mapped[0] ?? defaultVoice);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setVoicesError("Could not load Ultravox voices. Using the agent default voice.");
-          if (!selectedVoice) {
-            setSelectedVoice(defaultVoice);
-          }
-        }
-      } finally {
-        if (!cancelled) {
-          setVoicesLoading(false);
-        }
-      }
-    };
-    loadVoices();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   const handleToggleCall = async () => {
     if (!isInCall) {
       await startCall();
@@ -194,15 +136,13 @@ export default function UltravoxDemo() {
     setStatus("connecting");
     setIsInCall(true);
     try {
-      const voiceId = selectedVoice?.id;
       const res = await fetch(API_URLS.ultravoxDemoCall, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          agentId: selectedAgent.id,
-          ...(voiceId ? { voiceId } : {})
+          agentId: selectedAgent.id
         })
       });
       if (!res.ok) {
@@ -248,6 +188,13 @@ export default function UltravoxDemo() {
 
   const statusLabel = statusCopy[status] || "Ready to start";
 
+  useEffect(() => {
+    const el = transcriptRef.current;
+    if (!el) return;
+    // Scroll to the latest message smoothly when new transcripts arrive.
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, [transcripts]);
+
   return (
     <section className="relative overflow-hidden rounded-3xl border border-white/60 bg-gradient-to-br from-white via-slate-50 to-indigo-50/70 p-6 shadow-[0_20px_90px_rgba(15,23,42,0.25)] backdrop-blur md:p-10">
       <div className="pointer-events-none absolute -left-10 -top-16 h-40 w-40 rounded-full bg-indigo-200/60 blur-3xl" />
@@ -289,6 +236,7 @@ export default function UltravoxDemo() {
           <div
             className="mt-4 h-[320px] overflow-y-auto rounded-xl border border-slate-100 bg-white/80 p-3 md:h-[380px]"
             aria-live="polite"
+            ref={transcriptRef}
           >
             {transcripts.length === 0 ? (
               <div className="flex h-full items-center justify-center text-center text-sm text-slate-500">
@@ -361,37 +309,7 @@ export default function UltravoxDemo() {
                   </button>
                 );
               })}
-              <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm">
-                <label className="text-xs uppercase tracking-[0.16em] text-slate-500">
-                  Voice
-                </label>
-                <select
-                  className="bg-transparent text-sm font-semibold text-slate-800 outline-none"
-                  value={selectedVoice?.id ?? defaultVoice.id}
-                  onChange={(e) => {
-                    const next = voices.find((v) => v.id === e.target.value) ?? defaultVoice;
-                    setSelectedVoice(next);
-                  }}
-                  disabled={voicesLoading || isInCall}
-                >
-                  {voicesLoading && <option>Loading voices…</option>}
-                  {!voicesLoading &&
-                    (voices.length > 0 ? voices : [defaultVoice]).map((voice) => (
-                      <option key={voice.id || voice.name} value={voice.id}>
-                        {voice.name}
-                      </option>
-                    ))}
-                </select>
-              </div>
             </div>
-            {voicesError && (
-              <p className="mt-2 text-xs text-amber-600">{voicesError}</p>
-            )}
-            {!voicesError && (
-              <p className="mt-2 text-xs text-slate-500">
-                Voice selection applies to your next call. End the current call to switch voices.
-              </p>
-            )}
           </div>
 
           <div className="mt-6 flex flex-col items-center gap-4">
