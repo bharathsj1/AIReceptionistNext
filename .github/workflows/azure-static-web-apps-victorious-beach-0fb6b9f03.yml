@@ -2,13 +2,32 @@ name: Azure Static Web Apps CI/CD
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
-  build_and_deploy_job:
-    name: Build and Deploy Job
+  build_only_pr:
+    name: Build (PR only)
     runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install & Build
+        working-directory: ./AIReceptionNewUI
+        env:
+          VITE_API_PROXY_BASE: https://aireceptionist-func.azurewebsites.net/api
+          VITE_FUNCTION_HOST: https://aireceptionist-func.azurewebsites.net
+        run: |
+          npm install
+          npm run build
+
+  build_and_deploy_job:
+    name: Build and Deploy (main only)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
 
     steps:
       - name: Checkout repository
@@ -23,7 +42,7 @@ jobs:
           VITE_API_PROXY_BASE: https://aireceptionist-func.azurewebsites.net/api
           VITE_FUNCTION_HOST: https://aireceptionist-func.azurewebsites.net
         with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          azure_static_web_apps_api_token: ${{ secrets.AIRECEPTIONIST_STATIC_WEB }}
           action: upload
           app_location: "./AIReceptionNewUI"
           api_location: ""
