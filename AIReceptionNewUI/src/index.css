@@ -601,6 +601,49 @@ html {
   gap: 4px;
 }
 
+.receptionist-surface {
+  background: linear-gradient(180deg, rgba(246, 247, 250, 0.75), rgba(238, 241, 245, 0.7));
+  color: #0f172a;
+  border-radius: 18px;
+  padding: 18px;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow: 0 10px 32px rgba(15, 23, 42, 0.18);
+  backdrop-filter: blur(14px);
+}
+
+.receptionist-surface .projects-hero,
+.receptionist-surface .project-impact-header {
+  color: inherit;
+}
+
+.receptionist-surface .project-card,
+.receptionist-surface .impact-card {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: #e2e8f0;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.14);
+  color: inherit;
+}
+
+.receptionist-surface .project-card .project-body {
+  background: rgba(248, 250, 252, 0.9);
+  border-color: #e2e8f0;
+}
+
+.receptionist-surface .impact-chart {
+  background: linear-gradient(135deg, rgba(11, 16, 34, 0.92), rgba(13, 19, 43, 0.92));
+  border-color: rgba(15, 23, 42, 0.35);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
+}
+
+.receptionist-surface .impact-chart::before {
+  opacity: 0.8;
+}
+
+.receptionist-surface .lead,
+.receptionist-surface .hint {
+  color: #475569;
+}
+
 .onboarding-steps {
   margin-top: 24px;
   background: rgba(255, 255, 255, 0.04);
@@ -731,14 +774,14 @@ html {
   transform: translateX(-50%);
   display: none;
   gap: 6px;
-  background: rgba(0, 0, 0, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(9, 12, 28, 0.88);
+  border: 1px solid rgba(123, 198, 255, 0.4);
   border-radius: 12px;
   padding: 10px;
   min-width: 220px;
   margin-top: 10px;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(10px);
+  box-shadow: 0 16px 32px rgba(5, 8, 20, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(12px);
   z-index: 20;
 }
 
@@ -749,18 +792,20 @@ html {
 
 .nav-subitem {
   background: transparent;
-  color: #e6ebff;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: #f6f8ff;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 10px;
   padding: 8px 10px;
   text-align: left;
   cursor: pointer;
   transition: background 140ms ease, transform 120ms ease, border-color 160ms ease;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.4);
 }
 
 .nav-subitem:hover {
-  background: rgba(123, 198, 255, 0.12);
-  border-color: rgba(123, 198, 255, 0.4);
+  background: rgba(123, 198, 255, 0.16);
+  border-color: rgba(123, 198, 255, 0.6);
   transform: translateY(-1px);
 }
 
@@ -1490,12 +1535,26 @@ html {
 }
 
 .impact-chart {
+  position: relative;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
-  padding: 12px;
-  background: rgba(255, 255, 255, 0.03);
+  border-radius: 14px;
+  padding: 14px;
+  background: radial-gradient(circle at 0% 40%, rgba(103, 90, 255, 0.25), transparent 45%),
+    linear-gradient(135deg, #0b1022, #0d132b 60%, #0b0f1f);
   display: grid;
   gap: 10px;
+  overflow: hidden;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.32);
+}
+
+.impact-chart::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 10% 20%, rgba(115, 196, 255, 0.18), transparent 35%),
+    radial-gradient(circle at 20% 60%, rgba(153, 93, 255, 0.28), transparent 40%);
+  pointer-events: none;
+  mix-blend-mode: screen;
 }
 
 .chart-title {
@@ -1504,6 +1563,7 @@ html {
   justify-content: space-between;
   font-weight: 700;
   color: #dce8ff;
+  position: relative;
 }
 
 .chart-bars {
@@ -1513,20 +1573,22 @@ html {
 
 .bar-row {
   display: grid;
-  grid-template-columns: 80px 1fr 60px;
+  grid-template-columns: 88px 1fr 64px;
   align-items: center;
   gap: 8px;
+  position: relative;
 }
 
 .bar-label {
-  color: #cfd8ff;
+  color: #e3e9ff;
+  font-weight: 700;
 }
 
 .bar-track {
   position: relative;
-  height: 12px;
+  height: 14px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.08);
   overflow: hidden;
 }
 
@@ -1534,7 +1596,8 @@ html {
   position: absolute;
   inset: 0;
   border-radius: 999px;
-  background: linear-gradient(90deg, #4dd38a, #7bc6ff);
+  background: linear-gradient(90deg, #6ac3ff, #9db7ff);
+  box-shadow: 0 0 18px rgba(124, 172, 255, 0.35);
 }
 
 .bar-value {
@@ -1550,8 +1613,9 @@ html {
 }
 
 .pill.subtle {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.1);
   color: #e9ecf2;
+  border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .calendar-connect {

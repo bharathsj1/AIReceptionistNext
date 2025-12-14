@@ -18,6 +18,7 @@ import PricingPackages from "./components/PricingPackages";
 import CreateAccountScreen from "./screens/CreateAccountScreen";
 import SignupSurveyScreen from "./screens/SignupSurveyScreen";
 import BusinessDetailsScreen from "./screens/BusinessDetailsScreen";
+import ProjectsScreen from "./screens/ProjectsScreen";
 
 const STAGES = {
   LANDING: "landing",
@@ -33,7 +34,8 @@ const STAGES = {
   PAYMENT_SUCCESS: "paymentSuccess",
   SIGNUP: "signup",
   SIGNUP_SURVEY: "signupSurvey",
-  BUSINESS_DETAILS: "businessDetails"
+  BUSINESS_DETAILS: "businessDetails",
+  PROJECTS: "projects"
 };
 
 const ONBOARDING_STEPS = [
@@ -96,6 +98,7 @@ export default function App() {
   const [calendarLoading, setCalendarLoading] = useState(false);
   const [calendarError, setCalendarError] = useState("");
   const googleStateRef = useRef(null);
+  const stageRef = useRef(stage);
   const [clientData, setClientData] = useState(null);
   const [signupName, setSignupName] = useState("");
   const [signupEmail, setSignupEmail] = useState("");
@@ -110,6 +113,7 @@ export default function App() {
   const [businessLoading, setBusinessLoading] = useState(false);
   const [businessError, setBusinessError] = useState("");
   const [paymentInfo, setPaymentInfo] = useState(null);
+  const [serviceSlug, setServiceSlug] = useState("receptionist");
 
   const getSelectedDays = useCallback(() => {
     const match = dateRanges.find((r) => r.label === dateRange);
@@ -271,10 +275,24 @@ export default function App() {
     setProvisionData(null);
     setLoadingPhase("crawl");
     setSelectedPlan(null);
+    setServiceSlug("receptionist");
     setStage(STAGES.LANDING);
+    if (typeof window !== "undefined") {
+      window.history.replaceState({ stage: STAGES.LANDING }, "", "/");
+    }
   };
 
-
+  const handleGoProjects = (slug = "receptionist") => {
+    setStatus("idle");
+    setResponseMessage("");
+    setResponseLink(null);
+    setServiceSlug(slug || "receptionist");
+    setStage(STAGES.PROJECTS);
+    if (typeof window !== "undefined") {
+      const safeSlug = slug || "receptionist";
+      window.history.replaceState({ stage: STAGES.PROJECTS }, "", `/${safeSlug}`);
+    }
+  };
   const handleLoginSubmit = async (event) => {
     event.preventDefault();
     setStatus("loading");
@@ -1006,6 +1024,22 @@ export default function App() {
   }, [completeGoogleAuth]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const path = (window.location.pathname || "").replace(/^\/+/, "");
+    const slug = path.split("/")[0];
+    const allowedSlugs = new Set([
+      "receptionist",
+      "social-manager",
+      "email-manager",
+      "crm-lead-manager"
+    ]);
+    if (allowedSlugs.has(slug)) {
+      setServiceSlug(slug || "receptionist");
+      setStage(STAGES.PROJECTS);
+    }
+  }, []);
+
+  useEffect(() => {
     if (hasLoadedPersistedRef.current) return;
     if (typeof window === "undefined") return;
     try {
@@ -1019,6 +1053,7 @@ export default function App() {
       if (saved.provisionData) setProvisionData(saved.provisionData);
       if (saved.phoneNumbers) setPhoneNumbers(saved.phoneNumbers);
       if (saved.activeTab) setActiveTab(saved.activeTab);
+      if (saved.serviceSlug) setServiceSlug(saved.serviceSlug);
     } catch (error) {
       console.error("Failed to load persisted state", error);
     } finally {
@@ -1058,6 +1093,7 @@ export default function App() {
       STAGES.PAYMENT_SUCCESS,
     ]);
     if (onboardingStages.has(stage)) return;
+    if (stage === STAGES.PROJECTS) return;
     if (stage === STAGES.DASHBOARD) return;
     setStage(STAGES.DASHBOARD);
     setActiveTab("dashboard");
@@ -1086,13 +1122,14 @@ export default function App() {
         provisionData,
         phoneNumbers,
         activeTab,
+        serviceSlug,
         selectedPlan
       };
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-    } catch (error) {
-      console.error("Failed to persist state", error);
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  } catch (error) {
+    console.error("Failed to persist state", error);
     }
-  }, [stage, isLoggedIn, user, email, provisionData, phoneNumbers, activeTab, selectedPlan]);
+  }, [stage, isLoggedIn, user, email, provisionData, phoneNumbers, activeTab, serviceSlug, selectedPlan]);
 
   useEffect(() => {
     if (!hasMountedHistoryRef.current) {
@@ -1169,6 +1206,26 @@ export default function App() {
     gsap.ticker.add(syncLenis);
     lenis.on("scroll", ScrollTrigger.update);
 
+    // Hide/show nav on scroll using Lenis scroll position
+    const nav = document.querySelector(".nav-card");
+    let lastY = 0;
+    const handleNav = ({ scroll }) => {
+      if (stageRef.current === STAGES.LANDING) {
+        nav?.classList.remove("nav-hidden");
+        lastY = scroll;
+        return;
+      }
+      const goingDown = scroll > lastY + 4;
+      const goingUp = scroll < lastY - 4;
+      if (goingDown) {
+        nav?.classList.add("nav-hidden");
+      } else if (goingUp) {
+        nav?.classList.remove("nav-hidden");
+      }
+      lastY = scroll;
+    };
+    lenis.on("scroll", handleNav);
+
     const sections = gsap.utils.toArray(".reveal-section");
     gsap.set(sections, { opacity: 0, y: 40 });
 
@@ -1192,6 +1249,7 @@ export default function App() {
     ScrollTrigger.refresh();
 
     return () => {
+      lenis.off("scroll", handleNav);
       ScrollTrigger.removeEventListener("refresh", onRefresh);
       animations.forEach((anim) => {
         anim.scrollTrigger?.kill();
@@ -1201,6 +1259,20 @@ export default function App() {
       lenis.destroy();
     };
   }, []);
+
+  useEffect(() => {
+    // handled via Lenis scroll listener above
+  }, []);
+
+  useEffect(() => {
+    stageRef.current = stage;
+    if (typeof window !== "undefined" && stage === STAGES.LANDING) {
+      const nav = document.querySelector(".nav-card");
+      if (nav) {
+        nav.classList.remove("nav-hidden");
+      }
+    }
+  }, [stage]);
 
   return (
     <div className={pageClassName} data-lenis-wrapper>
@@ -1216,27 +1288,31 @@ export default function App() {
         />
         <div className="page-video-overlay" />
       </div>
-      {showGlobalLogo && (
-        <header className="global-logo-bar">
-          <button className="logo-link" onClick={handleGoHome} aria-label="Go to home">
-            <span className="logo-text">SmartConnect4u</span>
-          </button>
-        </header>
-      )}
       <div className={pageContentClassName} data-lenis-content>
         <div className="background-glow" />
-        <main className={contentClassName}>
-        {isOnboardingStage && (
-          <div className="screen-panel narrow" style={{ marginBottom: 16 }}>
-            <StepIndicator steps={ONBOARDING_STEPS} currentStep={stage} />
-          </div>
+        {showGlobalLogo && (
+          <header className="global-logo-bar">
+            <button className="logo-link" onClick={handleGoHome} aria-label="Go to home">
+              <span className="logo-text">SmartConnect4u</span>
+            </button>
+          </header>
         )}
+        <main className={contentClassName}>
+          {isOnboardingStage && (
+            <div className="screen-panel narrow" style={{ marginBottom: 16 }}>
+              <StepIndicator steps={ONBOARDING_STEPS} currentStep={stage} />
+            </div>
+          )}
         {stage === STAGES.LANDING && (
           <LandingScreen
             onTry={() => setStage(STAGES.CRAWL_FORM)}
             onLogin={() => setStage(STAGES.LOGIN)}
             onSelectPlan={handleSelectPlan}
+            onShowService={handleGoProjects}
           />
+        )}
+        {stage === STAGES.PROJECTS && (
+          <ProjectsScreen serviceSlug={serviceSlug} onStartSignup={goToSignup} />
         )}
         {stage === STAGES.PACKAGES && (
           <div className="shell-card screen-panel">
