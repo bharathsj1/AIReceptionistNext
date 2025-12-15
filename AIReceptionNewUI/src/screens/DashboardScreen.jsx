@@ -21,7 +21,8 @@ export default function DashboardScreen({
   beginGoogleLogin,
   status,
   onRangeChange,
-  dateRanges
+  dateRanges,
+  onLogout
 }) {
   const pageSize = 10;
   const totalPages = Math.max(1, Math.ceil((recentCalls?.length || 0) / pageSize));
@@ -94,6 +95,11 @@ export default function DashboardScreen({
             <div className="nav-user-name">{user?.name || "You"}</div>
             <div className="hint">{user?.email || "user@example.com"}</div>
           </div>
+          {onLogout && (
+            <button className="ghost small logout-btn" type="button" onClick={onLogout}>
+              Logout
+            </button>
+          )}
         </div>
       </aside>
       <div className="dash-main">
