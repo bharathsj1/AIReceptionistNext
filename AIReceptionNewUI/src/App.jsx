@@ -13,7 +13,6 @@ import CompleteScreen from "./screens/CompleteScreen";
 import ResetPasswordScreen from "./screens/ResetPasswordScreen";
 import PaymentScreen from "./screens/PaymentScreen";
 import PaymentSuccessScreen from "./screens/PaymentSuccessScreen";
-import StepIndicator from "./components/StepIndicator";
 import PricingPackages from "./components/PricingPackages";
 import CreateAccountScreen from "./screens/CreateAccountScreen";
 import SignupSurveyScreen from "./screens/SignupSurveyScreen";
@@ -37,16 +36,6 @@ const STAGES = {
   BUSINESS_DETAILS: "businessDetails",
   PROJECTS: "projects"
 };
-
-const ONBOARDING_STEPS = [
-  { id: STAGES.LOGIN, label: "Login" },
-  { id: STAGES.SIGNUP, label: "Create account" },
-  { id: STAGES.BUSINESS_DETAILS, label: "Business info" },
-  { id: STAGES.CRAWL_FORM, label: "Website crawl" },
-  { id: STAGES.PACKAGES, label: "Pick a plan" },
-  { id: STAGES.PAYMENT, label: "Payment" },
-  { id: STAGES.PAYMENT_SUCCESS, label: "Provisioning" }
-];
 
 export default function App() {
   const [stage, setStage] = useState(STAGES.LANDING);
@@ -648,10 +637,6 @@ export default function App() {
     setStage(STAGES.PAYMENT_SUCCESS);
   };
 
-  const currentStepIndex = ONBOARDING_STEPS.findIndex((s) => s.id === stage);
-  const progressPercent =
-    currentStepIndex >= 0 ? ((currentStepIndex + 1) / ONBOARDING_STEPS.length) * 100 : 0;
-  const isOnboardingStage = currentStepIndex >= 0;
   const isLandingStage = stage === STAGES.LANDING;
   const pageClassName = `page${isLandingStage ? " page-landing" : ""}`;
   const pageContentClassName = `page-content${isLandingStage ? " page-content-landing" : ""}`;
@@ -1299,11 +1284,6 @@ export default function App() {
           </header>
         )}
         <main className={contentClassName}>
-          {isOnboardingStage && (
-            <div className="screen-panel narrow" style={{ marginBottom: 16 }}>
-              <StepIndicator steps={ONBOARDING_STEPS} currentStep={stage} />
-            </div>
-          )}
         {stage === STAGES.LANDING && (
           <LandingScreen
             onTry={() => setStage(STAGES.CRAWL_FORM)}
