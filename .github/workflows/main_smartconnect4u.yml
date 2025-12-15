@@ -1,7 +1,7 @@
 # Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
 # More GitHub Actions for Azure: https://github.com/Azure/actions
 
-name: Build and deploy Node.js app to Azure Web App - SmartConnect4u
+name: Build and deploy Node.js app to Azure Web App - smartconnect4u
 
 on:
   push:
@@ -51,15 +51,15 @@ jobs:
       - name: Login to Azure
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_345CF3851211423E8ED88E1C4C741FC5 }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_74DB28F408C746E39942EE3ED95088DE }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_B0C4429DE43B42B39AB3015F60A2E2AA }}
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_7FD51E4560FA4DEC9856C1EE9A68C512 }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_818468E6BB5A42D5B15391C47423430D }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_4F69041525204EAFB54F4E5B2B0B736C }}
 
       - name: 'Deploy to Azure Web App'
         id: deploy-to-webapp
         uses: azure/webapps-deploy@v3
         with:
-          app-name: 'SmartConnect4u'
+          app-name: 'smartconnect4u'
           slot-name: 'Production'
           package: .
           
