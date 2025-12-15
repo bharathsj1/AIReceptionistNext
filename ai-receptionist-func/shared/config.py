@@ -33,7 +33,7 @@ def get_google_oauth_settings() -> dict:
         "redirect_uri": os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:5173"),
         "scopes": os.getenv(
             "GOOGLE_SCOPES",
-            "https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile",
+            "https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile",
         ),
     }
 
