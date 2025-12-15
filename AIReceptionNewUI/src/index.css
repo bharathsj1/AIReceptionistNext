@@ -1365,6 +1365,10 @@ html {
   font-weight: 700;
 }
 
+.logout-btn {
+  margin-left: auto;
+}
+
 .dash-main {
   display: grid;
   gap: 18px;

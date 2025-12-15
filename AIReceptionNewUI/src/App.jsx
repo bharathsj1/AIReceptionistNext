@@ -293,6 +293,7 @@ export default function App() {
       window.history.replaceState({ stage: STAGES.PROJECTS }, "", `/${safeSlug}`);
     }
   };
+
   const handleLoginSubmit = async (event) => {
     event.preventDefault();
     setStatus("loading");
@@ -1427,6 +1428,7 @@ export default function App() {
             handleCalendarDisconnect={handleCalendarDisconnect}
             beginGoogleLogin={beginGoogleLogin}
             status={status}
+            onLogout={handleLogout}
           />
         )}
 
