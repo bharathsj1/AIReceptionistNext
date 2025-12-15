@@ -66,6 +66,9 @@ class Client(Base):
     website_data = Column(Text, nullable=True)
     business_name = Column(String, nullable=True)
     business_phone = Column(String, nullable=True)
+    booking_enabled = Column(Boolean, default=False)
+    booking_duration_minutes = Column(Integer, nullable=True)
+    booking_buffer_minutes = Column(Integer, nullable=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -164,6 +167,12 @@ def _ensure_optional_columns() -> None:
             conn.execute(text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS business_name VARCHAR"))
         if "business_phone" not in client_columns:
             conn.execute(text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS business_phone VARCHAR"))
+        if "booking_enabled" not in client_columns:
+            conn.execute(text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS booking_enabled BOOLEAN DEFAULT FALSE"))
+        if "booking_duration_minutes" not in client_columns:
+            conn.execute(text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS booking_duration_minutes INTEGER"))
+        if "booking_buffer_minutes" not in client_columns:
+            conn.execute(text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS booking_buffer_minutes INTEGER"))
 
         user_columns = {col["name"] for col in inspector.get_columns("users")}
         if "is_admin" not in user_columns:

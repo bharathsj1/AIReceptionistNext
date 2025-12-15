@@ -126,6 +126,61 @@ def _get_calendar_events(access_token: str, max_results: int = 5) -> Tuple[Optio
         return None, str(exc)
 
 
+def _freebusy(access_token: str, start_iso: str, end_iso: str) -> Tuple[Optional[dict], Optional[str]]:
+    """
+    Check primary calendar free/busy between start and end (ISO 8601).
+    """
+    payload = {
+        "timeMin": start_iso,
+        "timeMax": end_iso,
+        "items": [{"id": "primary"}],
+    }
+    try:
+        resp = requests.post(
+            "https://www.googleapis.com/calendar/v3/freeBusy",
+            headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
+            json=payload,
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            return None, resp.text
+        return resp.json(), None
+    except Exception as exc:  # pylint: disable=broad-except
+        return None, str(exc)
+
+
+def _create_calendar_event(
+    access_token: str,
+    summary: str,
+    start_iso: str,
+    end_iso: str,
+    description: Optional[str] = None,
+    attendees: Optional[list] = None,
+) -> Tuple[Optional[dict], Optional[str]]:
+    payload = {
+        "summary": summary,
+        "start": {"dateTime": start_iso},
+        "end": {"dateTime": end_iso},
+    }
+    if description:
+        payload["description"] = description
+    if attendees:
+        payload["attendees"] = attendees
+
+    try:
+        resp = requests.post(
+            "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+            headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
+            json=payload,
+            timeout=10,
+        )
+        if resp.status_code >= 300:
+            return None, resp.text
+        return resp.json(), None
+    except Exception as exc:  # pylint: disable=broad-except
+        return None, str(exc)
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -854,6 +909,179 @@ def calendar_events(req: func.HttpRequest) -> func.HttpResponse:
         logger.error("Calendar events failed: %s", exc)
         return func.HttpResponse(
             json.dumps({"error": "Calendar fetch failed", "details": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+            headers=cors,
+        )
+    finally:
+        db.close()
+
+
+@app.function_name(name="CalendarBook")
+@app.route(route="calendar/book", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Create an event on the user's primary Google Calendar if the slot is free.
+    Body: { email, start, end?, duration_minutes?, buffer_minutes?, title?, description?, callerName?, callerEmail?, callerPhone? }
+    """
+    cors = build_cors_headers(req, ["POST", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
+    try:
+        body = req.get_json()
+    except ValueError:
+        body = None
+    if not isinstance(body, dict):
+        body = {}
+
+    email = body.get("email")
+    if not email:
+        return func.HttpResponse(
+            json.dumps({"error": "email is required"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    start_iso = body.get("start")
+    end_iso = body.get("end")
+    duration_minutes = body.get("duration_minutes") or 30
+    buffer_minutes = body.get("buffer_minutes") or 5
+    title = body.get("title") or "Phone appointment with AI Receptionist"
+    description = body.get("description")
+    caller_name = body.get("callerName") or body.get("caller_name")
+    caller_email = body.get("callerEmail") or body.get("caller_email")
+    caller_phone = body.get("callerPhone") or body.get("caller_phone")
+
+    caller_lines = []
+    if caller_name:
+        caller_lines.append(f"Caller: {caller_name}")
+    if caller_email:
+        caller_lines.append(f"Email: {caller_email}")
+    if caller_phone:
+        caller_lines.append(f"Phone: {caller_phone}")
+    if caller_lines:
+        extra = "\n".join(caller_lines)
+        description = f"{description or ''}\n\n{extra}".strip()
+
+    try:
+        duration_minutes = int(duration_minutes)
+    except Exception:
+        duration_minutes = 30
+    try:
+        buffer_minutes = int(buffer_minutes)
+    except Exception:
+        buffer_minutes = 5
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter_by(email=email).one_or_none()
+        if not user:
+            return func.HttpResponse(
+                json.dumps({"error": "User not found"}),
+                status_code=404,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        token = (
+            db.query(GoogleToken)
+            .filter_by(user_id=user.id)
+            .order_by(GoogleToken.created_at.desc())
+            .first()
+        )
+        if not token:
+            return func.HttpResponse(
+                json.dumps({"error": "No Google account connected"}),
+                status_code=404,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        access_token = token.access_token
+        now = datetime.utcnow()
+        if token.expires_at and token.expires_at <= now and token.refresh_token:
+            refreshed, refresh_error = _refresh_google_token(token.refresh_token)
+            if refresh_error or not refreshed:
+                return func.HttpResponse(
+                    json.dumps({"error": "Unable to refresh token", "details": refresh_error}),
+                    status_code=401,
+                    mimetype="application/json",
+                    headers=cors,
+                )
+            access_token = refreshed.get("access_token") or access_token
+            token.access_token = access_token
+            token.expires_at = (
+                datetime.utcnow() + timedelta(seconds=int(refreshed.get("expires_in")))
+                if refreshed.get("expires_in")
+                else None
+            )
+            db.commit()
+
+        if not start_iso:
+            start_dt = datetime.utcnow() + timedelta(minutes=15)
+        else:
+            start_dt = datetime.fromisoformat(start_iso.replace("Z", "+00:00"))
+        if end_iso:
+            end_dt = datetime.fromisoformat(end_iso.replace("Z", "+00:00"))
+        else:
+            end_dt = start_dt + timedelta(minutes=duration_minutes)
+
+        buffered_end = end_dt + timedelta(minutes=buffer_minutes) if buffer_minutes else end_dt
+
+        fb, fb_error = _freebusy(
+            access_token,
+            start_dt.isoformat(),
+            buffered_end.isoformat(),
+        )
+        if fb_error or not fb:
+            return func.HttpResponse(
+                json.dumps({"error": "Unable to check availability", "details": fb_error}),
+                status_code=400,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        busy = fb.get("calendars", {}).get("primary", {}).get("busy", [])
+        if busy:
+            return func.HttpResponse(
+                json.dumps({"error": "Slot is busy", "busy": busy}),
+                status_code=409,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        attendees = []
+        if caller_email:
+            attendees.append({"email": caller_email})
+        event, event_error = _create_calendar_event(
+            access_token,
+            title,
+            start_dt.isoformat(),
+            end_dt.isoformat(),
+            description=description,
+            attendees=attendees or None,
+        )
+        if event_error or not event:
+            return func.HttpResponse(
+                json.dumps({"error": "Failed to create event", "details": event_error}),
+                status_code=500,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        return func.HttpResponse(
+            json.dumps({"event": event}),
+            status_code=201,
+            mimetype="application/json",
+            headers=cors,
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        db.rollback()
+        logger.error("Calendar book failed: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "Calendar booking failed", "details": str(exc)}),
             status_code=500,
             mimetype="application/json",
             headers=cors,

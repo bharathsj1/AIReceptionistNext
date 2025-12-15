@@ -36,6 +36,7 @@ const STAGES = {
   BUSINESS_DETAILS: "businessDetails",
   PROJECTS: "projects"
 };
+const ALLOWED_STAGE_VALUES = new Set(Object.values(STAGES));
 
 export default function App() {
   const [stage, setStage] = useState(STAGES.LANDING);
@@ -54,19 +55,29 @@ export default function App() {
   const [provisionData, setProvisionData] = useState(null);
   const [phoneNumbers, setPhoneNumbers] = useState([]);
   const [agentDetails, setAgentDetails] = useState({
+    agentId: "",
     agentName: "Ultravox Concierge",
+    systemPrompt: "",
+    voice: "",
+    temperature: 0.4,
     greeting: "Hi, I'm your AI receptionist. How can I help today?",
     escalation: "Forward complex questions to the human team.",
     faq: "Hours: 9-6pm PT\nSupport: support@example.com"
   });
+  const [ultravoxVoices, setUltravoxVoices] = useState([]);
+  const [ultravoxVoicesLoading, setUltravoxVoicesLoading] = useState(false);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
+  const [agentSaveStatus, setAgentSaveStatus] = useState({ status: "idle", message: "" });
+  const [businessSaveStatus, setBusinessSaveStatus] = useState({ status: "idle", message: "" });
+  const [userProfile, setUserProfile] = useState(null);
   const [user, setUser] = useState(null);
-  const aiNumber =
-    (phoneNumbers?.[0]?.phone_number ||
-      phoneNumbers?.[0] ||
-      provisionData?.phone_number ||
-      (provisionData?.phone_numbers || [])[0]?.phone_number ||
-      (provisionData?.phone_numbers || [])[0] ||
-      null) || "+1 (555) 123-4567";
+  const [callTranscript, setCallTranscript] = useState({
+    call: null,
+    transcripts: [],
+    recordings: [],
+    loading: false,
+    error: ""
+  });
   const [recentCalls, setRecentCalls] = useState([]);
   const [callsPage, setCallsPage] = useState(1);
   const [activeTab, setActiveTab] = useState("dashboard");
@@ -103,6 +114,37 @@ export default function App() {
   const [businessError, setBusinessError] = useState("");
   const [paymentInfo, setPaymentInfo] = useState(null);
   const [serviceSlug, setServiceSlug] = useState("receptionist");
+  const validStages = useMemo(() => new Set(Object.values(STAGES)), []);
+  const [bookingSettings, setBookingSettings] = useState({
+    booking_enabled: false,
+    booking_duration_minutes: 30,
+    booking_buffer_minutes: 5
+  });
+  const [bookingStatus, setBookingStatus] = useState({ status: "idle", message: "" });
+  const [bookingTestStatus, setBookingTestStatus] = useState({ status: "idle", message: "" });
+  const aiNumber = useMemo(() => {
+    const primary = phoneNumbers?.[0];
+    const phoneFromArray =
+      (primary && (primary.phone_number || primary.twilio_phone_number)) || primary;
+    const phoneFromProvision =
+      provisionData?.phone_number ||
+      provisionData?.twilio_phone_number ||
+      (provisionData?.phone_numbers || [])[0]?.phone_number ||
+      (provisionData?.phone_numbers || [])[0]?.twilio_phone_number ||
+      (provisionData?.phone_numbers || [])[0];
+    const phoneFromBusiness =
+      clientData?.business_phone || businessPhone || user?.business_number;
+
+    return phoneFromArray || phoneFromProvision || phoneFromBusiness || null;
+  }, [
+    businessPhone,
+    clientData?.business_phone,
+    phoneNumbers,
+    provisionData?.phone_number,
+    provisionData?.phone_numbers,
+    provisionData?.twilio_phone_number,
+    user?.business_number
+  ]);
 
   const getSelectedDays = useCallback(() => {
     const match = dateRanges.find((r) => r.label === dateRange);
@@ -606,6 +648,22 @@ export default function App() {
     setCalendarEvents([]);
     setCalendarError("");
     setCalendarLoading(false);
+    setUltravoxVoices([]);
+    setAgentSaveStatus({ status: "idle", message: "" });
+    setBusinessSaveStatus({ status: "idle", message: "" });
+    setCallTranscript({ call: null, transcripts: [], recordings: [], loading: false, error: "" });
+    setUserProfile(null);
+    setDashboardLoading(false);
+    setAgentDetails({
+      agentId: "",
+      agentName: "Ultravox Concierge",
+      systemPrompt: "",
+      voice: "",
+      temperature: 0.4,
+      greeting: "Hi, I'm your AI receptionist. How can I help today?",
+      escalation: "Forward complex questions to the human team.",
+      faq: "Hours: 9-6pm PT\nSupport: support@example.com"
+    });
     if (typeof window !== "undefined") {
       window.localStorage.removeItem(STORAGE_KEY);
       window.history.pushState({ stage: STAGES.LANDING }, "", "/");
@@ -843,6 +901,252 @@ export default function App() {
     [user?.email]
   );
 
+  const loadDashboard = useCallback(
+    async (emailAddress = null) => {
+      const targetEmail = emailAddress || user?.email || email || signupEmail || loginEmail;
+      if (!targetEmail) return;
+      setDashboardLoading(true);
+      try {
+        const [dashRes, clientRes, userRes] = await Promise.all([
+          fetch(`${API_URLS.dashboard}?email=${encodeURIComponent(targetEmail)}`),
+          fetch(`${API_URLS.clientsByEmail}?email=${encodeURIComponent(targetEmail)}`).catch(
+            () => null
+          ),
+          fetch(`${API_URLS.authUserByEmail}?email=${encodeURIComponent(targetEmail)}`).catch(
+            () => null
+          )
+        ]);
+
+        if (!dashRes.ok) {
+          const text = await dashRes.text();
+          throw new Error(text || "Unable to load dashboard");
+        }
+
+        const dashData = await dashRes.json();
+        const clientDetails =
+          clientRes && clientRes.ok ? await clientRes.json().catch(() => null) : null;
+        const userDetails =
+          userRes && userRes.ok ? await userRes.json().catch(() => null) : null;
+
+        setClientData(dashData?.client || clientDetails?.client || clientDetails || null);
+        setUserProfile(userDetails || null);
+        if (userDetails) {
+          setUser((prev) => ({
+            ...(prev || {}),
+            ...userDetails
+          }));
+        }
+
+        setBookingSettings({
+          booking_enabled: Boolean(
+            (dashData?.client && dashData?.client?.booking_enabled) ||
+              clientDetails?.booking_enabled
+          ),
+          booking_duration_minutes:
+            dashData?.client?.booking_duration_minutes ??
+            clientDetails?.booking_duration_minutes ??
+            30,
+          booking_buffer_minutes:
+            dashData?.client?.booking_buffer_minutes ??
+            clientDetails?.booking_buffer_minutes ??
+            5
+        });
+
+        const phones = dashData?.phone_numbers || [];
+        const normalizedPhones = Array.isArray(phones)
+          ? phones.map((p) =>
+              typeof p === "string"
+                ? { phone_number: p, twilio_phone_number: p }
+                : {
+                    ...p,
+                    phone_number: p.phone_number || p.twilio_phone_number,
+                    twilio_phone_number: p.twilio_phone_number || p.phone_number
+                  }
+            )
+          : [];
+        setPhoneNumbers(normalizedPhones);
+        setProvisionData((prev) => ({
+          ...(prev || {}),
+          phone_numbers: normalizedPhones,
+          phone_number: normalizedPhones?.[0]?.phone_number || prev?.phone_number
+        }));
+
+        const callTemplate =
+          dashData?.ultravox_agent?.callTemplate || dashData?.agent?.callTemplate || {};
+        const derivedBusinessName =
+          clientDetails?.business_name ||
+          clientDetails?.client?.business_name ||
+          dashData?.client?.business_name ||
+          dashData?.client?.name ||
+          businessName;
+        const derivedBusinessPhone =
+          clientDetails?.business_phone ||
+          clientDetails?.client?.business_phone ||
+          dashData?.client?.business_phone ||
+          businessPhone;
+        if (derivedBusinessName) setBusinessName(derivedBusinessName);
+        if (derivedBusinessPhone) setBusinessPhone(derivedBusinessPhone);
+
+        setAgentDetails((prev) => ({
+          ...prev,
+          agentId: dashData?.client?.ultravox_agent_id || prev.agentId,
+          agentName: dashData?.ultravox_agent?.name || dashData?.agent?.agent_name || prev.agentName,
+          systemPrompt: callTemplate?.systemPrompt || dashData?.agent?.system_prompt || prev.systemPrompt,
+          voice: callTemplate?.voice || callTemplate?.voiceId || dashData?.agent?.voice || prev.voice,
+          temperature:
+            typeof callTemplate?.temperature === "number"
+              ? callTemplate.temperature
+              : typeof dashData?.agent?.temperature === "number"
+                ? dashData.agent.temperature
+                : prev.temperature,
+          greeting: callTemplate?.greeting || dashData?.agent?.greeting || prev.greeting,
+          escalation: callTemplate?.fallback || dashData?.agent?.escalation || prev.escalation,
+          faq: callTemplate?.faq || dashData?.agent?.faq || prev.faq
+        }));
+      } catch (error) {
+        console.error("Failed to load dashboard", error);
+      } finally {
+        setDashboardLoading(false);
+      }
+    },
+    [businessName, businessPhone, email, loginEmail, signupEmail, user?.email]
+  );
+
+  const handleAgentSave = useCallback(
+    async (updates) => {
+      if (!user?.email) return;
+      setAgentSaveStatus({ status: "loading", message: "" });
+      try {
+        const res = await fetch(API_URLS.dashboardAgent, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          mode: "cors",
+          body: JSON.stringify({
+            email: user.email,
+            system_prompt: updates?.systemPrompt ?? agentDetails.systemPrompt,
+            voice: updates?.voice ?? agentDetails.voice,
+            temperature:
+              typeof updates?.temperature === "number"
+                ? updates.temperature
+                : agentDetails.temperature
+          })
+        });
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || "Failed to update agent");
+        }
+        setAgentSaveStatus({ status: "success", message: "Agent updated" });
+        await loadDashboard(user.email);
+      } catch (error) {
+        setAgentSaveStatus({
+          status: "error",
+          message: error?.message || "Failed to update agent"
+        });
+      }
+    },
+    [agentDetails.systemPrompt, agentDetails.temperature, agentDetails.voice, loadDashboard, user?.email]
+  );
+
+  const handleBusinessSave = useCallback(
+    async ({ businessName: name, businessPhone: phone, websiteUrl }) => {
+      if (!user?.email) return;
+      setBusinessSaveStatus({ status: "loading", message: "" });
+      try {
+        const res = await fetch(API_URLS.clientsBusinessDetails, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          mode: "cors",
+          body: JSON.stringify({
+            email: user.email,
+            businessName: name || businessName,
+            businessPhone: phone || businessPhone,
+            websiteUrl: websiteUrl || clientData?.website_url || url || ""
+          })
+        });
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || "Failed to save business details");
+        }
+        setBusinessSaveStatus({ status: "success", message: "Business details saved" });
+        setBusinessName(name || businessName);
+        setBusinessPhone(phone || businessPhone);
+        await loadDashboard(user.email);
+      } catch (error) {
+        setBusinessSaveStatus({
+          status: "error",
+          message: error?.message || "Failed to save business details"
+        });
+      }
+    },
+    [businessName, businessPhone, clientData?.website_url, loadDashboard, url, user?.email]
+  );
+
+  const handleBookingSettingsSave = useCallback(
+    async (nextSettings) => {
+      if (!user?.email) return;
+      setBookingStatus({ status: "loading", message: "" });
+      try {
+        const res = await fetch(API_URLS.dashboardBookingSettings, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          mode: "cors",
+          body: JSON.stringify({
+            email: user.email,
+            booking_enabled: nextSettings.booking_enabled,
+            duration_minutes: nextSettings.booking_duration_minutes,
+            buffer_minutes: nextSettings.booking_buffer_minutes
+          })
+        });
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || "Failed to save booking settings");
+        }
+        setBookingSettings(nextSettings);
+        setBookingStatus({ status: "success", message: "Booking settings saved" });
+      } catch (error) {
+        setBookingStatus({
+          status: "error",
+          message: error?.message || "Failed to save booking settings"
+        });
+      }
+    },
+    [user?.email]
+  );
+
+  const handleTestBooking = useCallback(
+    async () => {
+      if (!user?.email) return;
+      setBookingTestStatus({ status: "loading", message: "" });
+      try {
+        const start = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+        const res = await fetch(API_URLS.calendarBook, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          mode: "cors",
+          body: JSON.stringify({
+            email: user.email,
+            start,
+            duration_minutes: bookingSettings.booking_duration_minutes || 30,
+            buffer_minutes: bookingSettings.booking_buffer_minutes || 5,
+            title: "Test booking from dashboard",
+            description: "Created from dashboard to verify booking flow."
+          })
+        });
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || "Failed to book slot");
+        }
+        setBookingTestStatus({ status: "success", message: "Booked next available slot (check Google Calendar)." });
+      } catch (error) {
+        setBookingTestStatus({
+          status: "error",
+          message: error?.message || "Failed to book slot"
+        });
+      }
+    },
+    [bookingSettings.booking_buffer_minutes, bookingSettings.booking_duration_minutes, user?.email]
+  );
+
   const loadCallLogs = useCallback(
     async (emailAddress = user?.email, daysOverride = null) => {
       if (!emailAddress) return;
@@ -866,28 +1170,53 @@ export default function App() {
     [user?.email, getSelectedDays]
   );
 
-  const loadDashboard = useCallback(
-    async (emailAddress = user?.email) => {
-      if (!emailAddress) return;
+  const loadUltravoxVoices = useCallback(async () => {
+    setUltravoxVoicesLoading(true);
+    try {
+      const res = await fetch(API_URLS.ultravoxVoices);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Unable to fetch Ultravox voices");
+      }
+      const data = await res.json();
+      const voices = Array.isArray(data?.voices) ? data.voices : data;
+      setUltravoxVoices(voices || []);
+    } catch (error) {
+      console.error("Failed to load Ultravox voices", error);
+      setUltravoxVoices([]);
+    } finally {
+      setUltravoxVoicesLoading(false);
+    }
+  }, []);
+
+  const loadCallTranscript = useCallback(
+    async (callSid) => {
+      if (!callSid || !user?.email) return;
+      setCallTranscript((prev) => ({ ...prev, loading: true, error: "" }));
       try {
-        const res = await fetch(`${API_URLS.dashboard}?email=${encodeURIComponent(emailAddress)}`);
+        const res = await fetch(
+          `${API_URLS.dashboardCallTranscript}?email=${encodeURIComponent(
+            user.email
+          )}&callSid=${encodeURIComponent(callSid)}`
+        );
         if (!res.ok) {
           const text = await res.text();
-          throw new Error(text || "Unable to load dashboard");
+          throw new Error(text || "Unable to fetch transcript");
         }
         const data = await res.json();
-        setClientData(data?.client || null);
-        const phones = data?.phone_numbers || [];
-        setPhoneNumbers(Array.isArray(phones) ? phones : []);
-        // persist provision data extras if available
-        setProvisionData((prev) => ({
-          ...(prev || {}),
-          phone_numbers: phones,
-          phone_number: phones?.[0]?.phone_number || prev?.phone_number
-        }));
+        setCallTranscript({
+          call: data?.call || { sid: callSid },
+          transcripts: data?.transcripts || [],
+          recordings: data?.recordings || [],
+          loading: false,
+          error: ""
+        });
       } catch (error) {
-        console.error("Failed to load dashboard", error);
-        setPhoneNumbers([]);
+        setCallTranscript((prev) => ({
+          ...prev,
+          loading: false,
+          error: error?.message || "Unable to fetch transcript"
+        }));
       }
     },
     [user?.email]
@@ -1095,7 +1424,16 @@ export default function App() {
     if (stage !== STAGES.DASHBOARD) return;
     loadDashboard();
     loadCallLogs();
-  }, [stage, loadCallLogs, loadDashboard]);
+    loadUltravoxVoices();
+  }, [stage, loadCallLogs, loadDashboard, loadUltravoxVoices]);
+
+  useEffect(() => {
+    if (stage !== STAGES.DASHBOARD) return;
+    if (!user?.email && email) {
+      setUser((prev) => ({ ...(prev || {}), email }));
+      setIsLoggedIn(true);
+    }
+  }, [stage, user?.email, email]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1132,13 +1470,19 @@ export default function App() {
 
   useEffect(() => {
     const handlePopState = (event) => {
-      const nextStage = event.state?.stage || STAGES.LANDING;
-      suppressHistoryRef.current = true;
-      setStage(nextStage);
-    };
-    window.addEventListener("popstate", handlePopState);
-    return () => window.removeEventListener("popstate", handlePopState);
+    const nextStage = event.state?.stage || STAGES.LANDING;
+    suppressHistoryRef.current = true;
+    setStage(nextStage);
+  };
+  window.addEventListener("popstate", handlePopState);
+  return () => window.removeEventListener("popstate", handlePopState);
   }, []);
+
+  useEffect(() => {
+    if (!validStages.has(stage)) {
+      setStage(STAGES.LANDING);
+    }
+  }, [stage, validStages]);
 
   const handleCalendarDisconnect = () => {
     setCalendarStatus(null);
@@ -1257,6 +1601,12 @@ export default function App() {
       if (nav) {
         nav.classList.remove("nav-hidden");
       }
+    }
+  }, [stage]);
+
+  useEffect(() => {
+    if (!ALLOWED_STAGE_VALUES.has(stage)) {
+      setStage(STAGES.LANDING);
     }
   }, [stage]);
 
@@ -1386,7 +1736,6 @@ export default function App() {
             activeTab={activeTab}
             setActiveTab={setActiveTab}
             dateRange={dateRange}
-            setDateRange={setDateRange}
             dateRanges={dateRanges}
             onRangeChange={(range) => {
               setDateRange(range.label);
@@ -1408,6 +1757,25 @@ export default function App() {
             handleCalendarDisconnect={handleCalendarDisconnect}
             beginGoogleLogin={beginGoogleLogin}
             status={status}
+            dashboardLoading={dashboardLoading}
+            ultravoxVoices={ultravoxVoices}
+            ultravoxVoicesLoading={ultravoxVoicesLoading}
+            onAgentSave={handleAgentSave}
+            agentSaveStatus={agentSaveStatus}
+            businessSaveStatus={businessSaveStatus}
+            onBusinessSave={handleBusinessSave}
+            clientData={clientData}
+            userProfile={userProfile}
+            bookingSettings={bookingSettings}
+            bookingStatus={bookingStatus}
+            bookingTestStatus={bookingTestStatus}
+            setBookingSettings={setBookingSettings}
+            onBookingSave={handleBookingSettingsSave}
+            onTestBooking={handleTestBooking}
+            callTranscript={callTranscript}
+            onLoadTranscript={loadCallTranscript}
+            onRefreshCalls={loadCallLogs}
+            onRefreshDashboard={loadDashboard}
             onLogout={handleLogout}
           />
         )}
