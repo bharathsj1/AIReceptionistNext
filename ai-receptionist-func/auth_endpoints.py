@@ -1001,6 +1001,8 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
         caller_lines.append(f"Email: {caller_email}")
     if caller_phone:
         caller_lines.append(f"Phone: {caller_phone}")
+    caller_lines.append(f"Duration: {duration_minutes} min")
+    caller_lines.append(f"Buffer: {buffer_minutes} min")
     if caller_lines:
         extra = "\n".join(caller_lines)
         description = f"{description or ''}\n\n{extra}".strip()
@@ -1120,7 +1122,19 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
             )
 
         return func.HttpResponse(
-            json.dumps({"event": event}),
+            json.dumps(
+                {
+                    "event": event,
+                    "resolved": {
+                        "start": start_dt.isoformat(),
+                        "end": end_dt.isoformat(),
+                        "duration_minutes": duration_minutes,
+                        "buffer_minutes": buffer_minutes,
+                        "title": title,
+                        "description": description,
+                    },
+                }
+            ),
             status_code=201,
             mimetype="application/json",
             headers=cors,
