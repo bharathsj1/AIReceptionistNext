@@ -9,9 +9,10 @@ from urllib.parse import parse_qs
 import azure.functions as func
 import requests
 from function_app import app
-from shared.config import get_google_oauth_settings
+from shared.config import get_google_oauth_settings, get_public_api_base
 from shared.db import SessionLocal, User, Client, GoogleToken
 from utils.cors import build_cors_headers
+from services.ultravox_service import create_ultravox_webhook
 
 logger = logging.getLogger(__name__)
 
@@ -179,6 +180,25 @@ def _create_calendar_event(
         return resp.json(), None
     except Exception as exc:  # pylint: disable=broad-except
         return None, str(exc)
+
+
+def _maybe_create_ultravox_webhook_for_user(email: str, db):
+    """
+    After Google connect, auto-create an Ultravox webhook (End Call) scoped to the user's agent.
+    Best-effort; failures are logged and do not block auth.
+    """
+    try:
+        client = db.query(Client).filter_by(email=email).one_or_none()
+        if not client or not client.ultravox_agent_id:
+            return
+
+        base = get_public_api_base()
+        destination = f"{base}/api/calendar/book"
+        scope = {"type": "AGENT", "value": client.ultravox_agent_id}
+        # Per docs: events take dotted format.
+        create_ultravox_webhook(destination, ["call.ended"], scope=scope)
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.error("Auto Ultravox webhook creation failed for %s: %s", email, exc)
 
 
 # ---------------------------------------------------------------------------
@@ -780,6 +800,9 @@ def auth_google_callback(req: func.HttpRequest) -> func.HttpResponse:
             client.name = client.name or name
         db.commit()
 
+        # Auto-create Ultravox webhook for end-call booking (best-effort)
+        _maybe_create_ultravox_webhook_for_user(email, db)
+
         payload = {
             "user_id": user.id,
             "email": user.email,
@@ -889,6 +912,9 @@ def calendar_events(req: func.HttpRequest) -> func.HttpResponse:
                 else None
             )
             db.commit()
+
+        # Auto-create Ultravox webhook for end-call booking (best-effort)
+        _maybe_create_ultravox_webhook_for_user(email, db)
 
         events, events_error = _get_calendar_events(access_token, max_results=max_results)
         if events_error or not events:
@@ -1082,6 +1108,61 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
         logger.error("Calendar book failed: %s", exc)
         return func.HttpResponse(
             json.dumps({"error": "Calendar booking failed", "details": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+            headers=cors,
+        )
+    finally:
+        db.close()
+
+
+@app.function_name(name="GoogleDisconnect")
+@app.route(route="auth/google/disconnect", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def google_disconnect(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Delete stored Google tokens for a user to disconnect calendar access.
+    Body or params: { email }
+    """
+    cors = build_cors_headers(req, ["POST", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
+    try:
+        body = req.get_json()
+    except ValueError:
+        body = {}
+    email = (body or {}).get("email") or req.params.get("email")
+    if not email:
+        return func.HttpResponse(
+            json.dumps({"error": "email is required"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter_by(email=email).one_or_none()
+        if not user:
+            return func.HttpResponse(
+                json.dumps({"error": "User not found"}),
+                status_code=404,
+                mimetype="application/json",
+                headers=cors,
+            )
+        db.query(GoogleToken).filter_by(user_id=user.id).delete()
+        db.commit()
+        return func.HttpResponse(
+            json.dumps({"message": "Google disconnected"}),
+            status_code=200,
+            mimetype="application/json",
+            headers=cors,
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        db.rollback()
+        logger.error("Google disconnect failed: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "Failed to disconnect Google", "details": str(exc)}),
             status_code=500,
             mimetype="application/json",
             headers=cors,

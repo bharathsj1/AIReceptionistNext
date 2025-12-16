@@ -23,6 +23,7 @@ export const API_URLS = {
   dashboard: apiUrl("dashboard"),
   googleAuthUrl: apiUrl("auth/google/url"),
   googleAuthCallback: apiUrl("auth/google/callback"),
+  googleDisconnect: apiUrl("auth/google/disconnect"),
   calendarEvents: apiUrl("calendar/events"),
   calendarBook: apiUrl("calendar/book"),
   dashboardCalls: apiUrl("dashboard/calls"),

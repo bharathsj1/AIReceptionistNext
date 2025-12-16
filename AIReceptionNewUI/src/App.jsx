@@ -153,6 +153,7 @@ export default function App() {
   const suppressHistoryRef = useRef(false);
   const hasMountedHistoryRef = useRef(false);
   const hasLoadedPersistedRef = useRef(false);
+  const hasLoadedDashboardRef = useRef(false);
   const STORAGE_KEY = "ai-reception-app-state";
   const loadingSteps = useMemo(
     () => ({
@@ -937,20 +938,23 @@ export default function App() {
           }));
         }
 
-        setBookingSettings({
+        setBookingSettings((prev) => ({
           booking_enabled: Boolean(
             (dashData?.client && dashData?.client?.booking_enabled) ||
-              clientDetails?.booking_enabled
+              clientDetails?.booking_enabled ||
+              prev.booking_enabled
           ),
           booking_duration_minutes:
             dashData?.client?.booking_duration_minutes ??
             clientDetails?.booking_duration_minutes ??
+            prev.booking_duration_minutes ??
             30,
           booking_buffer_minutes:
             dashData?.client?.booking_buffer_minutes ??
             clientDetails?.booking_buffer_minutes ??
+            prev.booking_buffer_minutes ??
             5
-        });
+        }));
 
         const phones = dashData?.phone_numbers || [];
         const normalizedPhones = Array.isArray(phones)
@@ -1009,7 +1013,7 @@ export default function App() {
         setDashboardLoading(false);
       }
     },
-    [businessName, businessPhone, email, loginEmail, signupEmail, user?.email]
+    [email, loginEmail, signupEmail, user?.email]
   );
 
   const handleAgentSave = useCallback(
@@ -1369,6 +1373,9 @@ export default function App() {
       if (saved.phoneNumbers) setPhoneNumbers(saved.phoneNumbers);
       if (saved.activeTab) setActiveTab(saved.activeTab);
       if (saved.serviceSlug) setServiceSlug(saved.serviceSlug);
+      if (saved.calendarStatus) setCalendarStatus(saved.calendarStatus);
+      if (saved.calendarEvents) setCalendarEvents(saved.calendarEvents);
+      if (saved.bookingSettings) setBookingSettings(saved.bookingSettings);
     } catch (error) {
       console.error("Failed to load persisted state", error);
     } finally {
@@ -1421,11 +1428,17 @@ export default function App() {
   }, [isLoggedIn, stage]);
 
   useEffect(() => {
-    if (stage !== STAGES.DASHBOARD) return;
+    if (stage !== STAGES.DASHBOARD) {
+      hasLoadedDashboardRef.current = false;
+      return;
+    }
+    if (hasLoadedDashboardRef.current) return;
+    hasLoadedDashboardRef.current = true;
     loadDashboard();
     loadCallLogs();
     loadUltravoxVoices();
-  }, [stage, loadCallLogs, loadDashboard, loadUltravoxVoices]);
+    loadCalendarEvents();
+  }, [loadCalendarEvents, loadCallLogs, loadDashboard, loadUltravoxVoices, stage]);
 
   useEffect(() => {
     if (stage !== STAGES.DASHBOARD) return;
@@ -1447,13 +1460,16 @@ export default function App() {
         phoneNumbers,
         activeTab,
         serviceSlug,
-        selectedPlan
+        selectedPlan,
+        calendarStatus,
+        calendarEvents,
+        bookingSettings
       };
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
   } catch (error) {
     console.error("Failed to persist state", error);
     }
-  }, [stage, isLoggedIn, user, email, provisionData, phoneNumbers, activeTab, serviceSlug, selectedPlan]);
+  }, [stage, isLoggedIn, user, email, provisionData, phoneNumbers, activeTab, serviceSlug, selectedPlan, calendarStatus, calendarEvents, bookingSettings]);
 
   useEffect(() => {
     if (!hasMountedHistoryRef.current) {
@@ -1485,9 +1501,20 @@ export default function App() {
   }, [stage, validStages]);
 
   const handleCalendarDisconnect = () => {
+    if (!user?.email) {
+      setCalendarStatus(null);
+      setCalendarEvents([]);
+      setCalendarError("");
+      return;
+    }
     setCalendarStatus(null);
     setCalendarEvents([]);
     setCalendarError("");
+    fetch(API_URLS.googleDisconnect, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: user.email })
+    }).catch(() => {});
   };
 
   useEffect(() => {
