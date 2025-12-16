@@ -1002,6 +1002,7 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
             logger.info("CalendarBook raw body length: %s bytes", len(raw))
         body = json.loads(raw.decode("utf-8")) if raw else {}
     except Exception:  # pylint: disable=broad-except
+        logger.warning("CalendarBook invalid JSON body")
         return func.HttpResponse(
             json.dumps({"error": "Invalid JSON"}),
             status_code=400,
@@ -1010,6 +1011,8 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
         )
     if not isinstance(body, dict):
         body = {}
+
+    logger.info("CalendarBook parsed body keys: %s", list(body.keys()))
 
     email = body.get("email")
     agent_id = (
@@ -1035,6 +1038,17 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
         or (body.get("call") or {}).get("callId")
         or body.get("call_id")
         or (body.get("call") or {}).get("call_id")
+    )
+
+    logger.info(
+        "CalendarBook resolved identifiers: email=%s agent_id=%s call_id=%s start=%s end=%s duration=%s buffer=%s",
+        email,
+        agent_id,
+        call_id,
+        start_iso,
+        end_iso,
+        duration_minutes,
+        buffer_minutes,
     )
 
     caller_lines = []
@@ -1070,7 +1084,9 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
                 email = client.email
                 user = db.query(User).filter_by(email=email).one_or_none()
 
+        logger.info("CalendarBook user lookup: email=%s user_found=%s", email, bool(user))
         if not email or not user:
+            logger.warning("CalendarBook user not found for email=%s agent_id=%s", email, agent_id)
             return func.HttpResponse(
                 json.dumps({"error": "User not found", "hint": "Provide email or agentId"}),
                 status_code=404,
@@ -1084,7 +1100,9 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
             .order_by(GoogleToken.created_at.desc())
             .first()
         )
+        logger.info("CalendarBook token lookup for user_id=%s found=%s", user.id, bool(token))
         if not token:
+            logger.warning("CalendarBook no Google token for user_id=%s", user.id)
             return func.HttpResponse(
                 json.dumps({"error": "No Google account connected"}),
                 status_code=404,
@@ -1095,8 +1113,10 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
         access_token = token.access_token
         now = datetime.utcnow()
         if token.expires_at and token.expires_at <= now and token.refresh_token:
+            logger.info("CalendarBook token expired, attempting refresh for user_id=%s", user.id)
             refreshed, refresh_error = _refresh_google_token(token.refresh_token)
             if refresh_error or not refreshed:
+                logger.error("CalendarBook refresh failed: %s", refresh_error)
                 return func.HttpResponse(
                     json.dumps({"error": "Unable to refresh token", "details": refresh_error}),
                     status_code=401,
@@ -1127,12 +1147,23 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
             _ensure_utc(end_dt + timedelta(minutes=buffer_minutes)) if buffer_minutes else end_dt
         )
 
+        logger.info(
+            "CalendarBook resolved timing: start=%s end=%s buffered_end=%s duration=%s buffer=%s",
+            start_dt.isoformat(),
+            end_dt.isoformat(),
+            buffered_end.isoformat(),
+            duration_minutes,
+            buffer_minutes,
+        )
+
         fb, fb_error = _freebusy(
             access_token,
             start_dt.isoformat(),
             buffered_end.isoformat(),
         )
+        logger.info("CalendarBook free/busy response: error=%s busy_entries=%s", fb_error, (fb or {}).get("calendars", {}))
         if fb_error or not fb:
+            logger.warning("CalendarBook free/busy failure: %s", fb_error)
             return func.HttpResponse(
                 json.dumps({"error": "Unable to check availability", "details": fb_error}),
                 status_code=400,
@@ -1142,6 +1173,7 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
 
         busy = fb.get("calendars", {}).get("primary", {}).get("busy", [])
         if busy:
+            logger.warning("CalendarBook slot busy: %s", busy)
             return func.HttpResponse(
                 json.dumps({"error": "Slot is busy", "busy": busy}),
                 status_code=409,
@@ -1161,6 +1193,7 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
 
         if event_id:
             tried_id = True
+            logger.info("CalendarBook creating event with id=%s attendees=%s", event_id, attendees)
             event, event_error = _create_calendar_event(
                 access_token,
                 title,
@@ -1186,6 +1219,12 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
                 )
 
         if event_error or not event:
+            logger.error(
+                "CalendarBook event creation failed: event_error=%s event_id_used=%s tried_id=%s",
+                event_error,
+                event_id,
+                tried_id,
+            )
             return func.HttpResponse(
                 json.dumps(
                     {
@@ -1199,6 +1238,12 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
                 headers=cors,
             )
 
+        logger.info(
+            "CalendarBook event created: id=%s status=%s idempotent_id=%s",
+            (event or {}).get("id"),
+            (event or {}).get("status"),
+            event_id,
+        )
         return func.HttpResponse(
             json.dumps(
                 {
@@ -1220,7 +1265,7 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
         )
     except Exception as exc:  # pylint: disable=broad-except
         db.rollback()
-        logger.error("Calendar book failed: %s", exc)
+        logger.exception("Calendar book failed")
         return func.HttpResponse(
             json.dumps({"error": "Calendar booking failed", "details": str(exc)}),
             status_code=500,
