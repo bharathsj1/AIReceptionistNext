@@ -2,7 +2,8 @@ import json
 import logging
 import secrets
 import hashlib
-from datetime import datetime, timedelta
+import re
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 from urllib.parse import parse_qs
 
@@ -37,6 +38,36 @@ def _verify_password(password: str, stored: str) -> bool:
 
 def _generate_reset_token() -> str:
     return secrets.token_urlsafe(32)
+
+
+def _ensure_utc(dt: datetime) -> datetime:
+    """
+    Ensure datetimes have an explicit UTC timezone so Google Calendar accepts them.
+    """
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _build_event_id(raw_id: Optional[str]) -> Optional[str]:
+    """
+    Build a Google Calendar event id suitable for idempotency.
+    Rules: 5-1024 chars, letters/numbers/underscore only. We drop dashes and other chars to avoid "Invalid resource id".
+    """
+    if not raw_id:
+        return None
+    # Remove everything except alphanumerics/underscore to avoid Google 400.
+    safe = re.sub(r"[^a-zA-Z0-9_]", "", str(raw_id)).lower()
+    safe = safe.lstrip("_")
+    if safe and not re.match(r"^[a-zA-Z0-9]", safe):
+        safe = f"a{safe}"
+    if len(safe) < 5:
+        safe = (safe + "00000")[:5]
+    if len(safe) > 1024:
+        safe = safe[:1024]
+    if not re.match(r"^[a-zA-Z0-9_]{5,1024}$", safe):
+        return None
+    return safe
 
 
 def _build_google_auth_url(state: str) -> str:
@@ -157,6 +188,7 @@ def _create_calendar_event(
     end_iso: str,
     description: Optional[str] = None,
     attendees: Optional[list] = None,
+    event_id: Optional[str] = None,
 ) -> Tuple[Optional[dict], Optional[str]]:
     payload = {
         "summary": summary,
@@ -167,6 +199,8 @@ def _create_calendar_event(
         payload["description"] = description
     if attendees:
         payload["attendees"] = attendees
+    if event_id:
+        payload["id"] = event_id
 
     try:
         resp = requests.post(
@@ -175,6 +209,9 @@ def _create_calendar_event(
             json=payload,
             timeout=10,
         )
+        if resp.status_code == 409:
+            # Duplicate event id; treat as already created.
+            return {"duplicate": True, "id": event_id}, None
         if resp.status_code >= 300:
             return None, resp.text
         return resp.json(), None
@@ -993,6 +1030,12 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
     caller_name = body.get("callerName") or body.get("caller_name")
     caller_email = body.get("callerEmail") or body.get("caller_email")
     caller_phone = body.get("callerPhone") or body.get("caller_phone")
+    call_id = (
+        body.get("callId")
+        or (body.get("call") or {}).get("callId")
+        or body.get("call_id")
+        or (body.get("call") or {}).get("call_id")
+    )
 
     caller_lines = []
     if caller_name:
@@ -1070,15 +1113,19 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
             db.commit()
 
         if not start_iso:
-            start_dt = datetime.utcnow() + timedelta(minutes=15)
+            start_dt = datetime.now(timezone.utc) + timedelta(minutes=15)
         else:
             start_dt = datetime.fromisoformat(start_iso.replace("Z", "+00:00"))
+        start_dt = _ensure_utc(start_dt)
         if end_iso:
             end_dt = datetime.fromisoformat(end_iso.replace("Z", "+00:00"))
         else:
             end_dt = start_dt + timedelta(minutes=duration_minutes)
+        end_dt = _ensure_utc(end_dt)
 
-        buffered_end = end_dt + timedelta(minutes=buffer_minutes) if buffer_minutes else end_dt
+        buffered_end = (
+            _ensure_utc(end_dt + timedelta(minutes=buffer_minutes)) if buffer_minutes else end_dt
+        )
 
         fb, fb_error = _freebusy(
             access_token,
@@ -1105,17 +1152,48 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
         attendees = []
         if caller_email:
             attendees.append({"email": caller_email})
-        event, event_error = _create_calendar_event(
-            access_token,
-            title,
-            start_dt.isoformat(),
-            end_dt.isoformat(),
-            description=description,
-            attendees=attendees or None,
-        )
+        # Use call_id as event_id to get idempotency (Google returns 409 on duplicate).
+        event_id = _build_event_id(call_id)
+
+        event_error = None
+        event = None
+        tried_id = False
+
+        if event_id:
+            tried_id = True
+            event, event_error = _create_calendar_event(
+                access_token,
+                title,
+                start_dt.isoformat(),
+                end_dt.isoformat(),
+                description=description,
+                attendees=attendees or None,
+                event_id=event_id,
+            )
+
+        # If invalid id or other creation error, retry once without event_id.
+        if (event_error or not event) and tried_id:
+            if event_error and "Invalid resource id" in str(event_error):
+                logger.info("Retrying calendar create without event_id (invalid id: %s)", event_id)
+                event, event_error = _create_calendar_event(
+                    access_token,
+                    title,
+                    start_dt.isoformat(),
+                    end_dt.isoformat(),
+                    description=description,
+                    attendees=attendees or None,
+                    event_id=None,
+                )
+
         if event_error or not event:
             return func.HttpResponse(
-                json.dumps({"error": "Failed to create event", "details": event_error}),
+                json.dumps(
+                    {
+                        "error": "Failed to create event",
+                        "details": event_error,
+                        "event_id_used": event_id if tried_id else None,
+                    }
+                ),
                 status_code=500,
                 mimetype="application/json",
                 headers=cors,
@@ -1125,6 +1203,7 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps(
                 {
                     "event": event,
+                    "idempotent_event_id": event_id,
                     "resolved": {
                         "start": start_dt.isoformat(),
                         "end": end_dt.isoformat(),
