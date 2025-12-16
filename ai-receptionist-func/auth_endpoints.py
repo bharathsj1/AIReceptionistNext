@@ -948,7 +948,8 @@ def calendar_events(req: func.HttpRequest) -> func.HttpResponse:
 def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
     """
     Create an event on the user's primary Google Calendar if the slot is free.
-    Body: { email, start, end?, duration_minutes?, buffer_minutes?, title?, description?, callerName?, callerEmail?, callerPhone? }
+    Body: { email?, agentId?, call.agent.id?, start, end?, duration_minutes?, buffer_minutes?, title?, description?, callerName?, callerEmail?, callerPhone? }
+    If email is missing but agentId is provided, we resolve the client's email from the Ultravox agent id.
     """
     cors = build_cors_headers(req, ["POST", "OPTIONS"])
     if req.method == "OPTIONS":
@@ -962,13 +963,14 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
         body = {}
 
     email = body.get("email")
-    if not email:
-        return func.HttpResponse(
-            json.dumps({"error": "email is required"}),
-            status_code=400,
-            mimetype="application/json",
-            headers=cors,
-        )
+    agent_id = (
+        body.get("agentId")
+        or body.get("agent_id")
+        or (body.get("agent") or {}).get("id")
+        or (body.get("call") or {}).get("agentId")
+        or (body.get("call") or {}).get("agent_id")
+        or ((body.get("call") or {}).get("agent") or {}).get("id")
+    )
 
     start_iso = body.get("start")
     end_iso = body.get("end")
@@ -1002,10 +1004,18 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
 
     db = SessionLocal()
     try:
-        user = db.query(User).filter_by(email=email).one_or_none()
-        if not user:
+        user = None
+        if email:
+            user = db.query(User).filter_by(email=email).one_or_none()
+        if not user and agent_id:
+            client = db.query(Client).filter_by(ultravox_agent_id=agent_id).one_or_none()
+            if client:
+                email = client.email
+                user = db.query(User).filter_by(email=email).one_or_none()
+
+        if not email or not user:
             return func.HttpResponse(
-                json.dumps({"error": "User not found"}),
+                json.dumps({"error": "User not found", "hint": "Provide email or agentId"}),
                 status_code=404,
                 mimetype="application/json",
                 headers=cors,
