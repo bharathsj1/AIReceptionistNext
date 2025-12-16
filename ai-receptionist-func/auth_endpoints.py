@@ -957,6 +957,7 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
 
     try:
         body = req.get_json()
+        print(body)
     except ValueError:
         body = None
     if not isinstance(body, dict):
