@@ -954,12 +954,23 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
     cors = build_cors_headers(req, ["POST", "OPTIONS"])
     if req.method == "OPTIONS":
         return func.HttpResponse("", status_code=204, headers=cors)
-
+    print(req.get_body())
     try:
         body = req.get_json()
-        print(body)
-    except ValueError:
-        body = None
+    except Exception:  # pylint: disable=broad-except
+        try:
+            raw = req.get_body() or b""
+            if raw:
+                body = json.loads(raw.decode("utf-8"))
+            else:
+                body = {}
+        except Exception:  # pylint: disable=broad-except
+            return func.HttpResponse(
+                json.dumps({"error": "Invalid JSON"}),
+                status_code=400,
+                mimetype="application/json",
+                headers=cors,
+            )
     if not isinstance(body, dict):
         body = {}
 
