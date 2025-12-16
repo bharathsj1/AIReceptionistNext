@@ -169,3 +169,41 @@ def _build_deduped_agent_name(base_name: str, existing_count: int) -> str:
     truncated_base = safe_base[:max_base_len].rstrip("_-")
     candidate = f"{truncated_base}{suffix}"
     return _sanitize_name(candidate)
+
+
+def create_ultravox_webhook(
+    destination_url: str,
+    event_types: list[str],
+    scope: dict | None = None,
+    secret: str | None = None,
+) -> dict:
+    """
+    Create a webhook in Ultravox for the given events.
+    scope example: {"type": "AGENT", "value": "<agentId>"} or {"type": "GLOBAL"}
+    event_types example: ["call.ended", "call.started"]
+    """
+    # Per Ultravox docs: fields are url, events (e.g., call.started, call.ended), optional agentId, secrets.
+    normalized_events = [str(evt or "").lower() for evt in (event_types or []) if str(evt or "").strip()]
+    if not normalized_events:
+        normalized_events = ["call.ended"]
+
+    payload: dict = {
+        "url": destination_url,
+        "events": normalized_events,
+    }
+    # If scope is provided as {"type": "AGENT", "value": "<id>"}, map to agentId field.
+    if scope and scope.get("type") == "AGENT" and scope.get("value"):
+        payload["agentId"] = scope.get("value")
+    if secret:
+        payload["secrets"] = [secret]
+
+    with httpx.Client(timeout=20) as client:
+        resp = client.post(f"{ULTRAVOX_BASE_URL}/webhooks", headers=_headers(), json=payload)
+    if resp.status_code >= 300:
+        logger.error("Ultravox create webhook failed: %s - %s", resp.status_code, resp.text)
+        raise RuntimeError(f"Failed to create webhook: {resp.text}")
+    try:
+        return resp.json()
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.error("Ultravox webhook response parse failed: %s", exc)
+        return {}

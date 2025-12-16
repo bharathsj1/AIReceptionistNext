@@ -38,6 +38,14 @@ def get_google_oauth_settings() -> dict:
     }
 
 
+def get_public_api_base() -> str:
+    """
+    Base URL for webhooks to call back into this API (no trailing slash).
+    Defaults to the Azure Functions hostname if not provided.
+    """
+    return (os.getenv("API_PUBLIC_BASE_URL") or "https://aireceptionist-func.azurewebsites.net").rstrip("/")
+
+
 def get_smtp_settings() -> dict:
     """
     SMTP settings for transactional email (temp password, etc).
