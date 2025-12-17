@@ -255,12 +255,16 @@ def _create_calendar_event(
     description: Optional[str] = None,
     attendees: Optional[list] = None,
     event_id: Optional[str] = None,
+    time_zone: Optional[str] = None,
 ) -> Tuple[Optional[dict], Optional[str]]:
     payload = {
         "summary": summary,
         "start": {"dateTime": start_iso},
         "end": {"dateTime": end_iso},
     }
+    if time_zone:
+        payload["start"]["timeZone"] = time_zone
+        payload["end"]["timeZone"] = time_zone
     if description:
         payload["description"] = description
     if attendees:
@@ -1280,6 +1284,11 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
             _ensure_utc(end_dt + timedelta(minutes=buffer_minutes)) if buffer_minutes else end_dt
         )
 
+        start_london = start_dt.astimezone(ZoneInfo("Europe/London"))
+        end_london = end_dt.astimezone(ZoneInfo("Europe/London"))
+        start_for_google = start_london.isoformat()
+        end_for_google = end_london.isoformat()
+
         logger.info(
             "CalendarBook resolved timing: start=%s end=%s buffered_end=%s duration=%s buffer=%s",
             start_dt.isoformat(),
@@ -1330,11 +1339,12 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
             event, event_error = _create_calendar_event(
                 access_token,
                 title,
-                start_dt.isoformat(),
-                end_dt.isoformat(),
+                start_for_google,
+                end_for_google,
                 description=description,
                 attendees=attendees or None,
                 event_id=event_id,
+                time_zone="Europe/London",
             )
 
         # If invalid id or other creation error, retry once without event_id.
@@ -1344,11 +1354,12 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
                 event, event_error = _create_calendar_event(
                     access_token,
                     title,
-                    start_dt.isoformat(),
-                    end_dt.isoformat(),
+                    start_for_google,
+                    end_for_google,
                     description=description,
                     attendees=attendees or None,
                     event_id=None,
+                    time_zone="Europe/London",
                 )
 
         if event_error or not event:
@@ -1465,6 +1476,75 @@ def ultravox_debug_tools(req: func.HttpRequest) -> func.HttpResponse:
             mimetype="application/json",
             headers=cors,
         )
+
+
+@app.function_name(name="UltravoxEnsureBookingTool")
+@app.route(route="ultravox/ensure-tool", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def ultravox_ensure_booking_tool(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Force ensure/attach the calendar_book tool for an agent (guarded by ENABLE_ULTRAVOX_DEBUG).
+    Body or params: { agentId? , email? }
+    """
+    cors = build_cors_headers(req, ["POST", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
+    if (get_setting("ENABLE_ULTRAVOX_DEBUG") or "").lower() not in ("1", "true", "yes", "on"):
+        return func.HttpResponse(
+            json.dumps({"error": "Debug endpoint disabled"}),
+            status_code=404,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    try:
+        body = req.get_json()
+    except ValueError:
+        body = {}
+    agent_id = (body or {}).get("agentId") or req.params.get("agentId") or (body or {}).get("agent_id")
+    email = (body or {}).get("email") or req.params.get("email")
+
+    db = SessionLocal()
+    try:
+        if not agent_id and email:
+            client = db.query(Client).filter_by(email=email).one_or_none()
+            agent_id = client.ultravox_agent_id if client else None
+        if not agent_id:
+            return func.HttpResponse(
+                json.dumps({"error": "agentId or email is required"}),
+                status_code=400,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        base = get_public_api_base()
+        tool_id, created, attached = ensure_booking_tool(agent_id, base)
+        agent = get_ultravox_agent(agent_id)
+        selected = (agent.get("callTemplate") or {}).get("selectedTools") or []
+        return func.HttpResponse(
+            json.dumps(
+                {
+                    "agentId": agent_id,
+                    "tool_id": tool_id,
+                    "created": created,
+                    "attached": attached,
+                    "selectedTools": selected,
+                }
+            ),
+            status_code=200,
+            mimetype="application/json",
+            headers=cors,
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.error("Ultravox ensure tool failed: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "Failed to ensure tool", "details": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+            headers=cors,
+        )
+    finally:
+        db.close()
 
 
 @app.function_name(name="GoogleDisconnect")
