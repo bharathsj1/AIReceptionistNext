@@ -276,9 +276,34 @@ def attach_tool_to_agent(agent_id: str, tool_id: str) -> bool:
         return entry
 
     selected_ids = [_id_from_entry(x) for x in selected]
-    if tool_id in selected_ids:
-        logger.info("Ultravox tool already attached to agent %s", agent_id)
-        return False
+
+    def _normalize_entry(entry):
+        if isinstance(entry, dict):
+            return entry
+        return {"toolId": entry}
+
+    normalized_selected = [_normalize_entry(x) for x in selected]
+
+    booking_entry = {
+        "toolId": tool_id,
+        "nameOverride": "calendar_book",
+        "descriptionOverride": "Books a Google Calendar event for the caller.",
+        "parameterOverrides": {
+            "agentId": {"location": "PARAMETER_LOCATION_BODY", "value": agent_id},
+        },
+    }
+
+    # Replace or append booking entry to ensure agentId is present.
+    updated_entries = []
+    found = False
+    for entry in normalized_selected:
+        if _id_from_entry(entry) == tool_id:
+            updated_entries.append(booking_entry)
+            found = True
+        else:
+            updated_entries.append(entry)
+    if not found:
+        updated_entries.append(booking_entry)
 
     def _patch_selected(new_selected) -> Tuple[bool, str]:
         updated_template = dict(call_template)
@@ -292,7 +317,7 @@ def attach_tool_to_agent(agent_id: str, tool_id: str) -> bool:
         return resp.status_code < 300, resp.text
 
     # Try patch with list of SelectedTool objects using toolId.
-    dict_entries = [{"toolId": tid} for tid in selected_ids + [tool_id]]
+    dict_entries = updated_entries
     ok, resp_text = _patch_selected(dict_entries)
     if not ok:
         logger.info("Ultravox attach tool (toolId entries) failed, retrying with id list: %s", resp_text)
