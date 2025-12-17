@@ -1119,6 +1119,13 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
         or (body.get("call") or {}).get("agent_id")
         or ((body.get("call") or {}).get("agent") or {}).get("id")
     )
+    if isinstance(agent_id, dict):
+        agent_id = (
+            agent_id.get("value")
+            or agent_id.get("agentId")
+            or agent_id.get("agent_id")
+            or agent_id.get("id")
+        )
 
     start_iso = body.get("start")
     end_iso = body.get("end")
