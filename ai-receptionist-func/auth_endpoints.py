@@ -1354,6 +1354,20 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
                 time_zone="Europe/London",
             )
 
+        # If no event_id was provided, or the id attempt failed, try once without id.
+        if not event and not event_error and not tried_id:
+            logger.info("CalendarBook creating event without explicit id (call_id missing)")
+            event, event_error = _create_calendar_event(
+                access_token,
+                title,
+                start_for_google,
+                end_for_google,
+                description=description,
+                attendees=attendees or None,
+                event_id=None,
+                time_zone="Europe/London",
+            )
+
         # If invalid id or other creation error, retry once without event_id.
         if (event_error or not event) and tried_id:
             if event_error and "Invalid resource id" in str(event_error):
