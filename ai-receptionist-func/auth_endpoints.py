@@ -1153,6 +1153,15 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
     end_iso = extracted_end or body.get("end") or body.get("end_iso") or body.get("end_time") or body.get("end_time_iso")
     duration_minutes = extracted_duration or body.get("duration_minutes") or body.get("duration") or 30
     buffer_minutes = extracted_buffer or body.get("buffer_minutes") or body.get("buffer") or 5
+
+    if (body.get("event") or "").lower() == "call.ended" and not start_iso:
+        logger.info("CalendarBook skipping call.ended webhook without start time (noop).")
+        return func.HttpResponse(
+            json.dumps({"message": "No booking created; call.ended payload missing start"}),
+            status_code=202,
+            mimetype="application/json",
+            headers=cors,
+        )
     caller_lines = []
     if caller_name:
         caller_lines.append(f"Caller: {caller_name}")
