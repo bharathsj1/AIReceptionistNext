@@ -269,11 +269,18 @@ def attach_tool_to_agent(agent_id: str, tool_id: str) -> bool:
     agent = get_ultravox_agent(agent_id)
     call_template = agent.get("callTemplate") or {}
     selected = call_template.get("selectedTools") or []
-    if tool_id in selected:
+
+    def _id_from_entry(entry):
+        if isinstance(entry, dict):
+            return entry.get("id") or entry.get("toolId") or entry.get("tool_id") or entry.get("name")
+        return entry
+
+    selected_ids = [_id_from_entry(x) for x in selected]
+    if tool_id in selected_ids:
         logger.info("Ultravox tool already attached to agent %s", agent_id)
         return False
 
-    updated_selected = list(selected) + [tool_id]
+    updated_selected = selected_ids + [tool_id]
     updated_template = dict(call_template)
     updated_template["selectedTools"] = updated_selected
 
@@ -286,8 +293,21 @@ def attach_tool_to_agent(agent_id: str, tool_id: str) -> bool:
     if resp.status_code >= 300:
         logger.error("Ultravox attach tool failed: %s - %s", resp.status_code, resp.text)
         raise RuntimeError(f"Failed to attach tool to agent ({resp.status_code}): {resp.text}")
-    logger.info("Ultravox tool %s attached to agent %s", tool_id, agent_id)
-    return True
+    try:
+        refreshed = get_ultravox_agent(agent_id)
+        refreshed_selected = (refreshed.get("callTemplate") or {}).get("selectedTools") or []
+        refreshed_ids = [_id_from_entry(x) for x in refreshed_selected]
+        if tool_id in refreshed_ids:
+            logger.info("Ultravox tool %s attached to agent %s", tool_id, agent_id)
+            return True
+        logger.warning(
+            "Ultravox attach tool patch succeeded but tool not present in selectedTools for agent %s",
+            agent_id,
+        )
+        return False
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.warning("Ultravox attach tool verification failed: %s", exc)
+        return False
 
 
 BOOKING_TOOL_INSTRUCTION = (

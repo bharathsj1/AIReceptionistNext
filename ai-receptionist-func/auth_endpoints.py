@@ -1520,7 +1520,8 @@ def ultravox_ensure_booking_tool(req: func.HttpRequest) -> func.HttpResponse:
         base = get_public_api_base()
         tool_id, created, attached = ensure_booking_tool(agent_id, base)
         agent = get_ultravox_agent(agent_id)
-        selected = (agent.get("callTemplate") or {}).get("selectedTools") or []
+        call_template = agent.get("callTemplate") or {}
+        selected = call_template.get("selectedTools") or []
         return func.HttpResponse(
             json.dumps(
                 {
@@ -1529,6 +1530,7 @@ def ultravox_ensure_booking_tool(req: func.HttpRequest) -> func.HttpResponse:
                     "created": created,
                     "attached": attached,
                     "selectedTools": selected,
+                    "callTemplate": call_template,
                 }
             ),
             status_code=200,
