@@ -376,7 +376,12 @@ def _find_existing_booking_tool(tools: List[Dict], public_api_base: str) -> Opti
     target_url = f"{public_api_base.rstrip('/')}/api/calendar/book"
     fallback = None
     for tool in tools:
-        if str(tool.get("modelToolName") or "").lower() != "calendar_book":
+        model_name = (
+            tool.get("modelToolName")
+            or (tool.get("definition") or {}).get("modelToolName")
+            or tool.get("name")
+        )
+        if str(model_name or "").lower() != "calendar_book":
             continue
         http_cfg = tool.get("http") or tool.get("httpConfig") or {}
         tool_url = http_cfg.get("baseUrlPattern") or http_cfg.get("url") or tool.get("url")
