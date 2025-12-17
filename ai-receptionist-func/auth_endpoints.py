@@ -5,15 +5,21 @@ import hashlib
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
+from zoneinfo import ZoneInfo
 from urllib.parse import parse_qs
 
 import azure.functions as func
 import requests
 from function_app import app
-from shared.config import get_google_oauth_settings, get_public_api_base
+from shared.config import get_google_oauth_settings, get_public_api_base, get_setting
 from shared.db import SessionLocal, User, Client, GoogleToken
 from utils.cors import build_cors_headers
-from services.ultravox_service import create_ultravox_webhook
+from services.ultravox_service import (
+    create_ultravox_webhook,
+    ensure_booking_tool,
+    get_ultravox_agent,
+    list_ultravox_tools,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +74,66 @@ def _build_event_id(raw_id: Optional[str]) -> Optional[str]:
     if not re.match(r"^[a-zA-Z0-9_]{5,1024}$", safe):
         return None
     return safe
+
+
+def _parse_dt_with_london_default(value: str) -> datetime:
+    """
+    Parse an ISO timestamp; if no timezone, assume Europe/London, then convert to UTC.
+    """
+    dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        try:
+            dt = dt.replace(tzinfo=ZoneInfo("Europe/London"))
+        except Exception:  # pylint: disable=broad-except
+            dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _extract_time_fields(payload: dict) -> Tuple[Optional[str], Optional[str], Optional[int], Optional[int]]:
+    """
+    Extract start/end/duration/buffer from known top-level or nested shapes.
+    Accepts variants such as startTime/start_time and nested booking/appointment objects.
+    """
+    contexts = []
+    if isinstance(payload, dict):
+        contexts.append(payload)
+        for key in ("call", "booking", "appointment"):
+            child = payload.get(key)
+            if isinstance(child, dict):
+                contexts.append(child)
+                for sub_key in ("booking", "appointment", "slot"):
+                    sub_child = child.get(sub_key)
+                    if isinstance(sub_child, dict):
+                        contexts.append(sub_child)
+
+    def first(*keys):
+        for ctx in contexts:
+            for key in keys:
+                if key in ctx and ctx.get(key):
+                    return ctx.get(key)
+        return None
+
+    start_iso = first(
+        "start",
+        "startTime",
+        "start_time",
+        "start_time_iso",
+        "startTimeIso",
+        "requestedStart",
+        "requested_start",
+    )
+    end_iso = first(
+        "end",
+        "endTime",
+        "end_time",
+        "end_time_iso",
+        "endTimeIso",
+        "requestedEnd",
+        "requested_end",
+    )
+    duration = first("duration_minutes", "durationMinutes", "duration")
+    buffer = first("buffer_minutes", "bufferMinutes", "buffer")
+    return start_iso, end_iso, duration, buffer
 
 
 def _build_google_auth_url(state: str) -> str:
@@ -219,9 +285,9 @@ def _create_calendar_event(
         return None, str(exc)
 
 
-def _maybe_create_ultravox_webhook_for_user(email: str, db):
+def _ensure_ultravox_booking_tool_for_user(email: str, db):
     """
-    After Google connect, auto-create an Ultravox webhook (End Call) scoped to the user's agent.
+    Ensure the Ultravox HTTP tool for booking is created and attached to the user's agent.
     Best-effort; failures are logged and do not block auth.
     """
     try:
@@ -230,12 +296,36 @@ def _maybe_create_ultravox_webhook_for_user(email: str, db):
             return
 
         base = get_public_api_base()
-        destination = f"{base}/api/calendar/book"
-        scope = {"type": "AGENT", "value": client.ultravox_agent_id}
-        # Per docs: events take dotted format.
-        create_ultravox_webhook(destination, ["call.ended"], scope=scope)
+        tool_id, created, attached = ensure_booking_tool(client.ultravox_agent_id, base)
+        logger.info(
+            "Ultravox booking tool ensure: agent=%s tool_id=%s created=%s attached=%s",
+            client.ultravox_agent_id,
+            tool_id,
+            created,
+            attached,
+        )
+        # Keep the legacy call.ended webhook as non-blocking telemetry; avoid duplicates.
+        try:
+            from services.ultravox_service import list_ultravox_webhooks  # lazy import to avoid cycles
+
+            existing_hooks = list_ultravox_webhooks()
+            destination = f"{base}/api/calendar/book"
+            scoped = [
+                hook
+                for hook in existing_hooks
+                if (hook.get("url") or "").rstrip("/") == destination
+                and hook.get("agentId") == client.ultravox_agent_id
+                and "call.ended" in (hook.get("events") or [])
+            ]
+            if scoped:
+                logger.info("Ultravox call.ended webhook already exists for agent %s", client.ultravox_agent_id)
+            else:
+                scope = {"type": "AGENT", "value": client.ultravox_agent_id}
+                create_ultravox_webhook(destination, ["call.ended"], scope=scope)
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.info("Ultravox call.ended webhook skipped: %s", exc)
     except Exception as exc:  # pylint: disable=broad-except
-        logger.error("Auto Ultravox webhook creation failed for %s: %s", email, exc)
+        logger.error("Ultravox booking tool ensure failed for %s: %s", email, exc)
 
 
 # ---------------------------------------------------------------------------
@@ -837,8 +927,8 @@ def auth_google_callback(req: func.HttpRequest) -> func.HttpResponse:
             client.name = client.name or name
         db.commit()
 
-        # Auto-create Ultravox webhook for end-call booking (best-effort)
-        _maybe_create_ultravox_webhook_for_user(email, db)
+        # Ensure Ultravox booking tool is present/attached (best-effort)
+        _ensure_ultravox_booking_tool_for_user(email, db)
 
         payload = {
             "user_id": user.id,
@@ -950,8 +1040,8 @@ def calendar_events(req: func.HttpRequest) -> func.HttpResponse:
             )
             db.commit()
 
-        # Auto-create Ultravox webhook for end-call booking (best-effort)
-        _maybe_create_ultravox_webhook_for_user(email, db)
+        # Ensure Ultravox booking tool is present/attached (best-effort)
+        _ensure_ultravox_booking_tool_for_user(email, db)
 
         events, events_error = _get_calendar_events(access_token, max_results=max_results)
         if events_error or not events:
@@ -1014,6 +1104,8 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
 
     logger.info("CalendarBook parsed body keys: %s", list(body.keys()))
 
+    extracted_start, extracted_end, extracted_duration, extracted_buffer = _extract_time_fields(body)
+
     email = body.get("email")
     agent_id = (
         body.get("agentId")
@@ -1045,12 +1137,22 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
         email,
         agent_id,
         call_id,
-        start_iso,
-        end_iso,
-        duration_minutes,
-        buffer_minutes,
+        extracted_start,
+        extracted_end,
+        extracted_duration or duration_minutes,
+        extracted_buffer or buffer_minutes,
     )
 
+    start_iso = (
+        extracted_start
+        or body.get("start")
+        or body.get("start_iso")
+        or body.get("start_time")
+        or body.get("start_time_iso")
+    )
+    end_iso = extracted_end or body.get("end") or body.get("end_iso") or body.get("end_time") or body.get("end_time_iso")
+    duration_minutes = extracted_duration or body.get("duration_minutes") or body.get("duration") or 30
+    buffer_minutes = extracted_buffer or body.get("buffer_minutes") or body.get("buffer") or 5
     caller_lines = []
     if caller_name:
         caller_lines.append(f"Caller: {caller_name}")
@@ -1133,12 +1235,34 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
             db.commit()
 
         if not start_iso:
-            start_dt = datetime.now(timezone.utc) + timedelta(minutes=15)
-        else:
-            start_dt = datetime.fromisoformat(start_iso.replace("Z", "+00:00"))
-        start_dt = _ensure_utc(start_dt)
+            logger.warning("CalendarBook missing start; refusing to auto-schedule without a requested slot")
+            return func.HttpResponse(
+                json.dumps({"error": "Missing start time", "hint": "Provide start in ISO 8601 (e.g., 2025-12-17T15:00:00Z)"}),
+                status_code=400,
+                mimetype="application/json",
+                headers=cors,
+            )
+        try:
+            start_dt = _parse_dt_with_london_default(start_iso)
+        except Exception:  # pylint: disable=broad-except
+            logger.warning("CalendarBook invalid start format: %s", start_iso)
+            return func.HttpResponse(
+                json.dumps({"error": "Invalid start time format", "value": start_iso}),
+                status_code=400,
+                mimetype="application/json",
+                headers=cors,
+            )
         if end_iso:
-            end_dt = datetime.fromisoformat(end_iso.replace("Z", "+00:00"))
+            try:
+                end_dt = _parse_dt_with_london_default(end_iso)
+            except Exception:  # pylint: disable=broad-except
+                logger.warning("CalendarBook invalid end format: %s", end_iso)
+                return func.HttpResponse(
+                    json.dumps({"error": "Invalid end time format", "value": end_iso}),
+                    status_code=400,
+                    mimetype="application/json",
+                    headers=cors,
+                )
         else:
             end_dt = start_dt + timedelta(minutes=duration_minutes)
         end_dt = _ensure_utc(end_dt)
@@ -1274,6 +1398,64 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
         )
     finally:
         db.close()
+
+
+@app.function_name(name="UltravoxDebugTools")
+@app.route(route="ultravox/debug-tools", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def ultravox_debug_tools(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Debug helper to list Ultravox tools and agent attachments (guarded by ENABLE_ULTRAVOX_DEBUG flag).
+    """
+    cors = build_cors_headers(req, ["GET", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
+    if (get_setting("ENABLE_ULTRAVOX_DEBUG") or "").lower() not in ("1", "true", "yes", "on"):
+        return func.HttpResponse(
+            json.dumps({"error": "Debug endpoint disabled"}),
+            status_code=404,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    agent_id = req.params.get("agentId") or req.params.get("agent_id")
+    if not agent_id:
+        return func.HttpResponse(
+            json.dumps({"error": "agentId is required"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    try:
+        agent = get_ultravox_agent(agent_id)
+        selected = (agent.get("callTemplate") or {}).get("selectedTools") or []
+        tools = list_ultravox_tools()
+        attached = [
+            tool
+            for tool in tools
+            if (tool.get("id") or tool.get("toolId") or tool.get("tool_id")) in selected
+        ]
+        payload = {
+            "agentId": agent_id,
+            "selectedTools": selected,
+            "attachedTools": attached,
+            "availableTools": tools,
+        }
+        return func.HttpResponse(
+            json.dumps(payload),
+            status_code=200,
+            mimetype="application/json",
+            headers=cors,
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.error("Ultravox debug tools failed: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "Failed to list Ultravox tools"}),
+            status_code=500,
+            mimetype="application/json",
+            headers=cors,
+        )
 
 
 @app.function_name(name="GoogleDisconnect")

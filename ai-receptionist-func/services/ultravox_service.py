@@ -1,16 +1,21 @@
 import logging
 import re
 import time
-from typing import Dict, List
+from typing import Dict, List, Optional, Tuple
 
 import httpx
 
 from services.ultravox_agent_builder import _sanitize_name, build_ultravox_agent_payload  # pylint: disable=protected-access
-from shared.config import get_required_setting
+from shared.config import get_required_setting, get_setting
 
-ULTRAVOX_BASE_URL = "https://api.ultravox.ai/api"
+ULTRAVOX_BASE_URL_DEFAULT = "https://api.ultravox.ai/api"
 
 logger = logging.getLogger(__name__)
+
+
+def _base_url() -> str:
+    """Resolve the Ultravox base URL from env with a sensible default."""
+    return (get_setting("ULTRAVOX_BASE_URL") or ULTRAVOX_BASE_URL_DEFAULT).rstrip("/")
 
 
 def _headers() -> Dict[str, str]:
@@ -40,7 +45,7 @@ def create_ultravox_agent(
     )
 
     with httpx.Client(timeout=20) as client:
-        response = client.post(f"{ULTRAVOX_BASE_URL}/agents", headers=_headers(), json=payload)
+        response = client.post(f"{_base_url()}/agents", headers=_headers(), json=payload)
         if response.status_code == 400 and "already exists" in response.text.lower():
             # Append _<existing_count> to avoid name collisions (e.g., Foo, Foo_1, Foo_2).
             attempted_name = payload.get("name") or _sanitize_name(business_name)
@@ -53,7 +58,7 @@ def create_ultravox_agent(
                 agent_name_override=deduped_name,
                 system_prompt_override=system_prompt_override,
             )
-            response = client.post(f"{ULTRAVOX_BASE_URL}/agents", headers=_headers(), json=payload)
+            response = client.post(f"{_base_url()}/agents", headers=_headers(), json=payload)
 
     if response.status_code >= 300:
         logger.error(
@@ -91,7 +96,7 @@ def create_ultravox_call(agent_id: str, caller_number: str) -> str:
     }
 
     with httpx.Client(timeout=20) as client:
-        response = client.post(f"{ULTRAVOX_BASE_URL}/agents/{agent_id}/calls", headers=_headers(), json=payload)
+        response = client.post(f"{_base_url()}/agents/{agent_id}/calls", headers=_headers(), json=payload)
     if response.status_code >= 300:
         logger.error("Ultravox call creation failed: %s - %s", response.status_code, response.text)
         raise RuntimeError("Failed to create Ultravox call")
@@ -111,7 +116,7 @@ def list_ultravox_agents(limit: int = 20) -> List[Dict]:
     """
     params = {"limit": limit} if limit else None
     with httpx.Client(timeout=20) as client:
-        response = client.get(f"{ULTRAVOX_BASE_URL}/agents", headers=_headers(), params=params)
+        response = client.get(f"{_base_url()}/agents", headers=_headers(), params=params)
 
     if response.status_code >= 300:
         logger.error("Ultravox list agents failed: %s - %s", response.status_code, response.text)
@@ -132,7 +137,7 @@ def list_ultravox_agents(limit: int = 20) -> List[Dict]:
 def get_ultravox_agent(agent_id: str) -> Dict:
     """Fetch a single Ultravox agent by id."""
     with httpx.Client(timeout=20) as client:
-        response = client.get(f"{ULTRAVOX_BASE_URL}/agents/{agent_id}", headers=_headers())
+        response = client.get(f"{_base_url()}/agents/{agent_id}", headers=_headers())
 
     if response.status_code == 404:
         raise RuntimeError(f"Ultravox agent {agent_id} not found (404): {response.text}")
@@ -198,7 +203,7 @@ def create_ultravox_webhook(
         payload["secrets"] = [secret]
 
     with httpx.Client(timeout=20) as client:
-        resp = client.post(f"{ULTRAVOX_BASE_URL}/webhooks", headers=_headers(), json=payload)
+        resp = client.post(f"{_base_url()}/webhooks", headers=_headers(), json=payload)
     if resp.status_code >= 300:
         logger.error("Ultravox create webhook failed: %s - %s", resp.status_code, resp.text)
         raise RuntimeError(f"Failed to create webhook: {resp.text}")
@@ -207,3 +212,230 @@ def create_ultravox_webhook(
     except Exception as exc:  # pylint: disable=broad-except
         logger.error("Ultravox webhook response parse failed: %s", exc)
         return {}
+
+
+def list_ultravox_webhooks() -> List[Dict]:
+    """List all Ultravox webhooks."""
+    with httpx.Client(timeout=20) as client:
+        resp = client.get(f"{_base_url()}/webhooks", headers=_headers())
+    if resp.status_code >= 300:
+        logger.error("Ultravox list webhooks failed: %s - %s", resp.status_code, resp.text)
+        raise RuntimeError(f"Failed to list webhooks: {resp.text}")
+    data = resp.json()
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        for key in ("items", "webhooks", "data", "results"):
+            maybe = data.get(key)
+            if isinstance(maybe, list):
+                return maybe
+    return []
+
+
+def list_ultravox_tools(model_tool_name: Optional[str] = None) -> List[Dict]:
+    """List Ultravox tools (optionally filtered by modelToolName)."""
+    params = {"modelToolName": model_tool_name} if model_tool_name else None
+    with httpx.Client(timeout=20) as client:
+        resp = client.get(f"{_base_url()}/tools", headers=_headers(), params=params)
+    if resp.status_code >= 300:
+        logger.error("Ultravox list tools failed: %s - %s", resp.status_code, resp.text)
+        raise RuntimeError(f"Failed to list Ultravox tools ({resp.status_code}): {resp.text}")
+    data = resp.json()
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        for key in ("items", "tools", "data", "results"):
+            maybe = data.get(key)
+            if isinstance(maybe, list):
+                return maybe
+    return []
+
+
+def create_ultravox_tool(payload: Dict) -> Dict:
+    """Create an Ultravox tool."""
+    with httpx.Client(timeout=20) as client:
+        resp = client.post(f"{_base_url()}/tools", headers=_headers(), json=payload)
+    if resp.status_code >= 300:
+        logger.error("Ultravox create tool failed: %s - %s", resp.status_code, resp.text)
+        raise RuntimeError(f"Failed to create Ultravox tool ({resp.status_code}): {resp.text}")
+    return resp.json()
+
+
+def attach_tool_to_agent(agent_id: str, tool_id: str) -> bool:
+    """
+    Attach a tool to an agent by updating callTemplate.selectedTools.
+    Returns True if an update occurred.
+    """
+    agent = get_ultravox_agent(agent_id)
+    call_template = agent.get("callTemplate") or {}
+    selected = call_template.get("selectedTools") or []
+    if tool_id in selected:
+        logger.info("Ultravox tool already attached to agent %s", agent_id)
+        return False
+
+    updated_selected = list(selected) + [tool_id]
+    updated_template = dict(call_template)
+    updated_template["selectedTools"] = updated_selected
+
+    with httpx.Client(timeout=20) as client:
+        resp = client.patch(
+            f"{_base_url()}/agents/{agent_id}",
+            headers=_headers(),
+            json={"callTemplate": updated_template},
+        )
+    if resp.status_code >= 300:
+        logger.error("Ultravox attach tool failed: %s - %s", resp.status_code, resp.text)
+        raise RuntimeError(f"Failed to attach tool to agent ({resp.status_code}): {resp.text}")
+    logger.info("Ultravox tool %s attached to agent %s", tool_id, agent_id)
+    return True
+
+
+BOOKING_TOOL_INSTRUCTION = (
+    "After the caller confirms the appointment details, you MUST call the `calendar_book` tool with:\n"
+    "- start in ISO 8601 in Europe/London (no 'tomorrow' wording)\n"
+    "- callerPhone and callerName\n"
+    "- duration_minutes=30\n"
+    "Only call the tool if it is a weekday and start time is between 09:00 and 16:30 Europe/London."
+)
+
+
+def _ensure_prompt_instruction(agent_id: str) -> None:
+    """Ensure the booking instruction is present in the agent system prompt."""
+    try:
+        agent = get_ultravox_agent(agent_id)
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.warning("Unable to fetch Ultravox agent for prompt update: %s", exc)
+        return
+
+    call_template = agent.get("callTemplate") or {}
+    system_prompt = call_template.get("systemPrompt") or call_template.get("system_prompt") or ""
+    if BOOKING_TOOL_INSTRUCTION in system_prompt:
+        return
+
+    updated_prompt = (system_prompt.rstrip() + "\n\n" + BOOKING_TOOL_INSTRUCTION).strip()
+    updated_template = dict(call_template)
+    updated_template["systemPrompt"] = updated_prompt
+
+    with httpx.Client(timeout=20) as client:
+        resp = client.patch(
+            f"{_base_url()}/agents/{agent_id}",
+            headers=_headers(),
+            json={"callTemplate": updated_template},
+        )
+    if resp.status_code >= 300:
+        logger.warning(
+            "Failed to update Ultravox agent prompt for %s: %s - %s",
+            agent_id,
+            resp.status_code,
+            resp.text,
+        )
+    else:
+        logger.info("Ultravox agent %s prompt updated with booking tool instruction", agent_id)
+
+
+def _build_booking_tool_payload(public_api_base: str) -> Dict:
+    """Construct the HTTP tool payload for calendar booking."""
+    url = f"{public_api_base.rstrip('/')}/api/calendar/book"
+    def _param(name: str, schema_type: str, required: bool, description: Optional[str] = None) -> Dict:
+        schema: Dict[str, str] = {"type": schema_type}
+        if description:
+            schema["description"] = description
+        return {
+            "name": name,
+            "location": "PARAMETER_LOCATION_BODY",
+            "required": required,
+            "schema": schema,
+        }
+
+    body_parameters = [
+        _param("start", "string", True, "ISO-8601 start time"),
+        _param("end", "string", False, "ISO-8601 end time"),
+        _param("duration_minutes", "number", False),
+        _param("buffer_minutes", "number", False),
+        _param("callerName", "string", False),
+        _param("callerPhone", "string", True),
+        _param("callId", "string", False),
+        _param("agentId", "string", False),
+    ]
+    return {
+        "name": "calendar_book",
+        "definition": {
+            "modelToolName": "calendar_book",
+            "description": "Books a Google Calendar event for the caller.",
+            "dynamicParameters": body_parameters,
+            "http": {
+                "httpMethod": "POST",
+                "baseUrlPattern": url,
+            },
+        },
+    }
+
+
+def _find_existing_booking_tool(tools: List[Dict], public_api_base: str) -> Optional[Dict]:
+    """Return an existing booking tool if present."""
+    target_url = f"{public_api_base.rstrip('/')}/api/calendar/book"
+    fallback = None
+    for tool in tools:
+        if str(tool.get("modelToolName") or "").lower() != "calendar_book":
+            continue
+        http_cfg = tool.get("http") or tool.get("httpConfig") or {}
+        tool_url = http_cfg.get("baseUrlPattern") or http_cfg.get("url") or tool.get("url")
+        if tool_url and tool_url.rstrip("/") == target_url:
+            return tool
+        fallback = fallback or tool
+    return fallback
+
+
+def ensure_booking_tool(agent_id: str, public_api_base: str) -> Tuple[Optional[str], bool, bool]:
+    """
+    Ensure the calendar_book tool exists and is attached to the given agent.
+    Returns (tool_id, created, attached).
+    """
+    tool_id: Optional[str] = None
+    created = False
+    attached = False
+
+    tools = list_ultravox_tools(model_tool_name="calendar_book")
+    existing = _find_existing_booking_tool(tools, public_api_base)
+
+    # If filtered lookup missed it, try unfiltered list to reuse existing tool.
+    if not existing:
+        try:
+            all_tools = list_ultravox_tools()
+            existing = _find_existing_booking_tool(all_tools, public_api_base) or existing
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.info("Ultravox list tools (unfiltered) failed, will attempt creation: %s", exc)
+
+    if existing:
+        tool_id = existing.get("id") or existing.get("toolId") or existing.get("tool_id")
+        logger.info("Ultravox booking tool already exists: %s", tool_id)
+    else:
+        payload = _build_booking_tool_payload(public_api_base)
+        try:
+            created_tool = create_ultravox_tool(payload)
+            tool_id = created_tool.get("id") or created_tool.get("toolId") or created_tool.get("tool_id")
+            created = True
+            logger.info("Ultravox booking tool created: %s", tool_id)
+        except RuntimeError as exc:
+            if "unique set" in str(exc).lower() or "already exists" in str(exc).lower():
+                logger.info("Ultravox booking tool already exists (unique constraint); reusing existing")
+                all_tools = list_ultravox_tools()
+                existing = _find_existing_booking_tool(all_tools, public_api_base)
+                tool_id = existing.get("id") if existing else None
+            else:
+                raise
+
+    if not tool_id:
+        logger.warning("Ultravox booking tool id missing; cannot attach to agent %s", agent_id)
+        _ensure_prompt_instruction(agent_id)
+        return None, created, attached
+
+    if tool_id:
+        try:
+            attached = attach_tool_to_agent(agent_id, tool_id) or attached
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.error("Failed to attach booking tool %s to agent %s: %s", tool_id, agent_id, exc)
+
+    _ensure_prompt_instruction(agent_id)
+
+    return tool_id, created, attached
