@@ -280,19 +280,28 @@ def attach_tool_to_agent(agent_id: str, tool_id: str) -> bool:
         logger.info("Ultravox tool already attached to agent %s", agent_id)
         return False
 
-    updated_selected = selected_ids + [tool_id]
-    updated_template = dict(call_template)
-    updated_template["selectedTools"] = updated_selected
+    def _patch_selected(new_selected) -> Tuple[bool, str]:
+        updated_template = dict(call_template)
+        updated_template["selectedTools"] = new_selected
+        with httpx.Client(timeout=20) as client:
+            resp = client.patch(
+                f"{_base_url()}/agents/{agent_id}",
+                headers=_headers(),
+                json={"callTemplate": updated_template},
+            )
+        return resp.status_code < 300, resp.text
 
-    with httpx.Client(timeout=20) as client:
-        resp = client.patch(
-            f"{_base_url()}/agents/{agent_id}",
-            headers=_headers(),
-            json={"callTemplate": updated_template},
-        )
-    if resp.status_code >= 300:
-        logger.error("Ultravox attach tool failed: %s - %s", resp.status_code, resp.text)
-        raise RuntimeError(f"Failed to attach tool to agent ({resp.status_code}): {resp.text}")
+    # Try patch with list of SelectedTool objects using toolId.
+    dict_entries = [{"toolId": tid} for tid in selected_ids + [tool_id]]
+    ok, resp_text = _patch_selected(dict_entries)
+    if not ok:
+        logger.info("Ultravox attach tool (toolId entries) failed, retrying with id list: %s", resp_text)
+        id_entries = selected_ids + [tool_id]
+        ok, resp_text = _patch_selected(id_entries)
+        if not ok:
+            logger.error("Ultravox attach tool failed: %s", resp_text)
+            raise RuntimeError(f"Failed to attach tool to agent: {resp_text}")
+
     try:
         refreshed = get_ultravox_agent(agent_id)
         refreshed_selected = (refreshed.get("callTemplate") or {}).get("selectedTools") or []
