@@ -1340,8 +1340,8 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
         attendees = []
         if caller_email:
             attendees.append({"email": caller_email})
-    # Use call_id as event_id to get idempotency (Google returns 409 on duplicate).
-    event_id = _build_event_id(call_id)
+        # Use call_id as event_id to get idempotency (Google returns 409 on duplicate).
+        event_id = _build_event_id(call_id)
 
         event_error = None
         event = None
