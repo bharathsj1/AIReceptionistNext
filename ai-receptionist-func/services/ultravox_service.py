@@ -261,7 +261,13 @@ def create_ultravox_tool(payload: Dict) -> Dict:
     return resp.json()
 
 
-def attach_tool_to_agent(agent_id: str, tool_id: str) -> bool:
+def attach_tool_to_agent(
+    agent_id: str,
+    tool_id: str,
+    name_override: Optional[str] = None,
+    description_override: Optional[str] = None,
+    parameter_overrides: Optional[Dict] = None,
+) -> bool:
     """
     Attach a tool to an agent by updating callTemplate.selectedTools.
     Returns True if an update occurred.
@@ -284,26 +290,24 @@ def attach_tool_to_agent(agent_id: str, tool_id: str) -> bool:
 
     normalized_selected = [_normalize_entry(x) for x in selected]
 
-    booking_entry = {
-        "toolId": tool_id,
-        "nameOverride": "calendar_book",
-        "descriptionOverride": "Books a Google Calendar event for the caller.",
-        "parameterOverrides": {
-            "agentId": {"location": "PARAMETER_LOCATION_BODY", "value": agent_id},
-        },
-    }
+    entry_base: Dict = {"toolId": tool_id}
+    if name_override:
+        entry_base["nameOverride"] = name_override
+    if description_override:
+        entry_base["descriptionOverride"] = description_override
+    if parameter_overrides:
+        entry_base["parameterOverrides"] = parameter_overrides
 
-    # Replace or append booking entry to ensure agentId is present.
     updated_entries = []
     found = False
     for entry in normalized_selected:
         if _id_from_entry(entry) == tool_id:
-            updated_entries.append(booking_entry)
+            updated_entries.append(entry_base)
             found = True
         else:
             updated_entries.append(entry)
     if not found:
-        updated_entries.append(booking_entry)
+        updated_entries.append(entry_base)
 
     def _patch_selected(new_selected) -> Tuple[bool, str]:
         updated_template = dict(call_template)
@@ -316,16 +320,10 @@ def attach_tool_to_agent(agent_id: str, tool_id: str) -> bool:
             )
         return resp.status_code < 300, resp.text
 
-    # Try patch with list of SelectedTool objects using toolId.
-    dict_entries = updated_entries
-    ok, resp_text = _patch_selected(dict_entries)
+    ok, resp_text = _patch_selected(updated_entries)
     if not ok:
-        logger.info("Ultravox attach tool (toolId entries) failed, retrying with id list: %s", resp_text)
-        id_entries = selected_ids + [tool_id]
-        ok, resp_text = _patch_selected(id_entries)
-        if not ok:
-            logger.error("Ultravox attach tool failed: %s", resp_text)
-            raise RuntimeError(f"Failed to attach tool to agent: {resp_text}")
+        logger.error("Ultravox attach tool failed: %s", resp_text)
+        raise RuntimeError(f"Failed to attach tool to agent: {resp_text}")
 
     try:
         refreshed = get_ultravox_agent(agent_id)
@@ -556,7 +554,13 @@ def ensure_booking_tool(agent_id: str, public_api_base: str) -> Tuple[Optional[s
 
     if tool_id:
         try:
-            attached = attach_tool_to_agent(agent_id, tool_id) or attached
+            attached = attach_tool_to_agent(
+                agent_id,
+                tool_id,
+                name_override="calendar_book",
+                description_override="Books a Google Calendar event for the caller.",
+                parameter_overrides={"agentId": {"location": "PARAMETER_LOCATION_BODY", "value": agent_id}},
+            ) or attached
         except Exception as exc:  # pylint: disable=broad-except
             logger.error("Failed to attach booking tool %s to agent %s: %s", tool_id, agent_id, exc)
 
@@ -601,7 +605,13 @@ def ensure_availability_tool(agent_id: str, public_api_base: str) -> Tuple[Optio
         return None, created, attached
 
     try:
-        attached = attach_tool_to_agent(agent_id, tool_id) or attached
+        attached = attach_tool_to_agent(
+            agent_id,
+            tool_id,
+            name_override="calendar_availability",
+            description_override="Checks calendar availability for a proposed slot.",
+            parameter_overrides={"agentId": {"location": "PARAMETER_LOCATION_BODY", "value": agent_id}},
+        ) or attached
     except Exception as exc:  # pylint: disable=broad-except
         logger.error("Failed to attach availability tool %s to agent %s: %s", tool_id, agent_id, exc)
 
