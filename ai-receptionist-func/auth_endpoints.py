@@ -1641,7 +1641,15 @@ def calendar_availability(req: func.HttpRequest) -> func.HttpResponse:
         )
 
     try:
-        start_dt = _parse_dt_with_london_default(start_iso)
+        if isinstance(start_iso, str) and start_iso.lower() in (
+            "current_date_time_iso",
+            "current_datetime_iso",
+            "current",
+            "now",
+        ):
+            start_dt = datetime.now(ZoneInfo("Europe/London"))
+        else:
+            start_dt = _parse_dt_with_london_default(start_iso)
     except Exception:  # pylint: disable=broad-except
         return func.HttpResponse(
             json.dumps({"error": "Invalid start time format", "value": start_iso}),
