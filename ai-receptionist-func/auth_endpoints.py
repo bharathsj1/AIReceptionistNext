@@ -1147,6 +1147,8 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
         or body.get("call_id")
         or (body.get("call") or {}).get("call_id")
     )
+    if isinstance(call_id, str) and call_id.lower() in ("null", "none", ""):
+        call_id = None
 
     logger.info(
         "CalendarBook resolved identifiers: email=%s agent_id=%s call_id=%s start=%s end=%s duration=%s buffer=%s",
@@ -1338,8 +1340,8 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
         attendees = []
         if caller_email:
             attendees.append({"email": caller_email})
-        # Use call_id as event_id to get idempotency (Google returns 409 on duplicate).
-        event_id = _build_event_id(call_id)
+    # Use call_id as event_id to get idempotency (Google returns 409 on duplicate).
+    event_id = _build_event_id(call_id)
 
         event_error = None
         event = None
