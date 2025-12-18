@@ -351,6 +351,10 @@ BOOKING_TOOL_INSTRUCTION = (
     "- duration_minutes=30\n"
     "Only call the tool if it is a weekday and start time is between 09:00 and 16:30 Europe/London."
 )
+AVAILABILITY_TOOL_INSTRUCTION = (
+    "When the caller proposes a time, you MUST call `calendar_availability` to check the slot before promising it. "
+    "If the slot is busy, propose the next available option returned."
+)
 
 
 def _ensure_prompt_instruction(agent_id: str) -> None:
@@ -363,10 +367,15 @@ def _ensure_prompt_instruction(agent_id: str) -> None:
 
     call_template = agent.get("callTemplate") or {}
     system_prompt = call_template.get("systemPrompt") or call_template.get("system_prompt") or ""
-    if BOOKING_TOOL_INSTRUCTION in system_prompt:
+    additions = []
+    if BOOKING_TOOL_INSTRUCTION not in system_prompt:
+        additions.append(BOOKING_TOOL_INSTRUCTION)
+    if AVAILABILITY_TOOL_INSTRUCTION not in system_prompt:
+        additions.append(AVAILABILITY_TOOL_INSTRUCTION)
+    if not additions:
         return
 
-    updated_prompt = (system_prompt.rstrip() + "\n\n" + BOOKING_TOOL_INSTRUCTION).strip()
+    updated_prompt = (system_prompt.rstrip() + "\n\n" + "\n\n".join(additions)).strip()
     updated_template = dict(call_template)
     updated_template["systemPrompt"] = updated_prompt
 
@@ -425,6 +434,43 @@ def _build_booking_tool_payload(public_api_base: str) -> Dict:
     }
 
 
+def _build_availability_tool_payload(public_api_base: str) -> Dict:
+    """Construct the HTTP tool payload for calendar availability checks."""
+    url = f"{public_api_base.rstrip('/')}/api/calendar/availability"
+
+    def _param(name: str, schema_type: str, required: bool, description: Optional[str] = None) -> Dict:
+        schema: Dict[str, str] = {"type": schema_type}
+        if description:
+            schema["description"] = description
+        return {
+            "name": name,
+            "location": "PARAMETER_LOCATION_BODY",
+            "required": required,
+            "schema": schema,
+        }
+
+    body_parameters = [
+        _param("start", "string", True, "ISO-8601 start time"),
+        _param("duration_minutes", "number", False),
+        _param("buffer_minutes", "number", False),
+        _param("callerPhone", "string", False),
+        _param("callerName", "string", False),
+        _param("agentId", "string", False),
+    ]
+    return {
+        "name": "calendar_availability",
+        "definition": {
+            "modelToolName": "calendar_availability",
+            "description": "Checks calendar availability for a proposed slot.",
+            "dynamicParameters": body_parameters,
+            "http": {
+                "baseUrlPattern": url,
+                "httpMethod": "POST",
+            },
+        },
+    }
+
+
 def _find_existing_booking_tool(tools: List[Dict], public_api_base: str) -> Optional[Dict]:
     """Return an existing booking tool if present."""
     target_url = f"{public_api_base.rstrip('/')}/api/calendar/book"
@@ -436,6 +482,25 @@ def _find_existing_booking_tool(tools: List[Dict], public_api_base: str) -> Opti
             or tool.get("name")
         )
         if str(model_name or "").lower() != "calendar_book":
+            continue
+        http_cfg = tool.get("http") or tool.get("httpConfig") or {}
+        tool_url = http_cfg.get("baseUrlPattern") or http_cfg.get("url") or tool.get("url")
+        if tool_url and tool_url.rstrip("/") == target_url:
+            return tool
+        fallback = fallback or tool
+    return fallback
+
+
+def _find_existing_availability_tool(tools: List[Dict], public_api_base: str) -> Optional[Dict]:
+    target_url = f"{public_api_base.rstrip('/')}/api/calendar/availability"
+    fallback = None
+    for tool in tools:
+        model_name = (
+            tool.get("modelToolName")
+            or (tool.get("definition") or {}).get("modelToolName")
+            or tool.get("name")
+        )
+        if str(model_name or "").lower() != "calendar_availability":
             continue
         http_cfg = tool.get("http") or tool.get("httpConfig") or {}
         tool_url = http_cfg.get("baseUrlPattern") or http_cfg.get("url") or tool.get("url")
@@ -497,4 +562,48 @@ def ensure_booking_tool(agent_id: str, public_api_base: str) -> Tuple[Optional[s
 
     _ensure_prompt_instruction(agent_id)
 
+    return tool_id, created, attached
+
+
+def ensure_availability_tool(agent_id: str, public_api_base: str) -> Tuple[Optional[str], bool, bool]:
+    """
+    Ensure the calendar_availability tool exists and is attached to the given agent.
+    Returns (tool_id, created, attached).
+    """
+    tool_id: Optional[str] = None
+    created = False
+    attached = False
+
+    try:
+        tools = list_ultravox_tools(model_tool_name="calendar_availability")
+    except Exception:
+        tools = []
+    existing = _find_existing_availability_tool(tools, public_api_base)
+    if not existing:
+        try:
+            all_tools = list_ultravox_tools()
+            existing = _find_existing_availability_tool(all_tools, public_api_base) or existing
+        except Exception:
+            existing = existing
+    if existing:
+        tool_id = existing.get("id") or existing.get("toolId") or existing.get("tool_id")
+        logger.info("Ultravox availability tool already exists: %s", tool_id)
+    else:
+        payload = _build_availability_tool_payload(public_api_base)
+        created_tool = create_ultravox_tool(payload)
+        tool_id = created_tool.get("id") or created_tool.get("toolId") or created_tool.get("tool_id")
+        created = True
+        logger.info("Ultravox availability tool created: %s", tool_id)
+
+    if not tool_id:
+        logger.warning("Ultravox availability tool id missing; cannot attach to agent %s", agent_id)
+        _ensure_prompt_instruction(agent_id)
+        return None, created, attached
+
+    try:
+        attached = attach_tool_to_agent(agent_id, tool_id) or attached
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.error("Failed to attach availability tool %s to agent %s: %s", tool_id, agent_id, exc)
+
+    _ensure_prompt_instruction(agent_id)
     return tool_id, created, attached

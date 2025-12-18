@@ -697,9 +697,10 @@ export default function App() {
   };
 
   const isLandingStage = stage === STAGES.LANDING;
+  const isDashboardStage = stage === STAGES.DASHBOARD;
   const pageClassName = `page${isLandingStage ? " page-landing" : ""}`;
   const pageContentClassName = `page-content${isLandingStage ? " page-content-landing" : ""}`;
-  const contentClassName = `content${isLandingStage ? " content-landing" : ""}`;
+  const contentClassName = `content${isLandingStage ? " content-landing" : ""}${isDashboardStage ? " content-wide" : ""}`;
   const showGlobalLogo = stage !== STAGES.LANDING;
 
   const handleEmailSubmit = async (event) => {

@@ -300,13 +300,17 @@ def _ensure_ultravox_booking_tool_for_user(email: str, db):
             return
 
         base = get_public_api_base()
-        tool_id, created, attached = ensure_booking_tool(client.ultravox_agent_id, base)
+        booking_id, booking_created, booking_attached = ensure_booking_tool(client.ultravox_agent_id, base)
+        availability_id, availability_created, availability_attached = ensure_availability_tool(client.ultravox_agent_id, base)
         logger.info(
-            "Ultravox booking tool ensure: agent=%s tool_id=%s created=%s attached=%s",
+            "Ultravox tools ensure: agent=%s booking_id=%s booking_created=%s booking_attached=%s availability_id=%s availability_created=%s availability_attached=%s",
             client.ultravox_agent_id,
-            tool_id,
-            created,
-            attached,
+            booking_id,
+            booking_created,
+            booking_attached,
+            availability_id,
+            availability_created,
+            availability_attached,
         )
         # Keep the legacy call.ended webhook as non-blocking telemetry; avoid duplicates.
         try:
@@ -1503,7 +1507,7 @@ def ultravox_debug_tools(req: func.HttpRequest) -> func.HttpResponse:
 @app.route(route="ultravox/ensure-tool", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def ultravox_ensure_booking_tool(req: func.HttpRequest) -> func.HttpResponse:
     """
-    Force ensure/attach the calendar_book tool for an agent (guarded by ENABLE_ULTRAVOX_DEBUG).
+    Force ensure/attach the calendar_book and calendar_availability tools for an agent (guarded by ENABLE_ULTRAVOX_DEBUG).
     Body or params: { agentId? , email? }
     """
     cors = build_cors_headers(req, ["POST", "OPTIONS"])
@@ -1539,7 +1543,8 @@ def ultravox_ensure_booking_tool(req: func.HttpRequest) -> func.HttpResponse:
             )
 
         base = get_public_api_base()
-        tool_id, created, attached = ensure_booking_tool(agent_id, base)
+        booking_id, booking_created, booking_attached = ensure_booking_tool(agent_id, base)
+        availability_id, availability_created, availability_attached = ensure_availability_tool(agent_id, base)
         agent = get_ultravox_agent(agent_id)
         call_template = agent.get("callTemplate") or {}
         selected = call_template.get("selectedTools") or []
@@ -1547,9 +1552,12 @@ def ultravox_ensure_booking_tool(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps(
                 {
                     "agentId": agent_id,
-                    "tool_id": tool_id,
-                    "created": created,
-                    "attached": attached,
+                    "booking_tool_id": booking_id,
+                    "booking_created": booking_created,
+                    "booking_attached": booking_attached,
+                    "availability_tool_id": availability_id,
+                    "availability_created": availability_created,
+                    "availability_attached": availability_attached,
                     "selectedTools": selected,
                     "callTemplate": call_template,
                 }
@@ -1562,6 +1570,197 @@ def ultravox_ensure_booking_tool(req: func.HttpRequest) -> func.HttpResponse:
         logger.error("Ultravox ensure tool failed: %s", exc)
         return func.HttpResponse(
             json.dumps({"error": "Failed to ensure tool", "details": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+            headers=cors,
+        )
+    finally:
+        db.close()
+
+
+@app.function_name(name="CalendarAvailability")
+@app.route(route="calendar/availability", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def calendar_availability(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Check if a slot is available and suggest the next available slot if busy.
+    Body: { start, duration_minutes?, buffer_minutes?, email?, agentId?, callerPhone?, callerName? }
+    """
+    cors = build_cors_headers(req, ["POST", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
+    try:
+        raw = req.get_body() or b""
+        body = json.loads(raw.decode("utf-8")) if raw else {}
+    except Exception:  # pylint: disable=broad-except
+        return func.HttpResponse(
+            json.dumps({"error": "Invalid JSON"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+    if not isinstance(body, dict):
+        body = {}
+
+    start_iso = body.get("start")
+    duration_minutes = body.get("duration_minutes") or 30
+    buffer_minutes = body.get("buffer_minutes") or 5
+    email = body.get("email")
+    agent_id = (
+        body.get("agentId")
+        or body.get("agent_id")
+        or (body.get("agent") or {}).get("id")
+        or (body.get("call") or {}).get("agentId")
+        or (body.get("call") or {}).get("agent_id")
+        or ((body.get("call") or {}).get("agent") or {}).get("id")
+    )
+    if isinstance(agent_id, dict):
+        agent_id = (
+            agent_id.get("value")
+            or agent_id.get("agentId")
+            or agent_id.get("agent_id")
+            or agent_id.get("id")
+        )
+
+    try:
+        duration_minutes = int(duration_minutes)
+    except Exception:
+        duration_minutes = 30
+    try:
+        buffer_minutes = int(buffer_minutes)
+    except Exception:
+        buffer_minutes = 5
+
+    if not start_iso:
+        return func.HttpResponse(
+            json.dumps({"error": "Missing start time", "hint": "Provide start in ISO 8601 (e.g., 2025-12-17T15:00:00Z)"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    try:
+        start_dt = _parse_dt_with_london_default(start_iso)
+    except Exception:  # pylint: disable=broad-except
+        return func.HttpResponse(
+            json.dumps({"error": "Invalid start time format", "value": start_iso}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+    end_dt = _ensure_utc(start_dt + timedelta(minutes=duration_minutes))
+    buffered_end = _ensure_utc(end_dt + timedelta(minutes=buffer_minutes)) if buffer_minutes else end_dt
+
+    db = SessionLocal()
+    try:
+        user = None
+        if email:
+            user = db.query(User).filter_by(email=email).one_or_none()
+        if not user and agent_id:
+            client = db.query(Client).filter_by(ultravox_agent_id=agent_id).one_or_none()
+            if client:
+                email = client.email
+                user = db.query(User).filter_by(email=email).one_or_none()
+        if not user:
+            return func.HttpResponse(
+                json.dumps({"error": "User not found", "hint": "Provide email or agentId"}),
+                status_code=404,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        token = (
+            db.query(GoogleToken)
+            .filter_by(user_id=user.id)
+            .order_by(GoogleToken.created_at.desc())
+            .first()
+        )
+        if not token:
+            return func.HttpResponse(
+                json.dumps({"error": "No Google account connected"}),
+                status_code=404,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        access_token = token.access_token
+        now = datetime.utcnow()
+        if token.expires_at and token.expires_at <= now and token.refresh_token:
+            refreshed, refresh_error = _refresh_google_token(token.refresh_token)
+            if refresh_error or not refreshed:
+                return func.HttpResponse(
+                    json.dumps({"error": "Unable to refresh token", "details": refresh_error}),
+                    status_code=401,
+                    mimetype="application/json",
+                    headers=cors,
+                )
+            access_token = refreshed.get("access_token") or access_token
+            token.access_token = access_token
+            token.expires_at = (
+                datetime.utcnow() + timedelta(seconds=int(refreshed.get("expires_in")))
+                if refreshed.get("expires_in")
+                else None
+            )
+            db.commit()
+
+        fb, fb_error = _freebusy(
+            access_token,
+            start_dt.isoformat(),
+            buffered_end.isoformat(),
+        )
+        if fb_error or not fb:
+            return func.HttpResponse(
+                json.dumps({"error": "Unable to check availability", "details": fb_error}),
+                status_code=400,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        busy = fb.get("calendars", {}).get("primary", {}).get("busy", [])
+        available = not bool(busy)
+
+        def _next_available_slot() -> Optional[dict]:
+            probe_start = buffered_end
+            for _ in range(12):  # check next 12 slots (e.g., ~6 hours with 30m slots)
+                probe_end = probe_start + timedelta(minutes=duration_minutes + buffer_minutes)
+                check, check_err = _freebusy(access_token, probe_start.isoformat(), probe_end.isoformat())
+                if check_err or not check:
+                    probe_start = probe_end
+                    continue
+                probe_busy = check.get("calendars", {}).get("primary", {}).get("busy", [])
+                if not probe_busy:
+                    return {
+                        "start": probe_start.isoformat(),
+                        "end": (probe_start + timedelta(minutes=duration_minutes)).isoformat(),
+                    }
+                probe_start = max(
+                    probe_end,
+                    datetime.fromisoformat(probe_busy[-1]["end"].replace("Z", "+00:00")).astimezone(timezone.utc),
+                )
+            return None
+
+        suggestion = None
+        if not available:
+            suggestion = _next_available_slot()
+
+        return func.HttpResponse(
+            json.dumps(
+                {
+                    "available": available,
+                    "requested": {"start": start_dt.isoformat(), "end": end_dt.isoformat()},
+                    "busy": busy if not available else [],
+                    "suggestion": suggestion,
+                }
+            ),
+            status_code=200,
+            mimetype="application/json",
+            headers=cors,
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        db.rollback()
+        logger.exception("Calendar availability failed")
+        return func.HttpResponse(
+            json.dumps({"error": "Calendar availability failed", "details": str(exc)}),
             status_code=500,
             mimetype="application/json",
             headers=cors,

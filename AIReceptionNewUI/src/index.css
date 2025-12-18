@@ -273,6 +273,10 @@ html {
   margin: 48px auto 0;
 }
 
+.content.content-wide {
+  max-width: min(1520px, 98vw);
+}
+
 .content.content-landing {
   margin-top: 0;
   max-width: 1320px;
