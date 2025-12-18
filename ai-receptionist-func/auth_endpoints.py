@@ -2,17 +2,24 @@ import json
 import logging
 import secrets
 import hashlib
-from datetime import datetime, timedelta
+import re
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
+from zoneinfo import ZoneInfo
 from urllib.parse import parse_qs
 
 import azure.functions as func
 import requests
 from function_app import app
-from shared.config import get_google_oauth_settings, get_public_api_base
+from shared.config import get_google_oauth_settings, get_public_api_base, get_setting
 from shared.db import SessionLocal, User, Client, GoogleToken
 from utils.cors import build_cors_headers
-from services.ultravox_service import create_ultravox_webhook
+from services.ultravox_service import (
+    create_ultravox_webhook,
+    ensure_booking_tool,
+    get_ultravox_agent,
+    list_ultravox_tools,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +44,96 @@ def _verify_password(password: str, stored: str) -> bool:
 
 def _generate_reset_token() -> str:
     return secrets.token_urlsafe(32)
+
+
+def _ensure_utc(dt: datetime) -> datetime:
+    """
+    Ensure datetimes have an explicit UTC timezone so Google Calendar accepts them.
+    """
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _build_event_id(raw_id: Optional[str]) -> Optional[str]:
+    """
+    Build a Google Calendar event id suitable for idempotency.
+    Rules: 5-1024 chars, letters/numbers/underscore only. We drop dashes and other chars to avoid "Invalid resource id".
+    """
+    if not raw_id:
+        return None
+    # Remove everything except alphanumerics/underscore to avoid Google 400.
+    safe = re.sub(r"[^a-zA-Z0-9_]", "", str(raw_id)).lower()
+    safe = safe.lstrip("_")
+    if safe and not re.match(r"^[a-zA-Z0-9]", safe):
+        safe = f"a{safe}"
+    if len(safe) < 5:
+        safe = (safe + "00000")[:5]
+    if len(safe) > 1024:
+        safe = safe[:1024]
+    if not re.match(r"^[a-zA-Z0-9_]{5,1024}$", safe):
+        return None
+    return safe
+
+
+def _parse_dt_with_london_default(value: str) -> datetime:
+    """
+    Parse an ISO timestamp; if no timezone, assume Europe/London, then convert to UTC.
+    """
+    dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        try:
+            dt = dt.replace(tzinfo=ZoneInfo("Europe/London"))
+        except Exception:  # pylint: disable=broad-except
+            dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _extract_time_fields(payload: dict) -> Tuple[Optional[str], Optional[str], Optional[int], Optional[int]]:
+    """
+    Extract start/end/duration/buffer from known top-level or nested shapes.
+    Accepts variants such as startTime/start_time and nested booking/appointment objects.
+    """
+    contexts = []
+    if isinstance(payload, dict):
+        contexts.append(payload)
+        for key in ("call", "booking", "appointment"):
+            child = payload.get(key)
+            if isinstance(child, dict):
+                contexts.append(child)
+                for sub_key in ("booking", "appointment", "slot"):
+                    sub_child = child.get(sub_key)
+                    if isinstance(sub_child, dict):
+                        contexts.append(sub_child)
+
+    def first(*keys):
+        for ctx in contexts:
+            for key in keys:
+                if key in ctx and ctx.get(key):
+                    return ctx.get(key)
+        return None
+
+    start_iso = first(
+        "start",
+        "startTime",
+        "start_time",
+        "start_time_iso",
+        "startTimeIso",
+        "requestedStart",
+        "requested_start",
+    )
+    end_iso = first(
+        "end",
+        "endTime",
+        "end_time",
+        "end_time_iso",
+        "endTimeIso",
+        "requestedEnd",
+        "requested_end",
+    )
+    duration = first("duration_minutes", "durationMinutes", "duration")
+    buffer = first("buffer_minutes", "bufferMinutes", "buffer")
+    return start_iso, end_iso, duration, buffer
 
 
 def _build_google_auth_url(state: str) -> str:
@@ -157,16 +254,23 @@ def _create_calendar_event(
     end_iso: str,
     description: Optional[str] = None,
     attendees: Optional[list] = None,
+    event_id: Optional[str] = None,
+    time_zone: Optional[str] = None,
 ) -> Tuple[Optional[dict], Optional[str]]:
     payload = {
         "summary": summary,
         "start": {"dateTime": start_iso},
         "end": {"dateTime": end_iso},
     }
+    if time_zone:
+        payload["start"]["timeZone"] = time_zone
+        payload["end"]["timeZone"] = time_zone
     if description:
         payload["description"] = description
     if attendees:
         payload["attendees"] = attendees
+    if event_id:
+        payload["id"] = event_id
 
     try:
         resp = requests.post(
@@ -175,6 +279,9 @@ def _create_calendar_event(
             json=payload,
             timeout=10,
         )
+        if resp.status_code == 409:
+            # Duplicate event id; treat as already created.
+            return {"duplicate": True, "id": event_id}, None
         if resp.status_code >= 300:
             return None, resp.text
         return resp.json(), None
@@ -182,9 +289,9 @@ def _create_calendar_event(
         return None, str(exc)
 
 
-def _maybe_create_ultravox_webhook_for_user(email: str, db):
+def _ensure_ultravox_booking_tool_for_user(email: str, db):
     """
-    After Google connect, auto-create an Ultravox webhook (End Call) scoped to the user's agent.
+    Ensure the Ultravox HTTP tool for booking is created and attached to the user's agent.
     Best-effort; failures are logged and do not block auth.
     """
     try:
@@ -193,12 +300,40 @@ def _maybe_create_ultravox_webhook_for_user(email: str, db):
             return
 
         base = get_public_api_base()
-        destination = f"{base}/api/calendar/book"
-        scope = {"type": "AGENT", "value": client.ultravox_agent_id}
-        # Per docs: events take dotted format.
-        create_ultravox_webhook(destination, ["call.ended"], scope=scope)
+        booking_id, booking_created, booking_attached = ensure_booking_tool(client.ultravox_agent_id, base)
+        availability_id, availability_created, availability_attached = ensure_availability_tool(client.ultravox_agent_id, base)
+        logger.info(
+            "Ultravox tools ensure: agent=%s booking_id=%s booking_created=%s booking_attached=%s availability_id=%s availability_created=%s availability_attached=%s",
+            client.ultravox_agent_id,
+            booking_id,
+            booking_created,
+            booking_attached,
+            availability_id,
+            availability_created,
+            availability_attached,
+        )
+        # Keep the legacy call.ended webhook as non-blocking telemetry; avoid duplicates.
+        try:
+            from services.ultravox_service import list_ultravox_webhooks  # lazy import to avoid cycles
+
+            existing_hooks = list_ultravox_webhooks()
+            destination = f"{base}/api/calendar/book"
+            scoped = [
+                hook
+                for hook in existing_hooks
+                if (hook.get("url") or "").rstrip("/") == destination
+                and hook.get("agentId") == client.ultravox_agent_id
+                and "call.ended" in (hook.get("events") or [])
+            ]
+            if scoped:
+                logger.info("Ultravox call.ended webhook already exists for agent %s", client.ultravox_agent_id)
+            else:
+                scope = {"type": "AGENT", "value": client.ultravox_agent_id}
+                create_ultravox_webhook(destination, ["call.ended"], scope=scope)
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.info("Ultravox call.ended webhook skipped: %s", exc)
     except Exception as exc:  # pylint: disable=broad-except
-        logger.error("Auto Ultravox webhook creation failed for %s: %s", email, exc)
+        logger.error("Ultravox booking tool ensure failed for %s: %s", email, exc)
 
 
 # ---------------------------------------------------------------------------
@@ -800,8 +935,8 @@ def auth_google_callback(req: func.HttpRequest) -> func.HttpResponse:
             client.name = client.name or name
         db.commit()
 
-        # Auto-create Ultravox webhook for end-call booking (best-effort)
-        _maybe_create_ultravox_webhook_for_user(email, db)
+        # Ensure Ultravox booking tool is present/attached (best-effort)
+        _ensure_ultravox_booking_tool_for_user(email, db)
 
         payload = {
             "user_id": user.id,
@@ -913,8 +1048,8 @@ def calendar_events(req: func.HttpRequest) -> func.HttpResponse:
             )
             db.commit()
 
-        # Auto-create Ultravox webhook for end-call booking (best-effort)
-        _maybe_create_ultravox_webhook_for_user(email, db)
+        # Ensure Ultravox booking tool is present/attached (best-effort)
+        _ensure_ultravox_booking_tool_for_user(email, db)
 
         events, events_error = _get_calendar_events(access_token, max_results=max_results)
         if events_error or not events:
@@ -948,26 +1083,52 @@ def calendar_events(req: func.HttpRequest) -> func.HttpResponse:
 def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
     """
     Create an event on the user's primary Google Calendar if the slot is free.
-    Body: { email, start, end?, duration_minutes?, buffer_minutes?, title?, description?, callerName?, callerEmail?, callerPhone? }
+    Body: { email?, agentId?, call.agent.id?, start, end?, duration_minutes?, buffer_minutes?, title?, description?, callerName?, callerEmail?, callerPhone? }
+    If email is missing but agentId is provided, we resolve the client's email from the Ultravox agent id.
     """
     cors = build_cors_headers(req, ["POST", "OPTIONS"])
     if req.method == "OPTIONS":
         return func.HttpResponse("", status_code=204, headers=cors)
 
+    # Parse raw body once to avoid Kestrel "Unexpected end of request content".
     try:
-        body = req.get_json()
-    except ValueError:
-        body = None
-    if not isinstance(body, dict):
-        body = {}
-
-    email = body.get("email")
-    if not email:
+        raw = req.get_body() or b""
+        # Log the incoming payload for diagnostics (truncated to avoid oversized logs).
+        try:
+            logger.info("CalendarBook raw body (%s bytes): %s", len(raw), raw[:5000].decode("utf-8", "ignore"))
+        except Exception:  # pylint: disable=broad-except
+            logger.info("CalendarBook raw body length: %s bytes", len(raw))
+        body = json.loads(raw.decode("utf-8")) if raw else {}
+    except Exception:  # pylint: disable=broad-except
+        logger.warning("CalendarBook invalid JSON body")
         return func.HttpResponse(
-            json.dumps({"error": "email is required"}),
+            json.dumps({"error": "Invalid JSON"}),
             status_code=400,
             mimetype="application/json",
             headers=cors,
+        )
+    if not isinstance(body, dict):
+        body = {}
+
+    logger.info("CalendarBook parsed body keys: %s", list(body.keys()))
+
+    extracted_start, extracted_end, extracted_duration, extracted_buffer = _extract_time_fields(body)
+
+    email = body.get("email")
+    agent_id = (
+        body.get("agentId")
+        or body.get("agent_id")
+        or (body.get("agent") or {}).get("id")
+        or (body.get("call") or {}).get("agentId")
+        or (body.get("call") or {}).get("agent_id")
+        or ((body.get("call") or {}).get("agent") or {}).get("id")
+    )
+    if isinstance(agent_id, dict):
+        agent_id = (
+            agent_id.get("value")
+            or agent_id.get("agentId")
+            or agent_id.get("agent_id")
+            or agent_id.get("id")
         )
 
     start_iso = body.get("start")
@@ -979,7 +1140,43 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
     caller_name = body.get("callerName") or body.get("caller_name")
     caller_email = body.get("callerEmail") or body.get("caller_email")
     caller_phone = body.get("callerPhone") or body.get("caller_phone")
+    call_id = (
+        body.get("callId")
+        or (body.get("call") or {}).get("callId")
+        or body.get("call_id")
+        or (body.get("call") or {}).get("call_id")
+    )
 
+    logger.info(
+        "CalendarBook resolved identifiers: email=%s agent_id=%s call_id=%s start=%s end=%s duration=%s buffer=%s",
+        email,
+        agent_id,
+        call_id,
+        extracted_start,
+        extracted_end,
+        extracted_duration or duration_minutes,
+        extracted_buffer or buffer_minutes,
+    )
+
+    start_iso = (
+        extracted_start
+        or body.get("start")
+        or body.get("start_iso")
+        or body.get("start_time")
+        or body.get("start_time_iso")
+    )
+    end_iso = extracted_end or body.get("end") or body.get("end_iso") or body.get("end_time") or body.get("end_time_iso")
+    duration_minutes = extracted_duration or body.get("duration_minutes") or body.get("duration") or 30
+    buffer_minutes = extracted_buffer or body.get("buffer_minutes") or body.get("buffer") or 5
+
+    if (body.get("event") or "").lower() == "call.ended" and not start_iso:
+        logger.info("CalendarBook skipping call.ended webhook without start time (noop).")
+        return func.HttpResponse(
+            json.dumps({"message": "No booking created; call.ended payload missing start"}),
+            status_code=202,
+            mimetype="application/json",
+            headers=cors,
+        )
     caller_lines = []
     if caller_name:
         caller_lines.append(f"Caller: {caller_name}")
@@ -987,6 +1184,8 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
         caller_lines.append(f"Email: {caller_email}")
     if caller_phone:
         caller_lines.append(f"Phone: {caller_phone}")
+    caller_lines.append(f"Duration: {duration_minutes} min")
+    caller_lines.append(f"Buffer: {buffer_minutes} min")
     if caller_lines:
         extra = "\n".join(caller_lines)
         description = f"{description or ''}\n\n{extra}".strip()
@@ -1002,10 +1201,469 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
 
     db = SessionLocal()
     try:
-        user = db.query(User).filter_by(email=email).one_or_none()
+        user = None
+        if email:
+            user = db.query(User).filter_by(email=email).one_or_none()
+        if not user and agent_id:
+            client = db.query(Client).filter_by(ultravox_agent_id=agent_id).one_or_none()
+            if client:
+                email = client.email
+                user = db.query(User).filter_by(email=email).one_or_none()
+
+        logger.info("CalendarBook user lookup: email=%s user_found=%s", email, bool(user))
+        if not email or not user:
+            logger.warning("CalendarBook user not found for email=%s agent_id=%s", email, agent_id)
+            return func.HttpResponse(
+                json.dumps({"error": "User not found", "hint": "Provide email or agentId"}),
+                status_code=404,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        token = (
+            db.query(GoogleToken)
+            .filter_by(user_id=user.id)
+            .order_by(GoogleToken.created_at.desc())
+            .first()
+        )
+        logger.info("CalendarBook token lookup for user_id=%s found=%s", user.id, bool(token))
+        if not token:
+            logger.warning("CalendarBook no Google token for user_id=%s", user.id)
+            return func.HttpResponse(
+                json.dumps({"error": "No Google account connected"}),
+                status_code=404,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        access_token = token.access_token
+        now = datetime.utcnow()
+        if token.expires_at and token.expires_at <= now and token.refresh_token:
+            logger.info("CalendarBook token expired, attempting refresh for user_id=%s", user.id)
+            refreshed, refresh_error = _refresh_google_token(token.refresh_token)
+            if refresh_error or not refreshed:
+                logger.error("CalendarBook refresh failed: %s", refresh_error)
+                return func.HttpResponse(
+                    json.dumps({"error": "Unable to refresh token", "details": refresh_error}),
+                    status_code=401,
+                    mimetype="application/json",
+                    headers=cors,
+                )
+            access_token = refreshed.get("access_token") or access_token
+            token.access_token = access_token
+            token.expires_at = (
+                datetime.utcnow() + timedelta(seconds=int(refreshed.get("expires_in")))
+                if refreshed.get("expires_in")
+                else None
+            )
+            db.commit()
+
+        if not start_iso:
+            logger.warning("CalendarBook missing start; refusing to auto-schedule without a requested slot")
+            return func.HttpResponse(
+                json.dumps({"error": "Missing start time", "hint": "Provide start in ISO 8601 (e.g., 2025-12-17T15:00:00Z)"}),
+                status_code=400,
+                mimetype="application/json",
+                headers=cors,
+            )
+        try:
+            start_dt = _parse_dt_with_london_default(start_iso)
+        except Exception:  # pylint: disable=broad-except
+            logger.warning("CalendarBook invalid start format: %s", start_iso)
+            return func.HttpResponse(
+                json.dumps({"error": "Invalid start time format", "value": start_iso}),
+                status_code=400,
+                mimetype="application/json",
+                headers=cors,
+            )
+        if end_iso:
+            try:
+                end_dt = _parse_dt_with_london_default(end_iso)
+            except Exception:  # pylint: disable=broad-except
+                logger.warning("CalendarBook invalid end format: %s", end_iso)
+                return func.HttpResponse(
+                    json.dumps({"error": "Invalid end time format", "value": end_iso}),
+                    status_code=400,
+                    mimetype="application/json",
+                    headers=cors,
+                )
+        else:
+            end_dt = start_dt + timedelta(minutes=duration_minutes)
+        end_dt = _ensure_utc(end_dt)
+
+        buffered_end = (
+            _ensure_utc(end_dt + timedelta(minutes=buffer_minutes)) if buffer_minutes else end_dt
+        )
+
+        start_london = start_dt.astimezone(ZoneInfo("Europe/London"))
+        end_london = end_dt.astimezone(ZoneInfo("Europe/London"))
+        start_for_google = start_london.isoformat()
+        end_for_google = end_london.isoformat()
+
+        logger.info(
+            "CalendarBook resolved timing: start=%s end=%s buffered_end=%s duration=%s buffer=%s",
+            start_dt.isoformat(),
+            end_dt.isoformat(),
+            buffered_end.isoformat(),
+            duration_minutes,
+            buffer_minutes,
+        )
+
+        fb, fb_error = _freebusy(
+            access_token,
+            start_dt.isoformat(),
+            buffered_end.isoformat(),
+        )
+        logger.info("CalendarBook free/busy response: error=%s busy_entries=%s", fb_error, (fb or {}).get("calendars", {}))
+        if fb_error or not fb:
+            logger.warning("CalendarBook free/busy failure: %s", fb_error)
+            return func.HttpResponse(
+                json.dumps({"error": "Unable to check availability", "details": fb_error}),
+                status_code=400,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        busy = fb.get("calendars", {}).get("primary", {}).get("busy", [])
+        if busy:
+            logger.warning("CalendarBook slot busy: %s", busy)
+            return func.HttpResponse(
+                json.dumps({"error": "Slot is busy", "busy": busy}),
+                status_code=409,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        attendees = []
+        if caller_email:
+            attendees.append({"email": caller_email})
+        # Use call_id as event_id to get idempotency (Google returns 409 on duplicate).
+        event_id = _build_event_id(call_id)
+
+        event_error = None
+        event = None
+        tried_id = False
+
+        if event_id:
+            tried_id = True
+            logger.info("CalendarBook creating event with id=%s attendees=%s", event_id, attendees)
+            event, event_error = _create_calendar_event(
+                access_token,
+                title,
+                start_for_google,
+                end_for_google,
+                description=description,
+                attendees=attendees or None,
+                event_id=event_id,
+                time_zone="Europe/London",
+            )
+
+        # If no event_id was provided, or the id attempt failed, try once without id.
+        if not event and not event_error and not tried_id:
+            logger.info("CalendarBook creating event without explicit id (call_id missing)")
+            event, event_error = _create_calendar_event(
+                access_token,
+                title,
+                start_for_google,
+                end_for_google,
+                description=description,
+                attendees=attendees or None,
+                event_id=None,
+                time_zone="Europe/London",
+            )
+
+        # If invalid id or other creation error, retry once without event_id.
+        if (event_error or not event) and tried_id:
+            if event_error and "Invalid resource id" in str(event_error):
+                logger.info("Retrying calendar create without event_id (invalid id: %s)", event_id)
+                event, event_error = _create_calendar_event(
+                    access_token,
+                    title,
+                    start_for_google,
+                    end_for_google,
+                    description=description,
+                    attendees=attendees or None,
+                    event_id=None,
+                    time_zone="Europe/London",
+                )
+
+        if event_error or not event:
+            logger.error(
+                "CalendarBook event creation failed: event_error=%s event_id_used=%s tried_id=%s",
+                event_error,
+                event_id,
+                tried_id,
+            )
+            return func.HttpResponse(
+                json.dumps(
+                    {
+                        "error": "Failed to create event",
+                        "details": event_error,
+                        "event_id_used": event_id if tried_id else None,
+                    }
+                ),
+                status_code=500,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        logger.info(
+            "CalendarBook event created: id=%s status=%s idempotent_id=%s",
+            (event or {}).get("id"),
+            (event or {}).get("status"),
+            event_id,
+        )
+        return func.HttpResponse(
+            json.dumps(
+                {
+                    "event": event,
+                    "idempotent_event_id": event_id,
+                    "resolved": {
+                        "start": start_dt.isoformat(),
+                        "end": end_dt.isoformat(),
+                        "duration_minutes": duration_minutes,
+                        "buffer_minutes": buffer_minutes,
+                        "title": title,
+                        "description": description,
+                    },
+                }
+            ),
+            status_code=201,
+            mimetype="application/json",
+            headers=cors,
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        db.rollback()
+        logger.exception("Calendar book failed")
+        return func.HttpResponse(
+            json.dumps({"error": "Calendar booking failed", "details": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+            headers=cors,
+        )
+    finally:
+        db.close()
+
+
+@app.function_name(name="UltravoxDebugTools")
+@app.route(route="ultravox/debug-tools", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def ultravox_debug_tools(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Debug helper to list Ultravox tools and agent attachments (guarded by ENABLE_ULTRAVOX_DEBUG flag).
+    """
+    cors = build_cors_headers(req, ["GET", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
+    if (get_setting("ENABLE_ULTRAVOX_DEBUG") or "").lower() not in ("1", "true", "yes", "on"):
+        return func.HttpResponse(
+            json.dumps({"error": "Debug endpoint disabled"}),
+            status_code=404,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    agent_id = req.params.get("agentId") or req.params.get("agent_id")
+    if not agent_id:
+        return func.HttpResponse(
+            json.dumps({"error": "agentId is required"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    try:
+        agent = get_ultravox_agent(agent_id)
+        selected = (agent.get("callTemplate") or {}).get("selectedTools") or []
+        tools = list_ultravox_tools()
+        attached = [
+            tool
+            for tool in tools
+            if (tool.get("id") or tool.get("toolId") or tool.get("tool_id")) in selected
+        ]
+        payload = {
+            "agentId": agent_id,
+            "selectedTools": selected,
+            "attachedTools": attached,
+            "availableTools": tools,
+        }
+        return func.HttpResponse(
+            json.dumps(payload),
+            status_code=200,
+            mimetype="application/json",
+            headers=cors,
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.error("Ultravox debug tools failed: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "Failed to list Ultravox tools"}),
+            status_code=500,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+
+@app.function_name(name="UltravoxEnsureBookingTool")
+@app.route(route="ultravox/ensure-tool", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def ultravox_ensure_booking_tool(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Force ensure/attach the calendar_book and calendar_availability tools for an agent (guarded by ENABLE_ULTRAVOX_DEBUG).
+    Body or params: { agentId? , email? }
+    """
+    cors = build_cors_headers(req, ["POST", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
+    if (get_setting("ENABLE_ULTRAVOX_DEBUG") or "").lower() not in ("1", "true", "yes", "on"):
+        return func.HttpResponse(
+            json.dumps({"error": "Debug endpoint disabled"}),
+            status_code=404,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    try:
+        body = req.get_json()
+    except ValueError:
+        body = {}
+    agent_id = (body or {}).get("agentId") or req.params.get("agentId") or (body or {}).get("agent_id")
+    email = (body or {}).get("email") or req.params.get("email")
+
+    db = SessionLocal()
+    try:
+        if not agent_id and email:
+            client = db.query(Client).filter_by(email=email).one_or_none()
+            agent_id = client.ultravox_agent_id if client else None
+        if not agent_id:
+            return func.HttpResponse(
+                json.dumps({"error": "agentId or email is required"}),
+                status_code=400,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        base = get_public_api_base()
+        booking_id, booking_created, booking_attached = ensure_booking_tool(agent_id, base)
+        availability_id, availability_created, availability_attached = ensure_availability_tool(agent_id, base)
+        agent = get_ultravox_agent(agent_id)
+        call_template = agent.get("callTemplate") or {}
+        selected = call_template.get("selectedTools") or []
+        return func.HttpResponse(
+            json.dumps(
+                {
+                    "agentId": agent_id,
+                    "booking_tool_id": booking_id,
+                    "booking_created": booking_created,
+                    "booking_attached": booking_attached,
+                    "availability_tool_id": availability_id,
+                    "availability_created": availability_created,
+                    "availability_attached": availability_attached,
+                    "selectedTools": selected,
+                    "callTemplate": call_template,
+                }
+            ),
+            status_code=200,
+            mimetype="application/json",
+            headers=cors,
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.error("Ultravox ensure tool failed: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "Failed to ensure tool", "details": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+            headers=cors,
+        )
+    finally:
+        db.close()
+
+
+@app.function_name(name="CalendarAvailability")
+@app.route(route="calendar/availability", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def calendar_availability(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Check if a slot is available and suggest the next available slot if busy.
+    Body: { start, duration_minutes?, buffer_minutes?, email?, agentId?, callerPhone?, callerName? }
+    """
+    cors = build_cors_headers(req, ["POST", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
+    try:
+        raw = req.get_body() or b""
+        body = json.loads(raw.decode("utf-8")) if raw else {}
+    except Exception:  # pylint: disable=broad-except
+        return func.HttpResponse(
+            json.dumps({"error": "Invalid JSON"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+    if not isinstance(body, dict):
+        body = {}
+
+    start_iso = body.get("start")
+    duration_minutes = body.get("duration_minutes") or 30
+    buffer_minutes = body.get("buffer_minutes") or 5
+    email = body.get("email")
+    agent_id = (
+        body.get("agentId")
+        or body.get("agent_id")
+        or (body.get("agent") or {}).get("id")
+        or (body.get("call") or {}).get("agentId")
+        or (body.get("call") or {}).get("agent_id")
+        or ((body.get("call") or {}).get("agent") or {}).get("id")
+    )
+    if isinstance(agent_id, dict):
+        agent_id = (
+            agent_id.get("value")
+            or agent_id.get("agentId")
+            or agent_id.get("agent_id")
+            or agent_id.get("id")
+        )
+
+    try:
+        duration_minutes = int(duration_minutes)
+    except Exception:
+        duration_minutes = 30
+    try:
+        buffer_minutes = int(buffer_minutes)
+    except Exception:
+        buffer_minutes = 5
+
+    if not start_iso:
+        return func.HttpResponse(
+            json.dumps({"error": "Missing start time", "hint": "Provide start in ISO 8601 (e.g., 2025-12-17T15:00:00Z)"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    try:
+        start_dt = _parse_dt_with_london_default(start_iso)
+    except Exception:  # pylint: disable=broad-except
+        return func.HttpResponse(
+            json.dumps({"error": "Invalid start time format", "value": start_iso}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+    end_dt = _ensure_utc(start_dt + timedelta(minutes=duration_minutes))
+    buffered_end = _ensure_utc(end_dt + timedelta(minutes=buffer_minutes)) if buffer_minutes else end_dt
+
+    db = SessionLocal()
+    try:
+        user = None
+        if email:
+            user = db.query(User).filter_by(email=email).one_or_none()
+        if not user and agent_id:
+            client = db.query(Client).filter_by(ultravox_agent_id=agent_id).one_or_none()
+            if client:
+                email = client.email
+                user = db.query(User).filter_by(email=email).one_or_none()
         if not user:
             return func.HttpResponse(
-                json.dumps({"error": "User not found"}),
+                json.dumps({"error": "User not found", "hint": "Provide email or agentId"}),
                 status_code=404,
                 mimetype="application/json",
                 headers=cors,
@@ -1045,17 +1703,6 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
             )
             db.commit()
 
-        if not start_iso:
-            start_dt = datetime.utcnow() + timedelta(minutes=15)
-        else:
-            start_dt = datetime.fromisoformat(start_iso.replace("Z", "+00:00"))
-        if end_iso:
-            end_dt = datetime.fromisoformat(end_iso.replace("Z", "+00:00"))
-        else:
-            end_dt = start_dt + timedelta(minutes=duration_minutes)
-
-        buffered_end = end_dt + timedelta(minutes=buffer_minutes) if buffer_minutes else end_dt
-
         fb, fb_error = _freebusy(
             access_token,
             start_dt.isoformat(),
@@ -1070,44 +1717,50 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
             )
 
         busy = fb.get("calendars", {}).get("primary", {}).get("busy", [])
-        if busy:
-            return func.HttpResponse(
-                json.dumps({"error": "Slot is busy", "busy": busy}),
-                status_code=409,
-                mimetype="application/json",
-                headers=cors,
-            )
+        available = not bool(busy)
 
-        attendees = []
-        if caller_email:
-            attendees.append({"email": caller_email})
-        event, event_error = _create_calendar_event(
-            access_token,
-            title,
-            start_dt.isoformat(),
-            end_dt.isoformat(),
-            description=description,
-            attendees=attendees or None,
-        )
-        if event_error or not event:
-            return func.HttpResponse(
-                json.dumps({"error": "Failed to create event", "details": event_error}),
-                status_code=500,
-                mimetype="application/json",
-                headers=cors,
-            )
+        def _next_available_slot() -> Optional[dict]:
+            probe_start = buffered_end
+            for _ in range(12):  # check next 12 slots (e.g., ~6 hours with 30m slots)
+                probe_end = probe_start + timedelta(minutes=duration_minutes + buffer_minutes)
+                check, check_err = _freebusy(access_token, probe_start.isoformat(), probe_end.isoformat())
+                if check_err or not check:
+                    probe_start = probe_end
+                    continue
+                probe_busy = check.get("calendars", {}).get("primary", {}).get("busy", [])
+                if not probe_busy:
+                    return {
+                        "start": probe_start.isoformat(),
+                        "end": (probe_start + timedelta(minutes=duration_minutes)).isoformat(),
+                    }
+                probe_start = max(
+                    probe_end,
+                    datetime.fromisoformat(probe_busy[-1]["end"].replace("Z", "+00:00")).astimezone(timezone.utc),
+                )
+            return None
+
+        suggestion = None
+        if not available:
+            suggestion = _next_available_slot()
 
         return func.HttpResponse(
-            json.dumps({"event": event}),
-            status_code=201,
+            json.dumps(
+                {
+                    "available": available,
+                    "requested": {"start": start_dt.isoformat(), "end": end_dt.isoformat()},
+                    "busy": busy if not available else [],
+                    "suggestion": suggestion,
+                }
+            ),
+            status_code=200,
             mimetype="application/json",
             headers=cors,
         )
     except Exception as exc:  # pylint: disable=broad-except
         db.rollback()
-        logger.error("Calendar book failed: %s", exc)
+        logger.exception("Calendar availability failed")
         return func.HttpResponse(
-            json.dumps({"error": "Calendar booking failed", "details": str(exc)}),
+            json.dumps({"error": "Calendar availability failed", "details": str(exc)}),
             status_code=500,
             mimetype="application/json",
             headers=cors,

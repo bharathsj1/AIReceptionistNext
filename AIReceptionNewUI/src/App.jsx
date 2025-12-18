@@ -697,9 +697,10 @@ export default function App() {
   };
 
   const isLandingStage = stage === STAGES.LANDING;
+  const isDashboardStage = stage === STAGES.DASHBOARD;
   const pageClassName = `page${isLandingStage ? " page-landing" : ""}`;
   const pageContentClassName = `page-content${isLandingStage ? " page-content-landing" : ""}`;
-  const contentClassName = `content${isLandingStage ? " content-landing" : ""}`;
+  const contentClassName = `content${isLandingStage ? " content-landing" : ""}${isDashboardStage ? " content-wide" : ""}`;
   const showGlobalLogo = stage !== STAGES.LANDING;
 
   const handleEmailSubmit = async (event) => {
@@ -1656,6 +1657,7 @@ export default function App() {
         {showGlobalLogo && (
           <header className="global-logo-bar">
             <button className="logo-link" onClick={handleGoHome} aria-label="Go to home">
+              <img src="/logo.png" alt="SmartConnect4u logo" className="logo-img" />
               <span className="logo-text">SmartConnect4u</span>
             </button>
           </header>

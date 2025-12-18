@@ -179,7 +179,7 @@ export default function DashboardScreen({
     <section className="relative min-h-screen bg-slate-950 px-6 py-6 text-slate-100">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(99,102,241,0.08),transparent_32%),radial-gradient(circle_at_80%_0%,rgba(16,185,129,0.08),transparent_32%)]" />
       <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-3xl" />
-      <div className="relative mx-auto flex max-w-7xl flex-col gap-5">
+      <div className="relative mx-auto flex w-full max-w-screen-2xl flex-col gap-5">
         <header className="flex flex-col gap-3 rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl backdrop-blur">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
