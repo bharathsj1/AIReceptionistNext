@@ -1643,7 +1643,7 @@ export default function App() {
       <div className="page-video-bg" aria-hidden="true">
         <video
           className="page-video"
-          src="/Logo_noaudio.mp4"
+          src="/media/Logo_noaudio.mp4"
           autoPlay
           loop
           muted
@@ -1657,7 +1657,7 @@ export default function App() {
         {showGlobalLogo && (
           <header className="global-logo-bar">
             <button className="logo-link" onClick={handleGoHome} aria-label="Go to home">
-              <img src="/logo.png" alt="SmartConnect4u logo" className="logo-img" />
+              <img src="/media/logo.png" alt="SmartConnect4u logo" className="logo-img" />
               <span className="logo-text">SmartConnect4u</span>
             </button>
           </header>

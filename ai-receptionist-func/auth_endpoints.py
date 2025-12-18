@@ -17,6 +17,7 @@ from utils.cors import build_cors_headers
 from services.ultravox_service import (
     create_ultravox_webhook,
     ensure_booking_tool,
+    ensure_availability_tool,
     get_ultravox_agent,
     list_ultravox_tools,
 )
