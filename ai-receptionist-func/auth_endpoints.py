@@ -1147,6 +1147,8 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
         or body.get("call_id")
         or (body.get("call") or {}).get("call_id")
     )
+    if isinstance(call_id, str) and call_id.lower() in ("null", "none", ""):
+        call_id = None
 
     logger.info(
         "CalendarBook resolved identifiers: email=%s agent_id=%s call_id=%s start=%s end=%s duration=%s buffer=%s",
@@ -1641,7 +1643,15 @@ def calendar_availability(req: func.HttpRequest) -> func.HttpResponse:
         )
 
     try:
-        start_dt = _parse_dt_with_london_default(start_iso)
+        if isinstance(start_iso, str) and start_iso.lower() in (
+            "current_date_time_iso",
+            "current_datetime_iso",
+            "current",
+            "now",
+        ):
+            start_dt = datetime.now(ZoneInfo("Europe/London"))
+        else:
+            start_dt = _parse_dt_with_london_default(start_iso)
     except Exception:  # pylint: disable=broad-except
         return func.HttpResponse(
             json.dumps({"error": "Invalid start time format", "value": start_iso}),
