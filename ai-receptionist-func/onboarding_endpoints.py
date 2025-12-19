@@ -37,6 +37,34 @@ def get_site_summary(website_url: str, max_pages: int = 3) -> Tuple[str, str]:
     return name_guess, summary
 
 
+def _is_valid_url(website_url: str | None) -> bool:
+    if not website_url or not isinstance(website_url, str):
+        return False
+    parsed = urlparse(website_url)
+    return bool(parsed.scheme and parsed.netloc)
+
+
+def _build_manual_summary(body: dict) -> Tuple[str, str]:
+    name_guess = (
+        body.get("business_name")
+        or body.get("businessName")
+        or body.get("name")
+        or body.get("email")
+        or "Manual Business"
+    )
+    summary_lines = [
+        body.get("business_summary"),
+        body.get("business_services"),
+        body.get("business_hours"),
+        body.get("business_location"),
+        body.get("business_notes"),
+        body.get("business_phone"),
+        body.get("business_email"),
+    ]
+    filtered = [line for line in summary_lines if isinstance(line, str) and line.strip()]
+    return name_guess, "\n".join(filtered)
+
+
 def purchase_twilio_number(twilio_client: TwilioClient, webhook_base: str, country: str) -> Dict[str, str]:
     """
     Buy a Twilio number and configure its voice webhook.
@@ -237,9 +265,9 @@ def clients_provision(req: func.HttpRequest) -> func.HttpResponse:
     website_url = body.get("website_url") if isinstance(body, dict) else None
     system_prompt = body.get("system_prompt") if isinstance(body, dict) else None
 
-    if not email or not website_url:
+    if not email:
         return func.HttpResponse(
-            json.dumps({"error": "Missing required fields: email, website_url"}),
+            json.dumps({"error": "Missing required field: email"}),
             status_code=400,
             mimetype="application/json",
             headers=cors,
@@ -247,7 +275,12 @@ def clients_provision(req: func.HttpRequest) -> func.HttpResponse:
 
     db = SessionLocal()
     try:
-        name_guess, summary = get_site_summary(website_url)
+        has_valid_url = _is_valid_url(website_url) and website_url != "manual-entry"
+        if not has_valid_url:
+            website_url = "manual-entry"
+            name_guess, summary = _build_manual_summary(body if isinstance(body, dict) else {})
+        else:
+            name_guess, summary = get_site_summary(website_url)
     except Exception as exc:  # pylint: disable=broad-except
         logger.error("Failed to crawl site: %s", exc)
         return func.HttpResponse(
