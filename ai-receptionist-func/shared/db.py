@@ -152,6 +152,7 @@ class GoogleToken(Base):
     token_type = Column(String, nullable=True)
     expires_at = Column(DateTime, nullable=True)
     id_token = Column(LargeBinary, nullable=True)
+    google_account_email = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -224,6 +225,7 @@ def _ensure_optional_columns() -> None:
                         token_type VARCHAR,
                         expires_at DATETIME,
                         id_token BLOB,
+                        google_account_email VARCHAR,
                         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                         FOREIGN KEY(user_id) REFERENCES users (id)
@@ -231,6 +233,12 @@ def _ensure_optional_columns() -> None:
                     """
                 )
             )
+        else:
+            token_columns = {col["name"] for col in inspector.get_columns("google_tokens")}
+            if "google_account_email" not in token_columns:
+                conn.execute(
+                    text("ALTER TABLE google_tokens ADD COLUMN IF NOT EXISTS google_account_email VARCHAR")
+                )
 
         if "subscriptions" not in existing_tables:
             conn.execute(

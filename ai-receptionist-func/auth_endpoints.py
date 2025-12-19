@@ -1,12 +1,13 @@
 import json
 import logging
 import secrets
+import base64
 import hashlib
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 from zoneinfo import ZoneInfo
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, quote
 
 import azure.functions as func
 import requests
@@ -137,12 +138,13 @@ def _extract_time_fields(payload: dict) -> Tuple[Optional[str], Optional[str], O
     return start_iso, end_iso, duration, buffer
 
 
-def _build_google_auth_url(state: str) -> str:
+def _build_google_auth_url(state: str, force_consent: bool = False) -> str:
     settings = get_google_oauth_settings()
     scope = settings["scopes"]
     redirect_uri = settings["redirect_uri"]
     client_id = settings["client_id"]
     base = "https://accounts.google.com/o/oauth2/v2/auth"
+    prompt = "consent" if force_consent else "select_account"
     return (
         f"{base}?response_type=code"
         f"&client_id={client_id}"
@@ -150,9 +152,25 @@ def _build_google_auth_url(state: str) -> str:
         f"&scope={scope}"
         f"&access_type=offline"
         f"&include_granted_scopes=true"
-        f"&prompt=consent"
+        f"&prompt={prompt}"
         f"&state={state}"
     )
+
+
+def _encode_oauth_state(payload: dict) -> str:
+    raw = json.dumps(payload, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    return base64.urlsafe_b64encode(raw).decode("utf-8").rstrip("=")
+
+
+def _decode_oauth_state(state: str | None) -> dict | None:
+    if not state or not isinstance(state, str):
+        return None
+    try:
+        padded = state + "=" * (-len(state) % 4)
+        raw = base64.urlsafe_b64decode(padded.encode("utf-8"))
+        return json.loads(raw.decode("utf-8"))
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _exchange_code_for_tokens(code: str) -> Tuple[Optional[dict], Optional[str]]:
@@ -205,24 +223,89 @@ def _get_google_userinfo(access_token: str) -> Tuple[Optional[dict], Optional[st
         return None, str(exc)
 
 
-def _get_calendar_events(access_token: str, max_results: int = 5) -> Tuple[Optional[dict], Optional[str]]:
+def _get_calendar_list(access_token: str) -> Tuple[Optional[dict], Optional[str]]:
     try:
         resp = requests.get(
-            "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+            "https://www.googleapis.com/calendar/v3/users/me/calendarList",
             headers={"Authorization": f"Bearer {access_token}"},
             timeout=10,
-            params={
-                "maxResults": max_results,
-                "orderBy": "startTime",
-                "singleEvents": "true",
-                "timeMin": datetime.utcnow().isoformat() + "Z",
-            },
+            params={"maxResults": 20},
         )
         if resp.status_code != 200:
             return None, resp.text
         return resp.json(), None
     except Exception as exc:  # pylint: disable=broad-except
         return None, str(exc)
+
+
+def _get_calendar_events_for_calendar(
+    access_token: str, calendar_id: str, max_results: int, time_min: str
+) -> Tuple[Optional[list], Optional[str]]:
+    try:
+        encoded_id = quote(calendar_id, safe="")
+        resp = requests.get(
+            f"https://www.googleapis.com/calendar/v3/calendars/{encoded_id}/events",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10,
+            params={
+                "maxResults": max_results,
+                "orderBy": "startTime",
+                "singleEvents": "true",
+                "timeMin": time_min,
+            },
+        )
+        if resp.status_code != 200:
+            return None, resp.text
+        payload = resp.json()
+        return payload.get("items", []), None
+    except Exception as exc:  # pylint: disable=broad-except
+        return None, str(exc)
+
+
+def _get_calendar_events(access_token: str, max_results: int = 50) -> Tuple[Optional[dict], Optional[str]]:
+    time_min = (datetime.utcnow() - timedelta(days=365)).isoformat() + "Z"
+    calendar_list, list_error = _get_calendar_list(access_token)
+    calendar_items = (calendar_list or {}).get("items", []) if not list_error else []
+    diagnostics = {
+        "calendarListCount": len(calendar_items),
+        "selectedCalendarIds": [],
+        "perCalendarCounts": {},
+        "errors": [],
+    }
+    selected_calendars = [
+        cal.get("id")
+        for cal in calendar_items
+        if cal.get("id")
+        and (cal.get("primary") or cal.get("selected"))
+    ]
+    if not selected_calendars:
+        selected_calendars = ["primary"]
+    diagnostics["selectedCalendarIds"] = selected_calendars
+
+    events: list = []
+    per_calendar = max(5, int(max_results / max(1, len(selected_calendars))))
+    for calendar_id in selected_calendars:
+        items, err = _get_calendar_events_for_calendar(
+            access_token, calendar_id, per_calendar, time_min
+        )
+        if err or not items:
+            if err:
+                diagnostics["errors"].append({calendar_id: err})
+            continue
+        for item in items:
+            item["calendarId"] = calendar_id
+        events.extend(items)
+        diagnostics["perCalendarCounts"][calendar_id] = len(items)
+
+    if not events and list_error:
+        return None, list_error
+
+    def _event_start_value(item: dict) -> str:
+        start = (item.get("start") or {}).get("dateTime") or (item.get("start") or {}).get("date")
+        return start or ""
+
+    events.sort(key=_event_start_value)
+    return {"items": events[:max_results], "diagnostics": diagnostics}, None
 
 
 def _freebusy(access_token: str, start_iso: str, end_iso: str) -> Tuple[Optional[dict], Optional[str]]:
@@ -283,6 +366,53 @@ def _create_calendar_event(
         if resp.status_code == 409:
             # Duplicate event id; treat as already created.
             return {"duplicate": True, "id": event_id}, None
+        if resp.status_code >= 300:
+            return None, resp.text
+        return resp.json(), None
+    except Exception as exc:  # pylint: disable=broad-except
+        return None, str(exc)
+
+
+def _build_event_time_payload(value: Optional[str], time_zone: Optional[str] = None) -> dict:
+    if not value:
+        return {}
+    if "T" in value:
+        payload = {"dateTime": value}
+        if time_zone:
+            payload["timeZone"] = time_zone
+        return payload
+    return {"date": value}
+
+
+def _update_calendar_event(
+    access_token: str,
+    event_id: str,
+    summary: Optional[str] = None,
+    start_iso: Optional[str] = None,
+    end_iso: Optional[str] = None,
+    description: Optional[str] = None,
+    time_zone: Optional[str] = None,
+) -> Tuple[Optional[dict], Optional[str]]:
+    payload: dict = {}
+    if summary is not None:
+        payload["summary"] = summary
+    if start_iso:
+        payload["start"] = _build_event_time_payload(start_iso, time_zone=time_zone)
+    if end_iso:
+        payload["end"] = _build_event_time_payload(end_iso, time_zone=time_zone)
+    if description is not None:
+        payload["description"] = description
+
+    if not payload:
+        return None, "No updates provided."
+
+    try:
+        resp = requests.patch(
+            f"https://www.googleapis.com/calendar/v3/calendars/primary/events/{event_id}",
+            headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
+            json=payload,
+            timeout=10,
+        )
         if resp.status_code >= 300:
             return None, resp.text
         return resp.json(), None
@@ -815,6 +945,9 @@ def auth_google_url(req: func.HttpRequest) -> func.HttpResponse:  # pylint: disa
     if req.method == "OPTIONS":
         return func.HttpResponse("", status_code=204, headers=cors)
 
+    email = req.params.get("email")
+    force_param = req.params.get("force") or ""
+    force_consent = str(force_param).lower() in {"1", "true", "yes"}
     settings = get_google_oauth_settings()
     if not settings["client_id"] or not settings["client_secret"]:
         return func.HttpResponse(
@@ -823,8 +956,11 @@ def auth_google_url(req: func.HttpRequest) -> func.HttpResponse:  # pylint: disa
             mimetype="application/json",
             headers=cors,
         )
-    state = secrets.token_urlsafe(16)
-    url = _build_google_auth_url(state)
+    state_payload = {"nonce": secrets.token_urlsafe(16)}
+    if email:
+        state_payload["email"] = email
+    state = _encode_oauth_state(state_payload)
+    url = _build_google_auth_url(state, force_consent=force_consent)
     return func.HttpResponse(
         json.dumps({"auth_url": url, "state": state}),
         status_code=200,
@@ -886,16 +1022,33 @@ def auth_google_callback(req: func.HttpRequest) -> func.HttpResponse:
             headers=cors,
         )
 
-    email = profile.get("email")
-    name = profile.get("name") or email
+    google_email = profile.get("email")
+    name = profile.get("name") or google_email
+    state_payload = _decode_oauth_state(state)
+    requested_email = (state_payload or {}).get("email") if isinstance(state_payload, dict) else None
+    target_email = requested_email or google_email
+    if not target_email:
+        return func.HttpResponse(
+            json.dumps({"error": "Missing email"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
     db = SessionLocal()
     try:
-        user = db.query(User).filter_by(email=email).one_or_none()
+        user = db.query(User).filter_by(email=target_email).one_or_none()
         is_new_user = False
         if not user:
+            if requested_email:
+                return func.HttpResponse(
+                    json.dumps({"error": "User not found for calendar connection"}),
+                    status_code=404,
+                    mimetype="application/json",
+                    headers=cors,
+                )
             is_new_user = True
             temp_password = secrets.token_urlsafe(12)
-            user = User(email=email, password_hash=_hash_password(temp_password))
+            user = User(email=target_email, password_hash=_hash_password(temp_password))
             db.add(user)
             db.flush()
 
@@ -917,6 +1070,7 @@ def auth_google_callback(req: func.HttpRequest) -> func.HttpResponse:
             google_token.token_type = token_type
             google_token.expires_at = expires_at
             google_token.id_token = id_token.encode("utf-8") if isinstance(id_token, str) else id_token
+            google_token.google_account_email = google_email
         else:
             google_token = GoogleToken(
                 user_id=user.id,
@@ -926,18 +1080,19 @@ def auth_google_callback(req: func.HttpRequest) -> func.HttpResponse:
                 token_type=token_type,
                 expires_at=expires_at,
                 id_token=id_token.encode("utf-8") if isinstance(id_token, str) else id_token,
+                google_account_email=google_email,
             )
             db.add(google_token)
 
         # Link any pending client record
-        client = db.query(Client).filter_by(email=email).one_or_none()
+        client = db.query(Client).filter_by(email=user.email).one_or_none()
         if client:
             client.user_id = user.id
             client.name = client.name or name
         db.commit()
 
         # Ensure Ultravox booking tool is present/attached (best-effort)
-        _ensure_ultravox_booking_tool_for_user(email, db)
+        _ensure_ultravox_booking_tool_for_user(user.email, db)
 
         payload = {
             "user_id": user.id,
@@ -950,6 +1105,7 @@ def auth_google_callback(req: func.HttpRequest) -> func.HttpResponse:
                 "scope": scope,
             },
             "profile": {"name": name},
+            "google_account_email": google_email,
         }
         # If Google hits this endpoint directly, show simple HTML for the SPA to read.
         if req.method == "GET":
@@ -993,12 +1149,12 @@ def calendar_events(req: func.HttpRequest) -> func.HttpResponse:
     email = req.params.get("email")
     user_id = req.params.get("user_id")
     max_results_param = req.params.get("max_results")
-    max_results = 5
+    max_results = 50
     if max_results_param:
         try:
-            max_results = min(int(max_results_param), 20)
+            max_results = min(int(max_results_param), 50)
         except ValueError:
-            max_results = 5
+            max_results = 50
 
     db = SessionLocal()
     try:
@@ -1062,7 +1218,15 @@ def calendar_events(req: func.HttpRequest) -> func.HttpResponse:
             )
 
         return func.HttpResponse(
-            json.dumps({"events": events.get("items", []), "summary": events.get("summary"), "user": user.email}),
+            json.dumps(
+                {
+                    "events": events.get("items", []),
+                    "summary": events.get("summary"),
+                    "user": user.email,
+                    "account_email": token.google_account_email,
+                    "diagnostics": events.get("diagnostics"),
+                }
+            ),
             status_code=200,
             mimetype="application/json",
             headers=cors,
@@ -1071,6 +1235,227 @@ def calendar_events(req: func.HttpRequest) -> func.HttpResponse:
         logger.error("Calendar events failed: %s", exc)
         return func.HttpResponse(
             json.dumps({"error": "Calendar fetch failed", "details": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+            headers=cors,
+        )
+    finally:
+        db.close()
+
+
+@app.function_name(name="CalendarUpdate")
+@app.route(route="calendar/update", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def calendar_update(req: func.HttpRequest) -> func.HttpResponse:
+    cors = build_cors_headers(req, ["POST", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
+    try:
+        body = req.get_json()
+    except ValueError:
+        body = None
+
+    email = body.get("email") if isinstance(body, dict) else None
+    user_id = body.get("user_id") if isinstance(body, dict) else None
+    event_id = body.get("eventId") if isinstance(body, dict) else None
+    summary = body.get("summary") if isinstance(body, dict) else None
+    start_iso = body.get("start") if isinstance(body, dict) else None
+    end_iso = body.get("end") if isinstance(body, dict) else None
+    description = body.get("description") if isinstance(body, dict) else None
+
+    if not event_id or not (email or user_id):
+        return func.HttpResponse(
+            json.dumps({"error": "eventId and email (or user_id) are required"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    db = SessionLocal()
+    try:
+        user = None
+        if email:
+            user = db.query(User).filter_by(email=email).one_or_none()
+        elif user_id:
+            user = db.query(User).filter_by(id=int(user_id)).one_or_none()
+        if not user:
+            return func.HttpResponse(
+                json.dumps({"error": "User not found"}),
+                status_code=404,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        token = (
+            db.query(GoogleToken)
+            .filter_by(user_id=user.id)
+            .order_by(GoogleToken.created_at.desc())
+            .first()
+        )
+        if not token:
+            return func.HttpResponse(
+                json.dumps({"error": "No Google account connected"}),
+                status_code=404,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        access_token = token.access_token
+        now = datetime.utcnow()
+        if token.expires_at and token.expires_at <= now and token.refresh_token:
+            refreshed, refresh_error = _refresh_google_token(token.refresh_token)
+            if refresh_error or not refreshed:
+                return func.HttpResponse(
+                    json.dumps({"error": "Unable to refresh token", "details": refresh_error}),
+                    status_code=401,
+                    mimetype="application/json",
+                    headers=cors,
+                )
+            access_token = refreshed.get("access_token") or access_token
+            token.access_token = access_token
+            token.expires_at = (
+                datetime.utcnow() + timedelta(seconds=int(refreshed.get("expires_in")))
+                if refreshed.get("expires_in")
+                else None
+            )
+            db.commit()
+
+        updated, update_error = _update_calendar_event(
+            access_token,
+            event_id,
+            summary=summary,
+            start_iso=start_iso,
+            end_iso=end_iso,
+            description=description,
+        )
+        if update_error or not updated:
+            return func.HttpResponse(
+                json.dumps({"error": "Failed to update event", "details": update_error}),
+                status_code=400,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        return func.HttpResponse(
+            json.dumps({"event": updated}),
+            status_code=200,
+            mimetype="application/json",
+            headers=cors,
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.error("Calendar update failed: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "Calendar update failed", "details": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+            headers=cors,
+        )
+    finally:
+        db.close()
+
+
+@app.function_name(name="CalendarCreate")
+@app.route(route="calendar/create", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def calendar_create(req: func.HttpRequest) -> func.HttpResponse:
+    cors = build_cors_headers(req, ["POST", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
+    try:
+        body = req.get_json()
+    except ValueError:
+        body = None
+
+    email = body.get("email") if isinstance(body, dict) else None
+    user_id = body.get("user_id") if isinstance(body, dict) else None
+    summary = body.get("summary") if isinstance(body, dict) else None
+    start_iso = body.get("start") if isinstance(body, dict) else None
+    end_iso = body.get("end") if isinstance(body, dict) else None
+    description = body.get("description") if isinstance(body, dict) else None
+
+    if not start_iso or not (email or user_id):
+        return func.HttpResponse(
+            json.dumps({"error": "start and email (or user_id) are required"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    db = SessionLocal()
+    try:
+        user = None
+        if email:
+            user = db.query(User).filter_by(email=email).one_or_none()
+        elif user_id:
+            user = db.query(User).filter_by(id=int(user_id)).one_or_none()
+        if not user:
+            return func.HttpResponse(
+                json.dumps({"error": "User not found"}),
+                status_code=404,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        token = (
+            db.query(GoogleToken)
+            .filter_by(user_id=user.id)
+            .order_by(GoogleToken.created_at.desc())
+            .first()
+        )
+        if not token:
+            return func.HttpResponse(
+                json.dumps({"error": "No Google account connected"}),
+                status_code=404,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        access_token = token.access_token
+        now = datetime.utcnow()
+        if token.expires_at and token.expires_at <= now and token.refresh_token:
+            refreshed, refresh_error = _refresh_google_token(token.refresh_token)
+            if refresh_error or not refreshed:
+                return func.HttpResponse(
+                    json.dumps({"error": "Unable to refresh token", "details": refresh_error}),
+                    status_code=401,
+                    mimetype="application/json",
+                    headers=cors,
+                )
+            access_token = refreshed.get("access_token") or access_token
+            token.access_token = access_token
+            token.expires_at = (
+                datetime.utcnow() + timedelta(seconds=int(refreshed.get("expires_in")))
+                if refreshed.get("expires_in")
+                else None
+            )
+            db.commit()
+
+        summary = summary or "New event"
+        event, event_error = _create_calendar_event(
+            access_token,
+            summary,
+            start_iso=start_iso,
+            end_iso=end_iso or start_iso,
+            description=description,
+        )
+        if event_error or not event:
+            return func.HttpResponse(
+                json.dumps({"error": "Failed to create event", "details": event_error}),
+                status_code=400,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        return func.HttpResponse(
+            json.dumps({"event": event}),
+            status_code=200,
+            mimetype="application/json",
+            headers=cors,
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.error("Calendar create failed: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "Calendar create failed", "details": str(exc)}),
             status_code=500,
             mimetype="application/json",
             headers=cors,

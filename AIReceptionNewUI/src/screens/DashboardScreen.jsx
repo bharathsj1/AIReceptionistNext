@@ -1,4 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
+import "@fullcalendar/react/dist/vdom";
+import FullCalendar from "@fullcalendar/react";
+import interactionPlugin from "@fullcalendar/interaction";
+import timeGridPlugin from "@fullcalendar/timegrid";
+import "@fullcalendar/common/main.css";
+import "@fullcalendar/timegrid/main.css";
 import {
   Activity,
   CalendarClock,
@@ -13,6 +19,7 @@ import {
   Shield,
   User as UserIcon
 } from "lucide-react";
+import { API_URLS } from "../config/urls";
 
 const formatDuration = (seconds) => {
   if (!seconds && seconds !== 0) return "—";
@@ -96,6 +103,8 @@ export default function DashboardScreen({
   calendarLoading,
   calendarEvents,
   calendarError,
+  calendarAccountEmail,
+  calendarDiagnostics,
   loadCalendarEvents,
   handleCalendarDisconnect,
   beginGoogleLogin,
@@ -137,6 +146,138 @@ export default function DashboardScreen({
     businessName: userProfile?.business_name || "",
     businessNumber: userProfile?.business_number || ""
   });
+  const [editingEvent, setEditingEvent] = useState(null);
+  const [calendarEditForm, setCalendarEditForm] = useState({
+    title: "",
+    start: "",
+    end: "",
+    description: ""
+  });
+  const [calendarUpdateStatus, setCalendarUpdateStatus] = useState({
+    status: "idle",
+    message: ""
+  });
+  const [selectedCalendarProvider, setSelectedCalendarProvider] = useState("google");
+  const [calendarEditMode, setCalendarEditMode] = useState("edit");
+
+  const calendarItems = useMemo(
+    () =>
+      (calendarEvents || []).map((event) => {
+        const start = event.start?.dateTime || event.start?.date || null;
+        const end = event.end?.dateTime || event.end?.date || null;
+        const allDay = Boolean(event.start?.date && !event.start?.dateTime);
+        return {
+          id: event.id,
+          title: event.summary || "No title",
+          start,
+          end,
+          allDay,
+          extendedProps: { raw: event, provider: "google" }
+        };
+      }),
+    [calendarEvents]
+  );
+
+  const visibleCalendarItems = useMemo(() => {
+    if (selectedCalendarProvider === "google") return calendarItems;
+    return [];
+  }, [calendarItems, selectedCalendarProvider]);
+
+  const toLocalInputValue = (value) => {
+    if (!value) return "";
+    const dt = new Date(value);
+    if (Number.isNaN(dt.getTime())) return "";
+    const offset = dt.getTimezoneOffset() * 60000;
+    const local = new Date(dt.getTime() - offset);
+    return local.toISOString().slice(0, 16);
+  };
+
+  const toIsoValue = (value) => {
+    if (!value) return null;
+    const dt = new Date(value);
+    if (Number.isNaN(dt.getTime())) return null;
+    return dt.toISOString();
+  };
+
+  const openCalendarEdit = (event) => {
+    if (!event) return;
+    const startValue = event.start?.dateTime || event.start?.date || "";
+    const endValue = event.end?.dateTime || event.end?.date || "";
+    setEditingEvent(event);
+    setCalendarEditMode("edit");
+    setCalendarEditForm({
+      title: event.summary || "",
+      start: toLocalInputValue(startValue),
+      end: toLocalInputValue(endValue),
+      description: event.description || ""
+    });
+    setCalendarUpdateStatus({ status: "idle", message: "" });
+  };
+
+  const openCalendarCreate = (start, end) => {
+    setEditingEvent(null);
+    setCalendarEditMode("create");
+    setCalendarEditForm({
+      title: "",
+      start: toLocalInputValue(start),
+      end: toLocalInputValue(end),
+      description: ""
+    });
+    setCalendarUpdateStatus({ status: "idle", message: "" });
+  };
+
+  const ensureEndTime = (startIso, endIso) => {
+    if (endIso) return endIso;
+    if (!startIso) return null;
+    const startDate = new Date(startIso);
+    if (Number.isNaN(startDate.getTime())) return null;
+    return new Date(startDate.getTime() + 30 * 60 * 1000).toISOString();
+  };
+
+  const handleCalendarSave = async () => {
+    if (!user?.email) return;
+    setCalendarUpdateStatus({ status: "loading", message: "Saving changes..." });
+    try {
+      const startIso = toIsoValue(calendarEditForm.start);
+      const endIso = ensureEndTime(startIso, toIsoValue(calendarEditForm.end));
+      if (!startIso) {
+        throw new Error("Start time is required.");
+      }
+      const payload = {
+        email: user.email,
+        summary: calendarEditForm.title || "New event",
+        start: startIso,
+        end: endIso,
+        description: calendarEditForm.description || ""
+      };
+      const endpoint =
+        calendarEditMode === "create" ? API_URLS.calendarCreate : API_URLS.calendarUpdate;
+      if (calendarEditMode === "edit") {
+        payload.eventId = editingEvent?.id;
+      }
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || data?.details || "Failed to save event");
+      }
+      setCalendarUpdateStatus({
+        status: "success",
+        message: calendarEditMode === "create" ? "Event created." : "Event updated."
+      });
+      await loadCalendarEvents?.(user.email);
+      setEditingEvent(null);
+      setCalendarEditMode("edit");
+    } catch (err) {
+      setCalendarUpdateStatus({
+        status: "error",
+        message: err?.message || "Failed to save event"
+      });
+    }
+  };
   const toolTabs = [
     {
       id: "ai_receptionist",
@@ -243,6 +384,9 @@ export default function DashboardScreen({
   );
 
   const integrationStatus = calendarStatus || (calendarEvents?.length ? "Google" : null);
+  const selectedProviderLabel = selectedCalendarProvider === "google" ? "Google" : "Outlook";
+  const selectedProviderConnected =
+    selectedCalendarProvider === "google" ? Boolean(integrationStatus) : false;
 
   return (
     <section className="relative min-h-screen bg-slate-950 px-6 py-6 text-slate-100">
@@ -809,15 +953,24 @@ export default function DashboardScreen({
                   </div>
                 </div>
                 <div className="text-xs text-slate-300">
-                  {integrationStatus ? `Connected: ${integrationStatus}` : "Not connected"}
+                  {selectedProviderConnected
+                    ? `Connected: ${selectedProviderLabel}`
+                    : `Selected: ${selectedProviderLabel}`}
                 </div>
               </div>
               <div className="grid gap-2">
                 <button
                   type="button"
-                  onClick={beginGoogleLogin}
+                  onClick={() => {
+                    setSelectedCalendarProvider("google");
+                    beginGoogleLogin?.();
+                  }}
                   disabled={status === "loading" || calendarLoading}
-                  className="inline-flex items-center justify-between gap-2 rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:border-white/30 hover:bg-white/20 disabled:opacity-60"
+                  className={`inline-flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:border-white/30 hover:bg-white/20 disabled:opacity-60 ${
+                    selectedCalendarProvider === "google"
+                      ? "border-emerald-300/50 bg-emerald-500/15"
+                      : "border-white/15 bg-white/10"
+                  }`}
                 >
                   <span className="flex items-center gap-2">
                     <CalendarClock className="h-4 w-4" />
@@ -827,8 +980,12 @@ export default function DashboardScreen({
                 </button>
                 <button
                   type="button"
-                  disabled
-                  className="inline-flex items-center justify-between gap-2 rounded-xl border border-dashed border-white/10 bg-slate-900/40 px-3 py-2 text-sm font-semibold text-slate-300"
+                  onClick={() => setSelectedCalendarProvider("outlook")}
+                  className={`inline-flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-sm font-semibold transition ${
+                    selectedCalendarProvider === "outlook"
+                      ? "border-emerald-300/50 bg-emerald-500/15 text-white"
+                      : "border-white/10 bg-slate-900/40 text-slate-300"
+                  }`}
                 >
                   Outlook integration
                   <span className="text-xs text-slate-400">Coming soon</span>
@@ -844,6 +1001,13 @@ export default function DashboardScreen({
                     </button>
                     <button
                       type="button"
+                      onClick={() => beginGoogleLogin?.({ force: true })}
+                      className="rounded-lg border border-white/10 bg-white/10 px-3 py-1 text-xs text-white"
+                    >
+                      Force re-connect
+                    </button>
+                    <button
+                      type="button"
                       onClick={handleCalendarDisconnect}
                       className="rounded-lg border border-white/10 bg-white/10 px-3 py-1 text-xs text-white"
                     >
@@ -851,25 +1015,27 @@ export default function DashboardScreen({
                     </button>
                   </div>
                 )}
-                {calendarError && <div className="text-xs text-rose-300">{calendarError}</div>}
-                {calendarEvents?.length ? (
-                  <div className="mt-2 space-y-2 rounded-2xl border border-white/10 bg-slate-900/40 p-3 text-xs text-slate-200">
-                    {calendarEvents.map((event) => (
-                      <div key={event.id} className="flex items-center justify-between">
-                        <div>
-                          <div className="font-semibold">{event.summary || "No title"}</div>
-                          <div className="text-[11px] text-slate-400">
-                            {event.start?.dateTime || event.start?.date} →{" "}
-                            {event.end?.dateTime || event.end?.date}
-                          </div>
-                        </div>
-                        <span className="rounded-full border border-white/10 bg-white/10 px-2 py-0.5 text-[11px]">
-                          Google
-                        </span>
-                      </div>
-                    ))}
+                {calendarAccountEmail ? (
+                  <div className="text-xs text-emerald-200">
+                    Connected account: {calendarAccountEmail}
                   </div>
                 ) : null}
+                {calendarDiagnostics ? (
+                  <div className="text-[11px] text-slate-400">
+                    Calendars: {calendarDiagnostics.calendarListCount || 0} · Selected:{" "}
+                    {(calendarDiagnostics.selectedCalendarIds || []).length} · Events:{" "}
+                    {Object.values(calendarDiagnostics.perCalendarCounts || {}).reduce(
+                      (sum, val) => sum + Number(val || 0),
+                      0
+                    )}
+                  </div>
+                ) : null}
+                {calendarError && <div className="text-xs text-rose-300">{calendarError}</div>}
+                <div className="mt-2 rounded-2xl border border-white/10 bg-slate-900/40 p-3 text-xs text-slate-300">
+                  {selectedCalendarProvider === "google"
+                    ? "Google Calendar is selected. Refresh events to keep the week up to date."
+                    : "Outlook is selected. Sync is coming soon; switch back to Google to see events."}
+                </div>
               </div>
             </div>
 
@@ -878,97 +1044,65 @@ export default function DashboardScreen({
                 <div className="flex items-center gap-2">
                   <CalendarClock className="h-5 w-5 text-indigo-200" />
                   <div>
-                    <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Auto-booking</p>
-                    <h4 className="text-lg font-semibold text-white">Book via Google Calendar</h4>
+                    <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">
+                      {selectedProviderLabel} calendar
+                    </p>
+                    <h4 className="text-lg font-semibold text-white">Weekly schedule</h4>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 text-xs text-slate-300">
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={bookingSettings?.booking_enabled}
-                      onChange={(e) =>
-                        setBookingSettings?.({
-                          ...bookingSettings,
-                          booking_enabled: e.target.checked
-                        })
-                      }
+                <div className="text-xs text-slate-300">
+                  {selectedProviderConnected ? "Connected" : "Not connected"}
+                </div>
+              </div>
+              {selectedCalendarProvider === "google" && selectedProviderConnected ? (
+                <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-2">
+                  <div className="calendar-shell" data-lenis-prevent>
+                    <FullCalendar
+                      plugins={[timeGridPlugin, interactionPlugin]}
+                      initialView="timeGridWeek"
+                      headerToolbar={{
+                        left: "prev,next today",
+                        center: "title",
+                        right: "timeGridWeek,timeGridDay"
+                      }}
+                      events={visibleCalendarItems}
+                      height={520}
+                      contentHeight={520}
+                      editable={false}
+                      selectable={selectedCalendarProvider === "google"}
+                      selectMirror
+                      nowIndicator
+                      scrollTime="09:00:00"
+                      slotMinTime="00:00:00"
+                      slotMaxTime="24:00:00"
+                      businessHours={{
+                        startTime: "09:00",
+                        endTime: "18:00",
+                        daysOfWeek: [1, 2, 3, 4, 5]
+                      }}
+                      eventClick={(info) => {
+                        if (selectedCalendarProvider !== "google") return;
+                        openCalendarEdit(info.event.extendedProps?.raw);
+                      }}
+                      select={(selection) => {
+                        if (selectedCalendarProvider !== "google") return;
+                        openCalendarCreate(selection.start, selection.end);
+                      }}
+                      eventTimeFormat={{
+                        hour: "numeric",
+                        minute: "2-digit",
+                        meridiem: "short"
+                      }}
                     />
-                    Enable
-                  </label>
+                  </div>
                 </div>
-              </div>
-              <div className="grid gap-3 text-sm text-slate-100">
-                <label className="flex items-center gap-2">
-                  Duration (minutes)
-                  <input
-                    type="number"
-                    min="10"
-                    max="180"
-                    value={bookingSettings?.booking_duration_minutes ?? 30}
-                    onChange={(e) =>
-                      setBookingSettings?.({
-                        ...bookingSettings,
-                        booking_duration_minutes: Number(e.target.value) || 30
-                      })
-                    }
-                    className="w-24 rounded-lg border border-white/10 bg-slate-900/60 px-2 py-1 text-sm text-slate-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
-                  />
-                </label>
-                <label className="flex items-center gap-2">
-                  Buffer after meeting (minutes)
-                  <input
-                    type="number"
-                    min="0"
-                    max="60"
-                    value={bookingSettings?.booking_buffer_minutes ?? 5}
-                    onChange={(e) =>
-                      setBookingSettings?.({
-                        ...bookingSettings,
-                        booking_buffer_minutes: Number(e.target.value) || 5
-                      })
-                    }
-                    className="w-24 rounded-lg border border-white/10 bg-slate-900/60 px-2 py-1 text-sm text-slate-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
-                  />
-                </label>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => onBookingSave?.(bookingSettings)}
-                    className="rounded-lg border border-emerald-300/60 bg-emerald-500/20 px-3 py-1 text-xs font-semibold text-emerald-50"
-                  >
-                    Save booking prefs
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onTestBooking}
-                    className="rounded-lg border border-white/10 bg-white/10 px-3 py-1 text-xs font-semibold text-white"
-                  >
-                    Book next available (test)
-                  </button>
-                  {bookingStatus?.message && (
-                    <span
-                      className={`text-xs ${
-                        bookingStatus.status === "error" ? "text-rose-300" : "text-emerald-200"
-                      }`}
-                    >
-                      {bookingStatus.message}
-                    </span>
-                  )}
-                  {bookingTestStatus?.message && (
-                    <span
-                      className={`text-xs ${
-                        bookingTestStatus.status === "error" ? "text-rose-300" : "text-emerald-200"
-                      }`}
-                    >
-                      {bookingTestStatus.message}
-                    </span>
-                  )}
+              ) : (
+                <div className="rounded-2xl border border-white/10 bg-slate-900/40 p-4 text-sm text-slate-300">
+                  {selectedCalendarProvider === "google"
+                    ? "Connect Google Calendar to view and manage your schedule."
+                    : "Outlook calendar sync is not enabled yet. Switch to Google to view events."}
                 </div>
-                <p className="text-xs text-slate-400">
-                  When enabled, your Ultravox agent can check free/busy and book directly into your Google Calendar during calls.
-                </p>
-              </div>
+              )}
             </div>
           </section>
         )}
@@ -1108,6 +1242,110 @@ export default function DashboardScreen({
           </ToolGate>
         )}
       </div>
+      {(editingEvent || calendarEditMode === "create") && (
+        <div className="calendar-modal">
+          <div className="calendar-modal-card">
+            <div className="calendar-modal-header">
+              <div>
+                <p className="calendar-modal-eyebrow">
+                  {calendarEditMode === "create" ? "Create event" : "Edit event"}
+                </p>
+                <h4 className="calendar-modal-title">
+                  {calendarEditMode === "create"
+                    ? "New calendar event"
+                    : editingEvent?.summary || "Untitled event"}
+                </h4>
+              </div>
+              <button
+                type="button"
+                className="calendar-modal-close"
+                onClick={() => {
+                  setEditingEvent(null);
+                  setCalendarEditMode("edit");
+                }}
+              >
+                Close
+              </button>
+            </div>
+            <div className="calendar-modal-body">
+              <label>
+                Title
+                <input
+                  type="text"
+                  value={calendarEditForm.title}
+                  onChange={(event) =>
+                    setCalendarEditForm((prev) => ({ ...prev, title: event.target.value }))
+                  }
+                  placeholder="Event title"
+                />
+              </label>
+              <label>
+                Start time
+                <input
+                  type="datetime-local"
+                  value={calendarEditForm.start}
+                  onChange={(event) =>
+                    setCalendarEditForm((prev) => ({ ...prev, start: event.target.value }))
+                  }
+                />
+              </label>
+              <label>
+                End time
+                <input
+                  type="datetime-local"
+                  value={calendarEditForm.end}
+                  onChange={(event) =>
+                    setCalendarEditForm((prev) => ({ ...prev, end: event.target.value }))
+                  }
+                />
+              </label>
+              <label>
+                Notes
+                <textarea
+                  rows={3}
+                  value={calendarEditForm.description}
+                  onChange={(event) =>
+                    setCalendarEditForm((prev) => ({
+                      ...prev,
+                      description: event.target.value
+                    }))
+                  }
+                  placeholder="Add a note for this event"
+                />
+              </label>
+              {calendarUpdateStatus.message ? (
+                <div className={`calendar-modal-message ${calendarUpdateStatus.status}`}>
+                  {calendarUpdateStatus.message}
+                </div>
+              ) : null}
+            </div>
+            <div className="calendar-modal-actions">
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => {
+                  setEditingEvent(null);
+                  setCalendarEditMode("edit");
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="primary"
+                onClick={handleCalendarSave}
+                disabled={calendarUpdateStatus.status === "loading"}
+              >
+                {calendarUpdateStatus.status === "loading"
+                  ? "Saving..."
+                  : calendarEditMode === "create"
+                    ? "Create event"
+                    : "Save changes"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

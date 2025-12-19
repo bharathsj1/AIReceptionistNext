@@ -27,14 +27,24 @@ def get_google_oauth_settings() -> dict:
     """
     Centralized helper for Google OAuth env vars.
     """
+    raw_scopes = os.getenv(
+        "GOOGLE_SCOPES",
+        "https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile",
+    )
+    scopes = {scope.strip() for scope in raw_scopes.split() if scope.strip()}
+    # Ensure write-capable calendar scope is always requested.
+    scopes.update(
+        {
+            "https://www.googleapis.com/auth/calendar",
+            "https://www.googleapis.com/auth/userinfo.email",
+            "https://www.googleapis.com/auth/userinfo.profile",
+        }
+    )
     return {
         "client_id": os.getenv("GOOGLE_CLIENT_ID", ""),
         "client_secret": os.getenv("GOOGLE_CLIENT_SECRET", ""),
         "redirect_uri": os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:5173"),
-        "scopes": os.getenv(
-            "GOOGLE_SCOPES",
-            "https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile",
-        ),
+        "scopes": " ".join(sorted(scopes)),
     }
 
 
