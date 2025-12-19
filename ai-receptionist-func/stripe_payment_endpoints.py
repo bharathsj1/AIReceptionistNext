@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from function_app import app
 from shared.config import get_required_setting
-from shared.db import SessionLocal, Subscription, Payment
+from shared.db import SessionLocal, Subscription, Payment, AITool
 from utils.cors import build_cors_headers
 
 logger = logging.getLogger(__name__)
@@ -20,12 +20,43 @@ PLAN_AMOUNTS = {
     "silver": 60000,  # $600.00
     "gold": 70000,    # $700.00
 }
+TOOL_SLUGS = ["ai_receptionist", "email_manager", "social_media_manager"]
+PLAN_TOOL_ACCESS = {
+    "bronze": ["ai_receptionist"],
+    "silver": ["ai_receptionist", "email_manager"],
+    "gold": TOOL_SLUGS,
+    "custom": TOOL_SLUGS,
+}
+DEFAULT_TOOL = "ai_receptionist"
+PLAN_AMOUNTS_BY_TOOL = {
+    DEFAULT_TOOL: PLAN_AMOUNTS,
+    "email_manager": PLAN_AMOUNTS,
+    "social_media_manager": PLAN_AMOUNTS,
+}
 
 
 def _get_stripe_client() -> stripe.StripeClient:
     secret_key = get_required_setting("STRIPE_SECRET_KEY")
     stripe.api_key = secret_key
     return stripe
+
+def _get_plan_amount(plan_id: str, tool: str) -> int | None:
+    """
+    Resolve the plan amount for a given tool. Falls back to receptionist pricing when
+    the tool is unknown so legacy flows continue to work.
+    """
+    tool_key = (tool or DEFAULT_TOOL).lower()
+    plan_map = PLAN_AMOUNTS_BY_TOOL.get(tool_key) or PLAN_AMOUNTS_BY_TOOL.get(DEFAULT_TOOL, {})
+    return plan_map.get(plan_id)
+
+
+def _tools_for_plan(plan_id: str, default_tool: str) -> list[str]:
+    plan_key = (plan_id or "").lower()
+    base_tool = (default_tool or DEFAULT_TOOL).lower()
+    allowed = PLAN_TOOL_ACCESS.get(plan_key)
+    if allowed:
+        return allowed
+    return [base_tool]
 
 
 def _get_or_create_customer(stripe_client, email: str) -> str:
@@ -42,11 +73,23 @@ def _get_or_create_customer(stripe_client, email: str) -> str:
     return customer.id
 
 
-def _get_or_create_price(stripe_client, plan_id: str, amount: int) -> str:
+def _get_or_create_tool(db: Session, tool_slug: str) -> AITool:
+    slug = (tool_slug or DEFAULT_TOOL).lower()
+    tool = db.query(AITool).filter(AITool.slug == slug).one_or_none()
+    if tool:
+        return tool
+    tool = AITool(slug=slug, name=slug.replace("_", " ").title())
+    db.add(tool)
+    db.flush()
+    return tool
+
+
+def _get_or_create_price(stripe_client, plan_id: str, amount: int, tool: str) -> str:
     """
     Find or create a monthly price for the plan using lookup_key.
     """
-    lookup_key = f"ai_receptionist_{plan_id}_monthly"
+    tool_key = (tool or DEFAULT_TOOL).lower()
+    lookup_key = f"{tool_key}_{plan_id}_monthly"
     try:
         prices = stripe_client.Price.list(lookup_keys=[lookup_key], active=True, limit=1)
         if prices and prices.data:
@@ -55,7 +98,7 @@ def _get_or_create_price(stripe_client, plan_id: str, amount: int) -> str:
         # fallback to create
         pass
 
-    product = stripe_client.Product.create(name=f"AI Receptionist {plan_id.title()}")
+    product = stripe_client.Product.create(name=f"{tool_key.replace('_', ' ').title()} {plan_id.title()}")
     price = stripe_client.Price.create(
         unit_amount=amount,
         currency="usd",
@@ -81,6 +124,7 @@ def _upsert_subscription_record(
     db: Session,
     *,
     email: str,
+    tool: str,
     plan_id: str,
     stripe_customer_id: str,
     stripe_subscription_id: str,
@@ -93,9 +137,12 @@ def _upsert_subscription_record(
     currency: str,
 ) -> None:
     sub = db.query(Subscription).filter_by(stripe_subscription_id=stripe_subscription_id).first()
+    tool_obj = _get_or_create_tool(db, tool)
     if not sub:
         sub = Subscription(
             email=email,
+            tool=tool,
+            tool_id=tool_obj.id,
             plan_id=plan_id,
             price_id=price_id,
             stripe_customer_id=stripe_customer_id,
@@ -107,6 +154,8 @@ def _upsert_subscription_record(
         db.flush()
     else:
         sub.email = email
+        sub.tool = tool or sub.tool or DEFAULT_TOOL
+        sub.tool_id = tool_obj.id
         sub.plan_id = plan_id
         sub.price_id = price_id
         sub.status = status
@@ -151,7 +200,7 @@ def _upsert_subscription_record(
 def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
     """
     Create a Stripe Subscription for the selected plan and return the client secret for payment confirmation.
-    Expects JSON body: { "planId": "bronze" | "silver" | "gold", "email": "required" }
+    Expects JSON body: { "planId": "bronze" | "silver" | "gold", "toolId": "<tool>", "email": "required" }
     """
     cors = build_cors_headers(req, ["POST", "OPTIONS"])
     if req.method == "OPTIONS":
@@ -163,12 +212,13 @@ def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
         data = {}
 
     plan_id = (data.get("planId") or "").lower()
+    tool_id = (data.get("toolId") or data.get("tool") or DEFAULT_TOOL).lower()
     email = data.get("email") if isinstance(data.get("email"), str) else None
 
-    amount = PLAN_AMOUNTS.get(plan_id)
+    amount = _get_plan_amount(plan_id, tool_id)
     if not amount or not email:
         return func.HttpResponse(
-            json.dumps({"error": "Invalid or missing planId/email"}),
+            json.dumps({"error": "Invalid or missing planId/toolId/email"}),
             status_code=400,
             mimetype="application/json",
             headers=cors,
@@ -177,7 +227,7 @@ def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
     try:
         client = _get_stripe_client()
         customer_id = _get_or_create_customer(client, email)
-        price_id = _get_or_create_price(client, plan_id, amount)
+        price_id = _get_or_create_price(client, plan_id, amount, tool_id)
         subscription = client.Subscription.create(
             customer=customer_id,
             items=[{"price": price_id}],
@@ -185,7 +235,7 @@ def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
             payment_settings={"save_default_payment_method": "on_subscription"},
             billing_mode={"type": "flexible"},
             expand=["latest_invoice.confirmation_secret", "pending_setup_intent"],
-            metadata={"planId": plan_id, "email": email},
+            metadata={"planId": plan_id, "toolId": tool_id, "email": email},
         )
 
         # Determine which client secret to return based on Stripe's basil pattern.
@@ -224,6 +274,7 @@ def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
             _upsert_subscription_record(
                 db,
                 email=email,
+                tool=tool_id,
                 plan_id=plan_id,
                 stripe_customer_id=customer_id,
                 stripe_subscription_id=subscription.id,
@@ -253,6 +304,7 @@ def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
                 "type": intent_type,
                 "clientSecret": client_secret,
                 "subscriptionId": subscription.id,
+                "toolId": tool_id,
                 "customerId": customer_id,
                 "status": subscription.status,
             }
@@ -268,7 +320,7 @@ def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
 def confirm_subscription(req: func.HttpRequest) -> func.HttpResponse:
     """
     Confirm subscription status after payment on the client.
-    Body: { "subscriptionId": "<stripe_subscription_id>", "email": "<email>", "planId": "<plan>" }
+    Body: { "subscriptionId": "<stripe_subscription_id>", "email": "<email>", "planId": "<plan>", "toolId": "<tool>" }
     """
     cors = build_cors_headers(req, ["POST", "OPTIONS"])
     if req.method == "OPTIONS":
@@ -281,7 +333,8 @@ def confirm_subscription(req: func.HttpRequest) -> func.HttpResponse:
 
     subscription_id = data.get("subscriptionId")
     email = data.get("email")
-    plan_id = data.get("planId")
+    plan_id = (data.get("planId") or "").lower()
+    tool_id = (data.get("toolId") or data.get("tool") or DEFAULT_TOOL).lower()
 
     if not subscription_id or not email or not plan_id:
         return func.HttpResponse(
@@ -303,12 +356,20 @@ def confirm_subscription(req: func.HttpRequest) -> func.HttpResponse:
             headers=cors,
         )
 
+    metadata = getattr(subscription, "metadata", {}) or {}
+    if isinstance(metadata, dict):
+        meta_tool = metadata.get("toolId") or metadata.get("tool")
+        if meta_tool:
+            tool_id = (meta_tool or tool_id).lower()
+        if not plan_id and metadata.get("planId"):
+            plan_id = metadata.get("planId")
+
     status = subscription.status
     customer_id = subscription.customer if isinstance(subscription.customer, str) else getattr(subscription.customer, "id", None)
     latest_invoice = subscription.latest_invoice
     invoice_id = None
     payment_intent_id = None
-    amount = PLAN_AMOUNTS.get(plan_id, 0)
+    amount = _get_plan_amount(plan_id, tool_id) or PLAN_AMOUNTS.get(plan_id, 0)
     price_id = None
     current_period_end_val = getattr(subscription, "current_period_end", None) or 0
 
@@ -353,17 +414,18 @@ def confirm_subscription(req: func.HttpRequest) -> func.HttpResponse:
         _upsert_subscription_record(
             db,
             email=email,
+            tool=tool_id,
             plan_id=plan_id,
             stripe_customer_id=customer_id or "",
             stripe_subscription_id=subscription.id,
-        price_id=price_id or "",
-        status=status,
-        current_period_end=current_period_end_val,
-        invoice_id=invoice_id,
-        payment_intent_id=payment_intent_id,
-        amount=amount,
-        currency="usd",
-    )
+            price_id=price_id or "",
+            status=status,
+            current_period_end=current_period_end_val,
+            invoice_id=invoice_id,
+            payment_intent_id=payment_intent_id,
+            amount=amount,
+            currency="usd",
+        )
     finally:
         db.close()
 
@@ -380,13 +442,14 @@ def confirm_subscription(req: func.HttpRequest) -> func.HttpResponse:
 def get_subscription_status(req: func.HttpRequest) -> func.HttpResponse:
     """
     Check subscription status by email.
-    Query param: ?email=
+    Query params: ?email=...&toolId=... (toolId optional; when omitted, returns all tools)
     """
     cors = build_cors_headers(req, ["GET", "OPTIONS"])
     if req.method == "OPTIONS":
         return func.HttpResponse("", status_code=204, headers=cors)
 
     email = req.params.get("email")
+    tool_param = (req.params.get("tool") or req.params.get("toolId") or "").lower() or None
     if not email:
         return func.HttpResponse(
             json.dumps({"error": "email is required"}),
@@ -396,21 +459,48 @@ def get_subscription_status(req: func.HttpRequest) -> func.HttpResponse:
         )
     try:
         db = SessionLocal()
-        sub = (
+        subs = (
             db.query(Subscription)
             .filter(Subscription.email == email)
             .order_by(Subscription.updated_at.desc())
-            .first()
+            .all()
         )
-        if not sub:
-            body = {"active": False, "reason": "not_found"}
+        subscriptions_payload = []
+        for sub in subs:
+            primary_tool = (
+                sub.tool
+                or getattr(sub.tool_rel, "slug", None)
+                or DEFAULT_TOOL
+            ).lower()
+            tools = _tools_for_plan(sub.plan_id, primary_tool)
+            for tool_value in tools:
+                if tool_param and tool_param != tool_value:
+                    continue
+                subscriptions_payload.append(
+                    {
+                        "tool": tool_value,
+                        "active": (sub.status or "").lower() in {"active", "trialing"},
+                        "status": sub.status,
+                        "planId": sub.plan_id,
+                        "currentPeriodEnd": sub.current_period_end.isoformat() if sub.current_period_end else None,
+                    }
+                )
+        active_any = any(item["active"] for item in subscriptions_payload)
+        primary = subscriptions_payload[0] if subscriptions_payload else None
+        body = {
+            "active": primary["active"] if tool_param else active_any,
+            "tool": tool_param,
+            "subscriptions": subscriptions_payload,
+        }
+        if primary:
+            body["status"] = primary["status"]
+            body["planId"] = primary["planId"]
+            body["currentPeriodEnd"] = primary["currentPeriodEnd"]
         else:
-            body = {
-                "active": sub.status in {"active", "trialing"},
-                "status": sub.status,
-                "planId": sub.plan_id,
-                "currentPeriodEnd": sub.current_period_end.isoformat() if sub.current_period_end else None,
-            }
-        return func.HttpResponse(json.dumps(body), status_code=200, mimetype="application/json", headers=cors)
+            body["reason"] = "not_found"
+
+        return func.HttpResponse(
+            json.dumps(body), status_code=200, mimetype="application/json", headers=cors
+        )
     finally:
         db.close()

@@ -12,6 +12,7 @@ import EmailCaptureScreen from "./screens/EmailCaptureScreen";
 import CompleteScreen from "./screens/CompleteScreen";
 import ResetPasswordScreen from "./screens/ResetPasswordScreen";
 import PaymentScreen from "./screens/PaymentScreen";
+import ManualBusinessInfoScreen from "./screens/ManualBusinessInfoScreen";
 import PaymentSuccessScreen from "./screens/PaymentSuccessScreen";
 import PricingPackages from "./components/PricingPackages";
 import CreateAccountScreen from "./screens/CreateAccountScreen";
@@ -34,9 +35,16 @@ const STAGES = {
   SIGNUP: "signup",
   SIGNUP_SURVEY: "signupSurvey",
   BUSINESS_DETAILS: "businessDetails",
+  BUSINESS_INFO_MANUAL: "businessInfoManual",
   PROJECTS: "projects"
 };
 const ALLOWED_STAGE_VALUES = new Set(Object.values(STAGES));
+const TOOL_IDS = {
+  RECEPTIONIST: "ai_receptionist",
+  EMAIL: "email_manager",
+  SOCIAL: "social_media_manager"
+};
+const DEFAULT_TOOL_ID = TOOL_IDS.RECEPTIONIST;
 
 export default function App() {
   const [stage, setStage] = useState(STAGES.LANDING);
@@ -79,10 +87,19 @@ export default function App() {
     error: ""
   });
   const [recentCalls, setRecentCalls] = useState([]);
+  const [allCalls, setAllCalls] = useState([]);
   const [callsPage, setCallsPage] = useState(1);
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [activeTool, setActiveTool] = useState(DEFAULT_TOOL_ID);
+  const [toolSubscriptions, setToolSubscriptions] = useState({});
+  const [subscriptionsLoading, setSubscriptionsLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState(null);
+  const [selectedTool, setSelectedTool] = useState(DEFAULT_TOOL_ID);
+  const hasActiveSubscription = useMemo(
+    () => Object.values(toolSubscriptions || {}).some((entry) => entry?.active),
+    [toolSubscriptions]
+  );
   const dateRanges = useMemo(
     () => [
       { label: "Last 1 day", days: 1 },
@@ -108,6 +125,7 @@ export default function App() {
   const [signupReferral, setSignupReferral] = useState("");
   const [businessName, setBusinessName] = useState("");
   const [businessPhone, setBusinessPhone] = useState("");
+  const [manualBusinessInfo, setManualBusinessInfo] = useState(null);
   const [signupLoading, setSignupLoading] = useState(false);
   const [signupError, setSignupError] = useState("");
   const [businessLoading, setBusinessLoading] = useState(false);
@@ -408,6 +426,7 @@ export default function App() {
 
       setIsLoggedIn(true);
       setActiveTab("dashboard");
+      setActiveTool(DEFAULT_TOOL_ID);
       if (missingBiz) {
         setStage(STAGES.BUSINESS_DETAILS);
         setStatus("idle");
@@ -629,8 +648,120 @@ export default function App() {
     }
   };
 
+  const handleManualBusinessSubmit = async (payload) => {
+    const emailAddress = signupEmail || email || user?.email || "";
+    const summary = payload?.businessSummary || "";
+    const hours = payload?.hours || "";
+    const services = payload?.services || "";
+    const location = payload?.location || "";
+    const notes = payload?.notes || "";
+    const infoLines = [
+      summary && `Summary: ${summary}`,
+      services && `Services: ${services}`,
+      hours && `Hours: ${hours}`,
+      location && `Location: ${location}`,
+      notes && `Notes: ${notes}`,
+      payload?.businessPhone && `Phone: ${payload.businessPhone}`,
+      payload?.businessEmail && `Email: ${payload.businessEmail}`
+    ].filter(Boolean);
+    const combinedPages = [
+      {
+        url: "manual-entry",
+        content: infoLines.join("\n")
+      }
+    ];
+    const normalized = {
+      businessName: payload?.businessName || businessName || "Your business",
+      businessPhone: payload?.businessPhone || businessPhone || "",
+      businessEmail: payload?.businessEmail || "",
+      businessSummary: summary,
+      hours,
+      services,
+      location,
+      notes,
+      websiteUrl: payload?.websiteUrl || "manual-entry"
+    };
+
+    setManualBusinessInfo(normalized);
+    setBusinessName(normalized.businessName);
+    if (normalized.businessPhone) setBusinessPhone(normalized.businessPhone);
+    const nextCrawlData = {
+      business_name: normalized.businessName,
+      business_phone: normalized.businessPhone,
+      website_url: normalized.websiteUrl,
+      pages: combinedPages,
+      data: normalized
+    };
+    setCrawlData(nextCrawlData);
+    try {
+      await fetch(API_URLS.clientsBusinessDetails, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: emailAddress,
+          businessName: normalized.businessName,
+          businessPhone: normalized.businessPhone,
+          websiteUrl: normalized.websiteUrl,
+          websiteData: normalized
+        })
+      });
+    } catch (persistErr) {
+      console.warn("Failed to save manual business info", persistErr);
+    }
+    let hasActive = hasActiveSubscription;
+    if (emailAddress) {
+      try {
+        const subsRes = await fetch(
+          `${API_URLS.subscriptionsStatus}?email=${encodeURIComponent(emailAddress)}`
+        );
+        if (subsRes.ok) {
+          const subsJson = await subsRes.json().catch(() => ({}));
+          let normalizedSubs = null;
+          if (Array.isArray(subsJson?.subscriptions)) {
+            normalizedSubs = {};
+            subsJson.subscriptions.forEach((entry) => {
+              const toolId = (entry?.tool || entry?.toolId || entry?.tool_id || DEFAULT_TOOL_ID).toLowerCase();
+              const status = entry?.status || "";
+              const active =
+                typeof entry?.active === "boolean"
+                  ? entry.active
+                  : ["active", "trialing"].includes(status.toLowerCase());
+              normalizedSubs[toolId] = {
+                active,
+                status,
+                planId: entry?.planId || entry?.plan_id || null,
+                currentPeriodEnd: entry?.currentPeriodEnd || entry?.current_period_end || null
+              };
+            });
+            setToolSubscriptions(normalizedSubs);
+          }
+          if (typeof subsJson?.active === "boolean") {
+            hasActive = subsJson.active;
+          } else if (normalizedSubs) {
+            hasActive = Object.values(normalizedSubs).some((entry) => entry?.active);
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to check subscription status", err);
+      }
+    }
+    if (hasActive) {
+      await runProvisionFlow({
+        emailOverride: emailAddress,
+        manualInfoOverride: normalized,
+        crawlDataOverride: nextCrawlData
+      });
+      return;
+    }
+    setStage(STAGES.PACKAGES);
+  };
+
   const handleLogout = () => {
     setIsLoggedIn(false);
+    setActiveTool(DEFAULT_TOOL_ID);
+    setToolSubscriptions({});
+    setSubscriptionsLoading(false);
+    setAllCalls([]);
     setStage(STAGES.LANDING);
     setStatus("idle");
     setResponseMessage("");
@@ -650,6 +781,9 @@ export default function App() {
     setCalendarError("");
     setCalendarLoading(false);
     setUltravoxVoices([]);
+    setSelectedPlan(null);
+    setSelectedTool(DEFAULT_TOOL_ID);
+    setManualBusinessInfo(null);
     setAgentSaveStatus({ status: "idle", message: "" });
     setBusinessSaveStatus({ status: "idle", message: "" });
     setCallTranscript({ call: null, transcripts: [], recordings: [], loading: false, error: "" });
@@ -673,6 +807,7 @@ export default function App() {
 
   const handleGoToDashboard = () => {
     setActiveTab("dashboard");
+    setActiveTool(DEFAULT_TOOL_ID);
     setIsLoggedIn(true);
     setUser((current) => {
       if (current) return current;
@@ -685,7 +820,12 @@ export default function App() {
   };
 
   const handleSelectPlan = (planId) => {
+    if (hasActiveSubscription) {
+      setStage(STAGES.DASHBOARD);
+      return;
+    }
     setSelectedPlan(planId);
+    setSelectedTool(activeTool || DEFAULT_TOOL_ID);
     setStage(STAGES.PAYMENT);
   };
 
@@ -708,18 +848,25 @@ export default function App() {
     await runProvisionFlow();
   };
 
-  const runProvisionFlow = async () => {
-    const provisionEmail = signupEmail || email || loginEmail || "";
+  const runProvisionFlow = async ({
+    emailOverride = null,
+    manualInfoOverride = null,
+    crawlDataOverride = null
+  } = {}) => {
+    const provisionEmail = emailOverride || signupEmail || email || loginEmail || "";
+    const manualInfo = manualInfoOverride || manualBusinessInfo;
+    const activeCrawlData = crawlDataOverride || crawlData;
     const provisionWebsite =
       url ||
-      crawlData?.website_url ||
-      crawlData?.url ||
+      activeCrawlData?.website_url ||
+      activeCrawlData?.url ||
       clientData?.website_url ||
-      "";
+      manualInfo?.websiteUrl ||
+      (manualInfo ? "manual-entry" : "");
 
-    if (!provisionEmail || !provisionWebsite) {
+    if (!provisionEmail || (!provisionWebsite && !manualInfo)) {
       setStatus("error");
-      setResponseMessage("Missing required fields: email and website URL.");
+      setResponseMessage("Missing required fields: email and business info.");
       setResponseLink(null);
       setShowLoader(false);
       return;
@@ -733,13 +880,35 @@ export default function App() {
     setStage(STAGES.LOADING);
 
     try {
+      const fallbackBusiness =
+        activeCrawlData?.business_name ||
+        manualInfo?.businessName ||
+        businessName ||
+        "Horizon Property Group";
       const promptPayload = {
-        business_name: crawlData?.business_name || "Horizon Property Group",
+        business_name: fallbackBusiness,
         pages:
-          crawlData?.pages ||
-          crawlData?.data ||
-          crawlData?.raw ||
-          []
+          activeCrawlData?.pages ||
+          activeCrawlData?.data ||
+          activeCrawlData?.raw ||
+          (manualInfo
+            ? [
+                {
+                  url: "manual-entry",
+                  content: [
+                    manualInfo.businessSummary && `Summary: ${manualInfo.businessSummary}`,
+                    manualInfo.services && `Services: ${manualInfo.services}`,
+                    manualInfo.hours && `Hours: ${manualInfo.hours}`,
+                    manualInfo.location && `Location: ${manualInfo.location}`,
+                    manualInfo.notes && `Notes: ${manualInfo.notes}`,
+                    manualInfo.businessPhone && `Phone: ${manualInfo.businessPhone}`,
+                    manualInfo.businessEmail && `Email: ${manualInfo.businessEmail}`
+                  ]
+                    .filter(Boolean)
+                    .join("\n")
+                }
+              ]
+            : [])
       };
 
       const promptRes = await fetch(API_URLS.ultravoxPrompt, {
@@ -769,7 +938,15 @@ export default function App() {
       const provisionPayload = {
         email: provisionEmail,
         website_url: provisionWebsite,
-        system_prompt: derivedPrompt
+        system_prompt: derivedPrompt,
+        business_name: manualInfo?.businessName || fallbackBusiness,
+        business_phone: manualInfo?.businessPhone || businessPhone || "",
+        business_email: manualInfo?.businessEmail || "",
+        business_summary: manualInfo?.businessSummary || "",
+        business_hours: manualInfo?.hours || "",
+        business_services: manualInfo?.services || "",
+        business_location: manualInfo?.location || "",
+        business_notes: manualInfo?.notes || ""
       };
 
       const provisionRes = await fetch(API_URLS.provisionClient, {
@@ -852,11 +1029,15 @@ export default function App() {
       // Clear transient inputs for next run
       setUrl("");
       setCrawlData(null);
+      setManualBusinessInfo(null);
       setBusinessName("");
       setBusinessPhone("");
       setSelectedPlan(null);
+      setSelectedTool(DEFAULT_TOOL_ID);
       // Go straight to dashboard after provisioning completes
       setActiveTab("dashboard");
+      setActiveTool(DEFAULT_TOOL_ID);
+      setToolSubscriptions({});
       setIsLoggedIn(true);
       setStage(STAGES.DASHBOARD);
     } catch (error) {
@@ -903,18 +1084,49 @@ export default function App() {
     [user?.email]
   );
 
+  const normalizeToolSubscriptions = useCallback((payload) => {
+    const source = Array.isArray(payload?.subscriptions)
+      ? payload.subscriptions
+      : Array.isArray(payload)
+        ? payload
+        : [];
+    const map = {};
+    source.forEach((entry) => {
+      const toolId = (entry?.tool || entry?.toolId || entry?.tool_id || DEFAULT_TOOL_ID).toLowerCase();
+      const status = entry?.status || "";
+      const active =
+        typeof entry?.active === "boolean"
+          ? entry.active
+          : ["active", "trialing"].includes(status.toLowerCase());
+      map[toolId] = {
+        active,
+        status,
+        planId: entry?.planId || entry?.plan_id || null,
+        currentPeriodEnd: entry?.currentPeriodEnd || entry?.current_period_end || null
+      };
+    });
+    return map;
+  }, []);
+
   const loadDashboard = useCallback(
     async (emailAddress = null) => {
       const targetEmail = emailAddress || user?.email || email || signupEmail || loginEmail;
-      if (!targetEmail) return;
+      if (!targetEmail) {
+        setSubscriptionsLoading(false);
+        return;
+      }
       setDashboardLoading(true);
+      setSubscriptionsLoading(true);
       try {
-        const [dashRes, clientRes, userRes] = await Promise.all([
+        const [dashRes, clientRes, userRes, subsRes] = await Promise.all([
           fetch(`${API_URLS.dashboard}?email=${encodeURIComponent(targetEmail)}`),
           fetch(`${API_URLS.clientsByEmail}?email=${encodeURIComponent(targetEmail)}`).catch(
             () => null
           ),
           fetch(`${API_URLS.authUserByEmail}?email=${encodeURIComponent(targetEmail)}`).catch(
+            () => null
+          ),
+          fetch(`${API_URLS.subscriptionsStatus}?email=${encodeURIComponent(targetEmail)}`).catch(
             () => null
           )
         ]);
@@ -929,6 +1141,11 @@ export default function App() {
           clientRes && clientRes.ok ? await clientRes.json().catch(() => null) : null;
         const userDetails =
           userRes && userRes.ok ? await userRes.json().catch(() => null) : null;
+        let subscriptionPayload = dashData?.subscriptions;
+        if (!subscriptionPayload && subsRes && subsRes.ok) {
+          const subsJson = await subsRes.json().catch(() => null);
+          subscriptionPayload = subsJson?.subscriptions || subsJson;
+        }
 
         setClientData(dashData?.client || clientDetails?.client || clientDetails || null);
         setUserProfile(userDetails || null);
@@ -937,6 +1154,19 @@ export default function App() {
             ...(prev || {}),
             ...userDetails
           }));
+        }
+
+        if (subscriptionPayload !== undefined) {
+          const normalizedSubs = normalizeToolSubscriptions(subscriptionPayload);
+          setToolSubscriptions(normalizedSubs);
+          const firstActiveTool =
+            Object.entries(normalizedSubs).find(([, entry]) => entry?.active)?.[0] ||
+            null;
+          setActiveTool((prev) => {
+            if (prev && normalizedSubs[prev]?.active) return prev;
+            if (firstActiveTool) return firstActiveTool;
+            return prev || DEFAULT_TOOL_ID;
+          });
         }
 
         setBookingSettings((prev) => ({
@@ -1012,9 +1242,10 @@ export default function App() {
         console.error("Failed to load dashboard", error);
       } finally {
         setDashboardLoading(false);
+        setSubscriptionsLoading(false);
       }
     },
-    [email, loginEmail, signupEmail, user?.email]
+    [email, loginEmail, normalizeToolSubscriptions, signupEmail, user?.email]
   );
 
   const handleAgentSave = useCallback(
@@ -1152,6 +1383,27 @@ export default function App() {
     [bookingSettings.booking_buffer_minutes, bookingSettings.booking_duration_minutes, user?.email]
   );
 
+  const loadAllCalls = useCallback(
+    async (emailAddress = user?.email) => {
+      if (!emailAddress) return;
+      try {
+        const res = await fetch(
+          `${API_URLS.dashboardCalls}?email=${encodeURIComponent(emailAddress)}&limit=500`
+        );
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || "Unable to fetch call logs");
+        }
+        const data = await res.json();
+        setAllCalls(data?.calls || []);
+      } catch (error) {
+        console.error("Failed to load all calls", error);
+        setAllCalls([]);
+      }
+    },
+    [user?.email]
+  );
+
   const loadCallLogs = useCallback(
     async (emailAddress = user?.email, daysOverride = null) => {
       if (!emailAddress) return;
@@ -1174,6 +1426,12 @@ export default function App() {
     },
     [user?.email, getSelectedDays]
   );
+
+  const handleRefreshDashboardAll = useCallback(() => {
+    loadDashboard();
+    loadCallLogs();
+    loadAllCalls();
+  }, [loadAllCalls, loadCallLogs, loadDashboard]);
 
   const loadUltravoxVoices = useCallback(async () => {
     setUltravoxVoicesLoading(true);
@@ -1373,6 +1631,10 @@ export default function App() {
       if (saved.provisionData) setProvisionData(saved.provisionData);
       if (saved.phoneNumbers) setPhoneNumbers(saved.phoneNumbers);
       if (saved.activeTab) setActiveTab(saved.activeTab);
+      if (saved.activeTool) setActiveTool(saved.activeTool);
+      if (saved.toolSubscriptions) setToolSubscriptions(saved.toolSubscriptions);
+      if (saved.selectedTool) setSelectedTool(saved.selectedTool);
+      if (saved.manualBusinessInfo) setManualBusinessInfo(saved.manualBusinessInfo);
       if (saved.serviceSlug) setServiceSlug(saved.serviceSlug);
       if (saved.calendarStatus) setCalendarStatus(saved.calendarStatus);
       if (saved.calendarEvents) setCalendarEvents(saved.calendarEvents);
@@ -1394,6 +1656,7 @@ export default function App() {
     if (hasSession) {
       setStage(STAGES.DASHBOARD);
       setActiveTab("dashboard");
+      setActiveTool(DEFAULT_TOOL_ID);
       return;
     }
 
@@ -1414,12 +1677,14 @@ export default function App() {
       STAGES.PACKAGES,
       STAGES.PAYMENT,
       STAGES.PAYMENT_SUCCESS,
+      STAGES.BUSINESS_INFO_MANUAL,
     ]);
     if (onboardingStages.has(stage)) return;
     if (stage === STAGES.PROJECTS) return;
     if (stage === STAGES.DASHBOARD) return;
     setStage(STAGES.DASHBOARD);
     setActiveTab("dashboard");
+    setActiveTool(DEFAULT_TOOL_ID);
     if (typeof window !== "undefined") {
       const path = window.location.pathname || "";
       if (path !== "/dashboard") {
@@ -1437,9 +1702,10 @@ export default function App() {
     hasLoadedDashboardRef.current = true;
     loadDashboard();
     loadCallLogs();
+    loadAllCalls();
     loadUltravoxVoices();
     loadCalendarEvents();
-  }, [loadCalendarEvents, loadCallLogs, loadDashboard, loadUltravoxVoices, stage]);
+  }, [hasActiveSubscription, loadAllCalls, loadCalendarEvents, loadCallLogs, loadDashboard, loadUltravoxVoices, stage]);
 
   useEffect(() => {
     if (stage !== STAGES.DASHBOARD) return;
@@ -1460,17 +1726,37 @@ export default function App() {
         provisionData,
         phoneNumbers,
         activeTab,
+        activeTool,
+        toolSubscriptions,
         serviceSlug,
         selectedPlan,
+        selectedTool,
+        manualBusinessInfo,
         calendarStatus,
         calendarEvents,
         bookingSettings
       };
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-  } catch (error) {
-    console.error("Failed to persist state", error);
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    } catch (error) {
+      console.error("Failed to persist state", error);
     }
-  }, [stage, isLoggedIn, user, email, provisionData, phoneNumbers, activeTab, serviceSlug, selectedPlan, calendarStatus, calendarEvents, bookingSettings]);
+  }, [
+    stage,
+    isLoggedIn,
+    user,
+    email,
+    provisionData,
+    phoneNumbers,
+    activeTab,
+    activeTool,
+    toolSubscriptions,
+    serviceSlug,
+    selectedPlan,
+    selectedTool,
+    calendarStatus,
+    calendarEvents,
+    bookingSettings
+  ]);
 
   useEffect(() => {
     if (!hasMountedHistoryRef.current) {
@@ -1498,8 +1784,13 @@ export default function App() {
   useEffect(() => {
     if (!validStages.has(stage)) {
       setStage(STAGES.LANDING);
+      return;
     }
-  }, [stage, validStages]);
+    if (hasActiveSubscription && (stage === STAGES.PACKAGES || stage === STAGES.PAYMENT)) {
+      setSelectedPlan(null);
+      setStage(STAGES.DASHBOARD);
+    }
+  }, [hasActiveSubscription, stage, validStages]);
 
   const handleCalendarDisconnect = () => {
     if (!user?.email) {
@@ -1674,9 +1965,21 @@ export default function App() {
         {stage === STAGES.PROJECTS && (
           <ProjectsScreen serviceSlug={serviceSlug} onStartSignup={goToSignup} />
         )}
-        {stage === STAGES.PACKAGES && (
+        {stage === STAGES.PACKAGES && !hasActiveSubscription && (
           <div className="shell-card screen-panel">
             <PricingPackages onSelectPackage={handleSelectPlan} showCrawlSuccess />
+          </div>
+        )}
+
+        {stage === STAGES.BUSINESS_INFO_MANUAL && (
+          <div className="shell-card screen-panel">
+            <ManualBusinessInfoScreen
+              name={businessName || signupName}
+              phone={businessPhone}
+              email={signupEmail || email}
+              onSubmit={handleManualBusinessSubmit}
+              onBack={() => setStage(STAGES.CRAWL_FORM)}
+            />
           </div>
         )}
 
@@ -1764,6 +2067,11 @@ export default function App() {
           <DashboardScreen
             activeTab={activeTab}
             setActiveTab={setActiveTab}
+            activeTool={activeTool}
+            setActiveTool={setActiveTool}
+            toolSubscriptions={toolSubscriptions}
+            subscriptionsLoading={subscriptionsLoading}
+            analyticsCalls={allCalls}
             dateRange={dateRange}
             dateRanges={dateRanges}
             onRangeChange={(range) => {
@@ -1804,7 +2112,7 @@ export default function App() {
             callTranscript={callTranscript}
             onLoadTranscript={loadCallTranscript}
             onRefreshCalls={loadCallLogs}
-            onRefreshDashboard={loadDashboard}
+            onRefreshDashboard={handleRefreshDashboardAll}
             onLogout={handleLogout}
           />
         )}
@@ -1817,8 +2125,8 @@ export default function App() {
               responseMessage={responseMessage}
               onSubmit={handleSubmit}
               onUrlChange={setUrl}
-              onBack={() => setStage(STAGES.LANDING)}
-              onSkipWebsite={() => setStage(STAGES.PACKAGES)}
+              onBack={() => setStage(STAGES.BUSINESS_DETAILS)}
+              onSkipWebsite={() => setStage(STAGES.BUSINESS_INFO_MANUAL)}
             />
           </div>
         )}
@@ -1859,14 +2167,23 @@ export default function App() {
         )}
 
         {stage === STAGES.PAYMENT && (
-          <div className="shell-card screen-panel">
-            <PaymentScreen
-              planId={selectedPlan}
-              onBack={handleGoHome}
-              onSubmit={handlePaymentSubmit}
-              initialEmail={signupEmail || email}
-            />
-          </div>
+          !hasActiveSubscription ? (
+            <div className="shell-card screen-panel">
+              <PaymentScreen
+                planId={selectedPlan}
+                toolId={selectedTool || activeTool || DEFAULT_TOOL_ID}
+                onBack={handleGoHome}
+                onSubmit={handlePaymentSubmit}
+                initialEmail={signupEmail || email}
+              />
+            </div>
+          ) : (
+            <div className="shell-card screen-panel">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-center text-sm text-white">
+                You already have an active subscription. Returning to dashboard...
+              </div>
+            </div>
+          )
         )}
         {stage === STAGES.PAYMENT_SUCCESS && (
           <div className="shell-card screen-panel">

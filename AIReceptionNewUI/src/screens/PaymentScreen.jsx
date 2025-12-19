@@ -54,8 +54,13 @@ const plans = {
     ]
   }
 };
+const TOOL_LABELS = {
+  ai_receptionist: "AI Receptionist",
+  email_manager: "Email Manager",
+  social_media_manager: "Social Media Manager"
+};
 
-export default function PaymentScreen({ planId, onBack, onSubmit, initialEmail = "" }) {
+export default function PaymentScreen({ planId, toolId = "ai_receptionist", onBack, onSubmit, initialEmail = "" }) {
   const [clientSecret, setClientSecret] = useState("");
   const [subscriptionId, setSubscriptionId] = useState("");
   const [customerId, setCustomerId] = useState("");
@@ -70,6 +75,7 @@ export default function PaymentScreen({ planId, onBack, onSubmit, initialEmail =
     if (planId && plans[planId]) return plans[planId];
     return plans.gold;
   }, [planId]);
+  const toolLabel = TOOL_LABELS[toolId] || "AI workspace";
 
   const stripePromise = loadStripe(
     import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY ||
@@ -95,7 +101,7 @@ export default function PaymentScreen({ planId, onBack, onSubmit, initialEmail =
         const res = await fetch(API_URLS.paymentsCreateSubscription, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ planId: planId || "gold", email }),
+          body: JSON.stringify({ planId: planId || "gold", toolId, email }),
           signal: controller.signal
         });
         const data = await res.json();
@@ -119,7 +125,7 @@ export default function PaymentScreen({ planId, onBack, onSubmit, initialEmail =
     };
     createSubscription();
     return () => controller.abort();
-  }, [planId, email]);
+  }, [planId, email, toolId]);
 
   return (
     <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-6 shadow-[0_20px_90px_rgba(15,23,42,0.35)] backdrop-blur md:p-10 screen-panel">
@@ -132,7 +138,7 @@ export default function PaymentScreen({ planId, onBack, onSubmit, initialEmail =
             Checkout
           </p>
           <h2 className="text-3xl font-semibold text-white md:text-4xl">
-            Secure your AI Receptionist
+            Secure your {toolLabel}
           </h2>
           <p className="text-sm text-slate-200/80">
             Review your plan and enter payment details to get started.
@@ -174,7 +180,7 @@ export default function PaymentScreen({ planId, onBack, onSubmit, initialEmail =
           <div className="mt-6 rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-slate-100/80">
             <p className="font-semibold text-white">What happens next?</p>
             <p className="mt-1">
-              We’ll activate your AI receptionist, share onboarding steps, and tailor call flows to your
+              We’ll activate your {toolLabel.toLowerCase()}, share onboarding steps, and tailor call flows to your
               business. You can change or upgrade anytime.
             </p>
           </div>
@@ -196,6 +202,7 @@ export default function PaymentScreen({ planId, onBack, onSubmit, initialEmail =
               setCardName={setCardName}
               onSubmit={onSubmit}
               planId={planId}
+              toolId={toolId}
               processing={processing}
               setProcessing={setProcessing}
         intentError={intentError}
@@ -250,6 +257,7 @@ function PaymentForm({
   setCardName,
   onSubmit,
   planId,
+  toolId,
   processing,
   setProcessing,
   intentError,
@@ -313,7 +321,7 @@ function PaymentForm({
         const res = await fetch(API_URLS.paymentsConfirmSubscription, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ subscriptionId, email, planId, customerId })
+          body: JSON.stringify({ subscriptionId, email, planId, toolId, customerId })
         });
         const confirmData = await res.json().catch(() => ({}));
         receiptUrl = confirmData?.receipt_url || confirmData?.invoice_pdf || null;
@@ -327,6 +335,7 @@ function PaymentForm({
     if (onSubmit) {
       onSubmit({
         planId: planId || "gold",
+        toolId,
         email,
         cardName,
         subscriptionId,
