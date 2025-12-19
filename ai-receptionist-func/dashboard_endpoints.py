@@ -7,10 +7,11 @@ from function_app import app
 from onboarding_endpoints import get_twilio_client
 from datetime import datetime, timedelta, timezone
 from services.ultravox_service import get_ultravox_agent
-from shared.db import Client, PhoneNumber, SessionLocal, User
+from shared.db import Client, PhoneNumber, SessionLocal, Subscription, User
 from utils.cors import build_cors_headers
 from sqlalchemy.exc import OperationalError
 from shared.db import engine
+from stripe_payment_endpoints import _tools_for_plan, DEFAULT_TOOL  # reuse mapping logic
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +115,26 @@ def _build_dashboard_payload(db, email: str) -> dict:
         except Exception as exc:  # pylint: disable=broad-except
             logger.error("Failed to fetch Ultravox agent: %s", exc)
 
+    subscriptions = (
+        db.query(Subscription)
+        .filter(Subscription.email == email)
+        .order_by(Subscription.updated_at.desc())
+        .all()
+    )
+    subscription_payload = []
+    for sub in subscriptions:
+        primary_tool = (sub.tool or getattr(sub.tool_rel, "slug", None) or DEFAULT_TOOL).lower()
+        for tool_value in _tools_for_plan(sub.plan_id, primary_tool):
+            subscription_payload.append(
+                {
+                    "tool": tool_value,
+                    "active": (sub.status or "").lower() in {"active", "trialing"},
+                    "status": sub.status,
+                    "planId": sub.plan_id,
+                    "currentPeriodEnd": sub.current_period_end.isoformat() if sub.current_period_end else None,
+                }
+            )
+
     return {
         "user": {
             "id": user.id if user else None,
@@ -133,6 +154,7 @@ def _build_dashboard_payload(db, email: str) -> dict:
         },
         "phone_numbers": phone_list,
         "ultravox_agent": agent_info,
+        "subscriptions": subscription_payload,
     }
 
 
@@ -159,7 +181,7 @@ def dashboard_call_logs(req: func.HttpRequest) -> func.HttpResponse:
             headers=cors,
         )
     try:
-        limit = min(int(limit_param), 50) if limit_param else 20
+        limit = min(int(limit_param), 500) if limit_param else 20
     except ValueError:
         limit = 20
     try:

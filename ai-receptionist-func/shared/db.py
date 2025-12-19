@@ -37,6 +37,16 @@ SessionLocal = scoped_session(
 Base = declarative_base()
 
 
+class AITool(Base):
+    __tablename__ = "ai_tools"
+
+    id = Column(Integer, primary_key=True, index=True)
+    slug = Column(String, unique=True, nullable=False, index=True)
+    name = Column(String, nullable=True)
+    description = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -95,6 +105,8 @@ class Subscription(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, nullable=False, index=True)
+    tool = Column(String, nullable=True, index=True, default="ai_receptionist")
+    tool_id = Column(Integer, ForeignKey("ai_tools.id"), nullable=True, index=True)
     plan_id = Column(String, nullable=False)
     price_id = Column(String, nullable=True)
     stripe_customer_id = Column(String, nullable=False)
@@ -107,6 +119,7 @@ class Subscription(Base):
 
     payments = relationship("Payment", back_populates="subscription")
     user = relationship("User")
+    tool_rel = relationship("AITool")
 
 
 class Payment(Base):
@@ -158,6 +171,21 @@ def _ensure_optional_columns() -> None:
     """
     inspector = inspect(engine)
     with engine.begin() as conn:
+        if "ai_tools" not in inspector.get_table_names():
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS ai_tools (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        slug VARCHAR NOT NULL UNIQUE,
+                        name VARCHAR,
+                        description TEXT,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+
         client_columns = {col["name"] for col in inspector.get_columns("clients")}
         if "website_data" not in client_columns:
             conn.execute(text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS website_data TEXT"))
@@ -211,6 +239,8 @@ def _ensure_optional_columns() -> None:
                     CREATE TABLE IF NOT EXISTS subscriptions (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         email VARCHAR NOT NULL,
+                        tool VARCHAR DEFAULT 'ai_receptionist',
+                        tool_id INTEGER,
                         plan_id VARCHAR NOT NULL,
                         price_id VARCHAR,
                         user_id INTEGER,
@@ -230,6 +260,18 @@ def _ensure_optional_columns() -> None:
             if "price_id" not in sub_columns:
                 conn.execute(
                     text("ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS price_id VARCHAR")
+                )
+            if "tool" not in sub_columns:
+                conn.execute(
+                    text(
+                        "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS tool VARCHAR DEFAULT 'ai_receptionist'"
+                    )
+                )
+            if "tool_id" not in sub_columns:
+                conn.execute(
+                    text(
+                        "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS tool_id INTEGER REFERENCES ai_tools(id)"
+                    )
                 )
             if "user_id" not in sub_columns:
                 conn.execute(
@@ -251,6 +293,38 @@ def _ensure_optional_columns() -> None:
                         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                         FOREIGN KEY(subscription_id) REFERENCES subscriptions (id)
                     )
+                    """
+                )
+            )
+
+        # Seed default tools and backfill tool_id where missing.
+        default_tools = [
+            ("ai_receptionist", "AI Receptionist"),
+            ("email_manager", "Email Manager"),
+            ("social_media_manager", "Social Media Manager"),
+        ]
+        for slug, name in default_tools:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO ai_tools (slug, name)
+                    VALUES (:slug, :name)
+                    ON CONFLICT (slug) DO NOTHING
+                    """
+                ),
+                {"slug": slug, "name": name},
+            )
+
+        sub_columns = {col["name"] for col in inspector.get_columns("subscriptions")}
+        if "tool_id" in sub_columns:
+            conn.execute(
+                text(
+                    """
+                    UPDATE subscriptions
+                    SET tool_id = (
+                        SELECT id FROM ai_tools WHERE slug = subscriptions.tool LIMIT 1
+                    )
+                    WHERE tool_id IS NULL AND tool IS NOT NULL
                     """
                 )
             )
