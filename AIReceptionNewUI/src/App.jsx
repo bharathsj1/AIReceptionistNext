@@ -114,6 +114,8 @@ export default function App() {
   const [calendarEvents, setCalendarEvents] = useState([]);
   const [calendarLoading, setCalendarLoading] = useState(false);
   const [calendarError, setCalendarError] = useState("");
+  const [calendarAccountEmail, setCalendarAccountEmail] = useState("");
+  const [calendarDiagnostics, setCalendarDiagnostics] = useState(null);
   const googleStateRef = useRef(null);
   const stageRef = useRef(stage);
   const [clientData, setClientData] = useState(null);
@@ -779,6 +781,9 @@ export default function App() {
     setCalendarStatus(null);
     setCalendarEvents([]);
     setCalendarError("");
+    setCalendarAccountEmail("");
+    setCalendarDiagnostics(null);
+    setCalendarAccountEmail("");
     setCalendarLoading(false);
     setUltravoxVoices([]);
     setSelectedPlan(null);
@@ -1066,15 +1071,41 @@ export default function App() {
       setCalendarError("");
       try {
         const res = await fetch(
-          `${API_URLS.calendarEvents}?email=${encodeURIComponent(emailAddress)}`
+          `${API_URLS.calendarEvents}?email=${encodeURIComponent(emailAddress)}&max_results=50`
         );
         if (!res.ok) {
           const text = await res.text();
-          throw new Error(text || "Unable to fetch calendar events");
+          let parsed = null;
+          try {
+            parsed = text ? JSON.parse(text) : null;
+          } catch {
+            parsed = null;
+          }
+          const detail = parsed?.error || parsed?.details || text || "Unable to fetch calendar events";
+          const detailText = String(detail || "");
+          const isDisconnected =
+            res.status === 404 || detailText.includes("No Google account connected");
+          const isAuthExpired =
+            res.status === 401 ||
+            detailText.includes("Invalid Credentials") ||
+            detailText.includes("UNAUTHENTICATED");
+          if (isDisconnected || isAuthExpired) {
+            setCalendarStatus(null);
+            setCalendarEvents([]);
+            setCalendarAccountEmail("");
+            setCalendarDiagnostics(null);
+          }
+          if (isAuthExpired) {
+            setCalendarError("Google Calendar connection expired. Please reconnect.");
+            return;
+          }
+          throw new Error(detail);
         }
         const data = await res.json();
         setCalendarEvents(data?.events || []);
         setCalendarStatus("Google");
+        setCalendarAccountEmail(data?.account_email || data?.accountEmail || "");
+        setCalendarDiagnostics(data?.diagnostics || null);
       } catch (error) {
         setCalendarError(error?.message || "Unable to load events");
       } finally {
@@ -1508,8 +1539,18 @@ export default function App() {
 
       setStage(STAGES.DASHBOARD);
       setCalendarStatus("Google");
+      setCalendarAccountEmail(payload?.google_account_email || payload?.account_email || "");
     },
-    [setCalendarError, setCalendarEvents, setCalendarStatus, setEmail, setResponseMessage, setStatus, setUser]
+    [
+      setCalendarAccountEmail,
+      setCalendarError,
+      setCalendarEvents,
+      setCalendarStatus,
+      setEmail,
+      setResponseMessage,
+      setStatus,
+      setUser
+    ]
   );
 
   const completeGoogleAuth = useCallback(
@@ -1532,6 +1573,7 @@ export default function App() {
         setResponseMessage("Google account connected.");
         setStatus("success");
         if (!isNewUser) {
+          setCalendarEvents([]);
           await loadCalendarEvents(data?.email);
         }
       } catch (error) {
@@ -1542,11 +1584,19 @@ export default function App() {
     [loadCalendarEvents, setLoggedInFromOAuth]
   );
 
-  const beginGoogleLogin = async () => {
+  const beginGoogleLogin = async (options = {}) => {
+    const force = Boolean(options?.force);
     setStatus("loading");
     setResponseMessage("");
     try {
-      const res = await fetch(API_URLS.googleAuthUrl);
+      const targetEmail = isLoggedIn ? user?.email : "";
+      const query = new URLSearchParams();
+      if (targetEmail) query.set("email", targetEmail);
+      if (force) query.set("force", "true");
+      const url = query.toString()
+        ? `${API_URLS.googleAuthUrl}?${query.toString()}`
+        : API_URLS.googleAuthUrl;
+      const res = await fetch(url);
       if (!res.ok) {
         const text = await res.text();
         throw new Error(text || "Unable to start Google sign-in");
@@ -1578,7 +1628,9 @@ export default function App() {
       setLoggedInFromOAuth(payload);
       setStatus("success");
       setResponseMessage("Google account connected.");
+      setCalendarAccountEmail(payload?.google_account_email || payload?.account_email || "");
       if (!isNewUser) {
+        setCalendarEvents([]);
         loadCalendarEvents(payload?.email);
       }
     };
@@ -1638,6 +1690,7 @@ export default function App() {
       if (saved.serviceSlug) setServiceSlug(saved.serviceSlug);
       if (saved.calendarStatus) setCalendarStatus(saved.calendarStatus);
       if (saved.calendarEvents) setCalendarEvents(saved.calendarEvents);
+      if (saved.calendarAccountEmail) setCalendarAccountEmail(saved.calendarAccountEmail);
       if (saved.bookingSettings) setBookingSettings(saved.bookingSettings);
     } catch (error) {
       console.error("Failed to load persisted state", error);
@@ -1734,6 +1787,7 @@ export default function App() {
         manualBusinessInfo,
         calendarStatus,
         calendarEvents,
+        calendarAccountEmail,
         bookingSettings
       };
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
@@ -1755,8 +1809,14 @@ export default function App() {
     selectedTool,
     calendarStatus,
     calendarEvents,
+    calendarAccountEmail,
     bookingSettings
   ]);
+
+  useEffect(() => {
+    if (!calendarAccountEmail || !user?.email) return;
+    loadCalendarEvents(user.email);
+  }, [calendarAccountEmail, loadCalendarEvents, user?.email]);
 
   useEffect(() => {
     if (!hasMountedHistoryRef.current) {
@@ -2095,6 +2155,8 @@ export default function App() {
             beginGoogleLogin={beginGoogleLogin}
             status={status}
             dashboardLoading={dashboardLoading}
+            calendarAccountEmail={calendarAccountEmail}
+            calendarDiagnostics={calendarDiagnostics}
             ultravoxVoices={ultravoxVoices}
             ultravoxVoicesLoading={ultravoxVoicesLoading}
             onAgentSave={handleAgentSave}
