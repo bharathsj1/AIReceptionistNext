@@ -1875,12 +1875,19 @@ export default function App() {
     const content = document.querySelector("[data-lenis-content]");
     if (!scroller || !content) return;
 
+    const userAgent = typeof navigator !== "undefined" ? navigator.userAgent : "";
+    const isSafari = /safari/i.test(userAgent) && !/chrome|crios|android|fxios/i.test(userAgent);
     const isMobile = window.matchMedia("(max-width: 768px)").matches;
-    if (isMobile) {
+    if (isMobile || isSafari) {
+      const prevOverflow = document.body.style.overflow;
       scroller.style.position = "static";
       scroller.style.overflow = "auto";
+      scroller.style.webkitOverflowScrolling = "touch";
+      document.body.style.overflow = "auto";
       content.style.minHeight = "100%";
-      return;
+      return () => {
+        document.body.style.overflow = prevOverflow;
+      };
     }
 
     const lenis = new Lenis({
@@ -1989,18 +1996,50 @@ export default function App() {
     }
   }, [stage]);
 
+  const bgVideoRef = useRef(null);
+  useEffect(() => {
+    const video = bgVideoRef.current;
+    if (!video) return;
+
+    video.muted = true;
+    video.defaultMuted = true;
+    video.playsInline = true;
+    video.setAttribute("playsinline", "");
+    video.setAttribute("webkit-playsinline", "");
+
+    const tryPlay = () => {
+      const playPromise = video.play();
+      if (playPromise && typeof playPromise.catch === "function") {
+        playPromise.catch(() => {});
+      }
+    };
+
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        tryPlay();
+      }
+    };
+
+    tryPlay();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
+
   return (
     <div className={pageClassName} data-lenis-wrapper>
       <div className="page-video-bg" aria-hidden="true">
         <video
+          ref={bgVideoRef}
           className="page-video"
-          src="/media/Logo_noaudio.mp4"
           autoPlay
           loop
           muted
           playsInline
           preload="auto"
-        />
+          poster="/media/logo.png"
+        >
+          <source src="/media/Logo_noaudio.mp4" type="video/mp4" />
+        </video>
         <div className="page-video-overlay" />
       </div>
       <div className={pageContentClassName} data-lenis-content>
