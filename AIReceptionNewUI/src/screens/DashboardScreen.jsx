@@ -38,6 +38,13 @@ const formatDate = (iso) => {
   }
 };
 
+const formatHourLabel = (hour) => {
+  const normalized = Number(hour) || 0;
+  const period = normalized >= 12 ? "PM" : "AM";
+  const base = normalized % 12 || 12;
+  return `${base} ${period}`;
+};
+
 const StatCard = ({ label, value, hint, icon: Icon, tone = "default" }) => {
   const tones = {
     default: "bg-slate-900/60 border-slate-800 text-slate-200",
@@ -159,6 +166,7 @@ export default function DashboardScreen({
   });
   const [selectedCalendarProvider, setSelectedCalendarProvider] = useState("google");
   const [calendarEditMode, setCalendarEditMode] = useState("edit");
+  const [selectedCallDay, setSelectedCallDay] = useState("All days");
 
   const calendarItems = useMemo(
     () =>
@@ -371,6 +379,51 @@ export default function DashboardScreen({
     };
   }, [analyticsCalls, recentCalls]);
 
+  const callDayOptions = useMemo(
+    () => [
+      { label: "All days", value: "All days", dayIndex: null },
+      { label: "Monday", value: "Monday", dayIndex: 1 },
+      { label: "Tuesday", value: "Tuesday", dayIndex: 2 },
+      { label: "Wednesday", value: "Wednesday", dayIndex: 3 },
+      { label: "Thursday", value: "Thursday", dayIndex: 4 },
+      { label: "Friday", value: "Friday", dayIndex: 5 },
+      { label: "Saturday", value: "Saturday", dayIndex: 6 },
+      { label: "Sunday", value: "Sunday", dayIndex: 0 }
+    ],
+    []
+  );
+
+  const callTimeInsights = useMemo(() => {
+    const sourceCalls = (analyticsCalls?.length ? analyticsCalls : recentCalls) || [];
+    const hours = Array.from({ length: 24 }, (_, hour) => ({
+      hour,
+      count: 0
+    }));
+    const selected = callDayOptions.find((option) => option.value === selectedCallDay);
+    const targetDay = selected?.dayIndex ?? null;
+
+    sourceCalls.forEach((call) => {
+      const raw = call?.start_time || call?.date_created || call?.created_at || call?.startTime;
+      if (!raw) return;
+      const dt = new Date(raw);
+      if (Number.isNaN(dt.getTime())) return;
+      if (targetDay !== null && dt.getDay() !== targetDay) return;
+      const hour = dt.getHours();
+      if (hour >= 0 && hour <= 23) {
+        hours[hour].count += 1;
+      }
+    });
+
+    const maxCount = Math.max(...hours.map((entry) => entry.count), 0);
+    const peakHour = hours.reduce((best, entry) => (entry.count > best.count ? entry : best), hours[0]);
+    return {
+      hours,
+      maxCount,
+      totalCalls: hours.reduce((sum, entry) => sum + entry.count, 0),
+      peakLabel: peakHour?.count ? formatHourLabel(peakHour.hour) : "—"
+    };
+  }, [analyticsCalls, callDayOptions, recentCalls, selectedCallDay]);
+
   const primaryVoice = agentDetails.voice;
   const voiceOptions = useMemo(
     () =>
@@ -534,14 +587,62 @@ export default function DashboardScreen({
                   />
                 </section>
 
-                <section className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
+                <section className="mt-4 grid gap-4 lg:grid-cols-[1.35fr_1fr]">
                   <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-2xl backdrop-blur">
-                    <div className="mb-3 flex items-center justify-between">
-                      <div className="text-sm font-semibold text-white">Overview</div>
-                      <span className="text-xs text-slate-400">Latest activity</span>
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold text-white">Overview</div>
+                        <p className="text-xs text-slate-400">
+                          Typical call times based on recent activity.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-slate-400">
+                        <span>Day view</span>
+                        <select
+                          value={selectedCallDay}
+                          onChange={(event) => setSelectedCallDay(event.target.value)}
+                          className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs text-slate-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
+                        >
+                          {callDayOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
-                    <div className="text-sm text-slate-300">
-                      Use the tabs above to manage agents, inspect calls, edit business info, or manage integrations.
+
+                    <div className="rounded-2xl border border-white/10 bg-slate-900/40 p-4 shadow-inner">
+                      <div className="flex items-center justify-between text-xs text-slate-400">
+                        <span>
+                          Peak window:{" "}
+                          <span className="text-slate-200">{callTimeInsights.peakLabel}</span>
+                        </span>
+                        <span>{callTimeInsights.totalCalls} calls tracked</span>
+                      </div>
+                      <div className="mt-4 flex h-28 items-end gap-1">
+                        {callTimeInsights.hours.map((entry) => {
+                          const height = callTimeInsights.maxCount
+                            ? Math.max(12, Math.round((entry.count / callTimeInsights.maxCount) * 100))
+                            : 12;
+                          return (
+                            <div
+                              key={entry.hour}
+                              className="flex-1 rounded-full bg-gradient-to-t from-indigo-500/30 via-indigo-400/60 to-emerald-300/80"
+                              style={{ height: `${height}%`, minWidth: 6 }}
+                              title={`${formatHourLabel(entry.hour)} • ${entry.count} calls`}
+                            />
+                          );
+                        })}
+                      </div>
+                      <div className="mt-3 flex items-center justify-between text-[10px] uppercase tracking-[0.3em] text-slate-500">
+                        <span>12A</span>
+                        <span>4A</span>
+                        <span>8A</span>
+                        <span>12P</span>
+                        <span>4P</span>
+                        <span>8P</span>
+                      </div>
                     </div>
                   </div>
                   <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">

@@ -956,6 +956,21 @@ def auth_google_url(req: func.HttpRequest) -> func.HttpResponse:  # pylint: disa
             mimetype="application/json",
             headers=cors,
         )
+    if email and not force_consent:
+        db = SessionLocal()
+        try:
+            user = db.query(User).filter_by(email=email).one_or_none()
+            if user:
+                token = (
+                    db.query(GoogleToken)
+                    .filter_by(user_id=user.id)
+                    .order_by(GoogleToken.created_at.desc())
+                    .first()
+                )
+                if not token or not token.refresh_token:
+                    force_consent = True
+        finally:
+            db.close()
     state_payload = {"nonce": secrets.token_urlsafe(16)}
     if email:
         state_payload["email"] = email

@@ -1082,11 +1082,22 @@ export default function App() {
             parsed = null;
           }
           const detail = parsed?.error || parsed?.details || text || "Unable to fetch calendar events";
-          if (res.status === 404 || String(detail).includes("No Google account connected")) {
+          const detailText = String(detail || "");
+          const isDisconnected =
+            res.status === 404 || detailText.includes("No Google account connected");
+          const isAuthExpired =
+            res.status === 401 ||
+            detailText.includes("Invalid Credentials") ||
+            detailText.includes("UNAUTHENTICATED");
+          if (isDisconnected || isAuthExpired) {
             setCalendarStatus(null);
             setCalendarEvents([]);
             setCalendarAccountEmail("");
             setCalendarDiagnostics(null);
+          }
+          if (isAuthExpired) {
+            setCalendarError("Google Calendar connection expired. Please reconnect.");
+            return;
           }
           throw new Error(detail);
         }
