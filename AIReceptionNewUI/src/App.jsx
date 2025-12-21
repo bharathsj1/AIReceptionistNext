@@ -3,6 +3,7 @@ import Lenis from "lenis";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import API_URLS from "./config/urls.js";
+import Aurora from "./components/Aurora";
 import LandingScreen from "./screens/LandingScreen";
 import LoginScreen from "./screens/LoginScreen";
 import DashboardScreen from "./screens/DashboardScreen";
@@ -1996,50 +1997,15 @@ export default function App() {
     }
   }, [stage]);
 
-  const bgVideoRef = useRef(null);
-  useEffect(() => {
-    const video = bgVideoRef.current;
-    if (!video) return;
-
-    video.muted = true;
-    video.defaultMuted = true;
-    video.playsInline = true;
-    video.setAttribute("playsinline", "");
-    video.setAttribute("webkit-playsinline", "");
-
-    const tryPlay = () => {
-      const playPromise = video.play();
-      if (playPromise && typeof playPromise.catch === "function") {
-        playPromise.catch(() => {});
-      }
-    };
-
-    const onVisible = () => {
-      if (document.visibilityState === "visible") {
-        tryPlay();
-      }
-    };
-
-    tryPlay();
-    document.addEventListener("visibilitychange", onVisible);
-    return () => document.removeEventListener("visibilitychange", onVisible);
-  }, []);
-
   return (
     <div className={pageClassName} data-lenis-wrapper>
       <div className="page-video-bg" aria-hidden="true">
-        <video
-          ref={bgVideoRef}
-          className="page-video"
-          autoPlay
-          loop
-          muted
-          playsInline
-          preload="auto"
-          poster="/media/logo.png"
-        >
-          <source src="/media/Logo_noaudio.mp4" type="video/mp4" />
-        </video>
+        <Aurora
+          colorStops={["#3A29FF", "#FF94B4", "#FF3232"]}
+          blend={0.5}
+          amplitude={1.0}
+          speed={0.5}
+        />
         <div className="page-video-overlay" />
       </div>
       <div className={pageContentClassName} data-lenis-content>
