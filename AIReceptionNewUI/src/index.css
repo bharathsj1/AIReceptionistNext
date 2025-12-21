@@ -104,7 +104,7 @@ html {
   width: 28px;
   height: 28px;
   object-fit: contain;
-  border-radius: 8px;
+  border-radius: 0;
   background: rgba(255, 255, 255, 0.08);
   padding: 3px;
 }
@@ -298,7 +298,7 @@ html {
 
 .content.content-landing {
   margin-top: 0;
-  max-width: 1320px;
+  max-width: 100%;
 }
 
 .reveal-section {
@@ -344,7 +344,23 @@ html {
 .hero-centered-copy h1 {
   font-size: clamp(42px, 6vw, 62px);
   line-height: 1.05;
-  margin-bottom: 8px;
+  margin-bottom: 24px;
+}
+
+.hero-subtitle {
+  margin: 0 auto;
+  width: 75%;
+  padding-top: 10%;
+  padding-bottom: 10%;
+  font-size: clamp(36px, 5vw, 70px);
+  line-height: 1.05;
+  color: rgba(233, 238, 255, 0.95);
+  letter-spacing: 0.01em;
+  text-align: center;
+}
+
+[class*="rounded"] {
+  border-radius: 0 !important;
 }
 
 .hero-copy h1 {
@@ -413,6 +429,35 @@ html {
   font-size: 18px;
 }
 
+.hero-lead-single {
+  white-space: nowrap;
+  max-width: none;
+}
+
+.shine-text {
+  font-size: clamp(2.5rem, 5vw, 4.5rem);
+  font-weight: 600;
+  background: linear-gradient(
+    120deg,
+    #b3b3b3 20%,
+    #ffffff 40%,
+    #b3b3b3 60%
+  );
+  background-size: 200% auto;
+  color: transparent;
+  background-clip: text;
+  -webkit-background-clip: text;
+  animation: shine 3s linear infinite;
+}
+
+@keyframes shine {
+  from {
+    background-position: 200% center;
+  }
+  to {
+    background-position: -200% center;
+  }
+}
 .hero-highlight {
   font-weight: 800;
   color: #f7fbff;
@@ -436,12 +481,14 @@ html {
 
 .capability-shell {
   display: grid;
-  grid-template-columns: 260px 1fr;
-  gap: 18px;
+  grid-template-columns: minmax(180px, 22%) minmax(0, 1fr);
+  gap: 0;
   margin-top: 40px;
   align-items: flex-start;
   position: relative;
   isolation: isolate;
+  width: 100%;
+  padding: 0 clamp(16px, 5vw, 64px);
 }
 
 .cap-nav {
@@ -449,14 +496,15 @@ html {
   top: 120px;
   display: grid;
   gap: 10px;
-  padding-right: 12px;
+  padding-right: 0;
+  width: min(240px, 100%);
 }
 
 .cap-link {
   display: block;
   padding: 10px 12px;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 12px;
+  border-radius: 0;
   color: #cfd8ff;
   text-decoration: none;
   font-weight: 600;
@@ -476,6 +524,7 @@ html {
   color: #f6f7ff;
   transform: translateX(2px);
   box-shadow: 0 12px 30px rgba(59, 130, 246, 0.25);
+  border-radius: 0;
 }
 
 .cap-link.is-active .cap-index {
@@ -491,6 +540,7 @@ html {
   display: grid;
   gap: 18px;
   position: relative;
+  width: 100%;
 }
 
 .cap-capabilities {
@@ -881,14 +931,14 @@ html {
   gap: 20px;
   background: rgba(0, 0, 0, 0.4);
   border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 16px;
-  padding: 14px 18px;
+  border-radius: 0;
+  padding: 14px clamp(16px, 4vw, 48px);
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
   backdrop-filter: blur(10px);
   position: fixed;
   top: 0;
-  left: 12px;
-  right: 12px;
+  left: 0;
+  right: 0;
   transform: translateY(0);
   width: auto;
   z-index: 14;

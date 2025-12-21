@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import ThreeHero from "../components/ThreeHero";
 import CapabilitiesSection from "../components/CapabilitiesSection";
 // PricingPackages removed from home screen
 
@@ -200,10 +199,10 @@ export default function LandingScreen({ onTry, onLogin, onSelectPlan, onShowServ
             <span className="hero-highlight">AI</span> that feels human.
           </h1>
         </div>
-        <div className="hero-visual hero-blob hero-centered-visual" aria-hidden="true">
-          <ThreeHero />
-        </div>
-        <p className="lead narrow" style={{ margin: "8px 0 0" }}>
+        <p className="hero-subtitle shine-text">
+          The AI agent platform for all your customer service
+        </p>
+        <p className="lead narrow hero-lead-single" style={{ margin: "8px 0 0" }}>
           Smart AI systems built to grow your business while you focus on what matters.
         </p>
         <button className="login-cta hero-centered-cta hero-main-cta" onClick={() => onShowService("receptionist")}>
