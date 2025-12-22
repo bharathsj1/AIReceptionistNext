@@ -108,6 +108,8 @@ export default function App() {
     call: null,
     transcripts: [],
     recordings: [],
+    messages: [],
+    transcript: "",
     loading: false,
     error: ""
   });
@@ -1295,7 +1297,7 @@ export default function App() {
       setCalendarError("");
       try {
         const res = await fetch(
-          `${API_URLS.calendarEvents}?email=${encodeURIComponent(emailAddress)}&max_results=50`
+          `${API_URLS.calendarEvents}?email=${encodeURIComponent(emailAddress)}&max_results=200`
         );
         if (!res.ok) {
           const text = await res.text();
@@ -1667,6 +1669,19 @@ export default function App() {
     async (emailAddress = user?.email, daysOverride = null) => {
       if (!emailAddress) return;
       try {
+        const callsRes = await fetch(
+          `${API_URLS.calls}?email=${encodeURIComponent(emailAddress)}`
+        );
+        if (callsRes.ok) {
+          const callsJson = await callsRes.json().catch(() => ({}));
+          const calls = Array.isArray(callsJson?.calls) ? callsJson.calls : [];
+          if (calls.length) {
+            setRecentCalls(calls);
+            setCallsPage(1);
+            return;
+          }
+        }
+
         const days = typeof daysOverride === "number" ? daysOverride : getSelectedDays();
         const res = await fetch(
           `${API_URLS.dashboardCalls}?email=${encodeURIComponent(emailAddress)}&days=${days}`
@@ -1717,9 +1732,9 @@ export default function App() {
       setCallTranscript((prev) => ({ ...prev, loading: true, error: "" }));
       try {
         const res = await fetch(
-          `${API_URLS.dashboardCallTranscript}?email=${encodeURIComponent(
+          `${API_URLS.calls}/${encodeURIComponent(callSid)}/transcript?email=${encodeURIComponent(
             user.email
-          )}&callSid=${encodeURIComponent(callSid)}`
+          )}`
         );
         if (!res.ok) {
           const text = await res.text();
@@ -1730,6 +1745,8 @@ export default function App() {
           call: data?.call || { sid: callSid },
           transcripts: data?.transcripts || [],
           recordings: data?.recordings || [],
+          messages: data?.messages || [],
+          transcript: data?.transcript || "",
           loading: false,
           error: ""
         });

@@ -10,6 +10,7 @@ from sqlalchemy import (
     String,
     Text,
     LargeBinary,
+    UniqueConstraint,
     create_engine,
     inspect,
     text,
@@ -99,6 +100,40 @@ class PhoneNumber(Base):
 
     client = relationship("Client", back_populates="phone_numbers")
 
+
+class Call(Base):
+    __tablename__ = "calls"
+
+    id = Column(Integer, primary_key=True, index=True)
+    twilio_call_sid = Column(String, unique=True, index=True, nullable=False)
+    ultravox_call_id = Column(String, unique=True, index=True, nullable=True)
+    from_number = Column(String, nullable=True)
+    to_number = Column(String, nullable=True)
+    status = Column(String, nullable=True)
+    started_at = Column(DateTime, nullable=True)
+    ended_at = Column(DateTime, nullable=True)
+    transcript_text = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    messages = relationship("CallMessage", back_populates="call")
+
+
+class CallMessage(Base):
+    __tablename__ = "call_messages"
+    __table_args__ = (UniqueConstraint("call_id", "ordinal", name="uq_call_message_order"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    call_id = Column(Integer, ForeignKey("calls.id"), nullable=False, index=True)
+    speaker_role = Column(String, nullable=True)
+    text = Column(Text, nullable=True)
+    message_ts = Column(DateTime, nullable=True)
+    ordinal = Column(Integer, nullable=True)
+    raw_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    call = relationship("Call", back_populates="messages")
 
 class Subscription(Base):
     __tablename__ = "subscriptions"
@@ -303,6 +338,61 @@ def _ensure_optional_columns() -> None:
                     )
                     """
                 )
+            )
+
+        if "calls" not in existing_tables:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS calls (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        twilio_call_sid VARCHAR NOT NULL UNIQUE,
+                        ultravox_call_id VARCHAR UNIQUE,
+                        from_number VARCHAR,
+                        to_number VARCHAR,
+                        status VARCHAR,
+                        started_at DATETIME,
+                        ended_at DATETIME,
+                        transcript_text TEXT,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_calls_twilio_sid ON calls (twilio_call_sid)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_calls_ultravox_id ON calls (ultravox_call_id)"))
+        else:
+            call_columns = {col["name"] for col in inspector.get_columns("calls")}
+            if "transcript_text" not in call_columns:
+                conn.execute(text("ALTER TABLE calls ADD COLUMN IF NOT EXISTS transcript_text TEXT"))
+
+        if "call_messages" not in existing_tables:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS call_messages (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        call_id INTEGER NOT NULL,
+                        speaker_role VARCHAR,
+                        text TEXT,
+                        message_ts DATETIME,
+                        ordinal INTEGER,
+                        raw_json TEXT,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY(call_id) REFERENCES calls (id)
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_call_message_order ON call_messages (call_id, ordinal)"
+                )
+            )
+            conn.execute(
+                text("CREATE INDEX IF NOT EXISTS idx_call_messages_call_id ON call_messages (call_id)")
             )
 
         # Seed default tools and backfill tool_id where missing.

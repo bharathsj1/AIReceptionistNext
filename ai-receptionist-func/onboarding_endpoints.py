@@ -15,6 +15,7 @@ from function_app import app
 from auth_endpoints import _generate_reset_token  # pylint: disable=protected-access
 from crawler_endpoints import crawl_site
 from services.ultravox_service import create_ultravox_agent, create_ultravox_call, list_ultravox_agents
+from services.call_service import upsert_call, attach_ultravox_call
 from shared.config import get_required_setting, get_setting, get_smtp_settings
 from shared.db import Client, PhoneNumber, SessionLocal, User, init_db
 from utils.cors import build_cors_headers
@@ -417,19 +418,33 @@ def twilio_incoming(req: func.HttpRequest) -> func.HttpResponse:
     logger.info("TwilioIncoming invoked. Headers=%s RawBody=%s", dict(req.headers), raw_body)
 
     params = parse_qs(raw_body)
+    query_params = req.params or {}
 
     def _first_non_empty(keys):
         for key in keys:
             val = params.get(key, [None])[0]
             if val:
                 return val
+            qp = query_params.get(key)
+            if qp:
+                return qp
+            header_val = req.headers.get(key)
+            if header_val:
+                return header_val
         return None
 
     # Twilio can send To/From for PSTN and Called/Caller for client calls; normalize them.
     to_number = _first_non_empty(["To", "Called"])
     from_number = _first_non_empty(["From", "Caller"])
+    call_sid = _first_non_empty(["CallSid", "X-Twilio-CallSid", "X_TWILIO_CALLSID"])
 
-    logger.info("TwilioIncoming normalized params. To=%s From=%s RawParams=%s", to_number, from_number, params)
+    logger.info(
+        "TwilioIncoming normalized params. CallSid=%s To=%s From=%s RawParams=%s",
+        call_sid,
+        to_number,
+        from_number,
+        params,
+    )
 
     if not to_number:
         logger.error("TwilioIncoming: missing 'To' or 'Called' in request body: %s", params)
@@ -455,6 +470,9 @@ def twilio_incoming(req: func.HttpRequest) -> func.HttpResponse:
             )
 
         client_record: Client = db.query(Client).filter_by(id=phone_record.client_id).one()
+        if call_sid:
+            upsert_call(db, call_sid, from_number, to_number, "initiated")
+            db.commit()
         if not client_record.ultravox_agent_id:
             logger.error(
                 "TwilioIncoming: missing Ultravox agent id for client_id=%s To=%s", client_record.id, to_number
@@ -467,7 +485,11 @@ def twilio_incoming(req: func.HttpRequest) -> func.HttpResponse:
             )
 
         try:
-            join_url = create_ultravox_call(client_record.ultravox_agent_id, caller_number=from_number or "")
+            join_url, ultravox_call_id = create_ultravox_call(
+                client_record.ultravox_agent_id,
+                caller_number=from_number or "",
+                metadata={"twilioCallSid": call_sid} if call_sid else None,
+            )
         except Exception as exc:  # pylint: disable=broad-except
             logger.error("Failed to create Ultravox call: %s", exc)
             return func.HttpResponse(
@@ -477,8 +499,15 @@ def twilio_incoming(req: func.HttpRequest) -> func.HttpResponse:
                 headers=cors,
             )
 
+        if call_sid:
+            attach_ultravox_call(db, call_sid, ultravox_call_id)
+            upsert_call(db, call_sid, from_number, to_number, "in_progress")
+            db.commit()
+
         logger.info(
-            "TwilioIncoming success. To=%s From=%s client_id=%s agent_id=%s join_url=%s",
+            "TwilioIncoming success. CallSid=%s UltravoxCallId=%s To=%s From=%s client_id=%s agent_id=%s join_url=%s",
+            call_sid,
+            ultravox_call_id,
             to_number,
             from_number,
             client_record.id,
