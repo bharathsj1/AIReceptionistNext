@@ -20,6 +20,7 @@ import CreateAccountScreen from "./screens/CreateAccountScreen";
 import SignupSurveyScreen from "./screens/SignupSurveyScreen";
 import BusinessDetailsScreen from "./screens/BusinessDetailsScreen";
 import ProjectsScreen from "./screens/ProjectsScreen";
+import BusinessReviewScreen from "./screens/BusinessReviewScreen";
 
 const STAGES = {
   LANDING: "landing",
@@ -37,6 +38,7 @@ const STAGES = {
   SIGNUP_SURVEY: "signupSurvey",
   BUSINESS_DETAILS: "businessDetails",
   BUSINESS_INFO_MANUAL: "businessInfoManual",
+  BUSINESS_INFO_REVIEW: "businessInfoReview",
   PROJECTS: "projects"
 };
 const ALLOWED_STAGE_VALUES = new Set(Object.values(STAGES));
@@ -46,6 +48,14 @@ const TOOL_IDS = {
   SOCIAL: "social_media_manager"
 };
 const DEFAULT_TOOL_ID = TOOL_IDS.RECEPTIONIST;
+const isStrongPassword = (value) => {
+  if (!value) return false;
+  const hasLower = /[a-z]/.test(value);
+  const hasUpper = /[A-Z]/.test(value);
+  const hasNumber = /\d/.test(value);
+  const hasSymbol = /[^A-Za-z0-9]/.test(value);
+  return value.length >= 8 && hasLower && hasUpper && hasNumber && hasSymbol;
+};
 
 export default function App() {
   const [stage, setStage] = useState(STAGES.LANDING);
@@ -276,9 +286,34 @@ export default function App() {
       } catch (persistErr) {
         console.warn("Failed to save website URL", persistErr);
       }
+      let profile = null;
+      try {
+        const profileRes = await fetch(API_URLS.businessProfile, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          mode: "cors",
+          body: JSON.stringify({
+            website_url: websiteUrl,
+            pages: data?.pages || data?.data || data?.raw || []
+          })
+        });
+        const profileJson = await profileRes.json().catch(() => ({}));
+        if (profileRes.ok) {
+          profile = profileJson?.profile || null;
+        } else {
+          console.warn("Business profile extraction failed", profileJson);
+        }
+      } catch (profileErr) {
+        console.warn("Business profile extraction request failed", profileErr);
+      }
+      const defaults = buildReviewDefaults(websiteUrl, data);
+      const reviewInfo = mergeProfileIntoReview(defaults, profile);
+      setManualBusinessInfo(reviewInfo);
+      if (reviewInfo.businessName) setBusinessName(reviewInfo.businessName);
+      if (reviewInfo.businessPhone) setBusinessPhone(reviewInfo.businessPhone);
       setStatus("success");
-      // After a successful crawl, send the user to package selection
-      setStage(STAGES.PACKAGES);
+      // After a successful crawl, confirm business details before packages
+      setStage(STAGES.BUSINESS_INFO_REVIEW);
     } catch (error) {
       setStatus("error");
       setResponseMessage(
@@ -586,8 +621,57 @@ export default function App() {
     setBusinessError("");
   };
 
+  const buildReviewDefaults = (websiteUrl, data) => {
+    let nameGuess =
+      businessName ||
+      data?.business_name ||
+      data?.pages?.[0]?.title ||
+      "";
+    if (!nameGuess && websiteUrl) {
+      try {
+        nameGuess = new URL(websiteUrl).hostname.replace(/^www\./, "");
+      } catch (err) {
+        nameGuess = websiteUrl;
+      }
+    }
+    return {
+      businessName: nameGuess,
+      businessPhone: businessPhone || "",
+      businessEmail: signupEmail || email || "",
+      websiteUrl: websiteUrl || "",
+      businessSummary: "",
+      location: "",
+      hours: "",
+      openings: "",
+      services: "",
+      notes: ""
+    };
+  };
+
+  const mergeProfileIntoReview = (defaults, profile) => {
+    if (!profile) return defaults;
+    return {
+      ...defaults,
+      businessName: profile.business_name || defaults.businessName,
+      businessPhone: profile.contact_phone || defaults.businessPhone,
+      businessEmail: profile.contact_email || defaults.businessEmail,
+      businessSummary: profile.business_summary || defaults.businessSummary,
+      location: profile.business_location || defaults.location,
+      hours: profile.business_hours || defaults.hours,
+      openings: profile.business_openings || defaults.openings,
+      services: profile.business_services || defaults.services,
+      notes: profile.business_notes || defaults.notes
+    };
+  };
+
   const handleCreateAccountSubmit = async ({ name, email, password }) => {
     setSignupError("");
+    if (!isStrongPassword(password)) {
+      setSignupError(
+        "Password must be at least 8 characters and include uppercase, lowercase, a number, and a symbol."
+      );
+      return;
+    }
     setSignupLoading(true);
     try {
       const res = await fetch(API_URLS.authSignup, {
@@ -658,10 +742,12 @@ export default function App() {
     const services = payload?.services || "";
     const location = payload?.location || "";
     const notes = payload?.notes || "";
+    const openings = payload?.openings || "";
     const infoLines = [
       summary && `Summary: ${summary}`,
       services && `Services: ${services}`,
       hours && `Hours: ${hours}`,
+      openings && `Openings: ${openings}`,
       location && `Location: ${location}`,
       notes && `Notes: ${notes}`,
       payload?.businessPhone && `Phone: ${payload.businessPhone}`,
@@ -680,6 +766,7 @@ export default function App() {
       businessSummary: summary,
       hours,
       services,
+      openings,
       location,
       notes,
       websiteUrl: payload?.websiteUrl || "manual-entry"
@@ -753,6 +840,89 @@ export default function App() {
         emailOverride: emailAddress,
         manualInfoOverride: normalized,
         crawlDataOverride: nextCrawlData
+      });
+      return;
+    }
+    setStage(STAGES.PACKAGES);
+  };
+
+  const handleBusinessReviewSubmit = async (payload) => {
+    const emailAddress = signupEmail || email || user?.email || "";
+    const normalized = {
+      businessName: payload?.businessName || businessName || "Your business",
+      businessPhone: payload?.businessPhone || businessPhone || "",
+      businessEmail: payload?.businessEmail || signupEmail || email || "",
+      businessSummary: payload?.businessSummary || "",
+      hours: payload?.hours || "",
+      openings: payload?.openings || "",
+      location: payload?.location || "",
+      services: payload?.services || "",
+      notes: payload?.notes || "",
+      websiteUrl:
+        payload?.websiteUrl || url || crawlData?.website_url || crawlData?.start_url || ""
+    };
+    setManualBusinessInfo(normalized);
+    setBusinessName(normalized.businessName);
+    if (normalized.businessPhone) setBusinessPhone(normalized.businessPhone);
+
+    try {
+      await fetch(API_URLS.clientsBusinessDetails, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: emailAddress,
+          businessName: normalized.businessName,
+          businessPhone: normalized.businessPhone,
+          websiteUrl: normalized.websiteUrl,
+          websiteData: normalized
+        })
+      });
+    } catch (persistErr) {
+      console.warn("Failed to save reviewed business info", persistErr);
+    }
+
+    let hasActive = hasActiveSubscription;
+    if (emailAddress) {
+      try {
+        const subsRes = await fetch(
+          `${API_URLS.subscriptionsStatus}?email=${encodeURIComponent(emailAddress)}`
+        );
+        if (subsRes.ok) {
+          const subsJson = await subsRes.json().catch(() => ({}));
+          let normalizedSubs = null;
+          if (Array.isArray(subsJson?.subscriptions)) {
+            normalizedSubs = {};
+            subsJson.subscriptions.forEach((entry) => {
+              const toolId = (entry?.tool || entry?.toolId || entry?.tool_id || DEFAULT_TOOL_ID).toLowerCase();
+              const status = entry?.status || "";
+              const active =
+                typeof entry?.active === "boolean"
+                  ? entry.active
+                  : ["active", "trialing"].includes(status.toLowerCase());
+              normalizedSubs[toolId] = {
+                active,
+                status,
+                planId: entry?.planId || entry?.plan_id || null,
+                currentPeriodEnd: entry?.currentPeriodEnd || entry?.current_period_end || null
+              };
+            });
+            setToolSubscriptions(normalizedSubs);
+          }
+          if (typeof subsJson?.active === "boolean") {
+            hasActive = subsJson.active;
+          } else if (normalizedSubs) {
+            hasActive = Object.values(normalizedSubs).some((entry) => entry?.active);
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to check subscription status", err);
+      }
+    }
+    if (hasActive) {
+      await runProvisionFlow({
+        emailOverride: emailAddress,
+        manualInfoOverride: normalized,
+        crawlDataOverride: crawlData
       });
       return;
     }
@@ -891,30 +1061,31 @@ export default function App() {
         manualInfo?.businessName ||
         businessName ||
         "Horizon Property Group";
+      const infoLines = manualInfo
+        ? [
+            manualInfo.businessSummary && `Summary: ${manualInfo.businessSummary}`,
+            manualInfo.services && `Services: ${manualInfo.services}`,
+            manualInfo.hours && `Hours: ${manualInfo.hours}`,
+            manualInfo.openings && `Openings: ${manualInfo.openings}`,
+            manualInfo.location && `Location: ${manualInfo.location}`,
+            manualInfo.notes && `Notes: ${manualInfo.notes}`,
+            manualInfo.businessPhone && `Phone: ${manualInfo.businessPhone}`,
+            manualInfo.businessEmail && `Email: ${manualInfo.businessEmail}`
+          ]
+            .filter(Boolean)
+            .join("\n")
+        : "";
+      const manualPages = infoLines
+        ? [
+            {
+              url: "manual-entry",
+              content: infoLines
+            }
+          ]
+        : [];
       const promptPayload = {
         business_name: fallbackBusiness,
-        pages:
-          activeCrawlData?.pages ||
-          activeCrawlData?.data ||
-          activeCrawlData?.raw ||
-          (manualInfo
-            ? [
-                {
-                  url: "manual-entry",
-                  content: [
-                    manualInfo.businessSummary && `Summary: ${manualInfo.businessSummary}`,
-                    manualInfo.services && `Services: ${manualInfo.services}`,
-                    manualInfo.hours && `Hours: ${manualInfo.hours}`,
-                    manualInfo.location && `Location: ${manualInfo.location}`,
-                    manualInfo.notes && `Notes: ${manualInfo.notes}`,
-                    manualInfo.businessPhone && `Phone: ${manualInfo.businessPhone}`,
-                    manualInfo.businessEmail && `Email: ${manualInfo.businessEmail}`
-                  ]
-                    .filter(Boolean)
-                    .join("\n")
-                }
-              ]
-            : [])
+        pages: manualPages
       };
 
       const promptRes = await fetch(API_URLS.ultravoxPrompt, {
@@ -1726,12 +1897,15 @@ export default function App() {
     const onboardingStages = new Set([
       STAGES.BUSINESS_DETAILS,
       STAGES.CRAWL_FORM,
+      STAGES.LOADING,
+      STAGES.EMAIL_CAPTURE,
       STAGES.SIGNUP,
       STAGES.SIGNUP_SURVEY,
       STAGES.PACKAGES,
       STAGES.PAYMENT,
       STAGES.PAYMENT_SUCCESS,
       STAGES.BUSINESS_INFO_MANUAL,
+      STAGES.BUSINESS_INFO_REVIEW,
     ]);
     if (onboardingStages.has(stage)) return;
     if (stage === STAGES.PROJECTS) return;
@@ -2036,6 +2210,16 @@ export default function App() {
           </div>
         )}
 
+        {stage === STAGES.BUSINESS_INFO_REVIEW && (
+          <div className="shell-card screen-panel">
+            <BusinessReviewScreen
+              initialData={manualBusinessInfo || {}}
+              onSubmit={handleBusinessReviewSubmit}
+              onBack={() => setStage(STAGES.CRAWL_FORM)}
+            />
+          </div>
+        )}
+
         {stage === STAGES.BUSINESS_INFO_MANUAL && (
           <div className="shell-card screen-panel">
             <ManualBusinessInfoScreen
@@ -2049,7 +2233,7 @@ export default function App() {
         )}
 
         {stage === STAGES.LOGIN && (
-          <div className="shell-card screen-panel narrow">
+          <div className="shell-card screen-panel narrow login-shell">
             <LoginScreen
               loginEmail={loginEmail}
               loginPassword={loginPassword}

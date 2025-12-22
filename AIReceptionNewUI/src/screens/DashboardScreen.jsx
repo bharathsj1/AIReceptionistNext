@@ -167,6 +167,7 @@ export default function DashboardScreen({
   const [selectedCalendarProvider, setSelectedCalendarProvider] = useState("google");
   const [calendarEditMode, setCalendarEditMode] = useState("edit");
   const [selectedCallDay, setSelectedCallDay] = useState("All days");
+  const [sideNavOpen, setSideNavOpen] = useState(true);
 
   const calendarItems = useMemo(
     () =>
@@ -442,119 +443,143 @@ export default function DashboardScreen({
     selectedCalendarProvider === "google" ? Boolean(integrationStatus) : false;
 
   return (
-    <section className="relative min-h-screen bg-slate-950 px-6 py-6 text-slate-100">
+    <section className="relative min-h-screen bg-slate-950 px-3 sm:px-6 lg:px-10 py-6 text-slate-100">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(99,102,241,0.08),transparent_32%),radial-gradient(circle_at_80%_0%,rgba(16,185,129,0.08),transparent_32%)]" />
       <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-3xl" />
-      <div className="relative mx-auto flex w-full max-w-screen-2xl flex-col gap-5">
-        <header className="flex flex-col gap-3 rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl backdrop-blur">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <ActiveIcon className="h-10 w-10 text-indigo-300" />
-              <div>
-                <p className="text-xs uppercase tracking-[0.28em] text-indigo-200">
-                  Dashboard · {activeToolLabel}
-                </p>
-                <h1 className="text-3xl font-semibold text-white">
-                  {clientData?.business_name || clientData?.name || "Your AI Receptionist"}
-                </h1>
-                <p className="text-sm text-slate-300">
-                  {activeToolCopy}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              {currentTool === "ai_receptionist" && (
-                <div className="rounded-2xl border border-emerald-400/40 bg-emerald-900/40 px-4 py-3 text-sm font-semibold text-emerald-100 shadow">
-                  <p className="text-xs uppercase tracking-[0.2em] text-emerald-200">AI Number</p>
-                  <div className="flex items-center gap-2 text-lg">
-                    <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
-                    {aiNumber || "Pending assignment"}
-                  </div>
-                </div>
+      <div className="relative mx-auto w-full max-w-none">
+        <div className="flex gap-5">
+          <aside
+            className={`sticky top-6 flex h-fit flex-col gap-3 rounded-3xl border border-white/10 bg-white/5 p-4 shadow-2xl backdrop-blur transition-all ${
+              sideNavOpen ? "w-full max-w-[22%] min-w-[220px]" : "w-20"
+            }`}
+          >
+            <div className={`flex items-center ${sideNavOpen ? "justify-between" : "justify-center"} gap-2`}>
+              {sideNavOpen && (
+                <span className="text-[11px] uppercase tracking-[0.2em] text-indigo-200">Main menu</span>
               )}
-              {onLogout && (
-                <button
-                  className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:border-white/40 hover:bg-white/20"
-                  type="button"
-                  onClick={onLogout}
-                >
-                  Logout
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => setSideNavOpen((prev) => !prev)}
+                className={`rounded-full border border-white/10 bg-white/5 px-2 py-1 text-xs text-slate-200 transition hover:border-white/30 ${
+                  sideNavOpen ? "" : "mx-auto"
+                }`}
+                aria-label={sideNavOpen ? "Collapse menu" : "Expand menu"}
+              >
+                {sideNavOpen ? "⟨" : "⟩"}
+              </button>
             </div>
-          </div>
-          <div className="grid gap-3 md:grid-cols-3">
-            {toolTabs.map((tool) => {
-              const Icon = tool.icon;
-              const locked = isToolLocked(tool.id);
-              const statusLabel =
-                subscriptionsLoading && !toolSubscriptions?.[tool.id]
-                  ? "Checking..."
-                  : locked
-                    ? "Locked"
-                    : "Active";
-              return (
-                <button
-                  key={tool.id}
-                  onClick={() => {
-                    setActiveTool?.(tool.id);
-                    if (tool.id === "ai_receptionist") setActiveTab?.("dashboard");
-                  }}
-                  className={`group flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left transition ${
-                    currentTool === tool.id
-                      ? "border-indigo-400/70 bg-indigo-500/10 shadow-lg shadow-indigo-900/40"
-                      : "border-white/10 bg-white/5 hover:border-white/25 hover:bg-white/10"
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <Icon className="h-5 w-5 text-indigo-200" />
-                    <div>
-                      <p className="text-[11px] uppercase tracking-[0.18em] text-indigo-200">
-                        {tool.eyebrow}
-                      </p>
-                      <p className="text-base font-semibold text-white">{tool.label}</p>
-                    </div>
-                  </div>
-                  <span
-                    className={`rounded-full border px-3 py-1 text-xs font-semibold ${
-                      locked
-                        ? "border-white/15 bg-white/5 text-slate-200"
-                        : "border-emerald-200/60 bg-emerald-500/20 text-emerald-50"
+            <div className="mt-2 grid gap-2">
+              {toolTabs.map((tool) => {
+                const Icon = tool.icon;
+                const locked = isToolLocked(tool.id);
+                return (
+                  <button
+                    key={tool.id}
+                    onClick={() => {
+                      setActiveTool?.(tool.id);
+                      if (tool.id === "ai_receptionist") setActiveTab?.("dashboard");
+                    }}
+                    className={`flex items-center ${
+                      sideNavOpen ? "justify-start gap-3 px-3" : "justify-center"
+                    } rounded-2xl border py-2 text-left transition ${
+                      currentTool === tool.id
+                        ? "border-indigo-400/70 bg-indigo-500/10 text-white"
+                        : "border-white/10 bg-white/5 text-slate-200 hover:border-white/25 hover:bg-white/10"
                     }`}
                   >
-                    {statusLabel}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-          {currentTool === "ai_receptionist" && (
-            <div className="flex flex-wrap items-center gap-2">
-              {["dashboard", "agents", "calls", "business", "integrations"].map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab?.(tab)}
-                  className={`rounded-full border px-3 py-1 text-sm capitalize transition ${
-                    activeTab === tab
-                      ? "border-indigo-400 bg-indigo-500/20 text-indigo-100"
-                      : "border-white/10 bg-white/5 text-slate-200 hover:border-white/30"
-                  }`}
-                >
-                  {tab}
-                </button>
-              ))}
-              <span className="ml-auto text-xs text-slate-400">
-                {subscriptionsLoading
-                  ? "Checking access..."
-                  : dashboardLoading
-                    ? "Syncing data..."
-                    : activeToolLocked
-                      ? "Locked"
-                      : "Live"}
-              </span>
+                    <Icon className="h-5 w-5 text-indigo-200" />
+                    {sideNavOpen && (
+                      <div className="flex-1">
+                        <p className="text-[11px] uppercase tracking-[0.18em] text-indigo-200">{tool.eyebrow}</p>
+                        <p className="text-sm font-semibold text-white">{tool.label}</p>
+                      </div>
+                    )}
+                    {sideNavOpen && (
+                      <span
+                        className={`ml-auto rounded-full border px-2 py-1 text-[10px] font-semibold ${
+                          locked
+                            ? "border-white/15 bg-white/5 text-slate-200"
+                            : "border-emerald-200/60 bg-emerald-500/20 text-emerald-50"
+                        }`}
+                      >
+                        {subscriptionsLoading && !toolSubscriptions?.[tool.id]
+                          ? "Checking..."
+                          : locked
+                            ? "Locked"
+                            : "Active"}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
-          )}
-        </header>
+          </aside>
+
+          <div className="flex flex-1 flex-col gap-5">
+            <header className="flex flex-col gap-3 rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl backdrop-blur">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <ActiveIcon className="h-10 w-10 text-indigo-300" />
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.28em] text-indigo-200">
+                      Dashboard · {activeToolLabel}
+                    </p>
+                    <h1 className="text-3xl font-semibold text-white">
+                      {clientData?.business_name || clientData?.name || "Your AI Receptionist"}
+                    </h1>
+                    <p className="text-sm text-slate-300">
+                      {activeToolCopy}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  {currentTool === "ai_receptionist" && (
+                    <div className="rounded-2xl border border-emerald-400/40 bg-emerald-900/40 px-4 py-3 text-sm font-semibold text-emerald-100 shadow">
+                      <p className="text-xs uppercase tracking-[0.2em] text-emerald-200">AI Number</p>
+                      <div className="flex items-center gap-2 text-lg">
+                        <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
+                        {aiNumber || "Pending assignment"}
+                      </div>
+                    </div>
+                  )}
+                  {onLogout && (
+                    <button
+                      className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:border-white/40 hover:bg-white/20"
+                      type="button"
+                      onClick={onLogout}
+                    >
+                      Logout
+                    </button>
+                  )}
+                </div>
+              </div>
+              {currentTool === "ai_receptionist" && (
+                <div className="flex flex-wrap items-center gap-2">
+                  {["dashboard", "agents", "calls", "business", "integrations"].map((tab) => (
+                    <button
+                      key={tab}
+                      onClick={() => setActiveTab?.(tab)}
+                      className={`rounded-full border px-3 py-1 text-sm capitalize transition ${
+                        activeTab === tab
+                          ? "border-indigo-400 bg-indigo-500/20 text-indigo-100"
+                          : "border-white/10 bg-white/5 text-slate-200 hover:border-white/30"
+                      }`}
+                    >
+                      {tab}
+                    </button>
+                  ))}
+                  <span className="ml-auto text-xs text-slate-400">
+                    {subscriptionsLoading
+                      ? "Checking access..."
+                      : dashboardLoading
+                        ? "Syncing data..."
+                        : activeToolLocked
+                          ? "Locked"
+                          : "Live"}
+                  </span>
+                </div>
+              )}
+            </header>
 
         {currentTool === "ai_receptionist" && (
           <ToolGate
@@ -1342,6 +1367,8 @@ export default function DashboardScreen({
             </section>
           </ToolGate>
         )}
+          </div>
+        </div>
       </div>
       {(editingEvent || calendarEditMode === "create") && (
         <div className="calendar-modal">

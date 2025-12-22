@@ -197,6 +197,111 @@ def _generate_prompt(website_text: str, business_name: Optional[str]) -> str:
     return content
 
 
+def _build_business_profile_payload(website_text: str, website_url: Optional[str]) -> Dict[str, Any]:
+    site_snippet = website_text.strip()[:9000]
+    user_content = f"""
+Website URL: {website_url or "unknown"}
+
+Website content:
+{site_snippet}
+
+Extract a concise business profile in JSON with these keys:
+- business_name
+- business_summary (max 2000 chars)
+- business_location (max 1000 chars)
+- business_hours (max 1000 chars)
+- business_services (max 1000 chars)
+- business_notes (max 1000 chars)
+- business_openings (max 1000 chars)  # openings/availability if mentioned
+- contact_email
+- contact_phone
+
+Rules:
+- Use empty string "" when the detail is not clearly found.
+- Do not invent facts.
+- If multiple relevant details exist, include them with clear separation (sentences or semicolons).
+- Aim for fuller detail up to the limits while staying factual.
+"""
+    return {
+        "model": get_setting("OPENAI_MODEL", "gpt-4.1-mini"),
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You extract structured business information from website text. "
+                    "Return only valid JSON with the specified keys."
+                ),
+            },
+            {"role": "user", "content": user_content},
+        ],
+        "temperature": 0.2,
+        "max_tokens": 1200,
+        "response_format": {"type": "json_object"},
+    }
+
+
+def _generate_business_profile(website_text: str, website_url: Optional[str]) -> Dict[str, str]:
+    api_key = get_required_setting("OPENAI_API_KEY")
+    base_url = get_setting("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    payload = _build_business_profile_payload(website_text, website_url)
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    url = f"{base_url.rstrip('/')}/chat/completions"
+
+    timeout = httpx.Timeout(
+        connect=10.0,
+        read=80.0,
+        write=10.0,
+        pool=None,
+    )
+
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            resp = client.post(url, headers=headers, json=payload)
+    except httpx.ReadTimeout as exc:
+        logger.error("OpenAI request timed out while reading response: %s", exc)
+        raise RuntimeError("OpenAI API read timeout") from exc
+    except httpx.RequestError as exc:
+        logger.error("OpenAI request failed: %s", exc)
+        raise RuntimeError(f"OpenAI request failed: {exc}") from exc
+
+    if resp.status_code >= 300:
+        logger.error("OpenAI profile extraction failed: %s - %s", resp.status_code, resp.text)
+        raise RuntimeError(f"OpenAI API error {resp.status_code}: {resp.text}")
+
+    data = resp.json()
+    content = (
+        data.get("choices", [{}])[0]
+        .get("message", {})
+        .get("content", "")
+        .strip()
+    )
+    if not content:
+        logger.error("OpenAI returned empty profile content. Full response: %s", json.dumps(data))
+        raise RuntimeError("OpenAI returned empty profile")
+
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError as exc:
+        logger.error("Failed to parse OpenAI JSON: %s", content)
+        raise RuntimeError("OpenAI returned invalid JSON") from exc
+
+    return {
+        "business_name": str(parsed.get("business_name", "") or ""),
+        "business_summary": str(parsed.get("business_summary", "") or ""),
+        "business_location": str(parsed.get("business_location", "") or ""),
+        "business_hours": str(parsed.get("business_hours", "") or ""),
+        "business_services": str(parsed.get("business_services", "") or ""),
+        "business_notes": str(parsed.get("business_notes", "") or ""),
+        "business_openings": str(parsed.get("business_openings", "") or ""),
+        "contact_email": str(parsed.get("contact_email", "") or ""),
+        "contact_phone": str(parsed.get("contact_phone", "") or ""),
+    }
+
+
 @app.function_name(name="UltravoxPrompt")
 @app.route(route="ultravox/prompt", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def create_ultravox_prompt(req: func.HttpRequest) -> func.HttpResponse:
@@ -246,6 +351,56 @@ def create_ultravox_prompt(req: func.HttpRequest) -> func.HttpResponse:
 
     return func.HttpResponse(
         json.dumps({"prompt": prompt}),
+        status_code=200,
+        mimetype="application/json",
+        headers=cors,
+    )
+
+
+@app.function_name(name="BusinessProfile")
+@app.route(route="business-profile", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def create_business_profile(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Generate a structured business profile from website text using OpenAI.
+    Body:
+    {
+      "website_text": "...",           # optional if pages provided
+      "website_url": "https://...",
+      "pages": [ { "url": "...", "title": "...", "content": "..." } ]  # optional
+    }
+    """
+    cors = build_cors_headers(req, ["POST", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
+    try:
+        body = req.get_json()
+    except ValueError:
+        body = None
+    body = body or {}
+
+    website_text = _extract_site_text(body)
+    if not website_text:
+        return func.HttpResponse(
+            json.dumps({"error": "Missing website text or pages"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    website_url = body.get("website_url") or body.get("url")
+    try:
+        profile = _generate_business_profile(website_text, website_url)
+    except RuntimeError as exc:
+        return func.HttpResponse(
+            json.dumps({"error": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    return func.HttpResponse(
+        json.dumps({"profile": profile}),
         status_code=200,
         mimetype="application/json",
         headers=cors,

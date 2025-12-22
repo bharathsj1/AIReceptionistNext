@@ -10,8 +10,23 @@ export default function CreateAccountScreen({
   loading = false,
   error = ""
 }) {
+  const passwordValid = (() => {
+    if (!password) return false;
+    const hasLower = /[a-z]/.test(password);
+    const hasUpper = /[A-Z]/.test(password);
+    const hasNumber = /\d/.test(password);
+    const hasSymbol = /[^A-Za-z0-9]/.test(password);
+    return password.length >= 8 && hasLower && hasUpper && hasNumber && hasSymbol;
+  })();
+  const emailValid = (() => {
+    if (!email) return false;
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  })();
+  const showPasswordStatus = password.length > 0;
+  const showEmailStatus = email.length > 0;
   const handleSubmit = (event) => {
     event.preventDefault();
+    if (!passwordValid) return;
     onSubmit({ name, email, password });
   };
 
@@ -41,6 +56,7 @@ export default function CreateAccountScreen({
                   placeholder="e.g. alex@example.com"
                   value={email}
                   onChange={(e) => onEmailChange(e.target.value)}
+                  className={showEmailStatus && !emailValid ? "is-invalid" : ""}
                   required
                 />
               </label>
@@ -54,18 +70,23 @@ export default function CreateAccountScreen({
                   required
                 />
               </label>
+              <p
+                className={`password-hint ${showPasswordStatus ? (passwordValid ? "is-valid" : "is-invalid") : ""}`.trim()}
+              >
+                Use 8+ chars with uppercase, lowercase, number, and symbol.
+              </p>
               <p className="tiny">
                 By signing up you agree to our <a href="#">Terms</a> and{" "}
                 <a href="#">Privacy Policy</a>.
               </p>
-              <button className="primary full" type="submit">
+              <button className="primary full" type="submit" disabled={loading || !passwordValid}>
                 {loading ? "Creating..." : "Create Account"}
               </button>
             </form>
             {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
-            <div className="hint-row">
-              <span className="text-slate-900">Already have an account? </span>
-              <button type="button" className="text-link text-slate-900" onClick={onBackToLogin}>
+          <div className="hint-row">
+              <span className="login-hint-text">Already have an account? </span>
+              <button type="button" className="text-link login-hint-text" onClick={onBackToLogin}>
                 Log in
               </button>
             </div>
