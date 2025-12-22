@@ -190,7 +190,7 @@ def crawl_kb_api(req: func.HttpRequest) -> func.HttpResponse:
     Body (JSON):
     {
       "url": "https://example.com",
-      "max_pages": 50,               # optional
+      "max_pages": 5,               # optional
       "client_email": "user@example.com" # optional; ignored in DB-less mode
     }
 
