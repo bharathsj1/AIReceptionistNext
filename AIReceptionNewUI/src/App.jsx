@@ -48,6 +48,20 @@ const TOOL_IDS = {
   SOCIAL: "social_media_manager"
 };
 const DEFAULT_TOOL_ID = TOOL_IDS.RECEPTIONIST;
+const TOOL_ID_ALIASES = {
+  "ai receptionist": "ai_receptionist",
+  "ai-receptionist": "ai_receptionist",
+  "email manager": "email_manager",
+  "email-manager": "email_manager",
+  "social media manager": "social_media_manager",
+  "social-media-manager": "social_media_manager"
+};
+const normalizeToolId = (value) => {
+  const base = (value || DEFAULT_TOOL_ID).toString().toLowerCase().trim();
+  if (!base) return DEFAULT_TOOL_ID;
+  if (TOOL_ID_ALIASES[base]) return TOOL_ID_ALIASES[base];
+  return base.replace(/[\s-]+/g, "_");
+};
 const isStrongPassword = (value) => {
   if (!value) return false;
   const hasLower = /[a-z]/.test(value);
@@ -293,6 +307,7 @@ export default function App() {
           headers: { "Content-Type": "application/json" },
           mode: "cors",
           body: JSON.stringify({
+            email: signupEmail || email || loginEmail || user?.email || "",
             website_url: websiteUrl,
             pages: data?.pages || data?.data || data?.raw || []
           })
@@ -1030,7 +1045,7 @@ export default function App() {
     crawlDataOverride = null
   } = {}) => {
     const provisionEmail = emailOverride || signupEmail || email || loginEmail || "";
-    const manualInfo = manualInfoOverride || manualBusinessInfo;
+    let manualInfo = manualInfoOverride || manualBusinessInfo;
     const activeCrawlData = crawlDataOverride || crawlData;
     const provisionWebsite =
       url ||
@@ -1056,6 +1071,43 @@ export default function App() {
     setStage(STAGES.LOADING);
 
     try {
+      if (
+        (!manualInfo || !manualInfo.businessSummary) &&
+        (Array.isArray(activeCrawlData?.pages) || Array.isArray(activeCrawlData?.data))
+      ) {
+        try {
+          const profileRes = await fetch(API_URLS.businessProfile, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            mode: "cors",
+            body: JSON.stringify({
+              email: provisionEmail,
+              website_url: provisionWebsite,
+              pages: activeCrawlData?.pages || activeCrawlData?.data || []
+            })
+          });
+          const profileJson = await profileRes.json().catch(() => ({}));
+          if (profileRes.ok && profileJson?.profile) {
+            const profile = profileJson.profile;
+            manualInfo = {
+              businessName: profile.business_name || manualInfo?.businessName || businessName || "",
+              businessPhone: profile.contact_phone || manualInfo?.businessPhone || businessPhone || "",
+              businessEmail: profile.contact_email || manualInfo?.businessEmail || "",
+              businessSummary: profile.business_summary || manualInfo?.businessSummary || "",
+              hours: profile.business_hours || manualInfo?.hours || "",
+              openings: profile.business_openings || manualInfo?.openings || "",
+              location: profile.business_location || manualInfo?.location || "",
+              services: profile.business_services || manualInfo?.services || "",
+              notes: profile.business_notes || manualInfo?.notes || "",
+              websiteUrl: provisionWebsite || manualInfo?.websiteUrl || ""
+            };
+            setManualBusinessInfo(manualInfo);
+          }
+        } catch (profileErr) {
+          console.warn("Business profile extraction before provision failed", profileErr);
+        }
+      }
+
       const fallbackBusiness =
         activeCrawlData?.business_name ||
         manualInfo?.businessName ||
@@ -1295,12 +1347,16 @@ export default function App() {
         : [];
     const map = {};
     source.forEach((entry) => {
-      const toolId = (entry?.tool || entry?.toolId || entry?.tool_id || DEFAULT_TOOL_ID).toLowerCase();
+      const toolId = normalizeToolId(entry?.tool || entry?.toolId || entry?.tool_id || DEFAULT_TOOL_ID);
       const status = entry?.status || "";
       const active =
         typeof entry?.active === "boolean"
           ? entry.active
           : ["active", "trialing"].includes(status.toLowerCase());
+      const existing = map[toolId];
+      if (existing?.active) {
+        return;
+      }
       map[toolId] = {
         active,
         status,
@@ -1856,7 +1912,13 @@ export default function App() {
       if (saved.phoneNumbers) setPhoneNumbers(saved.phoneNumbers);
       if (saved.activeTab) setActiveTab(saved.activeTab);
       if (saved.activeTool) setActiveTool(saved.activeTool);
-      if (saved.toolSubscriptions) setToolSubscriptions(saved.toolSubscriptions);
+      if (saved.toolSubscriptions) {
+        const normalized = {};
+        Object.entries(saved.toolSubscriptions).forEach(([key, value]) => {
+          normalized[normalizeToolId(key)] = value;
+        });
+        setToolSubscriptions(normalized);
+      }
       if (saved.selectedTool) setSelectedTool(saved.selectedTool);
       if (saved.manualBusinessInfo) setManualBusinessInfo(saved.manualBusinessInfo);
       if (saved.serviceSlug) setServiceSlug(saved.serviceSlug);
