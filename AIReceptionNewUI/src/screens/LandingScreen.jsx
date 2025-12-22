@@ -17,6 +17,7 @@ export default function LandingScreen({ onTry, onLogin, onSelectPlan, onShowServ
   );
   const [activeNavId, setActiveNavId] = useState(navItems[0]?.id || "");
   const activeNavIdRef = useRef(activeNavId);
+  const [capNavOpen, setCapNavOpen] = useState(false);
   const [testimonialIndex, setTestimonialIndex] = useState(0);
   const testimonials = useMemo(
     () => [
@@ -212,18 +213,33 @@ export default function LandingScreen({ onTry, onLogin, onSelectPlan, onShowServ
       </section>
 
       <section className="content content-landing reveal-section capability-shell">
-        <div className="cap-nav">
-          {navItems.map((item, idx) => (
-            <a
-              key={item.id}
-              className={`cap-link ${activeNavId === item.id ? "is-active" : ""}`.trim()}
-              href={`#${item.id}`}
-              onClick={() => setActiveNavId(item.id)}
-              aria-current={activeNavId === item.id ? "true" : undefined}
-            >
-              <span className="cap-index">{String(idx + 1).padStart(2, "0")}</span> {item.label}
-            </a>
-          ))}
+        <div className="cap-nav-shell">
+          <button
+            className="cap-nav-toggle"
+            type="button"
+            aria-expanded={capNavOpen}
+            aria-controls="cap-nav-menu"
+            onClick={() => setCapNavOpen((prev) => !prev)}
+          >
+            <span>Sections</span>
+            <span className="cap-nav-toggle-icon" aria-hidden>☰</span>
+          </button>
+          <div className={`cap-nav ${capNavOpen ? "is-open" : ""}`.trim()} id="cap-nav-menu">
+            {navItems.map((item, idx) => (
+              <a
+                key={item.id}
+                className={`cap-link ${activeNavId === item.id ? "is-active" : ""}`.trim()}
+                href={`#${item.id}`}
+                onClick={() => {
+                  setActiveNavId(item.id);
+                  setCapNavOpen(false);
+                }}
+                aria-current={activeNavId === item.id ? "true" : undefined}
+              >
+                <span className="cap-index">{String(idx + 1).padStart(2, "0")}</span> {item.label}
+              </a>
+            ))}
+          </div>
         </div>
 
         <div className="cap-content">

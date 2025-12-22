@@ -7,6 +7,7 @@ export const apiUrl = (path) =>
 
 export const API_URLS = {
   crawlKnowledgeBase: apiUrl("crawl-kb"),
+  businessProfile: apiUrl("business-profile"),
   ultravoxPrompt: apiUrl("ultravox/prompt"),
   provisionClient: apiUrl("clients/provision"),
   authSignup: apiUrl("auth/signup"),

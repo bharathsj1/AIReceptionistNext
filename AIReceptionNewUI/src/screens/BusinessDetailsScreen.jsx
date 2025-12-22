@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
 export default function BusinessDetailsScreen({
   userName,
   name,
@@ -12,14 +14,40 @@ export default function BusinessDetailsScreen({
   error = ""
 }) {
   const welcomeName = userName || "there";
+  const [country, setCountry] = useState("UK");
+  const [localPhone, setLocalPhone] = useState("");
+  const countryOptions = [
+    { value: "UK", label: "🇬🇧", dialCode: "+44" },
+    { value: "CA", label: "🇨🇦", dialCode: "+1" }
+  ];
+  const selectedCountry = countryOptions.find((option) => option.value === country) || countryOptions[0];
+
+  useEffect(() => {
+    const normalized = (phone || "").trim();
+    if (!normalized) {
+      setLocalPhone("");
+      return;
+    }
+    if (normalized.startsWith("+44")) {
+      setCountry("UK");
+      setLocalPhone(normalized.replace(/^\+44\s*/, ""));
+      return;
+    }
+    if (normalized.startsWith("+1")) {
+      setCountry("CA");
+      setLocalPhone(normalized.replace(/^\+1\s*/, ""));
+      return;
+    }
+    setLocalPhone(normalized);
+  }, [phone]);
   return (
     <section className="business-layout screen-panel">
       <div className="business-left">
         <div className="brand-row">
           <div className="brand-dot" />
-          <span className="brand-name" style={{ color: "#0b1224" }}>SmartConnect4u</span>
+          <span className="brand-name">SmartConnect4u</span>
           <div className="stepper">
-            <span style={{ color: "#0b1224" }}>Step 1/4</span>
+            <span>Step 1/4</span>
             <div className="progress">
               <div className="progress-bar" />
             </div>
@@ -46,11 +74,32 @@ export default function BusinessDetailsScreen({
         <div className="business-field">
           <label>What's your phone number?</label>
           <div className="phone-input">
-            <span className="flag">🇬🇧</span>
+            <select
+              className="country-select"
+              value={country}
+              onChange={(event) => {
+                const next = event.target.value;
+                const nextCountry =
+                  countryOptions.find((option) => option.value === next) || countryOptions[0];
+                setCountry(nextCountry.value);
+                onPhoneChange(`${nextCountry.dialCode}${localPhone}`);
+              }}
+              aria-label="Country code"
+            >
+              {countryOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label} {option.dialCode}
+                </option>
+              ))}
+            </select>
             <input
               type="tel"
-              value={phone}
-              onChange={(e) => onPhoneChange(e.target.value)}
+              value={localPhone}
+              onChange={(e) => {
+                const nextValue = e.target.value;
+                setLocalPhone(nextValue);
+                onPhoneChange(`${selectedCountry.dialCode}${nextValue}`);
+              }}
               placeholder="+1 234 567 8900"
             />
           </div>
