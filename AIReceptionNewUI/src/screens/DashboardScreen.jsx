@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import "@fullcalendar/react/dist/vdom";
 import FullCalendar from "@fullcalendar/react";
 import interactionPlugin from "@fullcalendar/interaction";
 import timeGridPlugin from "@fullcalendar/timegrid";
+import dayGridPlugin from "@fullcalendar/daygrid";
 import "@fullcalendar/common/main.css";
 import "@fullcalendar/timegrid/main.css";
 import {
@@ -168,10 +169,32 @@ export default function DashboardScreen({
   const [calendarEditMode, setCalendarEditMode] = useState("edit");
   const [selectedCallDay, setSelectedCallDay] = useState("All days");
   const [sideNavOpen, setSideNavOpen] = useState(true);
+  const [showHolidayCalendars, setShowHolidayCalendars] = useState(true);
+  const [showBirthdayEvents, setShowBirthdayEvents] = useState(true);
+  const calendarRef = useRef(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      window.dispatchEvent(new Event("resize"));
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [sideNavOpen]);
+
+  const filteredCalendarEvents = useMemo(() => {
+    return (calendarEvents || []).filter((event) => {
+      const calendarId = event.calendarId || "";
+      const eventType = event.eventType || "";
+      const isHolidayCalendar = calendarId.includes("holiday@group.v.calendar.google.com");
+      const isBirthday = eventType === "birthday";
+      if (!showHolidayCalendars && isHolidayCalendar) return false;
+      if (!showBirthdayEvents && isBirthday) return false;
+      return true;
+    });
+  }, [calendarEvents, showBirthdayEvents, showHolidayCalendars]);
 
   const calendarItems = useMemo(
     () =>
-      (calendarEvents || []).map((event) => {
+      filteredCalendarEvents.map((event) => {
         const start = event.start?.dateTime || event.start?.date || null;
         const end = event.end?.dateTime || event.end?.date || null;
         const allDay = Boolean(event.start?.date && !event.start?.dateTime);
@@ -181,16 +204,46 @@ export default function DashboardScreen({
           start,
           end,
           allDay,
+          display: "block",
+          backgroundColor: allDay ? "rgba(59, 130, 246, 0.55)" : "rgba(59, 130, 246, 0.85)",
+          borderColor: allDay ? "rgba(59, 130, 246, 0.8)" : "rgba(59, 130, 246, 1)",
+          textColor: "#f8fafc",
           extendedProps: { raw: event, provider: "google" }
         };
       }),
-    [calendarEvents]
+    [filteredCalendarEvents]
   );
 
   const visibleCalendarItems = useMemo(() => {
     if (selectedCalendarProvider === "google") return calendarItems;
     return [];
   }, [calendarItems, selectedCalendarProvider]);
+
+  const calendarFocusDate = useMemo(() => {
+    if (!visibleCalendarItems.length) return null;
+    const now = new Date();
+    const parsed = visibleCalendarItems
+      .map((item) => (item?.start ? new Date(item.start) : null))
+      .filter((d) => d && !Number.isNaN(d.getTime()));
+    if (!parsed.length) return null;
+    const upcoming = parsed.filter((d) => d >= now).sort((a, b) => a - b);
+    const target = upcoming[0] || parsed.sort((a, b) => b - a)[0];
+    return target.toISOString();
+  }, [visibleCalendarItems]);
+
+  const jumpToNextEvent = () => {
+    if (!calendarRef.current || !visibleCalendarItems.length) return;
+    const now = new Date();
+    const upcoming = visibleCalendarItems
+      .map((item) => (item?.start ? new Date(item.start) : null))
+      .filter((d) => d && !Number.isNaN(d.getTime()))
+      .filter((d) => d >= now)
+      .sort((a, b) => a - b);
+    const target = upcoming[0];
+    if (!target) return;
+    const api = calendarRef.current.getApi?.();
+    api?.gotoDate(target);
+  };
 
   const toLocalInputValue = (value) => {
     if (!value) return "";
@@ -977,6 +1030,13 @@ export default function DashboardScreen({
                   ) : (
                     pagedCalls.map((call) => {
                       const isActive = selectedCall?.sid === call.sid;
+                      const fromLabel =
+                        call.from ||
+                        call.from_display ||
+                        call.from_raw ||
+                        call.from_number ||
+                        "Unknown";
+                      const startLabel = call.start_time || call.started_at || call.startTime || null;
                       return (
                         <button
                           key={call.sid}
@@ -988,8 +1048,8 @@ export default function DashboardScreen({
                           onClick={() => setSelectedCall(call)}
                         >
                           <div className="flex items-center justify-between text-sm font-semibold">
-                            <span>{call.from || call.from_display || call.from_raw || "Unknown"}</span>
-                            <span className="text-xs text-slate-300">{formatDate(call.start_time)}</span>
+                            <span>{fromLabel}</span>
+                            <span className="text-xs text-slate-300">{formatDate(startLabel)}</span>
                           </div>
                           <div className="mt-1 flex items-center gap-2 text-xs text-slate-300">
                             <PhoneCall className="h-3.5 w-3.5" />
@@ -1029,15 +1089,39 @@ export default function DashboardScreen({
                 <div className="rounded-2xl border border-white/10 bg-slate-900/50 p-3 shadow-inner">
                   <div className="mb-2 flex items-center justify-between">
                     <div className="text-sm font-semibold text-white">Transcript</div>
-                    <span className="text-xs text-slate-400">
-                      {callTranscript?.recordings?.length || 0} recording(s)
-                    </span>
+                    <div className="flex items-center gap-2 text-xs text-slate-400">
+                      <button
+                        type="button"
+                        className="rounded-lg border border-white/10 bg-white/10 px-2 py-1 text-xs text-white transition hover:border-white/30 hover:bg-white/20"
+                        onClick={() => {
+                          const text = callTranscript?.transcript
+                            || (callTranscript?.messages || [])
+                              .map((m) => `${m.role || "system"}: ${m.text || ""}`)
+                              .join("\n")
+                            || "";
+                          if (text) navigator.clipboard?.writeText(text);
+                        }}
+                      >
+                        Copy
+                      </button>
+                      <span>{callTranscript?.recordings?.length || 0} recording(s)</span>
+                    </div>
                   </div>
                   <div className="h-64 overflow-y-auto rounded-xl border border-white/5 bg-slate-950/60 p-3 text-sm text-slate-200">
                     {callTranscript?.loading ? (
                       <p className="text-slate-400">Loading transcript...</p>
                     ) : callTranscript?.error ? (
                       <p className="text-rose-300">{callTranscript.error}</p>
+                    ) : (callTranscript?.messages || []).length > 0 ? (
+                      callTranscript.messages.map((msg, idx) => (
+                        <div key={`${msg.id || msg.ordinal || idx}`} className="mb-2 rounded-lg bg-white/5 p-2">
+                          <div className="flex items-center justify-between text-xs text-slate-400">
+                            <span>{msg.role || "system"}</span>
+                            <span>{formatDate(msg.timestamp)}</span>
+                          </div>
+                          <p className="text-slate-100">{msg.text || "No text returned"}</p>
+                        </div>
+                      ))
                     ) : (callTranscript?.transcripts || []).length === 0 ? (
                       <p className="text-slate-400">
                         No transcript available for this call yet. If you record calls with Twilio
@@ -1156,6 +1240,29 @@ export default function DashboardScreen({
                     )}
                   </div>
                 ) : null}
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-300">
+                  <button
+                    type="button"
+                    onClick={jumpToNextEvent}
+                    className="rounded-lg border border-white/10 bg-white/10 px-2 py-1 text-xs text-white"
+                  >
+                    Jump to next event
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowHolidayCalendars((prev) => !prev)}
+                    className="rounded-lg border border-white/10 bg-white/10 px-2 py-1 text-xs text-white"
+                  >
+                    {showHolidayCalendars ? "Hide holidays" : "Show holidays"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowBirthdayEvents((prev) => !prev)}
+                    className="rounded-lg border border-white/10 bg-white/10 px-2 py-1 text-xs text-white"
+                  >
+                    {showBirthdayEvents ? "Hide birthdays" : "Show birthdays"}
+                  </button>
+                </div>
                 {calendarError && <div className="text-xs text-rose-300">{calendarError}</div>}
                 <div className="mt-2 rounded-2xl border border-white/10 bg-slate-900/40 p-3 text-xs text-slate-300">
                   {selectedCalendarProvider === "google"
@@ -1184,12 +1291,20 @@ export default function DashboardScreen({
                 <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-2">
                   <div className="calendar-shell" data-lenis-prevent>
                     <FullCalendar
-                      plugins={[timeGridPlugin, interactionPlugin]}
+                      key={calendarFocusDate || "today"}
+                      ref={calendarRef}
+                      plugins={[timeGridPlugin, dayGridPlugin, interactionPlugin]}
                       initialView="timeGridWeek"
+                      initialDate={calendarFocusDate || undefined}
+                      eventDisplay="block"
+                      eventDidMount={(info) => {
+                        info.el.style.opacity = "1";
+                        info.el.style.visibility = "visible";
+                      }}
                       headerToolbar={{
                         left: "prev,next today",
                         center: "title",
-                        right: "timeGridWeek,timeGridDay"
+                        right: "dayGridMonth,timeGridWeek,timeGridDay"
                       }}
                       events={visibleCalendarItems}
                       height={520}

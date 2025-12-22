@@ -16,7 +16,7 @@ from utils.cors import build_cors_headers
 
 EXCLUDED_SCHEMES: Tuple[str, ...] = ("mailto:", "tel:", "javascript:")
 REMOVABLE_TAGS: Tuple[str, ...] = ("script", "style", "nav", "footer", "header", "aside")
-DEFAULT_MAX_PAGES: int = 50
+DEFAULT_MAX_PAGES: int = 5
 OUTPUT_PATH: Path = Path(__file__).resolve().parent / "data" / "website_knowledge.txt"
 USER_AGENT = "AIReceptionistCrawler/1.0"
 
@@ -190,7 +190,7 @@ def crawl_kb_api(req: func.HttpRequest) -> func.HttpResponse:
     Body (JSON):
     {
       "url": "https://example.com",
-      "max_pages": 50,               # optional
+      "max_pages": 5,               # optional
       "client_email": "user@example.com" # optional; ignored in DB-less mode
     }
 

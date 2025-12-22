@@ -48,6 +48,20 @@ const TOOL_IDS = {
   SOCIAL: "social_media_manager"
 };
 const DEFAULT_TOOL_ID = TOOL_IDS.RECEPTIONIST;
+const TOOL_ID_ALIASES = {
+  "ai receptionist": "ai_receptionist",
+  "ai-receptionist": "ai_receptionist",
+  "email manager": "email_manager",
+  "email-manager": "email_manager",
+  "social media manager": "social_media_manager",
+  "social-media-manager": "social_media_manager"
+};
+const normalizeToolId = (value) => {
+  const base = (value || DEFAULT_TOOL_ID).toString().toLowerCase().trim();
+  if (!base) return DEFAULT_TOOL_ID;
+  if (TOOL_ID_ALIASES[base]) return TOOL_ID_ALIASES[base];
+  return base.replace(/[\s-]+/g, "_");
+};
 const isStrongPassword = (value) => {
   if (!value) return false;
   const hasLower = /[a-z]/.test(value);
@@ -94,6 +108,8 @@ export default function App() {
     call: null,
     transcripts: [],
     recordings: [],
+    messages: [],
+    transcript: "",
     loading: false,
     error: ""
   });
@@ -293,6 +309,7 @@ export default function App() {
           headers: { "Content-Type": "application/json" },
           mode: "cors",
           body: JSON.stringify({
+            email: signupEmail || email || loginEmail || user?.email || "",
             website_url: websiteUrl,
             pages: data?.pages || data?.data || data?.raw || []
           })
@@ -1030,7 +1047,7 @@ export default function App() {
     crawlDataOverride = null
   } = {}) => {
     const provisionEmail = emailOverride || signupEmail || email || loginEmail || "";
-    const manualInfo = manualInfoOverride || manualBusinessInfo;
+    let manualInfo = manualInfoOverride || manualBusinessInfo;
     const activeCrawlData = crawlDataOverride || crawlData;
     const provisionWebsite =
       url ||
@@ -1056,6 +1073,43 @@ export default function App() {
     setStage(STAGES.LOADING);
 
     try {
+      if (
+        (!manualInfo || !manualInfo.businessSummary) &&
+        (Array.isArray(activeCrawlData?.pages) || Array.isArray(activeCrawlData?.data))
+      ) {
+        try {
+          const profileRes = await fetch(API_URLS.businessProfile, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            mode: "cors",
+            body: JSON.stringify({
+              email: provisionEmail,
+              website_url: provisionWebsite,
+              pages: activeCrawlData?.pages || activeCrawlData?.data || []
+            })
+          });
+          const profileJson = await profileRes.json().catch(() => ({}));
+          if (profileRes.ok && profileJson?.profile) {
+            const profile = profileJson.profile;
+            manualInfo = {
+              businessName: profile.business_name || manualInfo?.businessName || businessName || "",
+              businessPhone: profile.contact_phone || manualInfo?.businessPhone || businessPhone || "",
+              businessEmail: profile.contact_email || manualInfo?.businessEmail || "",
+              businessSummary: profile.business_summary || manualInfo?.businessSummary || "",
+              hours: profile.business_hours || manualInfo?.hours || "",
+              openings: profile.business_openings || manualInfo?.openings || "",
+              location: profile.business_location || manualInfo?.location || "",
+              services: profile.business_services || manualInfo?.services || "",
+              notes: profile.business_notes || manualInfo?.notes || "",
+              websiteUrl: provisionWebsite || manualInfo?.websiteUrl || ""
+            };
+            setManualBusinessInfo(manualInfo);
+          }
+        } catch (profileErr) {
+          console.warn("Business profile extraction before provision failed", profileErr);
+        }
+      }
+
       const fallbackBusiness =
         activeCrawlData?.business_name ||
         manualInfo?.businessName ||
@@ -1243,7 +1297,7 @@ export default function App() {
       setCalendarError("");
       try {
         const res = await fetch(
-          `${API_URLS.calendarEvents}?email=${encodeURIComponent(emailAddress)}&max_results=50`
+          `${API_URLS.calendarEvents}?email=${encodeURIComponent(emailAddress)}&max_results=200`
         );
         if (!res.ok) {
           const text = await res.text();
@@ -1295,12 +1349,16 @@ export default function App() {
         : [];
     const map = {};
     source.forEach((entry) => {
-      const toolId = (entry?.tool || entry?.toolId || entry?.tool_id || DEFAULT_TOOL_ID).toLowerCase();
+      const toolId = normalizeToolId(entry?.tool || entry?.toolId || entry?.tool_id || DEFAULT_TOOL_ID);
       const status = entry?.status || "";
       const active =
         typeof entry?.active === "boolean"
           ? entry.active
           : ["active", "trialing"].includes(status.toLowerCase());
+      const existing = map[toolId];
+      if (existing?.active) {
+        return;
+      }
       map[toolId] = {
         active,
         status,
@@ -1611,6 +1669,19 @@ export default function App() {
     async (emailAddress = user?.email, daysOverride = null) => {
       if (!emailAddress) return;
       try {
+        const callsRes = await fetch(
+          `${API_URLS.calls}?email=${encodeURIComponent(emailAddress)}`
+        );
+        if (callsRes.ok) {
+          const callsJson = await callsRes.json().catch(() => ({}));
+          const calls = Array.isArray(callsJson?.calls) ? callsJson.calls : [];
+          if (calls.length) {
+            setRecentCalls(calls);
+            setCallsPage(1);
+            return;
+          }
+        }
+
         const days = typeof daysOverride === "number" ? daysOverride : getSelectedDays();
         const res = await fetch(
           `${API_URLS.dashboardCalls}?email=${encodeURIComponent(emailAddress)}&days=${days}`
@@ -1661,9 +1732,9 @@ export default function App() {
       setCallTranscript((prev) => ({ ...prev, loading: true, error: "" }));
       try {
         const res = await fetch(
-          `${API_URLS.dashboardCallTranscript}?email=${encodeURIComponent(
+          `${API_URLS.calls}/${encodeURIComponent(callSid)}/transcript?email=${encodeURIComponent(
             user.email
-          )}&callSid=${encodeURIComponent(callSid)}`
+          )}`
         );
         if (!res.ok) {
           const text = await res.text();
@@ -1674,6 +1745,8 @@ export default function App() {
           call: data?.call || { sid: callSid },
           transcripts: data?.transcripts || [],
           recordings: data?.recordings || [],
+          messages: data?.messages || [],
+          transcript: data?.transcript || "",
           loading: false,
           error: ""
         });
@@ -1856,7 +1929,13 @@ export default function App() {
       if (saved.phoneNumbers) setPhoneNumbers(saved.phoneNumbers);
       if (saved.activeTab) setActiveTab(saved.activeTab);
       if (saved.activeTool) setActiveTool(saved.activeTool);
-      if (saved.toolSubscriptions) setToolSubscriptions(saved.toolSubscriptions);
+      if (saved.toolSubscriptions) {
+        const normalized = {};
+        Object.entries(saved.toolSubscriptions).forEach(([key, value]) => {
+          normalized[normalizeToolId(key)] = value;
+        });
+        setToolSubscriptions(normalized);
+      }
       if (saved.selectedTool) setSelectedTool(saved.selectedTool);
       if (saved.manualBusinessInfo) setManualBusinessInfo(saved.manualBusinessInfo);
       if (saved.serviceSlug) setServiceSlug(saved.serviceSlug);

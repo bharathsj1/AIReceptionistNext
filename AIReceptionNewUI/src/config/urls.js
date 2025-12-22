@@ -33,7 +33,8 @@ export const API_URLS = {
   dashboardCalls: apiUrl("dashboard/calls"),
   dashboardAgent: apiUrl("dashboard/agent"),
   dashboardBookingSettings: apiUrl("dashboard/booking-settings"),
-  dashboardCallTranscript: apiUrl("dashboard/call-transcript")
+  dashboardCallTranscript: apiUrl("dashboard/call-transcript"),
+  calls: apiUrl("calls")
 };
 
 

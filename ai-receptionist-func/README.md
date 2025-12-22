@@ -13,5 +13,15 @@ The Ultravox HTTP tool `calendar_book` is created and attached to each agent so 
 ### Config
 - `ULTRAVOX_API_KEY` (required)
 - `ULTRAVOX_BASE_URL` (optional, defaults to https://api.ultravox.ai/api)
+- `ULTRAVOX_WEBHOOK_SECRET` (optional, shared secret for Ultravox webhooks)
+- `TWILIO_AUTH_TOKEN` (required for Twilio API usage)
 - `API_PUBLIC_BASE_URL` (used for tool callback URL)
 - `ENABLE_ULTRAVOX_DEBUG` (optional, enables debug endpoint)
+
+### Webhooks
+- Twilio voice webhook: `POST /api/twilio/incoming`
+- Ultravox call ended webhook: `POST /api/ultravox/webhook` (set `ULTRAVOX_WEBHOOK_SECRET` and pass `X-Ultravox-Webhook-Secret`)
+
+### Transcript API
+- `GET /api/calls?email=...`
+- `GET /api/calls/{call_id}/transcript` (call_id can be DB id or Twilio CallSid)

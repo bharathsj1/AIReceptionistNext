@@ -1,12 +1,13 @@
 import json
 import logging
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional, List, Tuple
 
 import azure.functions as func
 import httpx
 
 from function_app import app
 from shared.config import get_required_setting, get_setting
+from shared.db import SessionLocal, Client
 from utils.cors import build_cors_headers
 
 logger = logging.getLogger(__name__)
@@ -240,10 +241,9 @@ Rules:
     }
 
 
-def _generate_business_profile(website_text: str, website_url: Optional[str]) -> Dict[str, str]:
+def _generate_business_profile(payload: Dict[str, Any]) -> Dict[str, str]:
     api_key = get_required_setting("OPENAI_API_KEY")
     base_url = get_setting("OPENAI_BASE_URL", "https://api.openai.com/v1")
-    payload = _build_business_profile_payload(website_text, website_url)
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -300,6 +300,23 @@ def _generate_business_profile(website_text: str, website_url: Optional[str]) ->
         "contact_email": str(parsed.get("contact_email", "") or ""),
         "contact_phone": str(parsed.get("contact_phone", "") or ""),
     }
+
+
+def _merge_website_data(existing: Optional[str], additions: Dict[str, Any]) -> str:
+    if not additions:
+        return existing or ""
+    base: Dict[str, Any] = {}
+    if existing:
+        try:
+            parsed = json.loads(existing)
+            if isinstance(parsed, dict):
+                base = parsed
+            else:
+                base = {"raw_website_data": parsed}
+        except json.JSONDecodeError:
+            base = {"raw_website_data": existing}
+    base.update(additions)
+    return json.dumps(base)
 
 
 @app.function_name(name="UltravoxPrompt")
@@ -389,8 +406,9 @@ def create_business_profile(req: func.HttpRequest) -> func.HttpResponse:
         )
 
     website_url = body.get("website_url") or body.get("url")
+    payload = _build_business_profile_payload(website_text, website_url)
     try:
-        profile = _generate_business_profile(website_text, website_url)
+        profile = _generate_business_profile(payload)
     except RuntimeError as exc:
         return func.HttpResponse(
             json.dumps({"error": str(exc)}),
@@ -398,6 +416,27 @@ def create_business_profile(req: func.HttpRequest) -> func.HttpResponse:
             mimetype="application/json",
             headers=cors,
         )
+
+    email = body.get("email") or body.get("client_email") or body.get("user_email")
+    if email:
+        db = SessionLocal()
+        try:
+            client = db.query(Client).filter_by(email=email).one_or_none()
+            if client:
+                client.website_url = website_url or client.website_url
+                client.website_data = _merge_website_data(
+                    client.website_data,
+                    {
+                        "business_profile_prompt_payload": payload,
+                        "business_profile": profile,
+                    },
+                )
+                db.commit()
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.warning("Failed to persist business profile: %s", exc)
+            db.rollback()
+        finally:
+            db.close()
 
     return func.HttpResponse(
         json.dumps({"profile": profile}),

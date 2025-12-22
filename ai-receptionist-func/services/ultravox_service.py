@@ -86,14 +86,16 @@ def create_ultravox_agent(
     return agent_id
 
 
-def create_ultravox_call(agent_id: str, caller_number: str) -> str:
-    """Create an Ultravox call and return joinUrl."""
+def create_ultravox_call(agent_id: str, caller_number: str, metadata: dict | None = None) -> tuple[str, str | None]:
+    """Create an Ultravox call and return (joinUrl, callId)."""
     payload = {
         # Minimal Twilio medium for inbound Streams; no unsupported "incoming" field.
         "medium": {"twilio": {}},
         "firstSpeakerSettings": {"agent": {}},
         "recordingEnabled": True,
     }
+    if metadata:
+        payload["metadata"] = metadata
 
     with httpx.Client(timeout=20) as client:
         response = client.post(f"{_base_url()}/agents/{agent_id}/calls", headers=_headers(), json=payload)
@@ -103,10 +105,28 @@ def create_ultravox_call(agent_id: str, caller_number: str) -> str:
 
     data = response.json()
     join_url = data.get("joinUrl") or data.get("join_url")
+    call_id = data.get("id") or data.get("callId") or data.get("call_id")
     if not join_url:
         logger.error("Ultravox call response missing joinUrl: %s", data)
         raise RuntimeError("Ultravox call response missing joinUrl")
-    return join_url
+    return join_url, call_id
+
+
+def get_ultravox_call_messages(call_id: str) -> list[dict]:
+    """Fetch Ultravox call messages for transcript rendering."""
+    if not call_id:
+        return []
+    with httpx.Client(timeout=20) as client:
+        resp = client.get(f"{_base_url()}/calls/{call_id}/messages", headers=_headers())
+    if resp.status_code >= 300:
+        logger.error("Ultravox call messages failed: %s - %s", resp.status_code, resp.text)
+        raise RuntimeError("Failed to fetch Ultravox call messages")
+    data = resp.json()
+    if isinstance(data, dict):
+        for key in ("messages", "items", "data", "results"):
+            if isinstance(data.get(key), list):
+                return data.get(key)
+    return data if isinstance(data, list) else []
 
 
 def list_ultravox_agents(limit: int = 20) -> List[Dict]:

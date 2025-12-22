@@ -262,7 +262,7 @@ def _get_calendar_events_for_calendar(
         return None, str(exc)
 
 
-def _get_calendar_events(access_token: str, max_results: int = 50) -> Tuple[Optional[dict], Optional[str]]:
+def _get_calendar_events(access_token: str, max_results: int = 200) -> Tuple[Optional[dict], Optional[str]]:
     time_min = (datetime.utcnow() - timedelta(days=365)).isoformat() + "Z"
     calendar_list, list_error = _get_calendar_list(access_token)
     calendar_items = (calendar_list or {}).get("items", []) if not list_error else []
@@ -276,7 +276,11 @@ def _get_calendar_events(access_token: str, max_results: int = 50) -> Tuple[Opti
         cal.get("id")
         for cal in calendar_items
         if cal.get("id")
-        and (cal.get("primary") or cal.get("selected"))
+        and (
+            cal.get("primary")
+            or cal.get("selected")
+            or cal.get("accessRole") in ("owner", "writer")
+        )
     ]
     if not selected_calendars:
         selected_calendars = ["primary"]
@@ -463,6 +467,26 @@ def _ensure_ultravox_booking_tool_for_user(email: str, db):
                 create_ultravox_webhook(destination, ["call.ended"], scope=scope)
         except Exception as exc:  # pylint: disable=broad-except
             logger.info("Ultravox call.ended webhook skipped: %s", exc)
+        # Transcript webhook for call.ended events (new).
+        try:
+            from services.ultravox_service import list_ultravox_webhooks  # lazy import to avoid cycles
+
+            existing_hooks = list_ultravox_webhooks()
+            destination = f"{base}/api/ultravox/webhook"
+            scoped = [
+                hook
+                for hook in existing_hooks
+                if (hook.get("url") or "").rstrip("/") == destination
+                and hook.get("agentId") == client.ultravox_agent_id
+                and "call.ended" in (hook.get("events") or [])
+            ]
+            if scoped:
+                logger.info("Ultravox transcript webhook already exists for agent %s", client.ultravox_agent_id)
+            else:
+                scope = {"type": "AGENT", "value": client.ultravox_agent_id}
+                create_ultravox_webhook(destination, ["call.ended"], scope=scope)
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.info("Ultravox transcript webhook skipped: %s", exc)
     except Exception as exc:  # pylint: disable=broad-except
         logger.error("Ultravox booking tool ensure failed for %s: %s", email, exc)
 
@@ -1164,12 +1188,12 @@ def calendar_events(req: func.HttpRequest) -> func.HttpResponse:
     email = req.params.get("email")
     user_id = req.params.get("user_id")
     max_results_param = req.params.get("max_results")
-    max_results = 50
+    max_results = 200
     if max_results_param:
         try:
-            max_results = min(int(max_results_param), 50)
+            max_results = min(int(max_results_param), 200)
         except ValueError:
-            max_results = 50
+            max_results = 200
 
     db = SessionLocal()
     try:
@@ -1224,7 +1248,7 @@ def calendar_events(req: func.HttpRequest) -> func.HttpResponse:
         _ensure_ultravox_booking_tool_for_user(email, db)
 
         events, events_error = _get_calendar_events(access_token, max_results=max_results)
-        if events_error or not events:
+        if events_error or events is None:
             return func.HttpResponse(
                 json.dumps({"error": "Failed to fetch calendar", "details": events_error}),
                 status_code=400,
