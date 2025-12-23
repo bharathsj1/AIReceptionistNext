@@ -1746,15 +1746,16 @@ export default function App() {
           transcripts: data?.transcripts || [],
           recordings: data?.recordings || [],
           messages: data?.messages || [],
-          transcript: data?.transcript || "",
+          transcript: "",
           loading: false,
           error: ""
         });
       } catch (error) {
+        const message = error?.message || "Unable to fetch transcript";
         setCallTranscript((prev) => ({
           ...prev,
           loading: false,
-          error: error?.message || "Unable to fetch transcript"
+          error: message
         }));
       }
     },

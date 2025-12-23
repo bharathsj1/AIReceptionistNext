@@ -20,8 +20,8 @@ The Ultravox HTTP tool `calendar_book` is created and attached to each agent so 
 
 ### Webhooks
 - Twilio voice webhook: `POST /api/twilio/incoming`
-- Ultravox call ended webhook: `POST /api/ultravox/webhook` (set `ULTRAVOX_WEBHOOK_SECRET` and pass `X-Ultravox-Webhook-Secret`)
+- Ultravox mapping webhook: `POST /api/ultravox/webhook` (set `ULTRAVOX_WEBHOOK_SECRET` and pass `X-Ultravox-Webhook-Secret`)
 
-### Transcript API
-- `GET /api/calls?email=...`
-- `GET /api/calls/{call_id}/transcript` (call_id can be DB id or Twilio CallSid)
+### Calls + transcript proxy
+- `GET /api/calls?email=...` (or `aiPhoneNumber=...`)
+- `GET /api/calls/{call_id}/transcript` (call_id can be DB id or Twilio CallSid; fetches live from Ultravox, no DB storage)

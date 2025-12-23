@@ -15,7 +15,7 @@ from function_app import app
 from auth_endpoints import _generate_reset_token  # pylint: disable=protected-access
 from crawler_endpoints import crawl_site
 from services.ultravox_service import create_ultravox_agent, create_ultravox_call, list_ultravox_agents
-from services.call_service import upsert_call, attach_ultravox_call
+from services.call_service import upsert_call, attach_ultravox_call, update_call_status
 from shared.config import get_required_setting, get_setting, get_smtp_settings
 from shared.db import Client, PhoneNumber, SessionLocal, User, init_db
 from utils.cors import build_cors_headers
@@ -471,7 +471,14 @@ def twilio_incoming(req: func.HttpRequest) -> func.HttpResponse:
 
         client_record: Client = db.query(Client).filter_by(id=phone_record.client_id).one()
         if call_sid:
-            upsert_call(db, call_sid, from_number, to_number, "initiated")
+            upsert_call(
+                db,
+                call_sid,
+                caller_number=from_number,
+                ai_phone_number=to_number,
+                status="initiated",
+                selected_agent_id=client_record.ultravox_agent_id,
+            )
             db.commit()
         if not client_record.ultravox_agent_id:
             logger.error(
@@ -488,7 +495,13 @@ def twilio_incoming(req: func.HttpRequest) -> func.HttpResponse:
             join_url, ultravox_call_id = create_ultravox_call(
                 client_record.ultravox_agent_id,
                 caller_number=from_number or "",
-                metadata={"twilioCallSid": call_sid} if call_sid else None,
+                metadata={
+                    "twilioCallSid": call_sid,
+                    "aiPhoneNumber": to_number,
+                    "selectedAgentId": client_record.ultravox_agent_id,
+                }
+                if call_sid
+                else None,
             )
         except Exception as exc:  # pylint: disable=broad-except
             logger.error("Failed to create Ultravox call: %s", exc)
@@ -501,7 +514,15 @@ def twilio_incoming(req: func.HttpRequest) -> func.HttpResponse:
 
         if call_sid:
             attach_ultravox_call(db, call_sid, ultravox_call_id)
-            upsert_call(db, call_sid, from_number, to_number, "in_progress")
+            call = upsert_call(
+                db,
+                call_sid,
+                caller_number=from_number,
+                ai_phone_number=to_number,
+                status="in_progress",
+                selected_agent_id=client_record.ultravox_agent_id,
+            )
+            update_call_status(db, call, "in_progress")
             db.commit()
 
         logger.info(

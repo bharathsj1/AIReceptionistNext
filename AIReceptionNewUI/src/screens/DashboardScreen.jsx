@@ -1031,6 +1031,7 @@ export default function DashboardScreen({
                     pagedCalls.map((call) => {
                       const isActive = selectedCall?.sid === call.sid;
                       const fromLabel =
+                        call.caller_number ||
                         call.from ||
                         call.from_display ||
                         call.from_raw ||

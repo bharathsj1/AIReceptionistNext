@@ -10,7 +10,6 @@ from sqlalchemy import (
     String,
     Text,
     LargeBinary,
-    UniqueConstraint,
     create_engine,
     inspect,
     text,
@@ -107,33 +106,14 @@ class Call(Base):
     id = Column(Integer, primary_key=True, index=True)
     twilio_call_sid = Column(String, unique=True, index=True, nullable=False)
     ultravox_call_id = Column(String, unique=True, index=True, nullable=True)
-    from_number = Column(String, nullable=True)
-    to_number = Column(String, nullable=True)
+    ai_phone_number = Column(String, nullable=True, index=True)
+    caller_number = Column(String, nullable=True)
+    selected_agent_id = Column(String, nullable=True, index=True)
     status = Column(String, nullable=True)
-    started_at = Column(DateTime, nullable=True)
+    started_at = Column(DateTime, nullable=True, index=True)
     ended_at = Column(DateTime, nullable=True)
-    transcript_text = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    messages = relationship("CallMessage", back_populates="call")
-
-
-class CallMessage(Base):
-    __tablename__ = "call_messages"
-    __table_args__ = (UniqueConstraint("call_id", "ordinal", name="uq_call_message_order"),)
-
-    id = Column(Integer, primary_key=True, index=True)
-    call_id = Column(Integer, ForeignKey("calls.id"), nullable=False, index=True)
-    speaker_role = Column(String, nullable=True)
-    text = Column(Text, nullable=True)
-    message_ts = Column(DateTime, nullable=True)
-    ordinal = Column(Integer, nullable=True)
-    raw_json = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    call = relationship("Call", back_populates="messages")
 
 class Subscription(Base):
     __tablename__ = "subscriptions"
@@ -348,12 +328,12 @@ def _ensure_optional_columns() -> None:
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         twilio_call_sid VARCHAR NOT NULL UNIQUE,
                         ultravox_call_id VARCHAR UNIQUE,
-                        from_number VARCHAR,
-                        to_number VARCHAR,
+                        ai_phone_number VARCHAR,
+                        caller_number VARCHAR,
+                        selected_agent_id VARCHAR,
                         status VARCHAR,
                         started_at DATETIME,
                         ended_at DATETIME,
-                        transcript_text TEXT,
                         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                     )
@@ -362,38 +342,18 @@ def _ensure_optional_columns() -> None:
             )
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_calls_twilio_sid ON calls (twilio_call_sid)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_calls_ultravox_id ON calls (ultravox_call_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_calls_ai_phone_started ON calls (ai_phone_number, started_at)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_calls_agent_started ON calls (selected_agent_id, started_at)"))
         else:
             call_columns = {col["name"] for col in inspector.get_columns("calls")}
-            if "transcript_text" not in call_columns:
-                conn.execute(text("ALTER TABLE calls ADD COLUMN IF NOT EXISTS transcript_text TEXT"))
-
-        if "call_messages" not in existing_tables:
-            conn.execute(
-                text(
-                    """
-                    CREATE TABLE IF NOT EXISTS call_messages (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        call_id INTEGER NOT NULL,
-                        speaker_role VARCHAR,
-                        text TEXT,
-                        message_ts DATETIME,
-                        ordinal INTEGER,
-                        raw_json TEXT,
-                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY(call_id) REFERENCES calls (id)
-                    )
-                    """
-                )
-            )
-            conn.execute(
-                text(
-                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_call_message_order ON call_messages (call_id, ordinal)"
-                )
-            )
-            conn.execute(
-                text("CREATE INDEX IF NOT EXISTS idx_call_messages_call_id ON call_messages (call_id)")
-            )
+            if "ai_phone_number" not in call_columns:
+                conn.execute(text("ALTER TABLE calls ADD COLUMN IF NOT EXISTS ai_phone_number VARCHAR"))
+            if "caller_number" not in call_columns:
+                conn.execute(text("ALTER TABLE calls ADD COLUMN IF NOT EXISTS caller_number VARCHAR"))
+            if "selected_agent_id" not in call_columns:
+                conn.execute(text("ALTER TABLE calls ADD COLUMN IF NOT EXISTS selected_agent_id VARCHAR"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_calls_ai_phone_started ON calls (ai_phone_number, started_at)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_calls_agent_started ON calls (selected_agent_id, started_at)"))
 
         # Seed default tools and backfill tool_id where missing.
         default_tools = [
