@@ -1108,7 +1108,10 @@ export default function DashboardScreen({
                       <span>{callTranscript?.recordings?.length || 0} recording(s)</span>
                     </div>
                   </div>
-                  <div className="h-64 overflow-y-auto rounded-xl border border-white/5 bg-slate-950/60 p-3 text-sm text-slate-200">
+                  <div
+                    className="transcript-scroll rounded-xl border border-white/5 bg-slate-950/60 p-3 text-sm text-slate-200"
+                    data-lenis-prevent
+                  >
                     {callTranscript?.loading ? (
                       <p className="text-slate-400">Loading transcript...</p>
                     ) : callTranscript?.error ? (

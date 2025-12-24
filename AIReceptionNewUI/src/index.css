@@ -2072,6 +2072,14 @@ html {
   max-height: 520px;
 }
 
+.transcript-scroll {
+  overflow-y: auto;
+  max-height: 16rem;
+  min-height: 16rem;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
 .calendar-shell .fc .fc-timegrid-body {
   min-height: 640px;
 }
