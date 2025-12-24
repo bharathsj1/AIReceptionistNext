@@ -239,7 +239,7 @@ def _get_calendar_list(access_token: str) -> Tuple[Optional[dict], Optional[str]
 
 
 def _get_calendar_events_for_calendar(
-    access_token: str, calendar_id: str, max_results: int, time_min: str
+    access_token: str, calendar_id: str, max_results: int, time_min: str, time_max: str
 ) -> Tuple[Optional[list], Optional[str]]:
     try:
         encoded_id = quote(calendar_id, safe="")
@@ -252,6 +252,7 @@ def _get_calendar_events_for_calendar(
                 "orderBy": "startTime",
                 "singleEvents": "true",
                 "timeMin": time_min,
+                "timeMax": time_max,
             },
         )
         if resp.status_code != 200:
@@ -262,8 +263,14 @@ def _get_calendar_events_for_calendar(
         return None, str(exc)
 
 
-def _get_calendar_events(access_token: str, max_results: int = 200) -> Tuple[Optional[dict], Optional[str]]:
-    time_min = (datetime.utcnow() - timedelta(days=365)).isoformat() + "Z"
+def _get_calendar_events(
+    access_token: str,
+    max_results: int = 200,
+    time_min: str | None = None,
+    time_max: str | None = None,
+) -> Tuple[Optional[dict], Optional[str]]:
+    time_min = time_min or (datetime.utcnow() - timedelta(days=30)).isoformat() + "Z"
+    time_max = time_max or (datetime.utcnow() + timedelta(days=30)).isoformat() + "Z"
     calendar_list, list_error = _get_calendar_list(access_token)
     calendar_items = (calendar_list or {}).get("items", []) if not list_error else []
     diagnostics = {
@@ -290,7 +297,7 @@ def _get_calendar_events(access_token: str, max_results: int = 200) -> Tuple[Opt
     per_calendar = max(5, int(max_results / max(1, len(selected_calendars))))
     for calendar_id in selected_calendars:
         items, err = _get_calendar_events_for_calendar(
-            access_token, calendar_id, per_calendar, time_min
+            access_token, calendar_id, per_calendar, time_min, time_max
         )
         if err or not items:
             if err:
@@ -1188,6 +1195,8 @@ def calendar_events(req: func.HttpRequest) -> func.HttpResponse:
     email = req.params.get("email")
     user_id = req.params.get("user_id")
     max_results_param = req.params.get("max_results")
+    range_from = req.params.get("from")
+    range_to = req.params.get("to")
     max_results = 200
     if max_results_param:
         try:
@@ -1247,7 +1256,12 @@ def calendar_events(req: func.HttpRequest) -> func.HttpResponse:
         # Ensure Ultravox booking tool is present/attached (best-effort)
         _ensure_ultravox_booking_tool_for_user(email, db)
 
-        events, events_error = _get_calendar_events(access_token, max_results=max_results)
+        events, events_error = _get_calendar_events(
+            access_token,
+            max_results=max_results,
+            time_min=range_from,
+            time_max=range_to,
+        )
         if events_error or events is None:
             return func.HttpResponse(
                 json.dumps({"error": "Failed to fetch calendar", "details": events_error}),

@@ -1291,13 +1291,20 @@ export default function App() {
   };
 
   const loadCalendarEvents = useCallback(
-    async (emailAddress = user?.email) => {
+    async (emailAddress = user?.email, range = null) => {
       if (!emailAddress) return;
       setCalendarLoading(true);
       setCalendarError("");
       try {
+        const params = new URLSearchParams({
+          email: emailAddress,
+          max_results: "200",
+          ts: String(Date.now())
+        });
+        if (range?.start) params.set("from", range.start);
+        if (range?.end) params.set("to", range.end);
         const res = await fetch(
-          `${API_URLS.calendarEvents}?email=${encodeURIComponent(emailAddress)}&max_results=200`
+          `${API_URLS.calendarEvents}?${params.toString()}`
         );
         if (!res.ok) {
           const text = await res.text();

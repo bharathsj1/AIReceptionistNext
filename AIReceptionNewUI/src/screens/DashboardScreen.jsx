@@ -172,6 +172,8 @@ export default function DashboardScreen({
   const [showHolidayCalendars, setShowHolidayCalendars] = useState(true);
   const [showBirthdayEvents, setShowBirthdayEvents] = useState(true);
   const calendarRef = useRef(null);
+  const calendarRangeCacheRef = useRef(new Set());
+  const calendarFetchTimerRef = useRef(null);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -243,6 +245,19 @@ export default function DashboardScreen({
     if (!target) return;
     const api = calendarRef.current.getApi?.();
     api?.gotoDate(target);
+  };
+
+  const handleCalendarRangeFetch = (range) => {
+    if (!range?.startStr || !range?.endStr) return;
+    const key = `${range.startStr}|${range.endStr}`;
+    if (calendarRangeCacheRef.current.has(key)) return;
+    calendarRangeCacheRef.current.add(key);
+    if (calendarFetchTimerRef.current) {
+      clearTimeout(calendarFetchTimerRef.current);
+    }
+    calendarFetchTimerRef.current = setTimeout(() => {
+      loadCalendarEvents?.(user?.email, { start: range.startStr, end: range.endStr });
+    }, 350);
   };
 
   const toLocalInputValue = (value) => {
@@ -1300,6 +1315,7 @@ export default function DashboardScreen({
                       plugins={[timeGridPlugin, dayGridPlugin, interactionPlugin]}
                       initialView="timeGridWeek"
                       initialDate={calendarFocusDate || undefined}
+                      datesSet={(range) => handleCalendarRangeFetch(range)}
                       eventDisplay="block"
                       eventDidMount={(info) => {
                         info.el.style.opacity = "1";
