@@ -505,12 +505,13 @@ def twilio_incoming(req: func.HttpRequest) -> func.HttpResponse:
             )
         except Exception as exc:  # pylint: disable=broad-except
             logger.error("Failed to create Ultravox call: %s", exc)
-            return func.HttpResponse(
-                json.dumps({"error": "Failed to create Ultravox call"}),
-                status_code=500,
-                mimetype="application/json",
-                headers=cors,
+            twiml = (
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                "<Response>"
+                "<Say voice=\"alice\">Sorry, we are having trouble connecting your call right now.</Say>"
+                "</Response>"
             )
+            return func.HttpResponse(twiml, status_code=200, mimetype="text/xml", headers=cors)
 
         if call_sid:
             attach_ultravox_call(db, call_sid, ultravox_call_id)

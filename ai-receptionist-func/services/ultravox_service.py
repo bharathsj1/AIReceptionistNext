@@ -97,7 +97,8 @@ def create_ultravox_call(agent_id: str, caller_number: str, metadata: dict | Non
     if metadata:
         payload["metadata"] = metadata
 
-    with httpx.Client(timeout=20) as client:
+    timeout = httpx.Timeout(connect=5.0, read=8.0, write=5.0, pool=None)
+    with httpx.Client(timeout=timeout) as client:
         response = client.post(f"{_base_url()}/agents/{agent_id}/calls", headers=_headers(), json=payload)
     if response.status_code >= 300:
         logger.error("Ultravox call creation failed: %s - %s", response.status_code, response.text)
