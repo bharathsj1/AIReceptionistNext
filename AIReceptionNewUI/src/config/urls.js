@@ -22,6 +22,7 @@ export const API_URLS = {
   ultravoxVoices: apiUrl("ultravox-voices"),
   ultravoxDemoCall: apiUrl("ultravox-demo-call"),
   dashboard: apiUrl("dashboard"),
+  assignAiNumber: apiUrl("clients/assign-number"),
   subscriptionsStatus: apiUrl("subscriptions/status"),
   googleAuthUrl: apiUrl("auth/google/url"),
   googleAuthCallback: apiUrl("auth/google/callback"),

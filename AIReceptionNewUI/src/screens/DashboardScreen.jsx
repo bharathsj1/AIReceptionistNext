@@ -136,6 +136,10 @@ export default function DashboardScreen({
   onLoadTranscript,
   onRefreshCalls,
   onRefreshDashboard,
+  assignNumberStatus,
+  onAssignNumber,
+  hasActiveSubscription,
+  onResumeBusinessDetails,
   onLogout
 }) {
   const pageSize = 8;
@@ -393,6 +397,15 @@ export default function DashboardScreen({
   const activeToolCopy =
     activeToolMeta?.copy || "Full control over your AI agents, analytics, and automations.";
   const ActiveIcon = activeToolMeta?.icon || Shield;
+  const hasTwilioNumber = Boolean(aiNumber);
+  const hasReceptionistSubscription = !subscriptionsLoading && !isToolLocked("ai_receptionist");
+  const needsNumberAssignment = !hasTwilioNumber;
+  const showAssignCta = hasReceptionistSubscription && needsNumberAssignment;
+  const showNumberGate = currentTool === "ai_receptionist" && showAssignCta;
+  const assignBusy = assignNumberStatus?.status === "loading";
+  const assignError =
+    assignNumberStatus?.status === "error" ? assignNumberStatus?.message : "";
+  const showResumeBusinessAction = !subscriptionsLoading && !hasActiveSubscription;
 
   useEffect(() => {
     setBusinessForm({
@@ -493,17 +506,73 @@ export default function DashboardScreen({
     };
   }, [analyticsCalls, callDayOptions, recentCalls, selectedCallDay]);
 
+  const [voiceLanguageFilter, setVoiceLanguageFilter] = useState("all");
   const primaryVoice = agentDetails.voice;
+  const resolveSampleUrl = (rawUrl) => {
+    const url = String(rawUrl || "").trim();
+    if (!url) return "";
+    if (url.startsWith("http://") || url.startsWith("https://")) return url;
+    if (url.startsWith("//")) {
+      const host = url.slice(2).split("/")[0];
+      if (!host.includes(".")) return "";
+      return `https:${url}`;
+    }
+    if (url.startsWith("/")) return "";
+    const host = url.split("/")[0];
+    if (!host.includes(".")) return "";
+    return `https://${url}`;
+  };
   const voiceOptions = useMemo(
     () =>
       (ultravoxVoices || []).map((v) => ({
         id: v.id || v.voiceId || v.voice_id,
         name: v.name || v.label || v.voice || v.id,
         locale: v.locale || v.language || "",
-        gender: v.gender || v.style || ""
+        gender: v.gender || v.style || "",
+        primaryLanguage: v.primaryLanguage || v.primary_language || "",
+        sampleUrl: resolveSampleUrl(
+          v.previewUrl ||
+            v.preview_url ||
+            v.sample ||
+            v.sample_url ||
+            v.sampleUrl ||
+            v.audio_url ||
+            v.audioUrl ||
+            v.demo_url ||
+            v.demoUrl ||
+            ""
+        )
       })),
     [ultravoxVoices]
   );
+  const voiceLanguageOptions = useMemo(() => {
+    const set = new Set();
+    voiceOptions.forEach((voice) => {
+      if (voice.primaryLanguage) set.add(voice.primaryLanguage);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [voiceOptions]);
+  const filteredVoiceOptions = useMemo(() => {
+    if (voiceLanguageFilter === "all") return voiceOptions;
+    return voiceOptions.filter((voice) => voice.primaryLanguage === voiceLanguageFilter);
+  }, [voiceLanguageFilter, voiceOptions]);
+  const selectedVoice =
+    voiceOptions.find((voice) => voice.id === primaryVoice) || filteredVoiceOptions[0];
+
+  useEffect(() => {
+    if (voiceLanguageFilter !== "all" || !primaryVoice) return;
+    const voice = voiceOptions.find((item) => item.id === primaryVoice);
+    if (voice?.primaryLanguage) {
+      setVoiceLanguageFilter(voice.primaryLanguage);
+    }
+  }, [primaryVoice, voiceLanguageFilter, voiceOptions]);
+
+  useEffect(() => {
+    if (voiceLanguageFilter === "all") return;
+    if (!filteredVoiceOptions.length) return;
+    if (filteredVoiceOptions.some((voice) => voice.id === primaryVoice)) return;
+    setAgentDetails((prev) => ({ ...prev, voice: filteredVoiceOptions[0].id }));
+  }, [filteredVoiceOptions, primaryVoice, voiceLanguageFilter, setAgentDetails]);
 
   const integrationStatus = calendarStatus || (calendarEvents?.length ? "Google" : null);
   const selectedProviderLabel = selectedCalendarProvider === "google" ? "Google" : "Outlook";
@@ -581,6 +650,17 @@ export default function DashboardScreen({
                 );
               })}
             </div>
+            {showResumeBusinessAction && (
+              <button
+                type="button"
+                onClick={onResumeBusinessDetails}
+                className={`mt-2 inline-flex items-center justify-center rounded-2xl border border-indigo-400/60 bg-indigo-500/15 px-3 py-2 text-xs font-semibold text-indigo-100 transition hover:-translate-y-0.5 hover:border-indigo-300 hover:bg-indigo-500/25 ${
+                  sideNavOpen ? "" : "px-0"
+                }`}
+              >
+                {sideNavOpen ? "Enter business details" : "Go"}
+              </button>
+            )}
           </aside>
 
           <div className="flex flex-1 flex-col gap-5">
@@ -602,12 +682,52 @@ export default function DashboardScreen({
                 </div>
                 <div className="flex items-center gap-3">
                   {currentTool === "ai_receptionist" && (
-                    <div className="rounded-2xl border border-emerald-400/40 bg-emerald-900/40 px-4 py-3 text-sm font-semibold text-emerald-100 shadow">
-                      <p className="text-xs uppercase tracking-[0.2em] text-emerald-200">AI Number</p>
-                      <div className="flex items-center gap-2 text-lg">
-                        <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
-                        {aiNumber || "Pending assignment"}
-                      </div>
+                    <div
+                      className={`rounded-2xl border px-4 py-3 text-sm font-semibold shadow ${
+                        hasTwilioNumber
+                          ? "border-emerald-400/40 bg-emerald-900/40 text-emerald-100"
+                          : "border-slate-700/60 bg-slate-900/60 text-slate-100"
+                      }`}
+                    >
+                      <p
+                        className={`text-xs uppercase tracking-[0.2em] ${
+                          hasTwilioNumber ? "text-emerald-200" : "text-slate-300"
+                        }`}
+                      >
+                        AI Number
+                      </p>
+                      {hasTwilioNumber ? (
+                        <div className="flex items-center gap-2 text-lg">
+                          <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
+                          {aiNumber}
+                        </div>
+                      ) : (
+                        <div className="mt-2 flex flex-col gap-2">
+                          <div className="relative text-lg">
+                            <span className="select-none blur-[2px]">000 000 0000</span>
+                            <span className="absolute inset-0 flex items-center text-xs text-slate-300">
+                              Number not assigned
+                            </span>
+                          </div>
+                          {showAssignCta ? (
+                            <button
+                              type="button"
+                              onClick={onAssignNumber}
+                              disabled={assignBusy || !onAssignNumber}
+                              className="inline-flex items-center justify-center rounded-xl border border-emerald-400/60 bg-emerald-500/20 px-3 py-1 text-xs font-semibold text-emerald-100 transition hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-emerald-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {assignBusy ? "Assigning..." : "Assign AI number"}
+                            </button>
+                          ) : (
+                            <span className="text-xs text-slate-400">
+                              Activate AI Receptionist to assign a number.
+                            </span>
+                          )}
+                          {assignError && (
+                            <span className="text-xs text-rose-300">{assignError}</span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                   {onLogout && (
@@ -655,8 +775,10 @@ export default function DashboardScreen({
             loading={subscriptionsLoading}
             message="Purchase the AI Receptionist to unlock live calls, agents, and integrations."
           >
-            {activeTab === "dashboard" && (
-              <>
+            <div className="relative">
+              <div className={showNumberGate ? "pointer-events-none blur-[2px] opacity-60 transition" : "transition"}>
+                {activeTab === "dashboard" && (
+                  <>
                 <section className="grid gap-4 md:grid-cols-4">
                   <StatCard label="Total Calls" value={analytics.totalCalls} hint="All time" icon={PhoneCall} />
                   <StatCard
@@ -794,13 +916,25 @@ export default function DashboardScreen({
               <label className="text-sm text-slate-200">Voice</label>
               <div className="flex flex-wrap items-center gap-3">
                 <select
+                  value={voiceLanguageFilter}
+                  onChange={(e) => setVoiceLanguageFilter(e.target.value)}
+                  className="w-full min-w-[180px] rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40 sm:w-auto"
+                >
+                  <option value="all">All languages</option>
+                  {voiceLanguageOptions.map((lang) => (
+                    <option key={lang} value={lang}>
+                      {lang}
+                    </option>
+                  ))}
+                </select>
+                <select
                   value={primaryVoice || ""}
                   onChange={(e) => setAgentDetails({ ...agentDetails, voice: e.target.value })}
                   className="w-full min-w-[220px] rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40 sm:w-auto"
                   disabled={ultravoxVoicesLoading}
                 >
                   <option value="">Select a voice</option>
-                  {voiceOptions.map((v) => (
+                  {filteredVoiceOptions.map((v) => (
                     <option key={v.id} value={v.id}>
                       {v.name} {v.locale ? `• ${v.locale}` : ""} {v.gender ? `(${v.gender})` : ""}
                     </option>
@@ -809,9 +943,16 @@ export default function DashboardScreen({
                 <span className="text-xs text-slate-400">
                   {ultravoxVoicesLoading
                     ? "Loading Ultravox voices..."
-                    : `${voiceOptions.length} voices available`}
+                    : `${filteredVoiceOptions.length} voices available`}
                 </span>
               </div>
+              {selectedVoice?.sampleUrl ? (
+                <div className="mt-2">
+                  <audio controls className="w-full" src={selectedVoice.sampleUrl}>
+                    Your browser does not support audio playback.
+                  </audio>
+                </div>
+              ) : null}
 
               <label className="mt-2 text-sm text-slate-200">System prompt</label>
               <textarea
@@ -1367,8 +1508,33 @@ export default function DashboardScreen({
             </div>
           </section>
         )}
-      </ToolGate>
-    )}
+              </div>
+              {showNumberGate && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="max-w-md rounded-3xl border border-white/10 bg-slate-950/90 px-6 py-5 text-center shadow-2xl">
+                    <p className="text-sm font-semibold text-white">Assign your AI number</p>
+                    <p className="mt-1 text-xs text-slate-300">
+                      We need a Twilio number before calls and agents can go live.
+                    </p>
+                    {showAssignCta && (
+                      <button
+                        type="button"
+                        onClick={onAssignNumber}
+                        disabled={assignBusy || !onAssignNumber}
+                        className="mt-3 inline-flex items-center justify-center rounded-xl border border-emerald-400/60 bg-emerald-500/20 px-4 py-2 text-xs font-semibold text-emerald-100 transition hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-emerald-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {assignBusy ? "Assigning..." : "Assign AI number"}
+                      </button>
+                    )}
+                    {assignError && (
+                      <p className="mt-2 text-xs text-rose-300">{assignError}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </ToolGate>
+        )}
 
         {currentTool === "email_manager" && (
           <ToolGate

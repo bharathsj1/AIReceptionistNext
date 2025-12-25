@@ -3035,6 +3035,61 @@ html {
   color: #86efac;
 }
 
+.password-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-field input {
+  width: 100%;
+  padding-right: 54px;
+}
+
+.password-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  background: rgba(15, 23, 42, 0.85);
+  color: #f8fafc;
+  width: 32px;
+  height: 32px;
+  font-size: 0;
+  font-weight: 600;
+  padding: 0;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.password-toggle svg {
+  width: 16px;
+  height: 16px;
+}
+
+.signup-form .password-toggle {
+  background: rgba(15, 23, 42, 0.85);
+  border-color: rgba(148, 163, 184, 0.5);
+  color: #f8fafc;
+}
+
+.password-toggle:hover {
+  background: rgba(15, 23, 42, 0.95);
+}
+
+.signup-form .password-toggle:hover {
+  background: rgba(15, 23, 42, 0.95);
+}
+
+.password-toggle:focus-visible {
+  outline: 2px solid rgba(99, 102, 241, 0.6);
+  outline-offset: 2px;
+}
+
 .signup-label {
   display: grid;
   gap: 6px;

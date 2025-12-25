@@ -353,12 +353,12 @@ def dashboard_update_agent(req: func.HttpRequest) -> func.HttpResponse:
                 headers=cors,
             )
 
-        from services.ultravox_service import _headers, ULTRAVOX_BASE_URL  # pylint: disable=protected-access
+        from services.ultravox_service import _headers, _base_url  # pylint: disable=protected-access
         import httpx
 
         with httpx.Client(timeout=20) as client_http:
             resp = client_http.patch(
-                f"{ULTRAVOX_BASE_URL}/agents/{client.ultravox_agent_id}",
+                f"{_base_url()}/agents/{client.ultravox_agent_id}",
                 headers=_headers(),
                 json=update_payload,
             )

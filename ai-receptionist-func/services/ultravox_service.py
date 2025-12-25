@@ -32,6 +32,8 @@ def create_ultravox_agent(
     website_url: str,
     summary: str,
     system_prompt_override: str | None = None,
+    voice_override: str | None = None,
+    greeting_override: str | None = None,
 ) -> str:
     """
     Create an Ultravox agent and return its ID.
@@ -42,6 +44,8 @@ def create_ultravox_agent(
         website_url,
         summary,
         system_prompt_override=system_prompt_override,
+        voice_override=voice_override,
+        greeting_override=greeting_override,
     )
 
     with httpx.Client(timeout=20) as client:
@@ -57,6 +61,8 @@ def create_ultravox_agent(
                 summary,
                 agent_name_override=deduped_name,
                 system_prompt_override=system_prompt_override,
+                voice_override=voice_override,
+                greeting_override=greeting_override,
             )
             response = client.post(f"{_base_url()}/agents", headers=_headers(), json=payload)
 
@@ -367,6 +373,7 @@ BOOKING_TOOL_INSTRUCTION = (
     "After the caller confirms the appointment details, you MUST call the `calendar_book` tool with:\n"
     "- start in ISO 8601 in Europe/London (no 'tomorrow' wording)\n"
     "- callerPhone and callerName\n"
+    "- callerEmail if provided by the caller\n"
     "- duration_minutes=30\n"
     "Only call the tool if it is a weekday and start time is between 09:00 and 16:30 Europe/London."
 )
@@ -435,6 +442,7 @@ def _build_booking_tool_payload(public_api_base: str) -> Dict:
         _param("duration_minutes", "number", False),
         _param("buffer_minutes", "number", False),
         _param("callerName", "string", False),
+        _param("callerEmail", "string", False),
         _param("callerPhone", "string", True),
         _param("callId", "string", False),
         _param("agentId", "string", False),

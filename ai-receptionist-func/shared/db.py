@@ -147,6 +147,7 @@ class Payment(Base):
     amount = Column(Integer, nullable=False)
     currency = Column(String, nullable=False, default="usd")
     status = Column(String, nullable=False)
+    invoice_sent_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     subscription = relationship("Subscription", back_populates="payments")
@@ -313,12 +314,17 @@ def _ensure_optional_columns() -> None:
                         amount INTEGER NOT NULL,
                         currency VARCHAR NOT NULL DEFAULT 'usd',
                         status VARCHAR NOT NULL,
-                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        invoice_sent_at TIMESTAMP,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         FOREIGN KEY(subscription_id) REFERENCES subscriptions (id)
                     )
                     """
                 )
             )
+        else:
+            payment_columns = {col["name"] for col in inspector.get_columns("payments")}
+            if "invoice_sent_at" not in payment_columns:
+                conn.execute(text("ALTER TABLE payments ADD COLUMN IF NOT EXISTS invoice_sent_at TIMESTAMP"))
 
         if "calls" not in existing_tables:
             conn.execute(

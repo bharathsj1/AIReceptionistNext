@@ -1,14 +1,21 @@
 import json
 import logging
+import smtplib
+import ssl
 from datetime import datetime
+from email import encoders
+from email.mime.base import MIMEBase
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from typing import Dict
 
 import azure.functions as func
+import httpx
 import stripe
 from sqlalchemy.orm import Session
 
 from function_app import app
-from shared.config import get_required_setting
+from shared.config import get_required_setting, get_setting, get_smtp_settings
 from shared.db import SessionLocal, Subscription, Payment, AITool
 from utils.cors import build_cors_headers
 
@@ -118,6 +125,267 @@ def _convert_timestamp_to_datetime(timestamp: int | None) -> datetime | None:
     except (ValueError, OSError, OverflowError) as e:
         logger.warning("Failed to convert timestamp %s to datetime: %s", timestamp, e)
         return None
+
+
+def _get_invoice_field(invoice_obj, field: str):
+    if invoice_obj is None:
+        return None
+    if isinstance(invoice_obj, dict):
+        return invoice_obj.get(field)
+    return getattr(invoice_obj, field, None)
+
+
+def _get_event_type(event) -> str | None:
+    if isinstance(event, dict):
+        return event.get("type")
+    return getattr(event, "type", None)
+
+
+def _get_event_object(event):
+    if isinstance(event, dict):
+        return (event.get("data") or {}).get("object")
+    data = getattr(event, "data", None)
+    return getattr(data, "object", None)
+
+
+def _resolve_invoice_email(stripe_client, invoice_obj) -> str | None:
+    email = _get_invoice_field(invoice_obj, "customer_email") or _get_invoice_field(invoice_obj, "email")
+    if email:
+        return email
+    customer_id = _get_invoice_field(invoice_obj, "customer")
+    if not customer_id:
+        return None
+    try:
+        customer = stripe_client.Customer.retrieve(customer_id)
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.warning("Failed to retrieve Stripe customer %s for invoice email: %s", customer_id, exc)
+        return None
+    if isinstance(customer, dict):
+        return customer.get("email")
+    return getattr(customer, "email", None)
+
+
+def _upsert_payment_from_invoice(
+    db: Session,
+    *,
+    stripe_subscription_id: str | None,
+    invoice_id: str | None,
+    payment_intent_id: str | None,
+    status: str,
+    amount: int,
+    currency: str,
+) -> Payment | None:
+    if not stripe_subscription_id:
+        return None
+    subscription = (
+        db.query(Subscription)
+        .filter(Subscription.stripe_subscription_id == stripe_subscription_id)
+        .one_or_none()
+    )
+    if not subscription:
+        return None
+
+    payment = None
+    if invoice_id:
+        payment = db.query(Payment).filter(Payment.stripe_invoice_id == invoice_id).one_or_none()
+    if not payment and payment_intent_id:
+        payment = (
+            db.query(Payment)
+            .filter(Payment.stripe_payment_intent_id == payment_intent_id)
+            .one_or_none()
+        )
+    if payment:
+        payment.status = status
+        payment.amount = amount
+        payment.currency = currency
+    else:
+        payment = Payment(
+            subscription_id=subscription.id,
+            stripe_invoice_id=invoice_id,
+            stripe_payment_intent_id=payment_intent_id,
+            amount=amount,
+            currency=currency,
+            status=status,
+        )
+        db.add(payment)
+    db.commit()
+    return payment
+
+
+def _is_invoice_paid(invoice_obj) -> bool:
+    paid = _get_invoice_field(invoice_obj, "paid")
+    if paid is not None:
+        return bool(paid)
+    status = _get_invoice_field(invoice_obj, "status")
+    return str(status or "").lower() == "paid"
+
+
+def _payment_intent_succeeded(stripe_client, invoice_obj) -> bool:
+    payment_intent = _get_invoice_field(invoice_obj, "payment_intent")
+    if not payment_intent:
+        return False
+    if isinstance(payment_intent, dict):
+        status = payment_intent.get("status")
+    else:
+        try:
+            payment_intent = stripe_client.PaymentIntent.retrieve(payment_intent)
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.warning("Failed to retrieve Stripe payment intent %s: %s", payment_intent, exc)
+            return False
+        if isinstance(payment_intent, dict):
+            status = payment_intent.get("status")
+        else:
+            status = getattr(payment_intent, "status", None)
+    return str(status or "").lower() == "succeeded"
+
+
+def _download_invoice_pdf(invoice_obj) -> bytes | None:
+    invoice_pdf_url = _get_invoice_field(invoice_obj, "invoice_pdf")
+    if not invoice_pdf_url:
+        logger.warning("Stripe invoice is missing invoice_pdf URL.")
+        return None
+    try:
+        with httpx.Client(timeout=20, follow_redirects=True) as client:
+            resp = client.get(invoice_pdf_url)
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.warning("Failed to download invoice PDF: %s", exc)
+        return None
+    if resp.status_code >= 300:
+        logger.warning(
+            "Failed to download invoice PDF (%s) at %s: %s",
+            resp.status_code,
+            resp.url,
+            resp.text,
+        )
+        return None
+    return resp.content
+
+
+def _send_invoice_email(email: str, invoice_id: str, invoice_number: str | None, pdf_bytes: bytes) -> bool:
+    """
+    Send an invoice PDF as an email attachment to the customer.
+    Returns True on success, False on failure.
+    """
+    smtp = get_smtp_settings()
+    if not smtp.get("host") or not smtp.get("username") or not smtp.get("password"):
+        logger.warning("SMTP not configured; skipping invoice email.")
+        return False
+
+    identifier = (invoice_number or invoice_id or "invoice").replace(" ", "_")
+    subject = f"Your AI Receptionist invoice {identifier}".strip()
+    body = (
+        "Hi,\n\n"
+        "Thanks for your payment. Your invoice is attached as a PDF.\n\n"
+        "If you have any questions, reply to this email.\n\n"
+        "Thanks,\nAI Receptionist Team\n"
+    )
+
+    message = MIMEMultipart()
+    message["From"] = smtp["from_email"]
+    message["To"] = email
+    message["Subject"] = subject
+    message.attach(MIMEText(body, "plain"))
+
+    attachment = MIMEBase("application", "pdf")
+    attachment.set_payload(pdf_bytes)
+    encoders.encode_base64(attachment)
+    filename = f"invoice-{identifier}.pdf"
+    attachment.add_header("Content-Disposition", f'attachment; filename="{filename}"')
+    message.attach(attachment)
+
+    host = smtp["host"]
+    use_tls = smtp.get("use_tls", True)
+    use_ssl = smtp.get("use_ssl", False)
+    port = smtp.get("port")
+
+    if port is None:
+        port = 465 if use_ssl else (587 if use_tls else 25)
+
+    def _send():
+        if use_ssl:
+            context = ssl.create_default_context()
+            with smtplib.SMTP_SSL(host, port, context=context) as server:
+                code, capabilities = server.ehlo()
+                logger.debug("SMTP EHLO (SSL) response code: %s, capabilities: %s", code, capabilities)
+                if smtp.get("username") and not server.has_extn("auth"):
+                    raise RuntimeError("SMTP AUTH not supported on this endpoint/port.")
+                if smtp.get("username"):
+                    server.login(smtp["username"], smtp["password"])
+                server.sendmail(smtp["from_email"], [email], message.as_string())
+        else:
+            context = ssl.create_default_context() if use_tls else None
+            with smtplib.SMTP(host, port) as server:
+                code, capabilities = server.ehlo()
+                logger.debug("SMTP EHLO response code: %s, capabilities: %s", code, capabilities)
+                if use_tls:
+                    server.starttls(context=context)
+                    code_tls, capabilities_tls = server.ehlo()
+                    logger.debug("SMTP EHLO after STARTTLS code: %s, capabilities: %s", code_tls, capabilities_tls)
+                if smtp.get("username") and not server.has_extn("auth"):
+                    raise RuntimeError("SMTP AUTH not supported on this endpoint/port.")
+                if smtp.get("username"):
+                    server.login(smtp["username"], smtp["password"])
+                server.sendmail(smtp["from_email"], [email], message.as_string())
+
+    try:
+        _send()
+        return True
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.warning("First attempt to send invoice email failed: %s", exc)
+        try:
+            _send()
+            return True
+        except Exception as exc2:  # pylint: disable=broad-except
+            logger.error("Failed to send invoice email after retry: %s", exc2)
+            return False
+
+
+def _maybe_send_invoice_email(
+    db: Session,
+    stripe_client,
+    *,
+    email: str,
+    invoice_id: str | None,
+    payment_intent_id: str | None,
+) -> None:
+    if not email or not invoice_id:
+        if not email:
+            logger.warning("Invoice email skipped: missing customer email for invoice %s.", invoice_id)
+        return
+
+    payment = None
+    if invoice_id:
+        payment = db.query(Payment).filter(Payment.stripe_invoice_id == invoice_id).one_or_none()
+    if not payment and payment_intent_id:
+        payment = (
+            db.query(Payment)
+            .filter(Payment.stripe_payment_intent_id == payment_intent_id)
+            .one_or_none()
+        )
+    if payment and payment.invoice_sent_at:
+        return
+
+    try:
+        invoice = stripe_client.Invoice.retrieve(invoice_id)
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.warning("Failed to retrieve Stripe invoice %s: %s", invoice_id, exc)
+        return
+
+    if not _is_invoice_paid(invoice) and not _payment_intent_succeeded(stripe_client, invoice):
+        logger.info("Stripe invoice %s not paid yet; skipping email.", invoice_id)
+        return
+
+    pdf_bytes = _download_invoice_pdf(invoice)
+    if not pdf_bytes:
+        return
+
+    invoice_number = _get_invoice_field(invoice, "number")
+    if _send_invoice_email(email, invoice_id, invoice_number, pdf_bytes):
+        if payment:
+            payment.invoice_sent_at = datetime.utcnow()
+            db.commit()
+        else:
+            logger.info("Invoice email sent for %s, but no payment record found.", invoice_id)
 
 
 def _upsert_subscription_record(
@@ -426,6 +694,13 @@ def confirm_subscription(req: func.HttpRequest) -> func.HttpResponse:
             amount=amount,
             currency="usd",
         )
+        _maybe_send_invoice_email(
+            db,
+            client,
+            email=email,
+            invoice_id=invoice_id,
+            payment_intent_id=payment_intent_id,
+        )
     finally:
         db.close()
 
@@ -435,6 +710,82 @@ def confirm_subscription(req: func.HttpRequest) -> func.HttpResponse:
         mimetype="application/json",
         headers=cors,
     )
+
+
+@app.function_name(name="StripeWebhook")
+@app.route(route="payments/stripe-webhook", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def stripe_webhook(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Stripe webhook endpoint for invoice payment events.
+    """
+    cors = build_cors_headers(req, ["POST", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
+    payload = req.get_body()
+    sig_header = req.headers.get("Stripe-Signature")
+    webhook_secret = get_setting("STRIPE_WEBHOOK_SECRET")
+    event = None
+
+    if webhook_secret:
+        try:
+            event = stripe.Webhook.construct_event(payload, sig_header, webhook_secret)
+        except ValueError as exc:
+            logger.warning("Stripe webhook payload invalid: %s", exc)
+            return func.HttpResponse("Invalid payload", status_code=400, headers=cors)
+        except stripe.error.SignatureVerificationError as exc:
+            logger.warning("Stripe webhook signature failed: %s", exc)
+            return func.HttpResponse("Invalid signature", status_code=400, headers=cors)
+    else:
+        logger.warning("STRIPE_WEBHOOK_SECRET not set; accepting unsigned Stripe webhook.")
+        try:
+            event = json.loads(payload.decode("utf-8"))
+        except ValueError as exc:
+            logger.warning("Stripe webhook payload decode failed: %s", exc)
+            return func.HttpResponse("Invalid payload", status_code=400, headers=cors)
+
+    event_type = _get_event_type(event)
+    event_obj = _get_event_object(event)
+    if not event_type or not event_obj:
+        logger.warning("Stripe webhook missing type or object.")
+        return func.HttpResponse("Invalid event", status_code=400, headers=cors)
+
+    if event_type in {"invoice.payment_succeeded", "invoice.paid"}:
+        invoice_id = _get_invoice_field(event_obj, "id")
+        subscription_id = _get_invoice_field(event_obj, "subscription")
+        payment_intent_id = _get_invoice_field(event_obj, "payment_intent")
+        amount = _get_invoice_field(event_obj, "amount_paid") or _get_invoice_field(event_obj, "amount_due") or 0
+        currency = _get_invoice_field(event_obj, "currency") or "usd"
+        status = _get_invoice_field(event_obj, "status") or "paid"
+
+        try:
+            client = _get_stripe_client()
+            email = _resolve_invoice_email(client, event_obj)
+            db = SessionLocal()
+            _upsert_payment_from_invoice(
+                db,
+                stripe_subscription_id=subscription_id,
+                invoice_id=invoice_id,
+                payment_intent_id=payment_intent_id,
+                status=status,
+                amount=amount,
+                currency=currency,
+            )
+            _maybe_send_invoice_email(
+                db,
+                client,
+                email=email or "",
+                invoice_id=invoice_id,
+                payment_intent_id=payment_intent_id,
+            )
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.error("Stripe webhook processing failed: %s", exc)
+            return func.HttpResponse("Webhook processing failed", status_code=500, headers=cors)
+        finally:
+            if "db" in locals():
+                db.close()
+
+    return func.HttpResponse("ok", status_code=200, headers=cors)
 
 
 @app.function_name(name="GetSubscriptionStatus")

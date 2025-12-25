@@ -66,6 +66,22 @@ def _build_manual_summary(body: dict) -> Tuple[str, str]:
     return name_guess, "\n".join(filtered)
 
 
+def _build_summary_from_client(client: Client, user: User | None) -> Tuple[str, str]:
+    payload = {
+        "business_name": client.business_name or (user.business_name if user else None),
+        "name": client.name or client.business_name or (user.business_name if user else None),
+        "email": client.email,
+        "business_phone": client.business_phone or (user.business_number if user else None),
+        "business_email": client.email,
+        "business_notes": client.notes,
+        "business_summary": client.website_data,
+        "business_location": None,
+        "business_services": None,
+        "business_hours": None,
+    }
+    return _build_manual_summary(payload)
+
+
 def purchase_twilio_number(twilio_client: TwilioClient, webhook_base: str, country: str) -> Dict[str, str]:
     """
     Buy a Twilio number and configure its voice webhook.
@@ -265,6 +281,15 @@ def clients_provision(req: func.HttpRequest) -> func.HttpResponse:
     email = body.get("email") if isinstance(body, dict) else None
     website_url = body.get("website_url") if isinstance(body, dict) else None
     system_prompt = body.get("system_prompt") if isinstance(body, dict) else None
+    voice = body.get("voice") if isinstance(body, dict) else None
+    greeting = None
+    if isinstance(body, dict):
+        greeting = (
+            body.get("welcome_message")
+            or body.get("greeting")
+            or body.get("welcomeMessage")
+            or body.get("first_speaker_text")
+        )
 
     if not email:
         return func.HttpResponse(
@@ -315,6 +340,8 @@ def clients_provision(req: func.HttpRequest) -> func.HttpResponse:
                     website_url,
                     summary,
                     system_prompt_override=system_prompt if isinstance(system_prompt, str) else None,
+                    voice_override=voice if isinstance(voice, str) and voice.strip() else None,
+                    greeting_override=greeting if isinstance(greeting, str) and greeting.strip() else None,
                 )
             except Exception as exc:  # pylint: disable=broad-except
                 logger.error("Ultravox agent creation failed: %s", exc)
@@ -391,6 +418,121 @@ def clients_provision(req: func.HttpRequest) -> func.HttpResponse:
         logger.error("Provisioning failed: %s", exc)
         return func.HttpResponse(
             json.dumps({"error": "Provisioning failed"}),
+            status_code=500,
+            mimetype="application/json",
+            headers=cors,
+        )
+    finally:
+        db.close()
+
+
+@app.function_name(name="ClientsAssignNumber")
+@app.route(route="clients/assign-number", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def clients_assign_number(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Assign a Twilio number and ensure an Ultravox agent for an existing client.
+    Business details are sourced from the database to avoid recrawling.
+    """
+    cors = build_cors_headers(req, ["POST", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
+    try:
+        body = req.get_json()
+    except ValueError:
+        body = None
+
+    email = body.get("email") if isinstance(body, dict) else None
+    if not email:
+        return func.HttpResponse(
+            json.dumps({"error": "Missing required field: email"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    db = SessionLocal()
+    try:
+        client_record: Client = db.query(Client).filter_by(email=email).one_or_none()
+        if not client_record:
+            return func.HttpResponse(
+                json.dumps({"error": "Client not found"}),
+                status_code=404,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        user = db.query(User).filter_by(email=email).one_or_none()
+        client_record.user_id = user.id if user else client_record.user_id
+
+        if not client_record.ultravox_agent_id:
+            agent_name, summary = _build_summary_from_client(client_record, user)
+            agent_id = create_ultravox_agent(
+                agent_name or email,
+                client_record.website_url or "manual-entry",
+                summary,
+            )
+            client_record.ultravox_agent_id = agent_id
+
+        phone_record: PhoneNumber = (
+            db.query(PhoneNumber).filter_by(client_id=client_record.id, is_active=True).one_or_none()
+        )
+        if not phone_record:
+            try:
+                twilio_client = get_twilio_client()
+                default_country = get_setting("TWILIO_DEFAULT_COUNTRY") or "US"
+                webhook_base = get_required_setting("TWILIO_INBOUND_WEBHOOK_PUBLIC_URL")
+                purchased = purchase_twilio_number(twilio_client, webhook_base, default_country)
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.error("Twilio number purchase failed: %s", exc)
+                return func.HttpResponse(
+                    json.dumps(
+                        {
+                            "error": "Failed to purchase Twilio number",
+                            "details": str(exc),
+                        }
+                    ),
+                    status_code=500,
+                    mimetype="application/json",
+                    headers=cors,
+                )
+
+            existing_number = (
+                db.query(PhoneNumber)
+                .filter_by(twilio_phone_number=purchased["phone_number"], is_active=True)
+                .one_or_none()
+            ) or db.query(PhoneNumber).filter_by(twilio_phone_number=purchased["phone_number"]).one_or_none()
+            if existing_number:
+                phone_record = existing_number
+                phone_record.client_id = client_record.id
+                phone_record.is_active = True
+                phone_record.twilio_sid = purchased["sid"]
+            else:
+                phone_record = PhoneNumber(
+                    client_id=client_record.id,
+                    twilio_phone_number=purchased["phone_number"],
+                    twilio_sid=purchased["sid"],
+                    is_active=True,
+                )
+                db.add(phone_record)
+
+        db.commit()
+
+        response_payload = {
+            "client_id": client_record.id,
+            "email": client_record.email,
+            "website_url": client_record.website_url,
+            "ultravox_agent_id": client_record.ultravox_agent_id,
+            "agent_id": client_record.ultravox_agent_id,
+            "phone_number": phone_record.twilio_phone_number if phone_record else None,
+            "twilio_sid": phone_record.twilio_sid if phone_record else None,
+        }
+        return func.HttpResponse(json.dumps(response_payload), status_code=200, mimetype="application/json", headers=cors)
+    except Exception as exc:  # pylint: disable=broad-except
+        db.rollback()
+        logger.error("Assign number failed: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "Failed to assign AI number"}),
             status_code=500,
             mimetype="application/json",
             headers=cors,

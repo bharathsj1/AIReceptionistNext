@@ -4,6 +4,8 @@ import secrets
 import base64
 import hashlib
 import re
+import smtplib
+import ssl
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 from zoneinfo import ZoneInfo
@@ -12,7 +14,7 @@ from urllib.parse import parse_qs, quote
 import azure.functions as func
 import requests
 from function_app import app
-from shared.config import get_google_oauth_settings, get_public_api_base, get_setting
+from shared.config import get_google_oauth_settings, get_public_api_base, get_setting, get_smtp_settings
 from shared.db import SessionLocal, User, Client, GoogleToken
 from utils.cors import build_cors_headers
 from services.ultravox_service import (
@@ -136,6 +138,89 @@ def _extract_time_fields(payload: dict) -> Tuple[Optional[str], Optional[str], O
     duration = first("duration_minutes", "durationMinutes", "duration")
     buffer = first("buffer_minutes", "bufferMinutes", "buffer")
     return start_iso, end_iso, duration, buffer
+
+
+def _send_appointment_confirmation_email(
+    to_email: str,
+    business_name: Optional[str],
+    start_time: datetime,
+    end_time: datetime,
+    caller_name: Optional[str],
+    business_phone: Optional[str],
+    business_email: Optional[str],
+) -> bool:
+    smtp = get_smtp_settings()
+    if not smtp.get("host") or not smtp.get("username") or not smtp.get("password"):
+        logger.warning("SMTP not configured; skipping appointment confirmation email.")
+        return False
+
+    safe_business = business_name or "our team"
+    subject = f"Appointment confirmed with {safe_business}"
+    greeting = f"Hi {caller_name}," if caller_name else "Hi,"
+    start_str = start_time.strftime("%A, %d %B %Y at %H:%M %Z")
+    end_str = end_time.strftime("%H:%M %Z")
+    contact_lines = []
+    if business_phone:
+        contact_lines.append(f"Phone: {business_phone}")
+    if business_email:
+        contact_lines.append(f"Email: {business_email}")
+    contact_block = "\n".join(contact_lines)
+    if contact_block:
+        contact_block = f"\n\nContact details:\n{contact_block}"
+
+    body = (
+        f"{greeting}\n\n"
+        f"Your appointment with {safe_business} is confirmed.\n"
+        f"Time: {start_str} - {end_str}\n"
+        "If you need to make changes, reply to this email or contact us directly."
+        f"{contact_block}\n\n"
+        "Thanks,\n"
+        f"{safe_business}\n"
+    )
+    message = f"From: {smtp['from_email']}\r\nTo: {to_email}\r\nSubject: {subject}\r\n\r\n{body}"
+
+    host = smtp["host"]
+    use_tls = smtp.get("use_tls", True)
+    use_ssl = smtp.get("use_ssl", False)
+    port = smtp.get("port")
+
+    if port is None:
+        port = 465 if use_ssl else (587 if use_tls else 25)
+
+    def _send():
+        if use_ssl:
+            context = ssl.create_default_context()
+            with smtplib.SMTP_SSL(host, port, context=context) as server:
+                server.ehlo()
+                if smtp.get("username") and not server.has_extn("auth"):
+                    raise RuntimeError("SMTP AUTH not supported on this endpoint/port.")
+                if smtp.get("username"):
+                    server.login(smtp["username"], smtp["password"])
+                server.sendmail(smtp["from_email"], [to_email], message.encode("utf-8"))
+        else:
+            context = ssl.create_default_context() if use_tls else None
+            with smtplib.SMTP(host, port) as server:
+                server.ehlo()
+                if use_tls:
+                    server.starttls(context=context)
+                    server.ehlo()
+                if smtp.get("username") and not server.has_extn("auth"):
+                    raise RuntimeError("SMTP AUTH not supported on this endpoint/port.")
+                if smtp.get("username"):
+                    server.login(smtp["username"], smtp["password"])
+                server.sendmail(smtp["from_email"], [to_email], message.encode("utf-8"))
+
+    try:
+        _send()
+        return True
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.warning("First attempt to send appointment confirmation failed: %s", exc)
+        try:
+            _send()
+            return True
+        except Exception as exc2:  # pylint: disable=broad-except
+            logger.error("Failed to send appointment confirmation after retry: %s", exc2)
+            return False
 
 
 def _build_google_auth_url(state: str, force_consent: bool = False) -> str:
@@ -1643,13 +1728,16 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
     db = SessionLocal()
     try:
         user = None
+        client = None
         if email:
             user = db.query(User).filter_by(email=email).one_or_none()
-        if not user and agent_id:
+            client = db.query(Client).filter_by(email=email).one_or_none()
+        if not client and agent_id:
             client = db.query(Client).filter_by(ultravox_agent_id=agent_id).one_or_none()
-            if client:
+            if client and not email:
                 email = client.email
-                user = db.query(User).filter_by(email=email).one_or_none()
+        if not user and email:
+            user = db.query(User).filter_by(email=email).one_or_none()
 
         logger.info("CalendarBook user lookup: email=%s user_found=%s", email, bool(user))
         if not email or not user:
@@ -1854,11 +1942,36 @@ def calendar_book(req: func.HttpRequest) -> func.HttpResponse:
             (event or {}).get("status"),
             event_id,
         )
+        email_sent = False
+        caller_email_value = caller_email.strip() if isinstance(caller_email, str) else ""
+        if caller_email_value and event and not event.get("duplicate"):
+            business_name = None
+            business_phone = None
+            business_email = None
+            if client:
+                business_name = client.business_name or client.name
+                business_phone = client.business_phone
+                business_email = client.email
+            email_sent = _send_appointment_confirmation_email(
+                caller_email_value,
+                business_name,
+                start_london,
+                end_london,
+                caller_name,
+                business_phone,
+                business_email,
+            )
+            logger.info("CalendarBook confirmation email sent=%s to=%s", email_sent, caller_email_value)
+        elif not caller_email_value:
+            logger.info("CalendarBook no caller email provided; skipping confirmation email.")
+        elif event and event.get("duplicate"):
+            logger.info("CalendarBook duplicate event; skipping confirmation email.")
         return func.HttpResponse(
             json.dumps(
                 {
                     "event": event,
                     "idempotent_event_id": event_id,
+                    "caller_email_sent": email_sent,
                     "resolved": {
                         "start": start_dt.isoformat(),
                         "end": end_dt.isoformat(),
