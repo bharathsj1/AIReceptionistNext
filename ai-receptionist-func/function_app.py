@@ -19,3 +19,4 @@ import dashboard_endpoints  # noqa
 import ultravox_demo_endpoints  # noqa
 import stripe_payment_endpoints  # noqa
 import call_endpoints  # noqa
+import email_endpoints  # noqa

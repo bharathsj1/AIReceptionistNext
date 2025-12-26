@@ -22,6 +22,11 @@ The Ultravox HTTP tool `calendar_book` is created and attached to each agent so 
 - Twilio voice webhook: `POST /api/twilio/incoming`
 - Ultravox mapping webhook: `POST /api/ultravox/webhook` (set `ULTRAVOX_WEBHOOK_SECRET` and pass `X-Ultravox-Webhook-Secret`)
 
+### Gmail email manager
+- `GET /api/email/messages?email=...&max_results=20&label_ids=INBOX`
+- `POST /api/email/summary` with `{ "email": "...", "message_id": "..." }`
+- Ensure `GOOGLE_SCOPES` includes `https://www.googleapis.com/auth/gmail.readonly`, then re-connect Google OAuth.
+
 ### Calls + transcript proxy
 - `GET /api/calls?email=...` (or `aiPhoneNumber=...`)
 - `GET /api/calls/{call_id}/transcript` (call_id can be DB id or Twilio CallSid; fetches live from Ultravox, no DB storage)

@@ -1048,7 +1048,7 @@ export default function App() {
   const pageClassName = `page${isLandingStage ? " page-landing" : ""}`;
   const pageContentClassName = `page-content${isLandingStage ? " page-content-landing" : ""}`;
   const contentClassName = `content${isLandingStage ? " content-landing" : ""}${isDashboardStage ? " content-wide" : ""}`;
-  const showGlobalLogo = stage !== STAGES.LANDING;
+  const showGlobalLogo = stage !== STAGES.LANDING && stage !== STAGES.DASHBOARD;
 
   const handleEmailSubmit = async (event) => {
     event.preventDefault();
