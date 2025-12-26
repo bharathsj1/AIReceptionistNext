@@ -110,6 +110,23 @@ const formatHourLabel = (hour) => {
   return `${base} ${period}`;
 };
 
+const formatSummaryBullets = (summary) => {
+  const cleaned = String(summary || "").replace(/\r/g, "").trim();
+  if (!cleaned) return [];
+  let lines = cleaned
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length <= 1) {
+    const sentenceParts = cleaned.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [cleaned];
+    lines = sentenceParts.map((line) => line.trim()).filter(Boolean);
+  }
+  const bullets = lines
+    .map((line) => line.replace(/^(\u2022|-|\*|\d+[.)])\s+/, "").trim())
+    .filter(Boolean);
+  return bullets.length ? bullets : [cleaned];
+};
+
 const StatCard = ({ label, value, hint, icon: Icon, tone = "default" }) => {
   const tones = {
     default: "bg-slate-900/60 border-slate-800 text-slate-200",
@@ -292,6 +309,7 @@ export default function DashboardScreen({
   });
   const [selectedCallDay, setSelectedCallDay] = useState("All days");
   const [sideNavOpen, setSideNavOpen] = useState(false);
+  const [sideNavHidden, setSideNavHidden] = useState(false);
   const [showHolidayCalendars, setShowHolidayCalendars] = useState(true);
   const [showBirthdayEvents, setShowBirthdayEvents] = useState(true);
   const calendarRef = useRef(null);
@@ -299,13 +317,43 @@ export default function DashboardScreen({
   const calendarFetchTimerRef = useRef(null);
   const emailLoadedRef = useRef(false);
   const emailLabelsLoadedRef = useRef(false);
+  const sideNavHideTimerRef = useRef(null);
 
   useEffect(() => {
     const timer = setTimeout(() => {
       window.dispatchEvent(new Event("resize"));
     }, 200);
     return () => clearTimeout(timer);
-  }, [sideNavOpen]);
+  }, [sideNavOpen, sideNavHidden]);
+
+  useEffect(() => {
+    if (sideNavHidden) {
+      if (sideNavHideTimerRef.current) {
+        clearTimeout(sideNavHideTimerRef.current);
+      }
+      return;
+    }
+
+    const resetTimer = () => {
+      if (sideNavHideTimerRef.current) {
+        clearTimeout(sideNavHideTimerRef.current);
+      }
+      sideNavHideTimerRef.current = setTimeout(() => {
+        setSideNavHidden(true);
+      }, 5000);
+    };
+
+    const activityEvents = ["mousemove", "mousedown", "keydown", "scroll", "touchstart"];
+    resetTimer();
+    activityEvents.forEach((eventName) => window.addEventListener(eventName, resetTimer));
+
+    return () => {
+      if (sideNavHideTimerRef.current) {
+        clearTimeout(sideNavHideTimerRef.current);
+      }
+      activityEvents.forEach((eventName) => window.removeEventListener(eventName, resetTimer));
+    };
+  }, [sideNavHidden]);
 
   const filteredCalendarEvents = useMemo(() => {
     return (calendarEvents || []).filter((event) => {
@@ -1595,20 +1643,58 @@ export default function DashboardScreen({
   const selectedProviderLabel = selectedCalendarProvider === "google" ? "Google" : "Outlook";
   const selectedProviderConnected =
     selectedCalendarProvider === "google" ? Boolean(integrationStatus) : false;
+  const sideNavWidthClass = sideNavHidden
+    ? "w-0 min-w-0 max-w-0"
+    : sideNavOpen
+      ? "w-full max-w-[22%] min-w-[220px]"
+      : "w-20";
 
   return (
     <section
       className={`relative bg-slate-950 px-0 sm:px-2 lg:px-4 pt-2 pb-4 text-slate-100 ${
-        isEmailManager ? "h-screen overflow-hidden" : "min-h-screen"
+        isEmailManager ? "min-h-screen sm:h-screen sm:overflow-hidden" : "min-h-screen"
       }`}
     >
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(99,102,241,0.08),transparent_32%),radial-gradient(circle_at_80%_0%,rgba(16,185,129,0.08),transparent_32%)]" />
       <div className="absolute -left-6 -right-6 -top-6 bottom-0 bg-slate-950/60 backdrop-blur-3xl" />
       <div className={`relative mx-auto w-full max-w-none ${isEmailManager ? "h-full" : ""}`}>
-        <div className={`flex gap-3 ${isEmailManager ? "h-full min-h-0" : ""}`}>
+        {sideNavHidden && (
+          <div
+            className="absolute left-0 top-0 z-30 flex flex-col items-start gap-2"
+            onMouseEnter={() => setSideNavHidden(false)}
+            onTouchStart={() => setSideNavHidden(false)}
+          >
+            <button
+              type="button"
+              onClick={() => setSideNavHidden(false)}
+              className="mt-3 -translate-x-1/2 rounded-full border border-white/5 bg-white/5 px-2 py-1 text-[11px] text-slate-400 opacity-40"
+              aria-label="Show menu"
+            >
+              ⟩
+            </button>
+            <div
+              className="h-24 w-6 cursor-pointer"
+              role="button"
+              tabIndex={0}
+              aria-label="Show menu"
+              onFocus={() => setSideNavHidden(false)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  setSideNavHidden(false);
+                }
+              }}
+            />
+          </div>
+        )}
+        <div className={`flex ${sideNavHidden ? "gap-0" : "gap-3"} ${isEmailManager ? "h-full min-h-0" : ""}`}>
           <aside
-            className={`sticky top-0 flex h-fit flex-col gap-3 rounded-3xl border border-white/10 bg-white/5 p-4 shadow-2xl backdrop-blur transition-all ${
-              sideNavOpen ? "w-full max-w-[22%] min-w-[220px]" : "w-20"
+            aria-hidden={sideNavHidden}
+            inert={sideNavHidden ? "" : undefined}
+            className={`sticky top-0 flex h-fit flex-col gap-3 rounded-3xl border border-white/10 bg-white/5 p-4 shadow-2xl backdrop-blur transition-all ${sideNavWidthClass} ${
+              sideNavHidden
+                ? "pointer-events-none overflow-hidden border-transparent bg-transparent p-0 opacity-0 shadow-none"
+                : ""
             }`}
           >
             <div className={`flex items-center ${sideNavOpen ? "justify-between" : "justify-center"} gap-2`}>
@@ -2580,20 +2666,20 @@ export default function DashboardScreen({
             className="flex-1 min-h-0"
           >
             <div
-              className={`email-manager-shell h-full min-h-0 ${emailTheme === "light" ? "email-theme-light" : ""}`}
+              className={`email-manager-shell min-h-screen sm:h-full sm:min-h-0 ${emailTheme === "light" ? "email-theme-light" : ""}`}
             >
-              <div className="relative grid h-full min-h-0 gap-4 grid-rows-[auto,1fr] overflow-hidden">
+              <div className="relative grid gap-4 sm:h-full sm:min-h-0 sm:grid-rows-[auto,1fr] sm:overflow-hidden">
               {emailSubTab === "email" ? (
                 <section
-                  className={`grid h-full min-h-0 gap-4 overflow-hidden ${
+                  className={`grid gap-4 sm:h-full sm:min-h-0 sm:overflow-hidden ${
                     emailPanelOpen
                       ? "lg:grid-cols-[0.45fr_1.25fr_1.6fr]"
                       : "lg:grid-cols-[0.16fr_1.41fr_1.6fr]"
                   }`}
                 >
                   <aside
-                    className={`rounded-3xl border border-white/10 bg-white/5 shadow-xl backdrop-blur min-h-0 h-full overflow-hidden flex flex-col ${
-                      emailPanelOpen ? "p-4" : "p-2"
+                    className={`rounded-3xl border border-white/10 bg-white/5 shadow-xl backdrop-blur overflow-hidden flex flex-col sm:min-h-0 sm:h-full ${
+                      emailPanelOpen ? "p-3 sm:p-4" : "p-2"
                     }`}
                   >
                     <div className={`flex items-center ${emailPanelOpen ? "justify-between" : "justify-center"}`}>
@@ -2683,7 +2769,7 @@ export default function DashboardScreen({
                         </div>
                       </>
                     ) : (
-                      <div className="mt-4 flex h-full flex-col items-center gap-3">
+                      <div className="mt-4 flex w-full flex-row flex-wrap items-center justify-center gap-3 sm:h-full sm:flex-col">
                         {mailboxItems.map((item) => {
                           const Icon = item.icon;
                           const isActive = emailMailbox === item.id;
@@ -2708,8 +2794,8 @@ export default function DashboardScreen({
                     )}
                   </aside>
 
-                  <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur min-h-0 h-full flex flex-col overflow-hidden">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="rounded-3xl border border-white/10 bg-white/5 p-3 shadow-xl backdrop-blur flex flex-col overflow-hidden sm:min-h-0 sm:h-full sm:p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Inbox</p>
                         <h4 className="text-lg font-semibold text-white">{activeMailboxLabel}</h4>
@@ -2720,7 +2806,7 @@ export default function DashboardScreen({
                           {emailHasNext ? " · scroll to load more" : ""}
                         </p>
                       </div>
-                      <div className="flex flex-wrap items-center justify-end gap-3 text-xs text-slate-300">
+                      <div className="flex w-full flex-wrap items-center justify-between gap-3 text-xs text-slate-300 sm:w-auto sm:justify-end">
                         <button
                           type="button"
                           onClick={handleEmailRefresh}
@@ -2747,8 +2833,8 @@ export default function DashboardScreen({
                         </div>
                       </div>
                     </div>
-                    <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-slate-900/40 px-2 py-2 text-xs text-slate-200">
-                      <label className="flex items-center gap-2">
+                    <div className="mt-3 flex flex-nowrap items-center gap-2 overflow-x-auto rounded-xl border border-white/10 bg-slate-900/40 px-2 py-2 text-xs text-slate-200 sm:flex-wrap sm:overflow-visible">
+                      <label className="flex shrink-0 items-center gap-2">
                         <input
                           type="checkbox"
                           checked={emailAllSelected}
@@ -2757,10 +2843,10 @@ export default function DashboardScreen({
                           aria-label="Select all messages"
                         />
                       </label>
-                      <span className="text-[11px] text-slate-400">
+                      <span className="shrink-0 text-[11px] text-slate-400">
                         {emailSelectionCount ? `${emailSelectionCount} selected` : ""}
                       </span>
-                      <div className="h-5 w-px bg-white/10" />
+                      <div className="hidden h-5 w-px shrink-0 bg-white/10 sm:block" />
                       <button
                         type="button"
                         onClick={() =>
@@ -2770,7 +2856,7 @@ export default function DashboardScreen({
                           })
                         }
                         disabled={!emailSelectionCount || emailActionLoading}
-                        className="rounded-lg border border-white/10 bg-white/10 p-2 text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        className="shrink-0 rounded-lg border border-white/10 bg-white/10 p-2 text-white disabled:cursor-not-allowed disabled:opacity-50"
                         aria-label="Archive"
                         title="Archive"
                       >
@@ -2786,7 +2872,7 @@ export default function DashboardScreen({
                           })
                         }
                         disabled={!emailSelectionCount || emailActionLoading}
-                        className="rounded-lg border border-white/10 bg-white/10 p-2 text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        className="shrink-0 rounded-lg border border-white/10 bg-white/10 p-2 text-white disabled:cursor-not-allowed disabled:opacity-50"
                         aria-label="Report spam"
                         title="Report spam"
                       >
@@ -2801,7 +2887,7 @@ export default function DashboardScreen({
                           })
                         }
                         disabled={!emailSelectionCount || emailActionLoading}
-                        className="rounded-lg border border-white/10 bg-white/10 p-2 text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        className="shrink-0 rounded-lg border border-white/10 bg-white/10 p-2 text-white disabled:cursor-not-allowed disabled:opacity-50"
                         aria-label="Delete"
                         title="Delete"
                       >
@@ -2816,7 +2902,7 @@ export default function DashboardScreen({
                           })
                         }
                         disabled={!emailSelectionCount || emailActionLoading}
-                        className="rounded-lg border border-white/10 bg-white/10 p-2 text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        className="shrink-0 rounded-lg border border-white/10 bg-white/10 p-2 text-white disabled:cursor-not-allowed disabled:opacity-50"
                         aria-label="Mark as read"
                         title="Mark as read"
                       >
@@ -2831,14 +2917,14 @@ export default function DashboardScreen({
                           })
                         }
                         disabled={!emailSelectionCount || emailActionLoading}
-                        className="rounded-lg border border-white/10 bg-white/10 p-2 text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        className="shrink-0 rounded-lg border border-white/10 bg-white/10 p-2 text-white disabled:cursor-not-allowed disabled:opacity-50"
                         aria-label="Mark as unread"
                         title="Mark as unread"
                       >
                         <Mail className="h-4 w-4" />
                       </button>
-                      <div className="ml-auto flex flex-wrap items-center gap-2">
-                        <div className="flex items-center gap-1 rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5">
+                      <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+                        <div className="flex shrink-0 items-center gap-1 rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5">
                           <Tag className="h-3 w-3 text-slate-300" />
                           <select
                             value={emailLabelAction}
@@ -2862,7 +2948,7 @@ export default function DashboardScreen({
                             ))}
                           </select>
                         </div>
-                        <div className="flex items-center gap-1 rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5">
+                        <div className="flex shrink-0 items-center gap-1 rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5">
                           <Archive className="h-3 w-3 text-slate-300" />
                           <select
                             value={emailMoveAction}
@@ -2901,7 +2987,7 @@ export default function DashboardScreen({
                         {emailActionSuccess}
                       </div>
                     ) : null}
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
                       <input
                         type="text"
                         value={emailQuery}
@@ -2910,13 +2996,13 @@ export default function DashboardScreen({
                           if (event.key === "Enter") handleEmailSearch();
                         }}
                         placeholder="Search inbox (e.g. from:client subject:invoice)"
-                        className="min-w-[220px] flex-1 rounded-xl border border-white/10 bg-slate-900/50 px-3 py-2 text-xs text-white placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none"
+                        className="w-full rounded-xl border border-white/10 bg-slate-900/50 px-3 py-2 text-xs text-white placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none sm:min-w-[220px] sm:flex-1"
                       />
                       <button
                         type="button"
                         onClick={handleEmailSearch}
                         disabled={emailLoading}
-                        className="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-semibold text-white disabled:opacity-60"
+                        className="w-full rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-semibold text-white disabled:opacity-60 sm:w-auto"
                       >
                         Search
                       </button>
@@ -2963,7 +3049,7 @@ export default function DashboardScreen({
                                   : "border-white/10 bg-slate-900/40 hover:border-white/30 hover:bg-slate-900/60"
                               }`}
                             >
-                              <div className="flex items-center gap-3">
+                              <div className="flex flex-wrap items-start gap-2 sm:flex-nowrap sm:items-center sm:gap-3">
                                 <input
                                   type="checkbox"
                                   checked={isChecked}
@@ -3011,7 +3097,7 @@ export default function DashboardScreen({
                                     </span>
                                   </div>
                                 </div>
-                                <span className="shrink-0 text-xs text-slate-400">
+                                <span className="w-full text-right text-xs text-slate-400 sm:ml-auto sm:w-auto sm:shrink-0 sm:text-left">
                                   {formatInboxTimestamp(message)}
                                 </span>
                               </div>
@@ -3038,14 +3124,14 @@ export default function DashboardScreen({
                     </div>
                   </div>
 
-                  <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur min-h-0 h-full overflow-hidden flex flex-col">
-                    <div className="flex items-center justify-between gap-3">
+                  <div className="rounded-3xl border border-white/10 bg-white/5 p-3 shadow-xl backdrop-blur overflow-hidden flex flex-col sm:min-h-0 sm:h-full sm:p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Summary preview</p>
                         <h4 className="text-lg font-semibold text-white">Message detail</h4>
                         <p className="text-xs text-slate-400">OpenAI-generated recap of the selected email.</p>
                       </div>
-                      <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
                         <button
                           type="button"
                           onClick={() => openComposer("reply", selectedEmailMessage)}
@@ -3094,7 +3180,7 @@ export default function DashboardScreen({
                               onTouchMove={(event) => event.stopPropagation()}
                             >
                               <div className="grid gap-3">
-                                <div className="flex items-center gap-3">
+                                <div className="flex flex-wrap items-start gap-3 sm:flex-nowrap sm:items-center">
                                   <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/10 text-xs font-semibold text-slate-100">
                                     {initialsFromName(sender.name)}
                                   </div>
@@ -3104,7 +3190,7 @@ export default function DashboardScreen({
                                       {sender.email || "Unknown sender"}
                                     </p>
                                   </div>
-                                  <span className="ml-auto text-xs text-slate-400">
+                                  <span className="w-full text-right text-xs text-slate-400 sm:ml-auto sm:w-auto sm:text-left">
                                     {formatMessageTimestamp(selectedEmailMessage)}
                                   </span>
                                 </div>
@@ -3142,8 +3228,8 @@ export default function DashboardScreen({
                             {emailSummaryVisible ? (
                               <div className="absolute inset-0 flex items-center justify-center p-4">
                                 <div className="pointer-events-none absolute inset-0 rounded-2xl bg-slate-950/70 backdrop-blur-xl" />
-                                <div className="relative w-full max-w-xl rounded-2xl border border-white/10 bg-slate-950/95 p-4 shadow-xl backdrop-blur">
-                                  <div className="flex items-center justify-between gap-2">
+                                <div className="relative w-full max-w-xl rounded-2xl border border-white/10 bg-slate-950/95 p-3 shadow-xl backdrop-blur sm:p-4">
+                                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                                     <div>
                                       <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Summary</p>
                                       <p className="text-xs text-slate-400">Quick recap of the selected email.</p>
@@ -3162,12 +3248,18 @@ export default function DashboardScreen({
                                       <X className="h-4 w-4" />
                                     </button>
                                   </div>
-                                  <div className="mt-3 text-sm text-slate-100 whitespace-pre-line">
-                                    {selectedEmailSummary
-                                      ? selectedEmailSummary
-                                      : emailSummaryLoading
-                                        ? "Summarizing this email..."
-                                        : "Generate a summary to see the recap here."}
+                                  <div className="mt-3 text-sm text-slate-100">
+                                    {selectedEmailSummary ? (
+                                      <ul className="list-disc space-y-2 pl-5">
+                                        {formatSummaryBullets(selectedEmailSummary).map((item, idx) => (
+                                          <li key={`${messageId}-${idx}`}>{item}</li>
+                                        ))}
+                                      </ul>
+                                    ) : emailSummaryLoading ? (
+                                      <p>Summarizing this email...</p>
+                                    ) : (
+                                      <p>Generate a summary to see the recap here.</p>
+                                    )}
                                   </div>
                                   {emailSummaryError ? (
                                     <div className="mt-2 text-xs text-rose-300">{emailSummaryError}</div>
@@ -3330,7 +3422,7 @@ export default function DashboardScreen({
               ) : (
                 <section className="grid gap-4 lg:grid-cols-[1.25fr_1fr]">
                   <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Automation</p>
                         <h4 className="text-lg font-semibold text-white">Summary settings</h4>
@@ -3340,7 +3432,7 @@ export default function DashboardScreen({
                       </span>
                     </div>
                     <div className="mt-4 grid gap-3 text-sm text-slate-200">
-                      <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-slate-900/40 p-3">
+                      <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-slate-900/40 p-3 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                           <p className="text-sm font-semibold text-white">Theme</p>
                           <p className="text-xs text-slate-400">Switch the email manager appearance.</p>
@@ -3372,7 +3464,7 @@ export default function DashboardScreen({
                           </button>
                         </div>
                       </div>
-                      <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-slate-900/40 p-3">
+                      <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-slate-900/40 p-3 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                           <p className="text-sm font-semibold text-white">Auto-summarize on open</p>
                           <p className="text-xs text-slate-400">
@@ -3400,8 +3492,12 @@ export default function DashboardScreen({
                   </div>
                   <div className="grid gap-4">
                     <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
-                      <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Connection</p>
-                      <h4 className="mt-1 text-lg font-semibold text-white">Gmail access</h4>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Connection</p>
+                          <h4 className="mt-1 text-lg font-semibold text-white">Gmail access</h4>
+                        </div>
+                      </div>
                       <p className="mt-2 text-xs text-slate-300">
                         {gmailAccountLabel ? `Connected account: ${gmailAccountLabel}` : "No account connected yet."}
                       </p>
@@ -3442,7 +3538,7 @@ export default function DashboardScreen({
               )}
               {emailComposerOpen && (
                 <div className="absolute inset-0 z-40 flex items-center justify-center bg-slate-950/70 px-4 py-6 backdrop-blur">
-                  <div className="w-full max-w-2xl rounded-3xl border border-white/10 bg-slate-950/90 p-5 shadow-2xl">
+                  <div className="w-full max-w-2xl rounded-3xl border border-white/10 bg-slate-950/90 p-4 shadow-2xl sm:p-5">
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Compose</p>
@@ -3516,11 +3612,11 @@ export default function DashboardScreen({
                         </div>
                       ) : null}
                     </div>
-                    <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+                    <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
                       <button
                         type="button"
                         onClick={() => setEmailComposerOpen(false)}
-                        className="rounded-xl border border-white/10 bg-white/10 px-4 py-2 text-xs text-white"
+                        className="w-full rounded-xl border border-white/10 bg-white/10 px-4 py-2 text-xs text-white sm:w-auto"
                       >
                         Cancel
                       </button>
@@ -3528,7 +3624,7 @@ export default function DashboardScreen({
                         type="button"
                         onClick={handleSendEmail}
                         disabled={emailComposerStatus.status === "loading"}
-                        className="inline-flex items-center gap-2 rounded-xl border border-emerald-300/50 bg-emerald-500/20 px-4 py-2 text-xs font-semibold text-emerald-100 disabled:opacity-60"
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-300/50 bg-emerald-500/20 px-4 py-2 text-xs font-semibold text-emerald-100 disabled:opacity-60 sm:w-auto"
                       >
                         {emailComposerStatus.status === "loading" ? "Sending..." : "Send"}
                         <Send className="h-3.5 w-3.5" />
