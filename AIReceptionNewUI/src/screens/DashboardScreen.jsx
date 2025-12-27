@@ -140,10 +140,10 @@ const EMAIL_TAG_OPTIONS = [
 const REPLY_TONE_PRESETS = ["Professional", "Friendly", "Short", "Empathetic"];
 
 const priorityBadgeStyles = {
-  Urgent: "border-rose-400/50 bg-rose-500/20 text-rose-100",
-  Important: "border-amber-400/50 bg-amber-500/20 text-amber-100",
-  Normal: "border-slate-400/40 bg-slate-800/40 text-slate-200",
-  Low: "border-slate-700/40 bg-slate-900/50 text-slate-400"
+  Urgent: "border-rose-400/60 bg-rose-500/20 text-rose-100",
+  Important: "border-amber-400/60 bg-amber-400/20 text-amber-200",
+  Normal: "border-indigo-400/60 bg-indigo-500/15 text-indigo-200",
+  Low: "border-sky-400/50 bg-sky-500/10 text-sky-100"
 };
 
 const sentimentStyles = {
@@ -197,6 +197,32 @@ const InlineLoader = ({ label = "Loading..." }) => (
   <div className="flex items-center gap-2 text-xs text-slate-300">
     <span className="inline-flex h-4 w-4 animate-spin items-center justify-center rounded-full border border-white/20 border-t-transparent" />
     <span>{label}</span>
+  </div>
+);
+
+const AiDots = ({ label = "Thinking..." }) => (
+  <div className="flex items-center gap-2 text-xs text-slate-200" role="status" aria-live="polite">
+    <span className="ai-dot" />
+    <span className="ai-dot" style={{ animationDelay: "0.15s" }} />
+    <span className="ai-dot" style={{ animationDelay: "0.3s" }} />
+    <span className="ml-1">{label}</span>
+  </div>
+);
+
+const AiSkeleton = ({ lines = ["w-5/6", "w-2/3", "w-4/5"] }) => (
+  <div className="space-y-2">
+    {lines.map((width, index) => (
+      <div key={`${width}-${index}`} className={`ai-shimmer h-2 ${width} rounded`} />
+    ))}
+  </div>
+);
+
+const AiLoadingCard = ({ label, lines }) => (
+  <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+    <AiDots label={label} />
+    <div className="mt-2">
+      <AiSkeleton lines={lines} />
+    </div>
   </div>
 );
 
@@ -1605,6 +1631,10 @@ export default function DashboardScreen({
       : emailComposerMode === "forward"
         ? "Forward"
         : "New mail";
+  const headerSender = selectedEmailMessage ? parseSender(selectedEmailMessage.from) : null;
+  const headerSenderLabel = headerSender
+    ? `From: ${headerSender.name}${headerSender.email ? ` <${headerSender.email}>` : ""}`
+    : "Select an email to view details.";
 
   const filteredEmailMessages = useMemo(() => {
     let items = [...emailMessages];
@@ -1706,13 +1736,13 @@ export default function DashboardScreen({
 
   useEffect(() => {
     if (!selectedEmailMessage) return;
-    setEmailSummaryVisible(true);
+    setEmailSummaryVisible(emailAutoSummarize);
     setEmailMessageError("");
     setEmailInlineReplyOpen(false);
     setEmailInlineReplyMessageId(null);
     setEmailInlineAttachments([]);
     loadEmailMessageDetail(selectedEmailMessage);
-  }, [selectedEmailMessage?.id]);
+  }, [emailAutoSummarize, selectedEmailMessage?.id]);
 
   useEffect(() => {
     if (!selectedEmailMessage) {
@@ -1741,6 +1771,11 @@ export default function DashboardScreen({
     emailSummaries,
     selectedEmailMessage
   ]);
+
+  useEffect(() => {
+    if (emailAutoSummarize) return;
+    setEmailSummaryVisible(false);
+  }, [emailAutoSummarize]);
 
   useEffect(() => {
     if (currentTool !== "email_manager" || emailSubTab !== "email") return;
@@ -3584,7 +3619,12 @@ export default function DashboardScreen({
                       <div>
                         <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Summary preview</p>
                         <h4 className="text-lg font-semibold text-white">Message detail</h4>
-                        <p className="text-xs text-slate-400">OpenAI-generated recap of the selected email.</p>
+                        <div className="flex items-center gap-2 text-xs text-slate-400">
+                          <span className="flex h-6 w-6 items-center justify-center rounded-full border border-white/10 bg-white/10 text-[10px] font-semibold text-slate-200">
+                            {headerSender ? initialsFromName(headerSender.name) : "—"}
+                          </span>
+                          <span>{headerSenderLabel}</span>
+                        </div>
                       </div>
                       <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
                         <div className="flex flex-wrap items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-slate-200">
@@ -3810,7 +3850,10 @@ export default function DashboardScreen({
                                         ))}
                                       </ul>
                                     ) : emailSummaryLoading ? (
-                                      <p>Summarizing this email...</p>
+                                      <AiLoadingCard
+                                        label="Summarizing this email..."
+                                        lines={["w-4/5", "w-3/5", "w-5/6"]}
+                                      />
                                     ) : (
                                       <p>Generate a summary to see the recap here.</p>
                                     )}
@@ -3883,10 +3926,11 @@ export default function DashboardScreen({
                                         </span>
                                       </div>
                                       {classifyStatus.status === "loading" ? (
-                                        <div className="mt-3 space-y-2 animate-pulse">
-                                          <div className="h-3 w-1/2 rounded bg-slate-800/80" />
-                                          <div className="h-3 w-1/3 rounded bg-slate-800/80" />
-                                          <div className="h-3 w-2/3 rounded bg-slate-800/80" />
+                                        <div className="mt-3">
+                                          <AiDots label="Classifying message..." />
+                                          <div className="mt-2">
+                                            <AiSkeleton lines={["w-1/2", "w-1/3", "w-2/3"]} />
+                                          </div>
                                         </div>
                                       ) : classifyStatus.status === "error" ? (
                                         <div className="mt-2 text-xs text-rose-300">{classifyStatus.message}</div>
@@ -3954,10 +3998,11 @@ export default function DashboardScreen({
                                         </button>
                                       </div>
                                       {actionsStatus.status === "loading" ? (
-                                        <div className="mt-3 space-y-2 animate-pulse">
-                                          <div className="h-3 w-2/3 rounded bg-slate-800/80" />
-                                          <div className="h-3 w-1/2 rounded bg-slate-800/80" />
-                                          <div className="h-3 w-3/5 rounded bg-slate-800/80" />
+                                        <div className="mt-3">
+                                          <AiDots label="Extracting action items..." />
+                                          <div className="mt-2">
+                                            <AiSkeleton lines={["w-2/3", "w-1/2", "w-3/5"]} />
+                                          </div>
                                         </div>
                                       ) : actionsStatus.status === "error" ? (
                                         <div className="mt-2 text-xs text-rose-300">{actionsStatus.message}</div>
@@ -4050,10 +4095,11 @@ export default function DashboardScreen({
                                         ))}
                                       </div>
                                       {replyVariantsStatus.status === "loading" ? (
-                                        <div className="mt-3 space-y-2 animate-pulse">
-                                          <div className="h-3 w-3/4 rounded bg-slate-800/80" />
-                                          <div className="h-3 w-2/3 rounded bg-slate-800/80" />
-                                          <div className="h-3 w-4/5 rounded bg-slate-800/80" />
+                                        <div className="mt-3">
+                                          <AiDots label="Drafting replies..." />
+                                          <div className="mt-2">
+                                            <AiSkeleton lines={["w-3/4", "w-2/3", "w-4/5"]} />
+                                          </div>
                                         </div>
                                       ) : replyVariantsStatus.status === "error" ? (
                                         <div className="mt-2 text-xs text-rose-300">{replyVariantsStatus.message}</div>
