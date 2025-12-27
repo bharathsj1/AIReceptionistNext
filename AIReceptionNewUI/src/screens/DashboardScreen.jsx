@@ -127,6 +127,52 @@ const formatSummaryBullets = (summary) => {
   return bullets.length ? bullets : [cleaned];
 };
 
+const EMAIL_TAG_OPTIONS = [
+  "Sales Lead",
+  "Support",
+  "Invoice",
+  "Internal",
+  "Updates",
+  "Marketing",
+  "Spam/Low Priority"
+];
+
+const REPLY_TONE_PRESETS = ["Professional", "Friendly", "Short", "Empathetic"];
+
+const priorityBadgeStyles = {
+  Urgent: "border-rose-400/50 bg-rose-500/20 text-rose-100",
+  Important: "border-amber-400/50 bg-amber-500/20 text-amber-100",
+  Normal: "border-slate-400/40 bg-slate-800/40 text-slate-200",
+  Low: "border-slate-700/40 bg-slate-900/50 text-slate-400"
+};
+
+const sentimentStyles = {
+  Angry: "text-rose-200",
+  Concerned: "text-amber-200",
+  Happy: "text-emerald-200",
+  Neutral: "text-slate-200"
+};
+
+const trimText = (value, max = 2000) => {
+  if (!value) return "";
+  const text = String(value).trim();
+  if (text.length <= max) return text;
+  const clipped = text.slice(0, max);
+  const lastSpace = clipped.lastIndexOf(" ");
+  const safe = lastSpace > 0 ? clipped.slice(0, lastSpace) : clipped;
+  return `${safe}...`;
+};
+
+const getMessageTimestampValue = (message) => {
+  const internalDate = Number(message?.internalDate || 0);
+  if (internalDate) return internalDate;
+  if (message?.date) {
+    const parsed = new Date(message.date);
+    if (!Number.isNaN(parsed.getTime())) return parsed.getTime();
+  }
+  return 0;
+};
+
 const StatCard = ({ label, value, hint, icon: Icon, tone = "default" }) => {
   const tones = {
     default: "bg-slate-900/60 border-slate-800 text-slate-200",
@@ -283,13 +329,16 @@ export default function DashboardScreen({
   const [emailMessageLoading, setEmailMessageLoading] = useState(false);
   const [emailMessageError, setEmailMessageError] = useState("");
   const [emailSummaryVisible, setEmailSummaryVisible] = useState(true);
-  const [emailReplyStatus, setEmailReplyStatus] = useState({ status: "idle", message: "" });
   const [emailInlineReplyOpen, setEmailInlineReplyOpen] = useState(false);
   const [emailInlineReplyMessageId, setEmailInlineReplyMessageId] = useState(null);
   const [emailInlineAttachments, setEmailInlineAttachments] = useState([]);
   const [emailComposerOpen, setEmailComposerOpen] = useState(false);
   const [emailComposerMode, setEmailComposerMode] = useState("new");
-  const [emailTheme, setEmailTheme] = useState("dark");
+  const [emailTheme, setEmailTheme] = useState(() => {
+    if (typeof window === "undefined") return "dark";
+    const storedTheme = window.localStorage.getItem("email-theme");
+    return storedTheme === "light" || storedTheme === "dark" ? storedTheme : "dark";
+  });
   const [emailComposerForm, setEmailComposerForm] = useState({
     to: "",
     cc: "",
@@ -307,6 +356,16 @@ export default function DashboardScreen({
     status: "idle",
     message: ""
   });
+  const [emailTagFilter, setEmailTagFilter] = useState("all");
+  const [emailSort, setEmailSort] = useState("date");
+  const [emailClassifications, setEmailClassifications] = useState({});
+  const [emailClassifyStatus, setEmailClassifyStatus] = useState({});
+  const [emailActionsById, setEmailActionsById] = useState({});
+  const [emailActionsStatus, setEmailActionsStatus] = useState({});
+  const [emailActionChecks, setEmailActionChecks] = useState({});
+  const [emailReplyVariantsById, setEmailReplyVariantsById] = useState({});
+  const [emailReplyVariantsStatus, setEmailReplyVariantsStatus] = useState({});
+  const [emailReplyTone, setEmailReplyTone] = useState("Professional");
   const [selectedCallDay, setSelectedCallDay] = useState("All days");
   const [sideNavOpen, setSideNavOpen] = useState(false);
   const [sideNavHidden, setSideNavHidden] = useState(false);
@@ -317,7 +376,14 @@ export default function DashboardScreen({
   const calendarFetchTimerRef = useRef(null);
   const emailLoadedRef = useRef(false);
   const emailLabelsLoadedRef = useRef(false);
+  const emailClassifyTimerRef = useRef(null);
+  const emailActionsTimerRef = useRef(null);
   const sideNavHideTimerRef = useRef(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("email-theme", emailTheme);
+  }, [emailTheme]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -1072,13 +1138,8 @@ export default function DashboardScreen({
     }
   };
 
-  const handleReplyWithAi = async (message, draftOverride = null) => {
+  const handleReplyWithAi = async (message, draftOverride = null, options = {}) => {
     if (!message?.id) return;
-    const emailAddress = user?.email || userForm.email;
-    if (!emailAddress) {
-      setEmailReplyStatus({ status: "error", message: "Missing user email." });
-      return;
-    }
     const inlineActiveForMessage =
       emailInlineReplyOpen && emailInlineReplyMessageId === message.id;
     const draftValue =
@@ -1087,67 +1148,24 @@ export default function DashboardScreen({
         : inlineActiveForMessage
           ? emailComposerForm.body
           : "";
-    setEmailReplyStatus({ status: "loading", message: "Drafting reply..." });
-    try {
-      const res = await fetch(API_URLS.emailReplyDraft, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: emailAddress,
-          message_id: message.id,
-          draft: draftValue
-        })
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        let parsed = null;
-        try {
-          parsed = text ? JSON.parse(text) : null;
-        } catch {
-          parsed = null;
-        }
-        const detail = parsed?.details || parsed?.error || text || "Unable to draft reply";
-        const detailText = String(detail || "");
-        const needsConsent =
-          detailText.includes("insufficientAuthenticationScopes") ||
-          detailText.includes("insufficientPermissions");
-        if (needsConsent) {
-          throw new Error("Gmail permissions missing. Click Force re-connect to grant access.");
-        }
-        throw new Error(detail);
-      }
-      const data = await res.json().catch(() => ({}));
-      const draft = data?.reply || "";
-      if (!draft) {
-        throw new Error("AI reply was empty.");
-      }
-      setEmailReplyStatus({ status: "success", message: "Reply drafted." });
-      const nextForm = buildReplyForm(message, draft, "reply");
-      if (nextForm) {
-        setEmailComposerForm(nextForm);
-        setEmailComposerStatus({ status: "idle", message: "" });
-        setEmailInlineReplyOpen(true);
-        setEmailInlineReplyMessageId(message.id);
-        if (!inlineActiveForMessage) {
-          setEmailInlineAttachments([]);
-        }
-      }
-    } catch (err) {
-      setEmailReplyStatus({
-        status: "error",
-        message: err?.message || "Unable to draft reply."
-      });
-    }
+    setEmailSummaryVisible(true);
+    const { tone = emailReplyTone, intent = "reply" } = options;
+    await requestReplyVariants(message, {
+      tone,
+      intent,
+      currentDraft: draftValue
+    });
   };
 
-  const summarizeEmailMessage = async (message) => {
+  const summarizeEmailMessage = async (message, options = {}) => {
     if (!message?.id) return;
+    const { force = false } = options;
     const emailAddress = user?.email || userForm.email;
     if (!emailAddress) {
       setEmailSummaryStatus({ status: "error", message: "Missing user email." });
       return;
     }
-    if (emailSummaries?.[message.id]) return;
+    if (!force && emailSummaries?.[message.id]) return;
     setEmailSummaryStatus({ status: "loading", message: "Summarizing..." });
     setEmailSummaryVisible(true);
     try {
@@ -1191,6 +1209,224 @@ export default function DashboardScreen({
     }
   };
 
+  const buildEmailAiPayload = (message, overrides = {}) => {
+    const emailAddress = user?.email || userForm.email;
+    const bodyText = trimText(emailMessageBodies?.[message.id] || "", 3000);
+    return {
+      email: emailAddress,
+      message_id: message.id,
+      threadId: message.threadId || "",
+      headers: {
+        subject: message.subject || "",
+        from: message.from || "",
+        date: message.date || "",
+        to: message.to || "",
+        cc: message.cc || ""
+      },
+      snippet: message.snippet || "",
+      optionalBodyIfAlreadyAvailable: bodyText,
+      ...overrides
+    };
+  };
+
+  const parseApiError = async (res, fallback) => {
+    const text = await res.text();
+    let parsed = null;
+    try {
+      parsed = text ? JSON.parse(text) : null;
+    } catch {
+      parsed = null;
+    }
+    const detail = parsed?.details || parsed?.error || text || fallback;
+    const detailText = String(detail || "");
+    const needsConsent =
+      detailText.includes("insufficientAuthenticationScopes") ||
+      detailText.includes("insufficientPermissions");
+    if (needsConsent) {
+      return "Gmail permissions missing. Click Force re-connect to grant access.";
+    }
+    return detailText || fallback;
+  };
+
+  const requestEmailClassification = async (message, options = {}) => {
+    if (!message?.id) return;
+    const { force = false } = options;
+    if (!force && emailClassifications?.[message.id]) return;
+    const emailAddress = user?.email || userForm.email;
+    if (!emailAddress) {
+      setEmailClassifyStatus((prev) => ({
+        ...prev,
+        [message.id]: { status: "error", message: "Missing user email." }
+      }));
+      return;
+    }
+    setEmailClassifyStatus((prev) => ({
+      ...prev,
+      [message.id]: { status: "loading", message: "Classifying..." }
+    }));
+    try {
+      const payload = buildEmailAiPayload(message);
+      const res = await fetch(API_URLS.emailClassify, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        throw new Error(await parseApiError(res, "Unable to classify email"));
+      }
+      const data = await res.json().catch(() => ({}));
+      const next = {
+        tags: Array.isArray(data?.tags) ? data.tags : [],
+        priorityScore: Number(data?.priorityScore) || 0,
+        priorityLabel: data?.priorityLabel || "Normal",
+        sentiment: data?.sentiment || "Neutral"
+      };
+      if (data?.account_email || data?.accountEmail) {
+        setEmailAccountEmail(data.account_email || data.accountEmail);
+      }
+      setEmailClassifications((prev) => ({ ...prev, [message.id]: next }));
+      setEmailClassifyStatus((prev) => ({
+        ...prev,
+        [message.id]: { status: "success", message: "Insights ready." }
+      }));
+    } catch (err) {
+      setEmailClassifyStatus((prev) => ({
+        ...prev,
+        [message.id]: { status: "error", message: err?.message || "Unable to classify email." }
+      }));
+    }
+  };
+
+  const requestEmailActions = async (message, options = {}) => {
+    if (!message?.id) return;
+    const { force = false } = options;
+    if (!force && emailActionsById?.[message.id]) return;
+    const emailAddress = user?.email || userForm.email;
+    if (!emailAddress) {
+      setEmailActionsStatus((prev) => ({
+        ...prev,
+        [message.id]: { status: "error", message: "Missing user email." }
+      }));
+      return;
+    }
+    setEmailActionsStatus((prev) => ({
+      ...prev,
+      [message.id]: { status: "loading", message: "Extracting actions..." }
+    }));
+    try {
+      const payload = buildEmailAiPayload(message);
+      const res = await fetch(API_URLS.emailActions, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        throw new Error(await parseApiError(res, "Unable to extract action items"));
+      }
+      const data = await res.json().catch(() => ({}));
+      const items = Array.isArray(data?.actionItems) ? data.actionItems : [];
+      if (data?.account_email || data?.accountEmail) {
+        setEmailAccountEmail(data.account_email || data.accountEmail);
+      }
+      setEmailActionsById((prev) => ({ ...prev, [message.id]: items }));
+      setEmailActionsStatus((prev) => ({
+        ...prev,
+        [message.id]: { status: "success", message: "Action items ready." }
+      }));
+      setEmailActionChecks((prev) => {
+        const current = prev?.[message.id] || {};
+        const nextChecks = { ...current };
+        items.forEach((_, index) => {
+          if (nextChecks[index] === undefined) {
+            nextChecks[index] = false;
+          }
+        });
+        return { ...prev, [message.id]: nextChecks };
+      });
+    } catch (err) {
+      setEmailActionsStatus((prev) => ({
+        ...prev,
+        [message.id]: { status: "error", message: err?.message || "Unable to extract action items." }
+      }));
+    }
+  };
+
+  const requestReplyVariants = async (message, options = {}) => {
+    if (!message?.id) return;
+    const { tone = emailReplyTone, intent = "reply", currentDraft = "" } = options;
+    const emailAddress = user?.email || userForm.email;
+    if (!emailAddress) {
+      setEmailReplyVariantsStatus((prev) => ({
+        ...prev,
+        [message.id]: { status: "error", message: "Missing user email." }
+      }));
+      return;
+    }
+    setEmailReplyVariantsStatus((prev) => ({
+      ...prev,
+      [message.id]: { status: "loading", message: "Drafting variants..." }
+    }));
+    try {
+      const payload = buildEmailAiPayload(message, {
+        tone,
+        intent,
+        currentDraft
+      });
+      const res = await fetch(API_URLS.emailReplyVariants, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        throw new Error(await parseApiError(res, "Unable to draft reply variants"));
+      }
+      const data = await res.json().catch(() => ({}));
+      const variants = Array.isArray(data?.variants) ? data.variants : [];
+      if (data?.account_email || data?.accountEmail) {
+        setEmailAccountEmail(data.account_email || data.accountEmail);
+      }
+      setEmailReplyVariantsById((prev) => ({
+        ...prev,
+        [message.id]: {
+          tone: data?.tone || tone,
+          intent: data?.intent || intent,
+          variants
+        }
+      }));
+      setEmailReplyVariantsStatus((prev) => ({
+        ...prev,
+        [message.id]: { status: "success", message: "Reply variants ready." }
+      }));
+    } catch (err) {
+      setEmailReplyVariantsStatus((prev) => ({
+        ...prev,
+        [message.id]: { status: "error", message: err?.message || "Unable to draft reply variants." }
+      }));
+    }
+  };
+
+  const insertReplyVariant = (message, text) => {
+    if (!message?.id) return;
+    const nextForm = buildReplyForm(message, text, "reply");
+    if (!nextForm) return;
+    setEmailComposerForm(nextForm);
+    setEmailComposerStatus({ status: "idle", message: "" });
+    setEmailInlineReplyOpen(true);
+    setEmailInlineReplyMessageId(message.id);
+    setEmailInlineAttachments([]);
+  };
+
+  const toggleActionItem = (messageId, index) => {
+    if (!messageId && messageId !== 0) return;
+    setEmailActionChecks((prev) => {
+      const current = prev?.[messageId] || {};
+      return {
+        ...prev,
+        [messageId]: { ...current, [index]: !current?.[index] }
+      };
+    });
+  };
+
   const handleEmailDisconnect = () => {
     handleCalendarDisconnect?.();
     emailLoadedRef.current = false;
@@ -1201,6 +1437,13 @@ export default function DashboardScreen({
     setEmailPageTokens([null]);
     setEmailCurrentPage(1);
     setEmailSummaries({});
+    setEmailClassifications({});
+    setEmailClassifyStatus({});
+    setEmailActionsById({});
+    setEmailActionsStatus({});
+    setEmailActionChecks({});
+    setEmailReplyVariantsById({});
+    setEmailReplyVariantsStatus({});
     setSelectedEmailMessage(null);
     setEmailSelectedIds(new Set());
     setEmailMessageBodies({});
@@ -1210,7 +1453,6 @@ export default function DashboardScreen({
     setEmailSummaryStatus({ status: "idle", message: "" });
     setEmailMessageError("");
     setEmailActionStatus({ status: "idle", message: "" });
-    setEmailReplyStatus({ status: "idle", message: "" });
     setEmailInlineReplyOpen(false);
     setEmailInlineReplyMessageId(null);
     setEmailInlineAttachments([]);
@@ -1302,6 +1544,11 @@ export default function DashboardScreen({
     { id: "SPAM", label: "Spam", icon: AlertTriangle },
     { id: "TRASH", label: "Trash", icon: Trash2 }
   ];
+  const emailSubTabItems = [
+    { id: "email", label: "Email", icon: Mail },
+    { id: "settings", label: "Settings", icon: Edit3 },
+    { id: "analytics", label: "Analytics", icon: Activity }
+  ];
 
   const isToolLocked = (toolId) => {
     const entry = toolSubscriptions?.[toolId];
@@ -1330,7 +1577,6 @@ export default function DashboardScreen({
   const selectedEmailSummary = selectedEmailMessage ? emailSummaries[selectedEmailMessage.id] : "";
   const emailSummaryLoading = emailSummaryStatus.status === "loading";
   const emailSummaryError = emailSummaryStatus.status === "error" ? emailSummaryStatus.message : "";
-  const emailSummaryReady = Boolean(selectedEmailSummary);
   const gmailConnected = Boolean(emailAccountEmail || emailMessages.length);
   const googleConnected = Boolean(calendarAccountEmail || calendarStatus === "Google");
   const gmailAccountLabel = emailAccountEmail || calendarAccountEmail || "";
@@ -1359,6 +1605,28 @@ export default function DashboardScreen({
       : emailComposerMode === "forward"
         ? "Forward"
         : "New mail";
+
+  const filteredEmailMessages = useMemo(() => {
+    let items = [...emailMessages];
+    if (emailTagFilter && emailTagFilter !== "all") {
+      items = items.filter((message) => {
+        const tags = emailClassifications?.[message.id]?.tags || [];
+        return tags.includes(emailTagFilter);
+      });
+    }
+    const getPriorityScore = (message) =>
+      Number(emailClassifications?.[message.id]?.priorityScore) || 0;
+    if (emailSort === "priority") {
+      items.sort((a, b) => {
+        const diff = getPriorityScore(b) - getPriorityScore(a);
+        if (diff !== 0) return diff;
+        return getMessageTimestampValue(b) - getMessageTimestampValue(a);
+      });
+    } else {
+      items.sort((a, b) => getMessageTimestampValue(b) - getMessageTimestampValue(a));
+    }
+    return items;
+  }, [emailClassifications, emailMessages, emailSort, emailTagFilter]);
 
   const handleInboxScroll = (event) => {
     if (emailLoading || !emailHasNext) return;
@@ -1416,13 +1684,14 @@ export default function DashboardScreen({
   }, [gmailConnected]);
 
   useEffect(() => {
-    if (!emailMessages.length) {
+    const activeMessages = filteredEmailMessages.length ? filteredEmailMessages : emailMessages;
+    if (!activeMessages.length) {
       setSelectedEmailMessage(null);
       setEmailSelectedIds(new Set());
       return;
     }
-    if (!selectedEmailMessage || !emailMessages.find((m) => m.id === selectedEmailMessage.id)) {
-      setSelectedEmailMessage(emailMessages[0]);
+    if (!selectedEmailMessage || !activeMessages.find((m) => m.id === selectedEmailMessage.id)) {
+      setSelectedEmailMessage(activeMessages[0]);
     }
     setEmailSelectedIds((prev) => {
       if (!prev.size) return prev;
@@ -1433,13 +1702,12 @@ export default function DashboardScreen({
       });
       return next;
     });
-  }, [emailMessages, selectedEmailMessage]);
+  }, [emailMessages, filteredEmailMessages, selectedEmailMessage]);
 
   useEffect(() => {
     if (!selectedEmailMessage) return;
     setEmailSummaryVisible(true);
     setEmailMessageError("");
-    setEmailReplyStatus({ status: "idle", message: "" });
     setEmailInlineReplyOpen(false);
     setEmailInlineReplyMessageId(null);
     setEmailInlineAttachments([]);
@@ -1475,6 +1743,56 @@ export default function DashboardScreen({
   ]);
 
   useEffect(() => {
+    if (currentTool !== "email_manager" || emailSubTab !== "email") return;
+    if (!selectedEmailMessage?.id) return;
+    const status = emailClassifyStatus?.[selectedEmailMessage.id]?.status;
+    if (emailClassifications?.[selectedEmailMessage.id]) return;
+    if (status === "loading") return;
+    if (emailClassifyTimerRef.current) {
+      clearTimeout(emailClassifyTimerRef.current);
+    }
+    emailClassifyTimerRef.current = setTimeout(() => {
+      requestEmailClassification(selectedEmailMessage);
+    }, 400);
+    return () => {
+      if (emailClassifyTimerRef.current) {
+        clearTimeout(emailClassifyTimerRef.current);
+      }
+    };
+  }, [
+    currentTool,
+    emailClassifications,
+    emailClassifyStatus,
+    emailSubTab,
+    selectedEmailMessage?.id
+  ]);
+
+  useEffect(() => {
+    if (currentTool !== "email_manager" || emailSubTab !== "email") return;
+    if (!selectedEmailMessage?.id) return;
+    const status = emailActionsStatus?.[selectedEmailMessage.id]?.status;
+    if (emailActionsById?.[selectedEmailMessage.id]) return;
+    if (status === "loading") return;
+    if (emailActionsTimerRef.current) {
+      clearTimeout(emailActionsTimerRef.current);
+    }
+    emailActionsTimerRef.current = setTimeout(() => {
+      requestEmailActions(selectedEmailMessage);
+    }, 500);
+    return () => {
+      if (emailActionsTimerRef.current) {
+        clearTimeout(emailActionsTimerRef.current);
+      }
+    };
+  }, [
+    currentTool,
+    emailActionsById,
+    emailActionsStatus,
+    emailSubTab,
+    selectedEmailMessage?.id
+  ]);
+
+  useEffect(() => {
     if (calendarStatus || calendarAccountEmail) return;
     if (!emailMessages.length && !emailAccountEmail) return;
     emailLoadedRef.current = false;
@@ -1483,6 +1801,13 @@ export default function DashboardScreen({
     setEmailPageTokens([null]);
     setEmailCurrentPage(1);
     setEmailSummaries({});
+    setEmailClassifications({});
+    setEmailClassifyStatus({});
+    setEmailActionsById({});
+    setEmailActionsStatus({});
+    setEmailActionChecks({});
+    setEmailReplyVariantsById({});
+    setEmailReplyVariantsStatus({});
     setSelectedEmailMessage(null);
     setEmailError("");
     setEmailSummaryStatus({ status: "idle", message: "" });
@@ -1503,6 +1828,52 @@ export default function DashboardScreen({
     if (callTranscript?.call?.sid === selectedCall.sid && !callTranscript?.error) return;
     onLoadTranscript(selectedCall.sid);
   }, [callTranscript?.call?.sid, onLoadTranscript, selectedCall?.sid]);
+
+  const emailAnalytics = useMemo(() => {
+    const now = Date.now();
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
+
+    const processedToday = emailMessages.filter(
+      (message) => getMessageTimestampValue(message) >= startOfToday.getTime()
+    ).length;
+    const processedWeek = emailMessages.filter(
+      (message) => getMessageTimestampValue(message) >= weekAgo
+    ).length;
+
+    const tagCounts = EMAIL_TAG_OPTIONS.reduce((acc, tag) => {
+      acc[tag] = 0;
+      return acc;
+    }, {});
+    const priorityCounts = {
+      Urgent: 0,
+      Important: 0,
+      Normal: 0,
+      Low: 0
+    };
+
+    Object.values(emailClassifications || {}).forEach((classification) => {
+      const tags = classification?.tags || [];
+      tags.forEach((tag) => {
+        if (tagCounts[tag] !== undefined) {
+          tagCounts[tag] += 1;
+        }
+      });
+      const label = classification?.priorityLabel;
+      if (label && priorityCounts[label] !== undefined) {
+        priorityCounts[label] += 1;
+      }
+    });
+
+    return {
+      processedToday,
+      processedWeek,
+      totalLoaded: emailMessages.length,
+      tagCounts,
+      priorityCounts
+    };
+  }, [emailClassifications, emailMessages]);
 
   const analytics = useMemo(() => {
     const sourceCalls = (analyticsCalls?.length ? analyticsCalls : recentCalls) || [];
@@ -2669,51 +3040,55 @@ export default function DashboardScreen({
               className={`email-manager-shell min-h-screen sm:h-full sm:min-h-0 ${emailTheme === "light" ? "email-theme-light" : ""}`}
             >
               <div className="relative grid gap-4 sm:h-full sm:min-h-0 sm:grid-rows-[auto,1fr] sm:overflow-hidden">
-              {emailSubTab === "email" ? (
-                <section
-                  className={`grid gap-4 sm:h-full sm:min-h-0 sm:overflow-hidden ${
-                    emailPanelOpen
-                      ? "lg:grid-cols-[0.45fr_1.25fr_1.6fr]"
-                      : "lg:grid-cols-[0.16fr_1.41fr_1.6fr]"
+              <section
+                className={`grid gap-4 sm:h-full sm:min-h-0 sm:overflow-hidden ${
+                  emailSubTab === "email"
+                    ? emailPanelOpen
+                      ? "lg:grid-cols-[180px_1.25fr_1.6fr]"
+                      : "lg:grid-cols-[64px_1.41fr_1.6fr]"
+                    : emailPanelOpen
+                      ? "lg:grid-cols-[180px_1.55fr]"
+                      : "lg:grid-cols-[64px_1.84fr]"
+                }`}
+              >
+                <aside
+                  className={`rounded-3xl border border-white/10 bg-white/5 shadow-xl backdrop-blur overflow-hidden flex flex-col sm:min-h-0 sm:h-full ${
+                    emailPanelOpen ? "p-3 sm:p-4" : "p-2"
                   }`}
                 >
-                  <aside
-                    className={`rounded-3xl border border-white/10 bg-white/5 shadow-xl backdrop-blur overflow-hidden flex flex-col sm:min-h-0 sm:h-full ${
-                      emailPanelOpen ? "p-3 sm:p-4" : "p-2"
-                    }`}
-                  >
-                    <div className={`flex items-center ${emailPanelOpen ? "justify-between" : "justify-center"}`}>
-                      {emailPanelOpen && (
-                        <p className="text-[11px] uppercase tracking-[0.28em] text-indigo-200">Gmail inbox</p>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => setEmailPanelOpen((prev) => !prev)}
-                        className={`rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs text-slate-200 transition hover:border-white/30 ${
-                          emailPanelOpen ? "" : "mx-auto"
-                        }`}
-                        aria-label={emailPanelOpen ? "Collapse inbox panel" : "Expand inbox panel"}
-                      >
-                        {emailPanelOpen ? "⟨" : "⟩"}
-                      </button>
-                    </div>
+                  <div className={`flex items-center ${emailPanelOpen ? "justify-between" : "justify-center"}`}>
+                    {emailPanelOpen && (
+                      <p className="text-[11px] uppercase tracking-[0.28em] text-indigo-200">Gmail inbox</p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setEmailPanelOpen((prev) => !prev)}
+                      className={`rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs text-slate-200 transition hover:border-white/30 ${
+                        emailPanelOpen ? "" : "mx-auto"
+                      }`}
+                      aria-label={emailPanelOpen ? "Collapse inbox panel" : "Expand inbox panel"}
+                    >
+                      {emailPanelOpen ? "⟨" : "⟩"}
+                    </button>
+                  </div>
 
-                    <div className={`mt-4 ${emailPanelOpen ? "" : "flex justify-center"}`}>
-                      <button
-                        type="button"
-                        onClick={() => openComposer("new")}
-                        className={`inline-flex items-center justify-center rounded-xl border border-emerald-300/50 bg-emerald-500/20 text-xs font-semibold text-emerald-50 transition hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-emerald-500/30 ${
-                          emailPanelOpen ? "w-full gap-2 px-3 py-2" : "h-10 w-10"
-                        }`}
-                        aria-label="Compose email"
-                      >
-                        <MailPlus className="h-4 w-4" />
-                        {emailPanelOpen ? "New mail" : null}
-                      </button>
-                    </div>
+                  <div className={`mt-4 ${emailPanelOpen ? "" : "flex justify-center"}`}>
+                    <button
+                      type="button"
+                      onClick={() => openComposer("new")}
+                      className={`inline-flex items-center justify-center rounded-xl border border-emerald-300/50 bg-emerald-500/20 text-xs font-semibold text-emerald-50 transition hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-emerald-500/30 ${
+                        emailPanelOpen ? "w-full gap-2 px-3 py-2" : "h-10 w-10"
+                      }`}
+                      aria-label="Compose email"
+                    >
+                      <MailPlus className="h-4 w-4" />
+                      {emailPanelOpen ? "New mail" : null}
+                    </button>
+                  </div>
 
-                    {emailPanelOpen ? (
-                      <>
+                  {emailPanelOpen ? (
+                    <>
+                      {emailSubTab === "email" ? (
                         <div className="mt-4 border-t border-white/10 pt-4">
                           <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Mailboxes</p>
                           <div className="mt-2 grid gap-1">
@@ -2741,43 +3116,66 @@ export default function DashboardScreen({
                             })}
                           </div>
                         </div>
-                        <div className="mt-auto border-t border-white/10 pt-4">
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => setEmailSubTab("email")}
-                              className={`rounded-lg border px-3 py-1 text-xs font-semibold transition ${
-                                emailSubTab === "email"
-                                  ? "border-indigo-400 bg-indigo-500/20 text-indigo-100"
-                                  : "border-white/10 bg-white/5 text-slate-200 hover:border-white/30"
-                              }`}
-                            >
-                              Email
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setEmailSubTab("settings")}
-                              className={`rounded-lg border px-3 py-1 text-xs font-semibold transition ${
-                                emailSubTab === "settings"
-                                  ? "border-indigo-400 bg-indigo-500/20 text-indigo-100"
-                                  : "border-white/10 bg-white/5 text-slate-200 hover:border-white/30"
-                              }`}
-                            >
-                              Settings
-                            </button>
-                          </div>
+                      ) : null}
+                      <div className="mt-auto border-t border-white/10 pt-4">
+                        <div className="grid gap-2">
+                          {emailSubTabItems.map((item) => {
+                            const Icon = item.icon;
+                            const isActive = emailSubTab === item.id;
+                            return (
+                              <button
+                                key={`email-nav-${item.id}`}
+                                type="button"
+                                onClick={() => setEmailSubTab(item.id)}
+                                className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition ${
+                                  isActive
+                                    ? "border-indigo-400 bg-indigo-500/20 text-indigo-100"
+                                    : "border-white/10 bg-white/5 text-slate-200 hover:border-white/30"
+                                }`}
+                              >
+                                <Icon className="h-4 w-4" />
+                                {item.label}
+                              </button>
+                            );
+                          })}
                         </div>
-                      </>
-                    ) : (
-                      <div className="mt-4 flex w-full flex-row flex-wrap items-center justify-center gap-3 sm:h-full sm:flex-col">
-                        {mailboxItems.map((item) => {
+                      </div>
+                    </>
+                  ) : (
+                    <div className="mt-4 flex w-full flex-1 flex-col items-center">
+                      {emailSubTab === "email" ? (
+                        <div className="flex w-full flex-row flex-wrap items-center justify-center gap-3 sm:flex-col">
+                          {mailboxItems.map((item) => {
+                            const Icon = item.icon;
+                            const isActive = emailMailbox === item.id;
+                            return (
+                              <button
+                                key={item.id}
+                                type="button"
+                                onClick={() => handleMailboxSelect(item.id)}
+                                className={`flex h-9 w-9 items-center justify-center rounded-lg border transition ${
+                                  isActive
+                                    ? "border-indigo-400/60 bg-indigo-500/15 text-indigo-100"
+                                    : "border-white/10 bg-slate-900/40 text-slate-200 hover:border-white/30"
+                                }`}
+                                aria-label={item.label}
+                                title={item.label}
+                              >
+                                <Icon className="h-5 w-5" />
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                      <div className="mt-auto flex flex-col items-center gap-2 border-t border-white/10 pt-3">
+                        {emailSubTabItems.map((item) => {
                           const Icon = item.icon;
-                          const isActive = emailMailbox === item.id;
+                          const isActive = emailSubTab === item.id;
                           return (
                             <button
-                              key={item.id}
+                              key={`email-nav-collapsed-${item.id}`}
                               type="button"
-                              onClick={() => handleMailboxSelect(item.id)}
+                              onClick={() => setEmailSubTab(item.id)}
                               className={`flex h-9 w-9 items-center justify-center rounded-lg border transition ${
                                 isActive
                                   ? "border-indigo-400/60 bg-indigo-500/15 text-indigo-100"
@@ -2786,15 +3184,18 @@ export default function DashboardScreen({
                               aria-label={item.label}
                               title={item.label}
                             >
-                              <Icon className="h-5 w-5" />
+                              <Icon className="h-4 w-4" />
                             </button>
                           );
                         })}
                       </div>
-                    )}
-                  </aside>
+                    </div>
+                  )}
+                </aside>
 
-                  <div className="rounded-3xl border border-white/10 bg-white/5 p-3 shadow-xl backdrop-blur flex flex-col overflow-hidden sm:min-h-0 sm:h-full sm:p-4">
+                {emailSubTab === "email" ? (
+                  <div className="contents">
+                    <div className="rounded-3xl border border-white/10 bg-white/5 p-3 shadow-xl backdrop-blur flex flex-col overflow-hidden sm:min-h-0 sm:h-full sm:p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Inbox</p>
@@ -2998,6 +3399,34 @@ export default function DashboardScreen({
                         placeholder="Search inbox (e.g. from:client subject:invoice)"
                         className="w-full rounded-xl border border-white/10 bg-slate-900/50 px-3 py-2 text-xs text-white placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none sm:min-w-[220px] sm:flex-1"
                       />
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex shrink-0 items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2 py-1">
+                          <Tag className="h-3 w-3 text-slate-300" />
+                          <select
+                            value={emailTagFilter}
+                            onChange={(event) => setEmailTagFilter(event.target.value)}
+                            className="bg-transparent text-[10px] text-slate-200 focus:outline-none"
+                          >
+                            <option value="all">All tags</option>
+                            {EMAIL_TAG_OPTIONS.map((tag) => (
+                              <option key={tag} value={tag}>
+                                {tag}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2 py-1">
+                          <span className="text-[10px] text-slate-300">Sort</span>
+                          <select
+                            value={emailSort}
+                            onChange={(event) => setEmailSort(event.target.value)}
+                            className="bg-transparent text-[10px] text-slate-200 focus:outline-none"
+                          >
+                            <option value="date">Date</option>
+                            <option value="priority">Priority</option>
+                          </select>
+                        </div>
+                      </div>
                       <button
                         type="button"
                         onClick={handleEmailSearch}
@@ -3022,12 +3451,15 @@ export default function DashboardScreen({
                         <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
                           {emailError}
                         </div>
-                      ) : emailMessages.length ? (
-                        emailMessages.map((message) => {
+                      ) : filteredEmailMessages.length ? (
+                        filteredEmailMessages.map((message) => {
                           const isSelected = selectedEmailMessage?.id === message.id;
                           const isUnread = (message.labelIds || []).includes("UNREAD");
                           const isStarred = (message.labelIds || []).includes("STARRED");
                           const isChecked = emailSelectedIds.has(message.id);
+                          const classification = emailClassifications?.[message.id] || {};
+                          const tags = Array.isArray(classification.tags) ? classification.tags : [];
+                          const priorityLabel = classification.priorityLabel;
                           return (
                             <div
                               key={message.id}
@@ -3095,6 +3527,27 @@ export default function DashboardScreen({
                                     <span className={`truncate text-xs ${isUnread ? "text-slate-300" : "text-slate-500"}`}>
                                       {message.snippet || ""}
                                     </span>
+                                    {priorityLabel || tags.length ? (
+                                      <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-slate-300">
+                                        {priorityLabel ? (
+                                          <span
+                                            className={`rounded-full border px-2 py-0.5 ${
+                                              priorityBadgeStyles[priorityLabel] || priorityBadgeStyles.Normal
+                                            }`}
+                                          >
+                                            {priorityLabel}
+                                          </span>
+                                        ) : null}
+                                        {tags.slice(0, 2).map((tag) => (
+                                          <span
+                                            key={`${message.id}-${tag}`}
+                                            className="rounded-full border border-white/10 bg-slate-900/60 px-2 py-0.5 text-[10px] text-slate-300"
+                                          >
+                                            {tag}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    ) : null}
                                   </div>
                                 </div>
                                 <span className="w-full text-right text-xs text-slate-400 sm:ml-auto sm:w-auto sm:shrink-0 sm:text-left">
@@ -3107,7 +3560,9 @@ export default function DashboardScreen({
                       ) : (
                         <div className="rounded-xl border border-white/10 bg-slate-900/40 px-3 py-2 text-xs text-slate-300">
                           {gmailConnected
-                            ? "No messages found. Try adjusting your search."
+                            ? emailMessages.length && emailTagFilter !== "all"
+                              ? "No messages match the selected tag."
+                              : "No messages found. Try adjusting your search."
                             : "Connect Gmail to view messages."}
                         </div>
                       )}
@@ -3132,6 +3587,50 @@ export default function DashboardScreen({
                         <p className="text-xs text-slate-400">OpenAI-generated recap of the selected email.</p>
                       </div>
                       <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+                        <div className="flex flex-wrap items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-slate-200">
+                          <span className="text-[10px] uppercase tracking-[0.2em] text-slate-400">AI</span>
+                          <button
+                            type="button"
+                            onClick={() => summarizeEmailMessage(selectedEmailMessage, { force: true })}
+                            disabled={!selectedEmailMessage || emailSummaryLoading}
+                            className="rounded-lg border border-white/10 bg-white/10 px-2 py-1 text-[10px] text-white disabled:opacity-50"
+                          >
+                            Re-summarize
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => requestEmailClassification(selectedEmailMessage, { force: true })}
+                            disabled={
+                              !selectedEmailMessage ||
+                              emailClassifyStatus?.[selectedEmailMessage?.id]?.status === "loading"
+                            }
+                            className="rounded-lg border border-white/10 bg-white/10 px-2 py-1 text-[10px] text-white disabled:opacity-50"
+                          >
+                            Classify
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => requestEmailActions(selectedEmailMessage, { force: true })}
+                            disabled={
+                              !selectedEmailMessage ||
+                              emailActionsStatus?.[selectedEmailMessage?.id]?.status === "loading"
+                            }
+                            className="rounded-lg border border-white/10 bg-white/10 px-2 py-1 text-[10px] text-white disabled:opacity-50"
+                          >
+                            Extract actions
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleReplyWithAi(selectedEmailMessage)}
+                            disabled={
+                              !selectedEmailMessage ||
+                              emailReplyVariantsStatus?.[selectedEmailMessage?.id]?.status === "loading"
+                            }
+                            className="rounded-lg border border-emerald-300/40 bg-emerald-500/20 px-2 py-1 text-[10px] text-emerald-100 disabled:opacity-50"
+                          >
+                            Reply with AI
+                          </button>
+                        </div>
                         <button
                           type="button"
                           onClick={() => openComposer("reply", selectedEmailMessage)}
@@ -3169,6 +3668,32 @@ export default function DashboardScreen({
                         const bodyText =
                           emailMessageBodies[messageId] || selectedEmailMessage.snippet || "";
                         const htmlBody = emailMessageHtml[messageId] || "";
+                        const classification = emailClassifications?.[messageId] || {};
+                        const tags = Array.isArray(classification?.tags) ? classification.tags : [];
+                        const classifyStatus = emailClassifyStatus?.[messageId] || { status: "idle", message: "" };
+                        const actionsStatus = emailActionsStatus?.[messageId] || { status: "idle", message: "" };
+                        const actionItems = emailActionsById?.[messageId] || [];
+                        const replyVariantsStatus = emailReplyVariantsStatus?.[messageId] || {
+                          status: "idle",
+                          message: ""
+                        };
+                        const replyVariants = emailReplyVariantsById?.[messageId]?.variants || [];
+                        const priorityLabel = classification?.priorityLabel || "";
+                        const priorityScore = Number(classification?.priorityScore) || 0;
+                        const sentiment = classification?.sentiment || "Neutral";
+                        const isEscalation =
+                          ["Angry", "Concerned"].includes(sentiment) &&
+                          (priorityLabel === "Urgent" || priorityScore >= 80);
+                        const hasReplyDraft = replyVariants.length > 0;
+                        const hasInsights =
+                          tags.length > 0 ||
+                          Boolean(classification?.priorityLabel) ||
+                          Boolean(classification?.priorityScore) ||
+                          Boolean(classification?.sentiment);
+                        const userEmail = user?.email || userForm.email || "";
+                        const fromUser = userEmail && sender.email && sender.email.includes(userEmail);
+                        const hasSentLabel = (selectedEmailMessage.labelIds || []).includes("SENT");
+                        const showFollowUp = !fromUser && !hasSentLabel;
                         return (
                           <>
                             <div
@@ -3204,6 +3729,30 @@ export default function DashboardScreen({
                                   {selectedEmailMessage.cc ? (
                                     <p className="text-xs text-slate-400">Cc: {selectedEmailMessage.cc}</p>
                                   ) : null}
+                                  {priorityLabel || tags.length ? (
+                                    <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-slate-200">
+                                      {priorityLabel ? (
+                                        <span
+                                          className={`rounded-full border px-2 py-0.5 ${
+                                            priorityBadgeStyles[priorityLabel] || priorityBadgeStyles.Normal
+                                          }`}
+                                        >
+                                          {priorityLabel} {priorityScore}/100
+                                        </span>
+                                      ) : null}
+                                      {tags.map((tag) => (
+                                        <span
+                                          key={`${messageId}-tag-${tag}`}
+                                          className="rounded-full border border-white/10 bg-slate-900/60 px-2 py-0.5 text-[10px] text-slate-300"
+                                        >
+                                          {tag}
+                                        </span>
+                                      ))}
+                                      <span className={`text-[10px] ${sentimentStyles[sentiment] || sentimentStyles.Neutral}`}>
+                                        {sentiment}
+                                      </span>
+                                    </div>
+                                  ) : null}
                                 </div>
                                 <div className="rounded-2xl border border-white/10 bg-slate-900/40 p-3 text-sm text-slate-100">
                                   {emailMessageLoading && !emailMessageBodies[messageId] && !emailMessageHtml[messageId]
@@ -3228,7 +3777,12 @@ export default function DashboardScreen({
                             {emailSummaryVisible ? (
                               <div className="absolute inset-0 flex items-center justify-center p-4">
                                 <div className="pointer-events-none absolute inset-0 rounded-2xl bg-slate-950/70 backdrop-blur-xl" />
-                                <div className="relative w-full max-w-xl rounded-2xl border border-white/10 bg-slate-950/95 p-3 shadow-xl backdrop-blur sm:p-4">
+                                <div
+                                  className="relative z-10 w-full max-w-xl max-h-[80vh] overflow-y-auto overscroll-contain rounded-2xl border border-white/10 bg-slate-950/95 p-3 shadow-xl backdrop-blur pointer-events-auto sm:p-4"
+                                  data-lenis-prevent
+                                  onWheel={(event) => event.stopPropagation()}
+                                  onTouchMove={(event) => event.stopPropagation()}
+                                >
                                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                                     <div>
                                       <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Summary</p>
@@ -3264,34 +3818,276 @@ export default function DashboardScreen({
                                   {emailSummaryError ? (
                                     <div className="mt-2 text-xs text-rose-300">{emailSummaryError}</div>
                                   ) : null}
-                                  {emailReplyStatus.status === "error" ? (
-                                    <div className="mt-2 text-xs text-rose-300">{emailReplyStatus.message}</div>
+                                  {isEscalation ? (
+                                    <div className="mt-3 rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-100">
+                                      <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <div>
+                                          <p className="text-[11px] uppercase tracking-[0.18em] text-rose-200">
+                                            Escalation recommended
+                                          </p>
+                                          <p className="text-[11px] text-rose-100/80">
+                                            Angry or concerned sentiment with high priority.
+                                          </p>
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              requestReplyVariants(selectedEmailMessage, {
+                                                tone: emailReplyTone,
+                                                intent: "follow_up"
+                                              })
+                                            }
+                                            disabled={replyVariantsStatus.status === "loading"}
+                                            className="rounded-lg border border-rose-300/40 bg-rose-500/20 px-2 py-1 text-[11px] text-rose-100 disabled:opacity-60"
+                                          >
+                                            Create follow-up draft
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              runEmailModify({
+                                                messageIds: [messageId],
+                                                addLabelIds: ["IMPORTANT"],
+                                                clearSelection: false,
+                                                successMessage: "Marked as important."
+                                              })
+                                            }
+                                            className="rounded-lg border border-white/10 bg-white/10 px-2 py-1 text-[11px] text-white"
+                                          >
+                                            Mark important
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
                                   ) : null}
                                   <div className="mt-3 flex flex-wrap items-center gap-2">
-                                    {!inlineReplyActive ? (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleReplyWithAi(selectedEmailMessage)}
-                                        disabled={!selectedEmailMessage || emailReplyStatus.status === "loading"}
-                                        className="rounded-xl border border-emerald-300/50 bg-emerald-500/20 px-3 py-1 text-xs font-semibold text-emerald-100 disabled:opacity-60"
-                                      >
-                                        {emailReplyStatus.status === "loading"
-                                          ? "Drafting reply..."
-                                          : "Reply with AI"}
-                                      </button>
-                                    ) : null}
                                     <button
                                       type="button"
-                                      onClick={() => summarizeEmailMessage(selectedEmailMessage)}
-                                      disabled={!selectedEmailMessage || emailSummaryLoading || emailSummaryReady}
+                                      onClick={() => summarizeEmailMessage(selectedEmailMessage, { force: true })}
+                                      disabled={!selectedEmailMessage || emailSummaryLoading}
                                       className="rounded-xl border border-white/10 bg-white/10 px-3 py-1 text-xs text-white disabled:opacity-60"
                                     >
-                                      {emailSummaryLoading
-                                        ? "Summarizing..."
-                                        : emailSummaryReady
-                                          ? "Summary ready"
-                                          : "Generate summary"}
+                                      {emailSummaryLoading ? "Summarizing..." : "Refresh summary"}
                                     </button>
+                                  </div>
+                                  <div className="mt-4 grid gap-3">
+                                    <div className="rounded-xl border border-white/10 bg-slate-900/40 p-3">
+                                      <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <div>
+                                          <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Insights</p>
+                                          <p className="text-[11px] text-slate-400">Tags, priority, sentiment.</p>
+                                        </div>
+                                        <span className="text-[11px] text-slate-400">
+                                          {classifyStatus.status === "loading" ? "Classifying..." : ""}
+                                        </span>
+                                      </div>
+                                      {classifyStatus.status === "loading" ? (
+                                        <div className="mt-3 space-y-2 animate-pulse">
+                                          <div className="h-3 w-1/2 rounded bg-slate-800/80" />
+                                          <div className="h-3 w-1/3 rounded bg-slate-800/80" />
+                                          <div className="h-3 w-2/3 rounded bg-slate-800/80" />
+                                        </div>
+                                      ) : classifyStatus.status === "error" ? (
+                                        <div className="mt-2 text-xs text-rose-300">{classifyStatus.message}</div>
+                                      ) : hasInsights ? (
+                                        <div className="mt-3 space-y-2 text-xs text-slate-200">
+                                          <div className="flex flex-wrap items-center gap-2">
+                                            <span className="text-[11px] uppercase tracking-[0.18em] text-slate-400">
+                                              Priority
+                                            </span>
+                                            {priorityLabel ? (
+                                              <span
+                                                className={`rounded-full border px-2 py-0.5 ${
+                                                  priorityBadgeStyles[priorityLabel] || priorityBadgeStyles.Normal
+                                                }`}
+                                              >
+                                                {priorityLabel}
+                                              </span>
+                                            ) : (
+                                              <span className="text-slate-400">Not scored</span>
+                                            )}
+                                            <span className="text-[11px] text-slate-400">{priorityScore}/100</span>
+                                          </div>
+                                          <div className="flex flex-wrap items-center gap-2">
+                                            <span className="text-[11px] uppercase tracking-[0.18em] text-slate-400">
+                                              Sentiment
+                                            </span>
+                                            <span className={sentimentStyles[sentiment] || sentimentStyles.Neutral}>
+                                              {sentiment}
+                                            </span>
+                                          </div>
+                                          <div className="flex flex-wrap items-center gap-1">
+                                            {tags.length ? (
+                                              tags.map((tag) => (
+                                                <span
+                                                  key={`${messageId}-${tag}-insight`}
+                                                  className="rounded-full border border-white/10 bg-slate-900/60 px-2 py-0.5 text-[10px] text-slate-300"
+                                                >
+                                                  {tag}
+                                                </span>
+                                              ))
+                                            ) : (
+                                              <span className="text-slate-400">No tags yet.</span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div className="mt-2 text-xs text-slate-400">
+                                          Run classify to see insights.
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div className="rounded-xl border border-white/10 bg-slate-900/40 p-3">
+                                      <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <div>
+                                          <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Action items</p>
+                                          <p className="text-[11px] text-slate-400">Checklist from the thread.</p>
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => requestEmailActions(selectedEmailMessage, { force: true })}
+                                          disabled={actionsStatus.status === "loading"}
+                                          className="rounded-lg border border-white/10 bg-white/10 px-2 py-1 text-[11px] text-white disabled:opacity-60"
+                                        >
+                                          {actionsStatus.status === "loading" ? "Extracting..." : "Extract"}
+                                        </button>
+                                      </div>
+                                      {actionsStatus.status === "loading" ? (
+                                        <div className="mt-3 space-y-2 animate-pulse">
+                                          <div className="h-3 w-2/3 rounded bg-slate-800/80" />
+                                          <div className="h-3 w-1/2 rounded bg-slate-800/80" />
+                                          <div className="h-3 w-3/5 rounded bg-slate-800/80" />
+                                        </div>
+                                      ) : actionsStatus.status === "error" ? (
+                                        <div className="mt-2 text-xs text-rose-300">{actionsStatus.message}</div>
+                                      ) : actionItems.length ? (
+                                        <div className="mt-3 space-y-2">
+                                          {actionItems.map((item, index) => {
+                                            const isChecked = emailActionChecks?.[messageId]?.[index];
+                                            return (
+                                              <label
+                                                key={`${messageId}-action-${index}`}
+                                                className="flex items-start gap-2 rounded-lg border border-white/10 bg-slate-900/60 px-2 py-2 text-[11px] text-slate-200"
+                                              >
+                                                <input
+                                                  type="checkbox"
+                                                  checked={Boolean(isChecked)}
+                                                  onChange={() => toggleActionItem(messageId, index)}
+                                                  className="mt-0.5 h-3.5 w-3.5 rounded border border-white/20 bg-transparent text-indigo-400"
+                                                />
+                                                <div className="flex-1">
+                                                  <p className={isChecked ? "text-slate-500 line-through" : "text-slate-100"}>
+                                                    {item.title}
+                                                  </p>
+                                                  <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-slate-400">
+                                                    {item.dueDate ? <span>Due {item.dueDate}</span> : null}
+                                                    {item.owner ? <span>Owner {item.owner}</span> : null}
+                                                  </div>
+                                                </div>
+                                                {item.confidence !== undefined ? (
+                                                  <span className="text-[10px] text-slate-400">
+                                                    {Math.round(Number(item.confidence || 0) * 100)}%
+                                                  </span>
+                                                ) : null}
+                                              </label>
+                                            );
+                                          })}
+                                        </div>
+                                      ) : (
+                                        <div className="mt-2 text-xs text-slate-400">
+                                          No action items detected yet.
+                                        </div>
+                                      )}
+                                      {showFollowUp ? (
+                                        <div className="mt-3">
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              requestReplyVariants(selectedEmailMessage, {
+                                                tone: emailReplyTone,
+                                                intent: "follow_up"
+                                              })
+                                            }
+                                            disabled={replyVariantsStatus.status === "loading"}
+                                            className="rounded-lg border border-emerald-300/40 bg-emerald-500/20 px-3 py-1 text-[11px] text-emerald-100 disabled:opacity-60"
+                                          >
+                                            Create follow-up draft
+                                          </button>
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                    <div className="rounded-xl border border-white/10 bg-slate-900/40 p-3">
+                                      <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <div>
+                                          <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Reply with AI</p>
+                                          <p className="text-[11px] text-slate-400">Pick a tone, get 3 variants.</p>
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => requestReplyVariants(selectedEmailMessage, { tone: emailReplyTone })}
+                                          disabled={replyVariantsStatus.status === "loading"}
+                                          className="rounded-lg border border-emerald-300/40 bg-emerald-500/20 px-2 py-1 text-[11px] text-emerald-100 disabled:opacity-60"
+                                        >
+                                          {replyVariantsStatus.status === "loading" ? "Drafting..." : "Generate variants"}
+                                        </button>
+                                      </div>
+                                      <div className="mt-2 flex flex-wrap gap-2">
+                                        {REPLY_TONE_PRESETS.map((tone) => (
+                                          <button
+                                            key={tone}
+                                            type="button"
+                                            onClick={() => setEmailReplyTone(tone)}
+                                            className={`rounded-full border px-2 py-0.5 text-[10px] transition ${
+                                              emailReplyTone === tone
+                                                ? "border-emerald-300/50 bg-emerald-500/20 text-emerald-100"
+                                                : "border-white/10 bg-white/5 text-slate-200 hover:border-white/30"
+                                            }`}
+                                            aria-pressed={emailReplyTone === tone}
+                                          >
+                                            {tone}
+                                          </button>
+                                        ))}
+                                      </div>
+                                      {replyVariantsStatus.status === "loading" ? (
+                                        <div className="mt-3 space-y-2 animate-pulse">
+                                          <div className="h-3 w-3/4 rounded bg-slate-800/80" />
+                                          <div className="h-3 w-2/3 rounded bg-slate-800/80" />
+                                          <div className="h-3 w-4/5 rounded bg-slate-800/80" />
+                                        </div>
+                                      ) : replyVariantsStatus.status === "error" ? (
+                                        <div className="mt-2 text-xs text-rose-300">{replyVariantsStatus.message}</div>
+                                      ) : hasReplyDraft ? (
+                                        <div className="mt-3 grid gap-2">
+                                          {replyVariants.slice(0, 3).map((variant, index) => (
+                                            <div
+                                              key={`${messageId}-variant-${index}`}
+                                              className="rounded-lg border border-white/10 bg-slate-900/60 px-2 py-2 text-[11px] text-slate-100"
+                                            >
+                                              <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-400">
+                                                <span>
+                                                  {variant.tone || emailReplyTone} variant {index + 1}
+                                                </span>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => insertReplyVariant(selectedEmailMessage, variant.text)}
+                                                  className="rounded-md border border-white/10 bg-white/10 px-2 py-0.5 text-[10px] text-white"
+                                                >
+                                                  Insert
+                                                </button>
+                                              </div>
+                                              <p className="mt-2 whitespace-pre-line text-xs text-slate-100">
+                                                {variant.text}
+                                              </p>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <div className="mt-2 text-xs text-slate-400">
+                                          Generate variants to see options.
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
                                   {inlineReplyActive ? (
                                     <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-3">
@@ -3383,13 +4179,19 @@ export default function DashboardScreen({
                                         </button>
                                         <button
                                           type="button"
-                                          onClick={() => handleReplyWithAi(selectedEmailMessage, emailComposerForm.body)}
-                                          disabled={!selectedEmailMessage || emailReplyStatus.status === "loading"}
+                                          onClick={() =>
+                                            requestReplyVariants(selectedEmailMessage, {
+                                              tone: emailReplyTone,
+                                              intent: "reply",
+                                              currentDraft: emailComposerForm.body
+                                            })
+                                          }
+                                          disabled={!selectedEmailMessage || replyVariantsStatus.status === "loading"}
                                           className="rounded-xl border border-white/10 bg-white/10 px-3 py-1 text-xs text-white disabled:opacity-60"
                                         >
-                                          {emailReplyStatus.status === "loading"
+                                          {replyVariantsStatus.status === "loading"
                                             ? "Regenerating..."
-                                            : "Regenerate reply"}
+                                            : "Regenerate variants"}
                                         </button>
                                         <button
                                           type="button"
@@ -3418,10 +4220,10 @@ export default function DashboardScreen({
                       )}
                     </div>
                   </div>
-                </section>
-              ) : (
-                <section className="grid gap-4 lg:grid-cols-[1.25fr_1fr]">
-                  <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
+                  </div>
+                ) : emailSubTab === "settings" ? (
+                  <div className="grid gap-4 lg:grid-cols-[1.25fr_1fr]">
+                    <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Automation</p>
@@ -3533,9 +4335,82 @@ export default function DashboardScreen({
                         You can revoke access at any time by disconnecting the account.
                       </p>
                     </div>
+                    </div>
                   </div>
-                </section>
-              )}
+                ) : (
+                  <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
+                    <div className="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-xl backdrop-blur">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Analytics</p>
+                        <h4 className="text-lg font-semibold text-white">Email performance</h4>
+                        <p className="text-xs text-slate-400">
+                          Snapshot of processed volume and AI triage results.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <StatCard
+                        label="Processed Today"
+                        value={emailAnalytics.processedToday}
+                        hint="Based on loaded messages"
+                        tone="success"
+                      />
+                      <StatCard
+                        label="Processed This Week"
+                        value={emailAnalytics.processedWeek}
+                        hint="Last 7 days"
+                        tone="default"
+                      />
+                      <StatCard
+                        label="Total Loaded"
+                        value={emailAnalytics.totalLoaded}
+                        hint="Current inbox view"
+                        tone="default"
+                      />
+                      <StatCard
+                        label="Avg Response Time"
+                        value="—"
+                        hint="Coming soon"
+                        tone="warning"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid gap-4">
+                    <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
+                      <p className="text-sm font-semibold text-white">Tag distribution</p>
+                      <div className="mt-3 space-y-2 text-xs text-slate-200">
+                        {EMAIL_TAG_OPTIONS.map((tag) => (
+                          <div
+                            key={`analytics-tag-${tag}`}
+                            className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-900/40 px-3 py-2"
+                          >
+                            <span>{tag}</span>
+                            <span className="text-slate-300">{emailAnalytics.tagCounts[tag] || 0}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
+                      <p className="text-sm font-semibold text-white">Priority breakdown</p>
+                      <div className="mt-3 space-y-2 text-xs text-slate-200">
+                        {Object.keys(emailAnalytics.priorityCounts).map((label) => (
+                          <div
+                            key={`analytics-priority-${label}`}
+                            className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-900/40 px-3 py-2"
+                          >
+                            <span>{label}</span>
+                            <span className="text-slate-300">
+                              {emailAnalytics.priorityCounts[label] || 0}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    </div>
+                  </div>
+                )}
+              </section>
               {emailComposerOpen && (
                 <div className="absolute inset-0 z-40 flex items-center justify-center bg-slate-950/70 px-4 py-6 backdrop-blur">
                   <div className="w-full max-w-2xl rounded-3xl border border-white/10 bg-slate-950/90 p-4 shadow-2xl sm:p-5">
