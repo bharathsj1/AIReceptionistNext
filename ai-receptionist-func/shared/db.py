@@ -1,4 +1,5 @@
 from datetime import datetime
+import os
 from typing import Generator
 
 from sqlalchemy import (
@@ -7,12 +8,15 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    JSON,
     String,
     Text,
     LargeBinary,
     create_engine,
     inspect,
     text,
+    UniqueConstraint,
+    Index,
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, scoped_session, sessionmaker
@@ -24,10 +28,20 @@ DATABASE_URL = get_database_url()
 # Important: DATABASE_URL should be like:
 # postgresql+psycopg2://user:pass@host:5432/dbname?sslmode=require&channel_binding=require
 
+def _engine_kwargs(database_url: str) -> dict:
+    kwargs = {
+        "future": True,
+        "pool_pre_ping": True,   # helps with idle connections
+    }
+    if database_url.startswith("postgresql"):
+        timeout = int(os.getenv("DB_CONNECT_TIMEOUT", "10"))
+        kwargs["connect_args"] = {"connect_timeout": timeout}
+    return kwargs
+
+
 engine = create_engine(
     DATABASE_URL,
-    future=True,
-    pool_pre_ping=True,   # helps with idle connections
+    **_engine_kwargs(DATABASE_URL),
 )
 
 SessionLocal = scoped_session(
@@ -173,6 +187,102 @@ class GoogleToken(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     user = relationship("User")
+
+
+class SocialConnection(Base):
+    __tablename__ = "social_connections"
+
+    id = Column(Integer, primary_key=True, index=True)
+    business_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
+    platform = Column(String, nullable=False, index=True)
+    external_account_id = Column(String, nullable=False)
+    display_name = Column(String, nullable=True)
+    access_token_enc = Column(Text, nullable=False)
+    refresh_token_enc = Column(Text, nullable=True)
+    token_expires_at = Column(DateTime, nullable=True)
+    scopes = Column(Text, nullable=True)
+    metadata_json = Column(JSON, nullable=True)
+    status = Column(String, nullable=False, default="connected", index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("business_id", "platform", "external_account_id", name="uq_social_connection"),
+        Index("ix_social_connection_business_platform", "business_id", "platform"),
+    )
+
+
+class SocialConversation(Base):
+    __tablename__ = "social_conversations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    business_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
+    platform = Column(String, nullable=False)
+    connection_id = Column(Integer, ForeignKey("social_connections.id"), nullable=False, index=True)
+    external_conversation_id = Column(String, nullable=False)
+    participant_handle = Column(String, nullable=True)
+    participant_name = Column(String, nullable=True)
+    last_message_text = Column(Text, nullable=True)
+    last_message_at = Column(DateTime, nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("platform", "external_conversation_id", name="uq_social_conversation"),
+        Index("ix_social_conversation_business_last", "business_id", "last_message_at"),
+    )
+
+
+class SocialMessage(Base):
+    __tablename__ = "social_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    conversation_id = Column(Integer, ForeignKey("social_conversations.id"), nullable=False, index=True)
+    platform = Column(String, nullable=False)
+    external_message_id = Column(String, nullable=False)
+    direction = Column(String, nullable=False)
+    sender_type = Column(String, nullable=False)
+    text = Column(Text, nullable=True)
+    attachments_json = Column(JSON, nullable=True)
+    message_ts = Column(DateTime, nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("platform", "external_message_id", name="uq_social_message"),
+        Index("ix_social_message_conversation_ts", "conversation_id", "message_ts"),
+    )
+
+
+class SocialPostDraft(Base):
+    __tablename__ = "social_post_drafts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    business_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
+    caption = Column(Text, nullable=True)
+    media_urls_json = Column(JSON, nullable=True)
+    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class SocialScheduledPost(Base):
+    __tablename__ = "social_scheduled_posts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    business_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
+    draft_id = Column(Integer, ForeignKey("social_post_drafts.id"), nullable=False, index=True)
+    platform_targets_json = Column(JSON, nullable=False)
+    scheduled_for = Column(DateTime, nullable=False, index=True)
+    status = Column(String, nullable=False, default="scheduled", index=True)
+    external_post_ids_json = Column(JSON, nullable=True)
+    last_error = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_social_schedule_status_time", "status", "scheduled_for"),
+        Index("ix_social_schedule_business_time", "business_id", "scheduled_for"),
+    )
 
 
 def init_db() -> None:
@@ -360,6 +470,172 @@ def _ensure_optional_columns() -> None:
                 conn.execute(text("ALTER TABLE calls ADD COLUMN IF NOT EXISTS selected_agent_id VARCHAR"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_calls_ai_phone_started ON calls (ai_phone_number, started_at)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_calls_agent_started ON calls (selected_agent_id, started_at)"))
+
+        if "social_connections" not in existing_tables:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS social_connections (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        business_id INTEGER NOT NULL,
+                        platform VARCHAR NOT NULL,
+                        external_account_id VARCHAR NOT NULL,
+                        display_name VARCHAR,
+                        access_token_enc TEXT NOT NULL,
+                        refresh_token_enc TEXT,
+                        token_expires_at TIMESTAMP,
+                        scopes TEXT,
+                        metadata_json JSONB,
+                        status VARCHAR NOT NULL DEFAULT 'connected',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY(business_id) REFERENCES clients (id)
+                    )
+                    """
+                )
+            )
+        if "social_conversations" not in existing_tables:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS social_conversations (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        business_id INTEGER NOT NULL,
+                        platform VARCHAR NOT NULL,
+                        connection_id INTEGER NOT NULL,
+                        external_conversation_id VARCHAR NOT NULL,
+                        participant_handle VARCHAR,
+                        participant_name VARCHAR,
+                        last_message_text TEXT,
+                        last_message_at TIMESTAMP,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY(business_id) REFERENCES clients (id),
+                        FOREIGN KEY(connection_id) REFERENCES social_connections (id)
+                    )
+                    """
+                )
+            )
+        if "social_messages" not in existing_tables:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS social_messages (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        conversation_id INTEGER NOT NULL,
+                        platform VARCHAR NOT NULL,
+                        external_message_id VARCHAR NOT NULL,
+                        direction VARCHAR NOT NULL,
+                        sender_type VARCHAR NOT NULL,
+                        text TEXT,
+                        attachments_json JSONB,
+                        message_ts TIMESTAMP,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY(conversation_id) REFERENCES social_conversations (id)
+                    )
+                    """
+                )
+            )
+        if "social_post_drafts" not in existing_tables:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS social_post_drafts (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        business_id INTEGER NOT NULL,
+                        caption TEXT,
+                        media_urls_json JSONB,
+                        created_by_user_id INTEGER NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY(business_id) REFERENCES clients (id),
+                        FOREIGN KEY(created_by_user_id) REFERENCES users (id)
+                    )
+                    """
+                )
+            )
+        if "social_scheduled_posts" not in existing_tables:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS social_scheduled_posts (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        business_id INTEGER NOT NULL,
+                        draft_id INTEGER NOT NULL,
+                        platform_targets_json JSONB NOT NULL,
+                        scheduled_for TIMESTAMP NOT NULL,
+                        status VARCHAR NOT NULL DEFAULT 'scheduled',
+                        external_post_ids_json JSONB,
+                        last_error TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY(business_id) REFERENCES clients (id),
+                        FOREIGN KEY(draft_id) REFERENCES social_post_drafts (id)
+                    )
+                    """
+                )
+            )
+
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_social_connection_idx "
+                "ON social_connections (business_id, platform, external_account_id)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_social_connection_business_platform "
+                "ON social_connections (business_id, platform)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_social_connection_status "
+                "ON social_connections (status)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_social_conversation_idx "
+                "ON social_conversations (platform, external_conversation_id)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_social_conversation_business_last "
+                "ON social_conversations (business_id, last_message_at DESC)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_social_conversation_connection "
+                "ON social_conversations (connection_id)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_social_message_idx "
+                "ON social_messages (platform, external_message_id)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_social_message_conversation_ts "
+                "ON social_messages (conversation_id, message_ts ASC)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_social_schedule_status_time "
+                "ON social_scheduled_posts (status, scheduled_for ASC)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_social_schedule_business_time "
+                "ON social_scheduled_posts (business_id, scheduled_for DESC)"
+            )
+        )
 
         # Seed default tools and backfill tool_id where missing.
         default_tools = [

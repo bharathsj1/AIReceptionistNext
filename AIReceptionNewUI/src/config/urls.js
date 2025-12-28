@@ -48,7 +48,23 @@ export const API_URLS = {
   dashboardAgent: apiUrl("dashboard/agent"),
   dashboardBookingSettings: apiUrl("dashboard/booking-settings"),
   dashboardCallTranscript: apiUrl("dashboard/call-transcript"),
-  calls: apiUrl("calls")
+  calls: apiUrl("calls"),
+  socialMetaAuthUrl: apiUrl("social/meta/auth-url"),
+  socialMetaCallback: apiUrl("social/meta/callback"),
+  socialConnections: apiUrl("social/connections"),
+  socialDisconnect: apiUrl("social/connections/disconnect"),
+  socialWhatsAppConnect: apiUrl("social/whatsapp/connect-manual"),
+  socialInboxConversations: apiUrl("social/inbox/conversations"),
+  socialInboxMessages: apiUrl("social/inbox/conversations"),
+  socialInboxReply: apiUrl("social/inbox/conversations"),
+  socialSuggestReply: apiUrl("social/ai/suggest-reply"),
+  socialDrafts: apiUrl("social/posts/drafts"),
+  socialDraftCreate: apiUrl("social/posts/draft"),
+  socialDraftUpdate: apiUrl("social/posts/draft"),
+  socialPublish: apiUrl("social/posts/publish"),
+  socialSchedule: apiUrl("social/posts/schedule"),
+  socialScheduledPosts: apiUrl("social/posts/scheduled"),
+  socialXConnect: apiUrl("social/x/connect")
 };
 
 

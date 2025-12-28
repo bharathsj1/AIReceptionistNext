@@ -16,17 +16,18 @@ import {
   FileText,
   Globe2,
   Inbox,
+  Link2,
   Mail,
   MailOpen,
   MailPlus,
   Megaphone,
+  MessageSquare,
   Mic,
   Paperclip,
   PhoneCall,
   RefreshCw,
   Reply,
   Shield,
-  Send,
   Star,
   Tag,
   Trash2,
@@ -153,6 +154,29 @@ const sentimentStyles = {
   Neutral: "text-slate-200"
 };
 
+const socialPlatformStyles = {
+  facebook: "bg-blue-500/20 text-blue-200 border-blue-400/40",
+  instagram: "bg-rose-500/20 text-rose-200 border-rose-400/40",
+  whatsapp_meta: "bg-emerald-500/20 text-emerald-200 border-emerald-400/40",
+  x: "bg-slate-500/20 text-slate-200 border-slate-400/40"
+};
+
+const formatSocialTimestamp = (value) => {
+  if (!value) return "—";
+  try {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return value;
+    return parsed.toLocaleString(undefined, {
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  } catch {
+    return value;
+  }
+};
+
 const trimText = (value, max = 2000) => {
   if (!value) return "";
   const text = String(value).trim();
@@ -162,6 +186,23 @@ const trimText = (value, max = 2000) => {
   const safe = lastSpace > 0 ? clipped.slice(0, lastSpace) : clipped;
   return `${safe}...`;
 };
+
+const SendIcon = ({ className = "", ...props }) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+    aria-hidden="true"
+    {...props}
+  >
+    <path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z" />
+    <path d="m21.854 2.147-10.94 10.939" />
+  </svg>
+);
 
 const getMessageTimestampValue = (message) => {
   const internalDate = Number(message?.internalDate || 0);
@@ -392,6 +433,46 @@ export default function DashboardScreen({
   const [emailReplyVariantsById, setEmailReplyVariantsById] = useState({});
   const [emailReplyVariantsStatus, setEmailReplyVariantsStatus] = useState({});
   const [emailReplyTone, setEmailReplyTone] = useState("Professional");
+  const [socialTab, setSocialTab] = useState("connect");
+  const [socialConnections, setSocialConnections] = useState([]);
+  const [socialConnectionsLoading, setSocialConnectionsLoading] = useState(false);
+  const [socialConnectionsError, setSocialConnectionsError] = useState("");
+  const [socialConnectStatus, setSocialConnectStatus] = useState({ status: "idle", message: "" });
+  const [whatsappForm, setWhatsappForm] = useState({
+    phoneNumberId: "",
+    wabaId: "",
+    token: ""
+  });
+  const [whatsappStatus, setWhatsappStatus] = useState({ status: "idle", message: "" });
+  const [socialConversations, setSocialConversations] = useState([]);
+  const [socialInboxLoading, setSocialInboxLoading] = useState(false);
+  const [socialInboxError, setSocialInboxError] = useState("");
+  const [socialSearch, setSocialSearch] = useState("");
+  const [socialSelectedConversation, setSocialSelectedConversation] = useState(null);
+  const [socialMessages, setSocialMessages] = useState([]);
+  const [socialMessagesLoading, setSocialMessagesLoading] = useState(false);
+  const [socialMessagesError, setSocialMessagesError] = useState("");
+  const [socialReplyText, setSocialReplyText] = useState("");
+  const [socialReplyStatus, setSocialReplyStatus] = useState({ status: "idle", message: "" });
+  const [socialSuggestStatus, setSocialSuggestStatus] = useState({ status: "idle", message: "" });
+  const [socialDrafts, setSocialDrafts] = useState([]);
+  const [socialDraftsLoading, setSocialDraftsLoading] = useState(false);
+  const [socialDraftsError, setSocialDraftsError] = useState("");
+  const [socialDraftId, setSocialDraftId] = useState(null);
+  const [socialDraftForm, setSocialDraftForm] = useState({
+    caption: "",
+    mediaUrls: [""]
+  });
+  const [socialTargets, setSocialTargets] = useState({
+    facebook_page_id: "",
+    instagram_user_id: ""
+  });
+  const [socialPublishStatus, setSocialPublishStatus] = useState({ status: "idle", message: "" });
+  const [socialScheduleStatus, setSocialScheduleStatus] = useState({ status: "idle", message: "" });
+  const [socialScheduleAt, setSocialScheduleAt] = useState("");
+  const [socialScheduledPosts, setSocialScheduledPosts] = useState([]);
+  const [socialScheduledLoading, setSocialScheduledLoading] = useState(false);
+  const [socialScheduledError, setSocialScheduledError] = useState("");
   const [selectedCallDay, setSelectedCallDay] = useState("All days");
   const [sideNavOpen, setSideNavOpen] = useState(false);
   const [sideNavHidden, setSideNavHidden] = useState(false);
@@ -404,6 +485,9 @@ export default function DashboardScreen({
   const emailLabelsLoadedRef = useRef(false);
   const emailClassifyTimerRef = useRef(null);
   const emailActionsTimerRef = useRef(null);
+  const socialConnectionsLoadedRef = useRef(false);
+  const socialDraftsLoadedRef = useRef(false);
+  const socialScheduledLoadedRef = useRef(false);
   const sideNavHideTimerRef = useRef(null);
 
   useEffect(() => {
@@ -1535,6 +1619,374 @@ export default function DashboardScreen({
     });
   };
 
+  const parseSimpleError = async (res, fallback) => {
+    const text = await res.text();
+    let parsed = null;
+    try {
+      parsed = text ? JSON.parse(text) : null;
+    } catch {
+      parsed = null;
+    }
+    return parsed?.details || parsed?.error || text || fallback;
+  };
+
+  const getSocialIdentity = () => ({
+    email: user?.email || userForm.email || "",
+    userId: user?.id || ""
+  });
+
+  const loadSocialConnections = async () => {
+    const { email: emailAddress } = getSocialIdentity();
+    if (!emailAddress) return;
+    setSocialConnectionsLoading(true);
+    setSocialConnectionsError("");
+    try {
+      const params = new URLSearchParams({ email: emailAddress });
+      const res = await fetch(`${API_URLS.socialConnections}?${params.toString()}`);
+      if (!res.ok) {
+        throw new Error(await parseSimpleError(res, "Unable to load connections"));
+      }
+      const data = await res.json().catch(() => ({}));
+      setSocialConnections(Array.isArray(data?.connections) ? data.connections : []);
+    } catch (err) {
+      setSocialConnectionsError(err?.message || "Unable to load connections.");
+    } finally {
+      setSocialConnectionsLoading(false);
+    }
+  };
+
+  const beginMetaConnect = async () => {
+    const { email: emailAddress } = getSocialIdentity();
+    if (!emailAddress) {
+      setSocialConnectStatus({ status: "error", message: "Missing user email." });
+      return;
+    }
+    setSocialConnectStatus({ status: "loading", message: "" });
+    try {
+      const params = new URLSearchParams({ email: emailAddress });
+      const res = await fetch(`${API_URLS.socialMetaAuthUrl}?${params.toString()}`);
+      if (!res.ok) {
+        throw new Error(await parseSimpleError(res, "Unable to start Meta connection"));
+      }
+      const data = await res.json().catch(() => ({}));
+      const authUrl = data?.auth_url;
+      if (!authUrl) {
+        throw new Error("Missing auth URL");
+      }
+      const popup = window.open(authUrl, "meta-oauth", "width=600,height=720");
+      if (!popup) {
+        throw new Error("Popup blocked. Please allow popups to connect Meta.");
+      }
+
+      const handleMessage = (event) => {
+        if (!event?.data || event.data?.status !== "connected") return;
+        setSocialConnectStatus({ status: "success", message: "Meta connected." });
+        loadSocialConnections();
+        window.removeEventListener("message", handleMessage);
+      };
+      window.addEventListener("message", handleMessage);
+
+      const timer = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(timer);
+          window.removeEventListener("message", handleMessage);
+          setSocialConnectStatus((prev) =>
+            prev.status === "success" ? prev : { status: "idle", message: "" }
+          );
+          loadSocialConnections();
+        }
+      }, 600);
+    } catch (err) {
+      setSocialConnectStatus({ status: "error", message: err?.message || "Meta connect failed." });
+    }
+  };
+
+  const disconnectSocialConnection = async (connectionId) => {
+    const { email: emailAddress } = getSocialIdentity();
+    if (!emailAddress) return;
+    try {
+      const res = await fetch(API_URLS.socialDisconnect, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: emailAddress, connection_id: connectionId })
+      });
+      if (!res.ok) {
+        throw new Error(await parseSimpleError(res, "Unable to disconnect"));
+      }
+      loadSocialConnections();
+    } catch (err) {
+      setSocialConnectionsError(err?.message || "Unable to disconnect connection.");
+    }
+  };
+
+  const handleWhatsAppConnect = async () => {
+    const { email: emailAddress } = getSocialIdentity();
+    if (!emailAddress) {
+      setWhatsappStatus({ status: "error", message: "Missing user email." });
+      return;
+    }
+    if (!whatsappForm.phoneNumberId || !whatsappForm.token) {
+      setWhatsappStatus({ status: "error", message: "Phone number ID and token are required." });
+      return;
+    }
+    setWhatsappStatus({ status: "loading", message: "" });
+    try {
+      const res = await fetch(API_URLS.socialWhatsAppConnect, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: emailAddress,
+          phone_number_id: whatsappForm.phoneNumberId,
+          waba_id: whatsappForm.wabaId,
+          permanent_token: whatsappForm.token
+        })
+      });
+      if (!res.ok) {
+        throw new Error(await parseSimpleError(res, "Unable to connect WhatsApp"));
+      }
+      setWhatsappStatus({ status: "success", message: "WhatsApp connected." });
+      setWhatsappForm({ phoneNumberId: "", wabaId: "", token: "" });
+      loadSocialConnections();
+    } catch (err) {
+      setWhatsappStatus({ status: "error", message: err?.message || "WhatsApp connect failed." });
+    }
+  };
+
+  const loadSocialConversations = async () => {
+    const { email: emailAddress } = getSocialIdentity();
+    if (!emailAddress) return;
+    setSocialInboxLoading(true);
+    setSocialInboxError("");
+    try {
+      const params = new URLSearchParams({ email: emailAddress, limit: "50" });
+      const res = await fetch(`${API_URLS.socialInboxConversations}?${params.toString()}`);
+      if (!res.ok) {
+        throw new Error(await parseSimpleError(res, "Unable to load conversations"));
+      }
+      const data = await res.json().catch(() => ({}));
+      const items = Array.isArray(data?.conversations) ? data.conversations : [];
+      setSocialConversations(items);
+      if (items.length && !socialSelectedConversation) {
+        setSocialSelectedConversation(items[0]);
+      }
+    } catch (err) {
+      setSocialInboxError(err?.message || "Unable to load conversations.");
+    } finally {
+      setSocialInboxLoading(false);
+    }
+  };
+
+  const loadSocialMessages = async (conversation) => {
+    const { email: emailAddress } = getSocialIdentity();
+    if (!emailAddress || !conversation?.id) return;
+    setSocialMessagesLoading(true);
+    setSocialMessagesError("");
+    try {
+      const params = new URLSearchParams({ email: emailAddress });
+      const res = await fetch(
+        `${API_URLS.socialInboxMessages}/${conversation.id}/messages?${params.toString()}`
+      );
+      if (!res.ok) {
+        throw new Error(await parseSimpleError(res, "Unable to load messages"));
+      }
+      const data = await res.json().catch(() => ({}));
+      setSocialMessages(Array.isArray(data?.messages) ? data.messages : []);
+    } catch (err) {
+      setSocialMessagesError(err?.message || "Unable to load messages.");
+    } finally {
+      setSocialMessagesLoading(false);
+    }
+  };
+
+  const sendSocialReply = async () => {
+    const { email: emailAddress } = getSocialIdentity();
+    if (!emailAddress || !socialSelectedConversation?.id) return;
+    if (!socialReplyText.trim()) return;
+    setSocialReplyStatus({ status: "loading", message: "" });
+    try {
+      const res = await fetch(
+        `${API_URLS.socialInboxReply}/${socialSelectedConversation.id}/reply`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: emailAddress, text: socialReplyText.trim() })
+        }
+      );
+      if (!res.ok) {
+        throw new Error(await parseSimpleError(res, "Unable to send reply"));
+      }
+      setSocialReplyText("");
+      setSocialReplyStatus({ status: "success", message: "Reply sent." });
+      loadSocialMessages(socialSelectedConversation);
+      loadSocialConversations();
+    } catch (err) {
+      setSocialReplyStatus({ status: "error", message: err?.message || "Reply failed." });
+    }
+  };
+
+  const requestSocialSuggestion = async () => {
+    const { email: emailAddress } = getSocialIdentity();
+    if (!emailAddress || !socialSelectedConversation?.id) return;
+    setSocialSuggestStatus({ status: "loading", message: "" });
+    try {
+      const res = await fetch(API_URLS.socialSuggestReply, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: emailAddress,
+          conversation_id: socialSelectedConversation.id
+        })
+      });
+      if (!res.ok) {
+        throw new Error(await parseSimpleError(res, "Unable to suggest reply"));
+      }
+      const data = await res.json().catch(() => ({}));
+      if (data?.suggestion) {
+        setSocialReplyText(data.suggestion);
+      }
+      setSocialSuggestStatus({ status: "success", message: "Suggestion ready." });
+    } catch (err) {
+      setSocialSuggestStatus({ status: "error", message: err?.message || "Suggestion failed." });
+    }
+  };
+
+  const loadSocialDrafts = async () => {
+    const { email: emailAddress } = getSocialIdentity();
+    if (!emailAddress) return;
+    setSocialDraftsLoading(true);
+    setSocialDraftsError("");
+    try {
+      const params = new URLSearchParams({ email: emailAddress });
+      const res = await fetch(`${API_URLS.socialDrafts}?${params.toString()}`);
+      if (!res.ok) {
+        throw new Error(await parseSimpleError(res, "Unable to load drafts"));
+      }
+      const data = await res.json().catch(() => ({}));
+      setSocialDrafts(Array.isArray(data?.drafts) ? data.drafts : []);
+    } catch (err) {
+      setSocialDraftsError(err?.message || "Unable to load drafts.");
+    } finally {
+      setSocialDraftsLoading(false);
+    }
+  };
+
+  const loadSocialScheduled = async () => {
+    const { email: emailAddress } = getSocialIdentity();
+    if (!emailAddress) return;
+    setSocialScheduledLoading(true);
+    setSocialScheduledError("");
+    try {
+      const params = new URLSearchParams({ email: emailAddress });
+      const res = await fetch(`${API_URLS.socialScheduledPosts}?${params.toString()}`);
+      if (!res.ok) {
+        throw new Error(await parseSimpleError(res, "Unable to load schedule"));
+      }
+      const data = await res.json().catch(() => ({}));
+      setSocialScheduledPosts(Array.isArray(data?.scheduled_posts) ? data.scheduled_posts : []);
+    } catch (err) {
+      setSocialScheduledError(err?.message || "Unable to load scheduled posts.");
+    } finally {
+      setSocialScheduledLoading(false);
+    }
+  };
+
+  const saveSocialDraft = async () => {
+    const { email: emailAddress } = getSocialIdentity();
+    if (!emailAddress) return;
+    const payload = {
+      email: emailAddress,
+      caption: socialDraftForm.caption || "",
+      media_urls: socialDraftForm.mediaUrls.filter(Boolean)
+    };
+    setSocialPublishStatus({ status: "idle", message: "" });
+    setSocialScheduleStatus({ status: "idle", message: "" });
+    try {
+      if (socialDraftId) {
+        const res = await fetch(`${API_URLS.socialDraftUpdate}/${socialDraftId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) {
+          throw new Error(await parseSimpleError(res, "Unable to update draft"));
+        }
+      } else {
+        const res = await fetch(API_URLS.socialDraftCreate, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) {
+          throw new Error(await parseSimpleError(res, "Unable to save draft"));
+        }
+        const data = await res.json().catch(() => ({}));
+        setSocialDraftId(data?.id || null);
+      }
+      loadSocialDrafts();
+    } catch (err) {
+      setSocialDraftsError(err?.message || "Unable to save draft.");
+    }
+  };
+
+  const publishSocialPost = async () => {
+    const { email: emailAddress } = getSocialIdentity();
+    if (!emailAddress || !socialDraftId) {
+      setSocialPublishStatus({ status: "error", message: "Select or save a draft first." });
+      return;
+    }
+    setSocialPublishStatus({ status: "loading", message: "" });
+    try {
+      const res = await fetch(API_URLS.socialPublish, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: emailAddress,
+          draft_id: socialDraftId,
+          targets: socialTargets
+        })
+      });
+      if (!res.ok) {
+        throw new Error(await parseSimpleError(res, "Publish failed"));
+      }
+      setSocialPublishStatus({ status: "success", message: "Published." });
+      loadSocialScheduled();
+    } catch (err) {
+      setSocialPublishStatus({ status: "error", message: err?.message || "Publish failed." });
+    }
+  };
+
+  const scheduleSocialPost = async () => {
+    const { email: emailAddress } = getSocialIdentity();
+    if (!emailAddress || !socialDraftId || !socialScheduleAt) {
+      setSocialScheduleStatus({
+        status: "error",
+        message: "Select a draft and schedule time."
+      });
+      return;
+    }
+    setSocialScheduleStatus({ status: "loading", message: "" });
+    try {
+      const res = await fetch(API_URLS.socialSchedule, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: emailAddress,
+          draft_id: socialDraftId,
+          scheduled_for: socialScheduleAt,
+          targets: socialTargets
+        })
+      });
+      if (!res.ok) {
+        throw new Error(await parseSimpleError(res, "Schedule failed"));
+      }
+      setSocialScheduleStatus({ status: "success", message: "Scheduled." });
+      setSocialScheduleAt("");
+      loadSocialScheduled();
+    } catch (err) {
+      setSocialScheduleStatus({ status: "error", message: err?.message || "Schedule failed." });
+    }
+  };
+
   const toolTabs = [
     {
       id: "ai_receptionist",
@@ -1564,7 +2016,7 @@ export default function DashboardScreen({
     { id: "IMPORTANT", label: "Important", icon: Star, requiresLabel: true },
     { id: "CATEGORY_UPDATES", label: "Updates", icon: Activity, requiresLabel: true },
     { id: "STARRED", label: "Starred", icon: Star },
-    { id: "SENT", label: "Sent mail", icon: Send },
+    { id: "SENT", label: "Sent mail", icon: SendIcon },
     { id: "DRAFT", label: "Drafts", icon: FileText },
     { id: "ALL_MAIL", label: "Archive", icon: Archive },
     { id: "SPAM", label: "Spam", icon: AlertTriangle },
@@ -1574,6 +2026,11 @@ export default function DashboardScreen({
     { id: "email", label: "Email", icon: Mail },
     { id: "settings", label: "Settings", icon: Edit3 },
     { id: "analytics", label: "Analytics", icon: Activity }
+  ];
+  const socialSubTabs = [
+    { id: "connect", label: "Connect" },
+    { id: "inbox", label: "Inbox" },
+    { id: "posts", label: "Posts" }
   ];
 
   const isToolLocked = (toolId) => {
@@ -1658,6 +2115,34 @@ export default function DashboardScreen({
     return items;
   }, [emailClassifications, emailMessages, emailSort, emailTagFilter]);
 
+  const facebookConnections = useMemo(
+    () =>
+      socialConnections.filter(
+        (conn) => conn.platform === "meta" && conn.metadata?.meta_type === "facebook_page"
+      ),
+    [socialConnections]
+  );
+  const instagramConnections = useMemo(
+    () =>
+      socialConnections.filter(
+        (conn) => conn.platform === "meta" && conn.metadata?.meta_type === "instagram_business"
+      ),
+    [socialConnections]
+  );
+  const whatsappConnections = useMemo(
+    () => socialConnections.filter((conn) => conn.platform === "whatsapp_meta"),
+    [socialConnections]
+  );
+  const filteredSocialConversations = useMemo(() => {
+    const base = [...socialConversations];
+    const query = socialSearch.trim().toLowerCase();
+    if (!query) return base;
+    return base.filter((item) => {
+      const text = `${item.participant_name || ""} ${item.participant_handle || ""} ${item.last_message_text || ""}`;
+      return text.toLowerCase().includes(query);
+    });
+  }, [socialConversations, socialSearch]);
+
   const handleInboxScroll = (event) => {
     if (emailLoading || !emailHasNext) return;
     const target = event.currentTarget;
@@ -1706,6 +2191,55 @@ export default function DashboardScreen({
     emailLabelsLoadedRef.current = true;
     loadEmailLabels();
   }, [activeToolLocked, currentTool, emailSubTab, user?.email, userForm.email]);
+
+  useEffect(() => {
+    socialConnectionsLoadedRef.current = false;
+    socialDraftsLoadedRef.current = false;
+    socialScheduledLoadedRef.current = false;
+  }, [user?.email]);
+
+  useEffect(() => {
+    if (currentTool !== "social_media_manager" || activeToolLocked) return;
+    const emailAddress = user?.email || userForm.email;
+    if (!emailAddress) return;
+    if (!socialConnectionsLoadedRef.current) {
+      socialConnectionsLoadedRef.current = true;
+      loadSocialConnections();
+    }
+    if (!socialDraftsLoadedRef.current) {
+      socialDraftsLoadedRef.current = true;
+      loadSocialDrafts();
+    }
+    if (!socialScheduledLoadedRef.current) {
+      socialScheduledLoadedRef.current = true;
+      loadSocialScheduled();
+    }
+  }, [activeToolLocked, currentTool, user?.email, userForm.email]);
+
+  useEffect(() => {
+    if (currentTool !== "social_media_manager" || activeToolLocked) return;
+    if (socialTab !== "inbox") return;
+    loadSocialConversations();
+  }, [activeToolLocked, currentTool, socialTab, user?.email, userForm.email]);
+
+  useEffect(() => {
+    if (!socialConversations.length) {
+      setSocialSelectedConversation(null);
+      setSocialMessages([]);
+      return;
+    }
+    if (
+      !socialSelectedConversation ||
+      !socialConversations.find((item) => item.id === socialSelectedConversation.id)
+    ) {
+      setSocialSelectedConversation(socialConversations[0]);
+    }
+  }, [socialConversations, socialSelectedConversation]);
+
+  useEffect(() => {
+    if (!socialSelectedConversation?.id) return;
+    loadSocialMessages(socialSelectedConversation);
+  }, [socialSelectedConversation?.id]);
 
   useEffect(() => {
     if (!gmailConnected || emailLabelsLoadedRef.current) return;
@@ -3685,7 +4219,7 @@ export default function DashboardScreen({
                           disabled={!selectedEmailMessage}
                           className="rounded-lg border border-white/10 bg-white/10 px-2 py-1 text-xs text-white disabled:opacity-50"
                         >
-                          <Send className="h-3.5 w-3.5" />
+                          <SendIcon className="h-3.5 w-3.5" />
                         </button>
                         {!emailSummaryVisible ? (
                           <button
@@ -4548,7 +5082,7 @@ export default function DashboardScreen({
                         className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-300/50 bg-emerald-500/20 px-4 py-2 text-xs font-semibold text-emerald-100 disabled:opacity-60 sm:w-auto"
                       >
                         {emailComposerStatus.status === "loading" ? "Sending..." : "Send"}
-                        <Send className="h-3.5 w-3.5" />
+                        <SendIcon className="h-3.5 w-3.5" />
                       </button>
                     </div>
                   </div>
@@ -4565,56 +5099,686 @@ export default function DashboardScreen({
             loading={subscriptionsLoading}
             message="Subscribe to the Social Media Manager to plan, approve, and schedule posts."
           >
-            <section className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
+            <div className="flex flex-col gap-4">
               <div className="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-xl backdrop-blur">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                   <div>
-                    <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Content engine</p>
-                    <h3 className="text-xl font-semibold text-white">Publishing control room</h3>
+                    <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Social command</p>
+                    <h3 className="text-xl font-semibold text-white">Social Media Manager</h3>
                     <p className="text-sm text-slate-300">
-                      Generate drafts, enforce tone, and stage posts for approval before they go live.
+                      Connect Meta + WhatsApp, respond from a unified inbox, and schedule posts.
                     </p>
                   </div>
-                  <div className="rounded-full border border-white/10 bg-white/5 p-2">
-                    <Megaphone className="h-5 w-5 text-indigo-200" />
-                  </div>
-                </div>
-                <div className="mt-4 grid gap-2 text-sm text-slate-200">
-                  <div className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-900/40 px-3 py-2">
-                    <span>Channels</span>
-                    <span className="text-xs text-slate-300">Instagram · LinkedIn · X · Facebook</span>
-                  </div>
-                  <div className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-900/40 px-3 py-2">
-                    <span>Brand safety</span>
-                    <span className="text-xs text-slate-300">Forbidden phrases + compliance tags</span>
-                  </div>
-                  <div className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-900/40 px-3 py-2">
-                    <span>Approval flow</span>
-                    <span className="text-xs text-slate-300">Draft → Review → Schedule</span>
-                  </div>
-                </div>
-              </div>
-              <div className="grid gap-3">
-                <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
-                  <p className="text-sm font-semibold text-white">Weekly calendar preview</p>
-                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-200">
-                    {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
-                      <div
-                        key={day}
-                        className="rounded-xl border border-white/10 bg-slate-900/50 p-3"
+                  <div className="flex flex-wrap gap-2">
+                    {socialSubTabs.map((tab) => (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setSocialTab(tab.id)}
+                        className={`rounded-full border px-4 py-1.5 text-xs font-semibold transition ${
+                          socialTab === tab.id
+                            ? "border-indigo-400/70 bg-indigo-500/20 text-indigo-100"
+                            : "border-white/10 bg-white/5 text-slate-200 hover:border-indigo-400/50"
+                        }`}
                       >
-                        <p className="text-[11px] uppercase tracking-[0.12em] text-indigo-200">{day}</p>
-                        <p className="mt-1 font-semibold text-white">2 posts scheduled</p>
-                        <p className="text-slate-300">Captions + assets ready</p>
-                      </div>
+                        {tab.label}
+                      </button>
                     ))}
                   </div>
                 </div>
-                <div className="rounded-3xl border border-dashed border-white/10 bg-slate-900/50 p-4 text-sm text-slate-200">
-                  Listening + sentiment coming soon - aggregate comments and DMs to train the AI on what resonates.
-                </div>
               </div>
-            </section>
+
+              {socialTab === "connect" && (
+                <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
+                  <div className="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-xl backdrop-blur">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-indigo-200">Meta OAuth</p>
+                        <h4 className="text-lg font-semibold text-white">Connect Facebook + Instagram</h4>
+                        <p className="text-sm text-slate-300">
+                          Grant access to your Facebook Pages and Instagram Business accounts.
+                        </p>
+                      </div>
+                      <div className="rounded-full border border-white/10 bg-white/5 p-2">
+                        <Globe2 className="h-5 w-5 text-indigo-200" />
+                      </div>
+                    </div>
+                    <div className="mt-4 flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={beginMetaConnect}
+                        disabled={socialConnectStatus.status === "loading"}
+                        className="inline-flex items-center gap-2 rounded-xl border border-indigo-300/50 bg-indigo-500/20 px-4 py-2 text-xs font-semibold text-indigo-100 disabled:opacity-60"
+                      >
+                        <Link2 className="h-4 w-4" />
+                        {socialConnectStatus.status === "loading" ? "Connecting..." : "Connect Meta"}
+                      </button>
+                      {socialConnectStatus.message ? (
+                        <span
+                          className={`text-xs ${
+                            socialConnectStatus.status === "error" ? "text-rose-300" : "text-emerald-200"
+                          }`}
+                        >
+                          {socialConnectStatus.message}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-xl backdrop-blur">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-emerald-200">WhatsApp</p>
+                        <h4 className="text-lg font-semibold text-white">Manual Cloud API connect</h4>
+                        <p className="text-sm text-slate-300">
+                          Paste your phone number ID and permanent token to start receiving messages.
+                        </p>
+                      </div>
+                      <div className="rounded-full border border-white/10 bg-white/5 p-2">
+                        <MessageSquare className="h-5 w-5 text-emerald-200" />
+                      </div>
+                    </div>
+                    <div className="mt-4 grid gap-3 text-xs">
+                      <input
+                        type="text"
+                        value={whatsappForm.phoneNumberId}
+                        onChange={(event) =>
+                          setWhatsappForm((prev) => ({ ...prev, phoneNumberId: event.target.value }))
+                        }
+                        placeholder="Phone number ID"
+                        className="w-full rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-white placeholder:text-slate-400"
+                      />
+                      <input
+                        type="text"
+                        value={whatsappForm.wabaId}
+                        onChange={(event) =>
+                          setWhatsappForm((prev) => ({ ...prev, wabaId: event.target.value }))
+                        }
+                        placeholder="WABA ID (optional)"
+                        className="w-full rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-white placeholder:text-slate-400"
+                      />
+                      <input
+                        type="password"
+                        value={whatsappForm.token}
+                        onChange={(event) =>
+                          setWhatsappForm((prev) => ({ ...prev, token: event.target.value }))
+                        }
+                        placeholder="Permanent access token"
+                        className="w-full rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-white placeholder:text-slate-400"
+                      />
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={handleWhatsAppConnect}
+                          disabled={whatsappStatus.status === "loading"}
+                          className="inline-flex items-center gap-2 rounded-xl border border-emerald-300/50 bg-emerald-500/20 px-4 py-2 text-xs font-semibold text-emerald-100 disabled:opacity-60"
+                        >
+                          {whatsappStatus.status === "loading" ? "Connecting..." : "Connect WhatsApp"}
+                        </button>
+                        {whatsappStatus.message ? (
+                          <span
+                            className={`text-xs ${
+                              whatsappStatus.status === "error" ? "text-rose-300" : "text-emerald-200"
+                            }`}
+                          >
+                            {whatsappStatus.message}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="lg:col-span-2 rounded-3xl border border-white/10 bg-white/5 p-5 shadow-xl backdrop-blur">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-slate-300">Connected channels</p>
+                        <h4 className="text-lg font-semibold text-white">Active connections</h4>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={loadSocialConnections}
+                        className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        Refresh
+                      </button>
+                    </div>
+                    {socialConnectionsLoading ? (
+                      <div className="mt-4">
+                        <InlineLoader label="Loading connections..." />
+                      </div>
+                    ) : socialConnectionsError ? (
+                      <div className="mt-4 rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+                        {socialConnectionsError}
+                      </div>
+                    ) : socialConnections.length ? (
+                      <div className="mt-4 grid gap-3 md:grid-cols-2">
+                        {socialConnections.map((conn) => (
+                          <div
+                            key={`connection-${conn.id}`}
+                            className="rounded-2xl border border-white/10 bg-slate-900/50 p-4"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-semibold text-white">
+                                  {conn.display_name || conn.external_account_id}
+                                </p>
+                                <p className="text-xs text-slate-400">{conn.external_account_id}</p>
+                                <div className="mt-2 inline-flex items-center gap-2 text-xs text-slate-200">
+                                  <span
+                                    className={`rounded-full border px-2 py-0.5 ${
+                                      socialPlatformStyles[
+                                        conn.metadata?.meta_type === "instagram_business"
+                                          ? "instagram"
+                                          : conn.platform === "meta"
+                                            ? "facebook"
+                                            : conn.platform
+                                      ] || "border-white/10 text-slate-200"
+                                    }`}
+                                  >
+                                    {conn.metadata?.meta_type === "instagram_business"
+                                      ? "Instagram"
+                                      : conn.platform === "whatsapp_meta"
+                                        ? "WhatsApp"
+                                        : "Facebook"}
+                                  </span>
+                                  <span className="text-slate-400">{conn.status}</span>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => disconnectSocialConnection(conn.id)}
+                                className="rounded-xl border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-200"
+                              >
+                                Disconnect
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-4 text-sm text-slate-300">
+                        No channels connected yet. Connect Meta or WhatsApp to get started.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="lg:col-span-2 rounded-3xl border border-dashed border-white/10 bg-slate-900/40 p-5 text-sm text-slate-300">
+                    X (Twitter) integration is coming soon. You can already reserve the channel in settings.
+                  </div>
+                </div>
+              )}
+
+              {socialTab === "inbox" && (
+                <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
+                  <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="text-sm font-semibold text-white">Conversations</h4>
+                      <button
+                        type="button"
+                        onClick={loadSocialConversations}
+                        className="rounded-xl border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-200"
+                      >
+                        Refresh
+                      </button>
+                    </div>
+                    <div className="mt-3">
+                      <input
+                        type="search"
+                        value={socialSearch}
+                        onChange={(event) => setSocialSearch(event.target.value)}
+                        placeholder="Search conversations"
+                        className="w-full rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-xs text-white placeholder:text-slate-400"
+                      />
+                    </div>
+                    <div className="mt-4 space-y-2">
+                      {socialInboxLoading ? (
+                        <InlineLoader label="Loading inbox..." />
+                      ) : socialInboxError ? (
+                        <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+                          {socialInboxError}
+                        </div>
+                      ) : filteredSocialConversations.length ? (
+                        filteredSocialConversations.map((conv) => {
+                          const isActive = socialSelectedConversation?.id === conv.id;
+                          const platformKey = conv.platform || "facebook";
+                          return (
+                            <button
+                              key={`conv-${conv.id}`}
+                              type="button"
+                              onClick={() => setSocialSelectedConversation(conv)}
+                              className={`w-full rounded-2xl border px-3 py-3 text-left text-xs transition ${
+                                isActive
+                                  ? "border-indigo-400/50 bg-indigo-500/20 text-indigo-100"
+                                  : "border-white/10 bg-slate-900/50 text-slate-200 hover:border-indigo-400/40"
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-semibold">
+                                  {conv.participant_name || conv.participant_handle || "Unknown"}
+                                </span>
+                                <span className="text-[11px] text-slate-400">
+                                  {formatSocialTimestamp(conv.last_message_at)}
+                                </span>
+                              </div>
+                              <div className="mt-1 line-clamp-2 text-slate-300">
+                                {conv.last_message_text || "No message preview"}
+                              </div>
+                              <div className="mt-2 flex items-center justify-between">
+                                <span
+                                  className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] ${
+                                    socialPlatformStyles[platformKey] || "border-white/10 text-slate-200"
+                                  }`}
+                                >
+                                  {platformKey === "whatsapp_meta"
+                                    ? "WhatsApp"
+                                    : platformKey === "instagram"
+                                      ? "Instagram"
+                                      : "Facebook"}
+                                </span>
+                                <span className="text-[10px] text-slate-400">
+                                  {conv.connection_name || conv.connection_platform || ""}
+                                </span>
+                              </div>
+                            </button>
+                          );
+                        })
+                      ) : (
+                        <p className="text-xs text-slate-300">No conversations yet.</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-xl backdrop-blur">
+                    {socialSelectedConversation ? (
+                      <div className="flex h-full flex-col gap-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-xs uppercase tracking-[0.2em] text-slate-300">Thread</p>
+                            <h4 className="text-lg font-semibold text-white">
+                              {socialSelectedConversation.participant_name ||
+                                socialSelectedConversation.participant_handle ||
+                                "Conversation"}
+                            </h4>
+                          </div>
+                          <span
+                            className={`rounded-full border px-3 py-1 text-[11px] ${
+                              socialPlatformStyles[socialSelectedConversation.platform] ||
+                              "border-white/10 text-slate-200"
+                            }`}
+                          >
+                            {socialSelectedConversation.platform === "whatsapp_meta"
+                              ? "WhatsApp"
+                              : socialSelectedConversation.platform === "instagram"
+                                ? "Instagram"
+                                : "Facebook"}
+                          </span>
+                        </div>
+
+                        <div className="flex-1 space-y-3 overflow-y-auto rounded-2xl border border-white/10 bg-slate-900/40 p-4">
+                          {socialMessagesLoading ? (
+                            <InlineLoader label="Loading messages..." />
+                          ) : socialMessagesError ? (
+                            <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+                              {socialMessagesError}
+                            </div>
+                          ) : socialMessages.length ? (
+                            socialMessages.map((msg) => (
+                              <div
+                                key={`msg-${msg.id}`}
+                                className={`flex ${msg.direction === "outbound" ? "justify-end" : "justify-start"}`}
+                              >
+                                <div
+                                  className={`max-w-[80%] rounded-2xl border px-3 py-2 text-xs ${
+                                    msg.direction === "outbound"
+                                      ? "border-indigo-400/40 bg-indigo-500/20 text-indigo-100"
+                                      : "border-white/10 bg-slate-800/60 text-slate-100"
+                                  }`}
+                                >
+                                  <p className="whitespace-pre-wrap">{msg.text || "Attachment received."}</p>
+                                  <p className="mt-1 text-[10px] text-slate-400">
+                                    {formatSocialTimestamp(msg.message_ts)}
+                                  </p>
+                                </div>
+                              </div>
+                            ))
+                          ) : (
+                            <p className="text-xs text-slate-300">No messages yet.</p>
+                          )}
+                        </div>
+
+                        <div className="rounded-2xl border border-white/10 bg-slate-900/50 p-3">
+                          <textarea
+                            rows={3}
+                            value={socialReplyText}
+                            onChange={(event) => setSocialReplyText(event.target.value)}
+                            placeholder="Write a reply..."
+                            className="w-full rounded-xl border border-white/10 bg-slate-900/70 px-3 py-2 text-xs text-white placeholder:text-slate-400"
+                          />
+                          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={requestSocialSuggestion}
+                                disabled={socialSuggestStatus.status === "loading"}
+                                className="rounded-xl border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-200"
+                              >
+                                {socialSuggestStatus.status === "loading" ? "Suggesting..." : "Suggest reply"}
+                              </button>
+                              {socialSuggestStatus.status === "error" ? (
+                                <span className="text-xs text-rose-300">{socialSuggestStatus.message}</span>
+                              ) : null}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={sendSocialReply}
+                              disabled={socialReplyStatus.status === "loading"}
+                              className="inline-flex items-center gap-2 rounded-xl border border-indigo-300/50 bg-indigo-500/20 px-4 py-2 text-xs font-semibold text-indigo-100 disabled:opacity-60"
+                            >
+                              {socialReplyStatus.status === "loading" ? "Sending..." : "Send"}
+                              <SendIcon className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                          {socialReplyStatus.message ? (
+                            <div
+                              className={`mt-2 text-xs ${
+                                socialReplyStatus.status === "error" ? "text-rose-300" : "text-emerald-200"
+                              }`}
+                            >
+                              {socialReplyStatus.message}
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex h-full items-center justify-center text-sm text-slate-300">
+                        Select a conversation to view messages.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {socialTab === "posts" && (
+                <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+                  <div className="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-xl backdrop-blur">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-indigo-200">Draft composer</p>
+                        <h4 className="text-lg font-semibold text-white">Create a new post</h4>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSocialDraftId(null);
+                          setSocialDraftForm({ caption: "", mediaUrls: [""] });
+                        }}
+                        className="rounded-xl border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-200"
+                      >
+                        New draft
+                      </button>
+                    </div>
+                    <div className="mt-4 space-y-3">
+                      <textarea
+                        rows={5}
+                        value={socialDraftForm.caption}
+                        onChange={(event) =>
+                          setSocialDraftForm((prev) => ({ ...prev, caption: event.target.value }))
+                        }
+                        placeholder="Write your caption..."
+                        className="w-full rounded-2xl border border-white/10 bg-slate-900/60 px-3 py-2 text-xs text-white placeholder:text-slate-400"
+                      />
+                      <div className="space-y-2">
+                        {socialDraftForm.mediaUrls.map((url, idx) => (
+                          <div key={`media-url-${idx}`} className="flex items-center gap-2">
+                            <input
+                              type="url"
+                              value={url}
+                              onChange={(event) => {
+                                const value = event.target.value;
+                                setSocialDraftForm((prev) => ({
+                                  ...prev,
+                                  mediaUrls: prev.mediaUrls.map((item, itemIdx) =>
+                                    itemIdx === idx ? value : item
+                                  )
+                                }));
+                              }}
+                              placeholder="Media URL (image)"
+                              className="flex-1 rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-xs text-white placeholder:text-slate-400"
+                            />
+                            {socialDraftForm.mediaUrls.length > 1 ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setSocialDraftForm((prev) => ({
+                                    ...prev,
+                                    mediaUrls: prev.mediaUrls.filter((_, itemIdx) => itemIdx !== idx)
+                                  }))
+                                }
+                                className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200"
+                              >
+                                Remove
+                              </button>
+                            ) : null}
+                          </div>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSocialDraftForm((prev) => ({ ...prev, mediaUrls: [...prev.mediaUrls, ""] }))
+                          }
+                          className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200"
+                        >
+                          Add media URL
+                        </button>
+                      </div>
+
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <div className="rounded-2xl border border-white/10 bg-slate-900/50 p-3">
+                          <p className="text-xs font-semibold text-slate-200">Facebook Page</p>
+                          <select
+                            value={socialTargets.facebook_page_id}
+                            onChange={(event) =>
+                              setSocialTargets((prev) => ({ ...prev, facebook_page_id: event.target.value }))
+                            }
+                            className="mt-2 w-full rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-xs text-white"
+                          >
+                            <option value="">Select page</option>
+                            {facebookConnections.map((conn) => (
+                              <option key={`fb-${conn.id}`} value={conn.external_account_id}>
+                                {conn.display_name || conn.external_account_id}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="rounded-2xl border border-white/10 bg-slate-900/50 p-3">
+                          <p className="text-xs font-semibold text-slate-200">Instagram Business</p>
+                          <select
+                            value={socialTargets.instagram_user_id}
+                            onChange={(event) =>
+                              setSocialTargets((prev) => ({ ...prev, instagram_user_id: event.target.value }))
+                            }
+                            className="mt-2 w-full rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-xs text-white"
+                          >
+                            <option value="">Select account</option>
+                            {instagramConnections.map((conn) => (
+                              <option key={`ig-${conn.id}`} value={conn.external_account_id}>
+                                {conn.display_name || conn.external_account_id}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={saveSocialDraft}
+                          className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs text-slate-200"
+                        >
+                          Save draft
+                        </button>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={publishSocialPost}
+                            disabled={socialPublishStatus.status === "loading"}
+                            className="inline-flex items-center gap-2 rounded-xl border border-indigo-300/50 bg-indigo-500/20 px-4 py-2 text-xs font-semibold text-indigo-100 disabled:opacity-60"
+                          >
+                            {socialPublishStatus.status === "loading" ? "Publishing..." : "Publish now"}
+                          </button>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="datetime-local"
+                              value={socialScheduleAt}
+                              onChange={(event) => setSocialScheduleAt(event.target.value)}
+                              className="rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-xs text-white"
+                            />
+                            <button
+                              type="button"
+                              onClick={scheduleSocialPost}
+                              disabled={socialScheduleStatus.status === "loading"}
+                              className="rounded-xl border border-emerald-300/50 bg-emerald-500/20 px-4 py-2 text-xs font-semibold text-emerald-100 disabled:opacity-60"
+                            >
+                              {socialScheduleStatus.status === "loading" ? "Scheduling..." : "Schedule"}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                      {socialPublishStatus.message ? (
+                        <div
+                          className={`text-xs ${
+                            socialPublishStatus.status === "error" ? "text-rose-300" : "text-emerald-200"
+                          }`}
+                        >
+                          {socialPublishStatus.message}
+                        </div>
+                      ) : null}
+                      {socialScheduleStatus.message ? (
+                        <div
+                          className={`text-xs ${
+                            socialScheduleStatus.status === "error" ? "text-rose-300" : "text-emerald-200"
+                          }`}
+                        >
+                          {socialScheduleStatus.message}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4">
+                    <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
+                      <div className="flex items-center justify-between gap-2">
+                        <h4 className="text-sm font-semibold text-white">Draft library</h4>
+                        <button
+                          type="button"
+                          onClick={loadSocialDrafts}
+                          className="rounded-xl border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-200"
+                        >
+                          Refresh
+                        </button>
+                      </div>
+                      {socialDraftsLoading ? (
+                        <div className="mt-3">
+                          <InlineLoader label="Loading drafts..." />
+                        </div>
+                      ) : socialDraftsError ? (
+                        <div className="mt-3 rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+                          {socialDraftsError}
+                        </div>
+                      ) : socialDrafts.length ? (
+                        <div className="mt-3 space-y-2">
+                          {socialDrafts.map((draft) => (
+                            <button
+                              key={`draft-${draft.id}`}
+                              type="button"
+                              onClick={() => {
+                                setSocialDraftId(draft.id);
+                                setSocialDraftForm({
+                                  caption: draft.caption || "",
+                                  mediaUrls: draft.media_urls?.length ? draft.media_urls : [""]
+                                });
+                              }}
+                              className={`w-full rounded-2xl border px-3 py-3 text-left text-xs ${
+                                socialDraftId === draft.id
+                                  ? "border-indigo-400/50 bg-indigo-500/20 text-indigo-100"
+                                  : "border-white/10 bg-slate-900/50 text-slate-200"
+                              }`}
+                            >
+                              <p className="font-semibold">
+                                {draft.caption ? draft.caption.slice(0, 60) : "Untitled draft"}
+                              </p>
+                              <p className="mt-1 text-[11px] text-slate-400">
+                                {draft.media_urls?.length ? `${draft.media_urls.length} media link(s)` : "No media"}
+                              </p>
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="mt-3 text-xs text-slate-300">No drafts yet.</p>
+                      )}
+                    </div>
+
+                    <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
+                      <div className="flex items-center justify-between gap-2">
+                        <h4 className="text-sm font-semibold text-white">Scheduled posts</h4>
+                        <button
+                          type="button"
+                          onClick={loadSocialScheduled}
+                          className="rounded-xl border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-200"
+                        >
+                          Refresh
+                        </button>
+                      </div>
+                      {socialScheduledLoading ? (
+                        <div className="mt-3">
+                          <InlineLoader label="Loading schedule..." />
+                        </div>
+                      ) : socialScheduledError ? (
+                        <div className="mt-3 rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+                          {socialScheduledError}
+                        </div>
+                      ) : socialScheduledPosts.length ? (
+                        <div className="mt-3 space-y-2">
+                          {socialScheduledPosts.map((post) => (
+                            <div
+                              key={`scheduled-${post.id}`}
+                              className="rounded-2xl border border-white/10 bg-slate-900/50 px-3 py-3 text-xs text-slate-200"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-semibold">Draft #{post.draft_id}</span>
+                                <span className="text-[11px] text-slate-400">
+                                  {formatSocialTimestamp(post.scheduled_for)}
+                                </span>
+                              </div>
+                              <div className="mt-1 flex items-center justify-between text-[11px]">
+                                <span className="text-slate-400">Status</span>
+                                <span
+                                  className={`rounded-full border px-2 py-0.5 ${
+                                    post.status === "published"
+                                      ? "border-emerald-400/40 text-emerald-200"
+                                      : post.status === "failed"
+                                        ? "border-rose-400/40 text-rose-200"
+                                        : "border-white/10 text-slate-200"
+                                  }`}
+                                >
+                                  {post.status}
+                                </span>
+                              </div>
+                              {post.last_error ? (
+                                <p className="mt-2 text-[11px] text-rose-300">{post.last_error}</p>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="mt-3 text-xs text-slate-300">No scheduled posts yet.</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </ToolGate>
         )}
           </div>

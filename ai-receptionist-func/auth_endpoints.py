@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, quote
 
 import azure.functions as func
 import requests
+from sqlalchemy.exc import OperationalError
 from function_app import app
 from shared.config import get_google_oauth_settings, get_public_api_base, get_setting, get_smtp_settings
 from shared.db import SessionLocal, User, Client, GoogleToken
@@ -1369,6 +1370,14 @@ def calendar_events(req: func.HttpRequest) -> func.HttpResponse:
             mimetype="application/json",
             headers=cors,
         )
+    except OperationalError as exc:
+        logger.warning("CalendarEvents database unavailable: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "Database unavailable", "details": str(exc)}),
+            status_code=503,
+            mimetype="application/json",
+            headers=cors,
+        )
     except Exception as exc:  # pylint: disable=broad-except
         logger.error("Calendar events failed: %s", exc)
         return func.HttpResponse(
@@ -1378,7 +1387,10 @@ def calendar_events(req: func.HttpRequest) -> func.HttpResponse:
             headers=cors,
         )
     finally:
-        db.close()
+        try:
+            db.close()
+        except OperationalError as exc:
+            logger.warning("CalendarEvents DB close failed: %s", exc)
 
 
 @app.function_name(name="CalendarUpdate")

@@ -30,3 +30,24 @@ The Ultravox HTTP tool `calendar_book` is created and attached to each agent so 
 ### Calls + transcript proxy
 - `GET /api/calls?email=...` (or `aiPhoneNumber=...`)
 - `GET /api/calls/{call_id}/transcript` (call_id can be DB id or Twilio CallSid; fetches live from Ultravox, no DB storage)
+
+### Social Media Manager
+Env vars:
+- `META_APP_ID` / `META_APP_SECRET` (Meta OAuth)
+- `META_VERIFY_TOKEN` (Meta + WhatsApp webhook verification)
+- `PUBLIC_APP_URL` (used for Meta OAuth redirect back to `/api/social/meta/callback`)
+- `SOCIAL_TOKEN_ENC_KEY` (AES-GCM key used to encrypt stored tokens)
+- `OPENAI_API_KEY` (optional, enables AI reply suggestions)
+
+Webhooks:
+- Meta (Facebook/Instagram): `GET|POST /api/social/meta/webhook`
+- WhatsApp Cloud API: `GET|POST /api/social/whatsapp/webhook`
+
+Connect Meta (Facebook + Instagram):
+1. Go to Social -> Connect in the dashboard.
+2. Click "Connect Meta" and approve the requested permissions.
+3. The connected Pages + IG Business accounts appear in the connections list.
+
+Connect WhatsApp (MVP manual):
+1. Gather `phone_number_id`, `waba_id`, and a permanent token from Meta Cloud API.
+2. Submit the manual form in Social -> Connect.
