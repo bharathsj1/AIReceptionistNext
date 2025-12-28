@@ -301,13 +301,9 @@ def meta_auth_url(req: func.HttpRequest) -> func.HttpResponse:
         redirect_uri = f"{redirect_base.rstrip('/')}/api/social/meta/callback"
         scopes = [
             "pages_show_list",
-            "pages_read_engagement",
-            "pages_manage_posts",
+            "pages_messaging",
             "instagram_basic",
             "instagram_manage_messages",
-            "instagram_manage_comments",
-            "instagram_content_publish",
-            "pages_messaging",
         ]
         state = _encode_state(
             {
