@@ -99,6 +99,8 @@ export default function App() {
   });
   const [ultravoxVoices, setUltravoxVoices] = useState([]);
   const [ultravoxVoicesLoading, setUltravoxVoicesLoading] = useState(false);
+  const [selectedVoiceId, setSelectedVoiceId] = useState("");
+  const [welcomeMessage, setWelcomeMessage] = useState("Hi! Thanks for calling. How can I help today?");
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [agentSaveStatus, setAgentSaveStatus] = useState({ status: "idle", message: "" });
   const [businessSaveStatus, setBusinessSaveStatus] = useState({ status: "idle", message: "" });
@@ -169,6 +171,7 @@ export default function App() {
   });
   const [bookingStatus, setBookingStatus] = useState({ status: "idle", message: "" });
   const [bookingTestStatus, setBookingTestStatus] = useState({ status: "idle", message: "" });
+  const [assignNumberStatus, setAssignNumberStatus] = useState({ status: "idle", message: "" });
   const aiNumber = useMemo(() => {
     const primary = phoneNumbers?.[0];
     const phoneFromArray =
@@ -179,18 +182,12 @@ export default function App() {
       (provisionData?.phone_numbers || [])[0]?.phone_number ||
       (provisionData?.phone_numbers || [])[0]?.twilio_phone_number ||
       (provisionData?.phone_numbers || [])[0];
-    const phoneFromBusiness =
-      clientData?.business_phone || businessPhone || user?.business_number;
-
-    return phoneFromArray || phoneFromProvision || phoneFromBusiness || null;
+    return phoneFromArray || phoneFromProvision || null;
   }, [
-    businessPhone,
-    clientData?.business_phone,
     phoneNumbers,
     provisionData?.phone_number,
     provisionData?.phone_numbers,
-    provisionData?.twilio_phone_number,
-    user?.business_number
+    provisionData?.twilio_phone_number
   ]);
 
   const getSelectedDays = useCallback(() => {
@@ -725,14 +722,15 @@ export default function App() {
     }
     setBusinessLoading(true);
     try {
-      if (!signupEmail) {
-        throw new Error("Please create an account first.");
+      const targetEmail = signupEmail || user?.email || email || loginEmail || "";
+      if (!targetEmail) {
+        throw new Error("Please log in before adding business details.");
       }
       const res = await fetch(API_URLS.clientsBusinessDetails, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email: signupEmail,
+          email: targetEmail,
           businessName: nameInput,
           businessPhone: phoneInput
         })
@@ -1012,6 +1010,22 @@ export default function App() {
     setStage(STAGES.DASHBOARD);
   };
 
+  const handleResumeBusinessDetails = useCallback(() => {
+    const targetEmail = signupEmail || user?.email || email || loginEmail || "";
+    if (targetEmail) {
+      if (!signupEmail) setSignupEmail(targetEmail);
+      if (!email) setEmail(targetEmail);
+    }
+    if (!signupName && user?.name) {
+      setSignupName(user.name);
+    }
+    setActiveTab("dashboard");
+    setActiveTool(DEFAULT_TOOL_ID);
+    setStage(STAGES.BUSINESS_DETAILS);
+    setStatus("idle");
+    setResponseMessage("");
+  }, [email, loginEmail, signupEmail, signupName, user?.email, user?.name]);
+
   const handleSelectPlan = (planId) => {
     if (hasActiveSubscription) {
       setStage(STAGES.DASHBOARD);
@@ -1034,7 +1048,7 @@ export default function App() {
   const pageClassName = `page${isLandingStage ? " page-landing" : ""}`;
   const pageContentClassName = `page-content${isLandingStage ? " page-content-landing" : ""}`;
   const contentClassName = `content${isLandingStage ? " content-landing" : ""}${isDashboardStage ? " content-wide" : ""}`;
-  const showGlobalLogo = stage !== STAGES.LANDING;
+  const showGlobalLogo = stage !== STAGES.LANDING && stage !== STAGES.DASHBOARD;
 
   const handleEmailSubmit = async (event) => {
     event.preventDefault();
@@ -1177,7 +1191,9 @@ export default function App() {
         business_hours: manualInfo?.hours || "",
         business_services: manualInfo?.services || "",
         business_location: manualInfo?.location || "",
-        business_notes: manualInfo?.notes || ""
+        business_notes: manualInfo?.notes || "",
+        voice: selectedVoiceId || "",
+        welcome_message: welcomeMessage || ""
       };
 
       const provisionRes = await fetch(API_URLS.provisionClient, {
@@ -1291,13 +1307,20 @@ export default function App() {
   };
 
   const loadCalendarEvents = useCallback(
-    async (emailAddress = user?.email) => {
+    async (emailAddress = user?.email, range = null) => {
       if (!emailAddress) return;
       setCalendarLoading(true);
       setCalendarError("");
       try {
+        const params = new URLSearchParams({
+          email: emailAddress,
+          max_results: "200",
+          ts: String(Date.now())
+        });
+        if (range?.start) params.set("from", range.start);
+        if (range?.end) params.set("to", range.end);
         const res = await fetch(
-          `${API_URLS.calendarEvents}?email=${encodeURIComponent(emailAddress)}&max_results=200`
+          `${API_URLS.calendarEvents}?${params.toString()}`
         );
         if (!res.ok) {
           const text = await res.text();
@@ -1508,6 +1531,43 @@ export default function App() {
     },
     [email, loginEmail, normalizeToolSubscriptions, signupEmail, user?.email]
   );
+
+  const handleAssignNumber = useCallback(async () => {
+    const targetEmail = user?.email || email || signupEmail || loginEmail;
+    if (!targetEmail) {
+      setAssignNumberStatus({ status: "error", message: "Missing user email." });
+      return;
+    }
+    setAssignNumberStatus({ status: "loading", message: "" });
+    try {
+      const payload = { email: targetEmail };
+      const res = await fetch(API_URLS.assignAiNumber, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        mode: "cors",
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const message = data?.error || data?.details || "Failed to assign AI number";
+        throw new Error(message);
+      }
+      setAssignNumberStatus({ status: "success", message: "AI number assigned." });
+      setProvisionData((prev) => ({ ...(prev || {}), ...data }));
+      await loadDashboard(targetEmail);
+    } catch (error) {
+      setAssignNumberStatus({
+        status: "error",
+        message: error?.message || "Failed to assign AI number"
+      });
+    }
+  }, [
+    email,
+    loadDashboard,
+    loginEmail,
+    signupEmail,
+    user?.email
+  ]);
 
   const handleAgentSave = useCallback(
     async (updates) => {
@@ -1746,15 +1806,16 @@ export default function App() {
           transcripts: data?.transcripts || [],
           recordings: data?.recordings || [],
           messages: data?.messages || [],
-          transcript: data?.transcript || "",
+          transcript: "",
           loading: false,
           error: ""
         });
       } catch (error) {
+        const message = error?.message || "Unable to fetch transcript";
         setCallTranscript((prev) => ({
           ...prev,
           loading: false,
-          error: error?.message || "Unable to fetch transcript"
+          error: message
         }));
       }
     },
@@ -1927,6 +1988,8 @@ export default function App() {
       if (saved.email) setEmail(saved.email);
       if (saved.provisionData) setProvisionData(saved.provisionData);
       if (saved.phoneNumbers) setPhoneNumbers(saved.phoneNumbers);
+      if (saved.selectedVoiceId) setSelectedVoiceId(saved.selectedVoiceId);
+      if (saved.welcomeMessage) setWelcomeMessage(saved.welcomeMessage);
       if (saved.activeTab) setActiveTab(saved.activeTab);
       if (saved.activeTool) setActiveTool(saved.activeTool);
       if (saved.toolSubscriptions) {
@@ -2015,12 +2078,67 @@ export default function App() {
   }, [hasActiveSubscription, loadAllCalls, loadCalendarEvents, loadCallLogs, loadDashboard, loadUltravoxVoices, stage]);
 
   useEffect(() => {
+    if (stage !== STAGES.PAYMENT_SUCCESS) return;
+    if (ultravoxVoices.length) return;
+    loadUltravoxVoices();
+  }, [loadUltravoxVoices, stage, ultravoxVoices.length]);
+
+  useEffect(() => {
+    if (selectedVoiceId) return;
+    if (!ultravoxVoices.length) return;
+    const sampleFirst =
+      ultravoxVoices.find((voice) =>
+        [
+          voice?.sample,
+          voice?.sample_url,
+          voice?.sampleUrl,
+          voice?.preview_url,
+          voice?.previewUrl,
+          voice?.audio_url,
+          voice?.audioUrl,
+          voice?.demo_url,
+          voice?.demoUrl
+        ].some(Boolean)
+      ) || ultravoxVoices[0];
+    const first = sampleFirst || ultravoxVoices[0];
+    const voiceId = first?.id || first?.voiceId || first?.voice_id || first?.name;
+    if (voiceId) setSelectedVoiceId(voiceId);
+  }, [selectedVoiceId, ultravoxVoices]);
+
+  useEffect(() => {
     if (stage !== STAGES.DASHBOARD) return;
     if (!user?.email && email) {
       setUser((prev) => ({ ...(prev || {}), email }));
       setIsLoggedIn(true);
     }
   }, [stage, user?.email, email]);
+
+  useEffect(() => {
+    if (stage !== STAGES.BUSINESS_DETAILS) return;
+    const targetEmail = signupEmail || user?.email || email || loginEmail || "";
+    if (targetEmail) {
+      if (!signupEmail) setSignupEmail(targetEmail);
+      if (!email) setEmail(targetEmail);
+    }
+    if (!signupName) {
+      const fallbackName =
+        user?.name ||
+        userProfile?.business_name ||
+        clientData?.business_name ||
+        "";
+      if (fallbackName) setSignupName(fallbackName);
+    }
+  }, [
+    clientData?.business_name,
+    email,
+    loginEmail,
+    signupEmail,
+    signupName,
+    stage,
+    user?.email,
+    user?.name,
+    userProfile?.business_name
+  ]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -2032,6 +2150,8 @@ export default function App() {
         email,
         provisionData,
         phoneNumbers,
+        selectedVoiceId,
+        welcomeMessage,
         activeTab,
         activeTool,
         toolSubscriptions,
@@ -2055,6 +2175,8 @@ export default function App() {
     email,
     provisionData,
     phoneNumbers,
+    selectedVoiceId,
+    welcomeMessage,
     activeTab,
     activeTool,
     toolSubscriptions,
@@ -2443,6 +2565,10 @@ export default function App() {
             onLoadTranscript={loadCallTranscript}
             onRefreshCalls={loadCallLogs}
             onRefreshDashboard={handleRefreshDashboardAll}
+            assignNumberStatus={assignNumberStatus}
+            onAssignNumber={handleAssignNumber}
+            hasActiveSubscription={hasActiveSubscription}
+            onResumeBusinessDetails={handleResumeBusinessDetails}
             onLogout={handleLogout}
           />
         )}
@@ -2519,6 +2645,11 @@ export default function App() {
           <div className="shell-card screen-panel">
             <PaymentSuccessScreen
               paymentInfo={paymentInfo}
+              voices={ultravoxVoices}
+              selectedVoiceId={selectedVoiceId}
+              onSelectVoice={setSelectedVoiceId}
+              welcomeMessage={welcomeMessage}
+              onWelcomeMessageChange={setWelcomeMessage}
               onContinue={runProvisionFlow}
             />
           </div>

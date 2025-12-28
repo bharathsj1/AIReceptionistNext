@@ -19,6 +19,8 @@ logger = logging.getLogger(__name__)
 def _find_client_and_user(db, email: str) -> tuple[Optional[Client], Optional[User]]:
     user = db.query(User).filter_by(email=email).one_or_none()
     client = db.query(Client).filter_by(email=email).one_or_none()
+    if not client and user:
+        client = db.query(Client).filter_by(user_id=user.id).one_or_none()
     return client, user
 
 
@@ -97,19 +99,21 @@ def dashboard_get(req: func.HttpRequest) -> func.HttpResponse:
 
 def _build_dashboard_payload(db, email: str) -> dict:
     client, user = _find_client_and_user(db, email)
-    if not client:
-        raise ValueError("Client not found")
+    if not client and user:
+        client = db.query(Client).filter_by(user_id=user.id).one_or_none()
 
-    phone_numbers = (
-        db.query(PhoneNumber).filter_by(client_id=client.id, is_active=True).all()
-    )
-    phone_list = [
-        {"phone_number": p.twilio_phone_number, "twilio_sid": p.twilio_sid}
-        for p in phone_numbers
-    ]
+    phone_list = []
+    if client:
+        phone_numbers = (
+            db.query(PhoneNumber).filter_by(client_id=client.id, is_active=True).all()
+        )
+        phone_list = [
+            {"phone_number": p.twilio_phone_number, "twilio_sid": p.twilio_sid}
+            for p in phone_numbers
+        ]
 
     agent_info = None
-    if client.ultravox_agent_id:
+    if client and client.ultravox_agent_id:
         try:
             agent_info = get_ultravox_agent(client.ultravox_agent_id)
         except Exception as exc:  # pylint: disable=broad-except
@@ -141,17 +145,21 @@ def _build_dashboard_payload(db, email: str) -> dict:
             "email": email,
             "is_admin": bool(user.is_admin) if user else False,
         },
-        "client": {
-            "id": client.id,
-            "name": client.name,
-            "website_url": client.website_url,
-            "ultravox_agent_id": client.ultravox_agent_id,
-            "business_name": client.business_name,
-            "business_phone": client.business_phone,
-            "booking_enabled": bool(client.booking_enabled),
-            "booking_duration_minutes": client.booking_duration_minutes,
-            "booking_buffer_minutes": client.booking_buffer_minutes,
-        },
+        "client": (
+            {
+                "id": client.id,
+                "name": client.name,
+                "website_url": client.website_url,
+                "ultravox_agent_id": client.ultravox_agent_id,
+                "business_name": client.business_name,
+                "business_phone": client.business_phone,
+                "booking_enabled": bool(client.booking_enabled),
+                "booking_duration_minutes": client.booking_duration_minutes,
+                "booking_buffer_minutes": client.booking_buffer_minutes,
+            }
+            if client
+            else None
+        ),
         "phone_numbers": phone_list,
         "ultravox_agent": agent_info,
         "subscriptions": subscription_payload,
@@ -353,12 +361,12 @@ def dashboard_update_agent(req: func.HttpRequest) -> func.HttpResponse:
                 headers=cors,
             )
 
-        from services.ultravox_service import _headers, ULTRAVOX_BASE_URL  # pylint: disable=protected-access
+        from services.ultravox_service import _headers, _base_url  # pylint: disable=protected-access
         import httpx
 
         with httpx.Client(timeout=20) as client_http:
             resp = client_http.patch(
-                f"{ULTRAVOX_BASE_URL}/agents/{client.ultravox_agent_id}",
+                f"{_base_url()}/agents/{client.ultravox_agent_id}",
                 headers=_headers(),
                 json=update_payload,
             )

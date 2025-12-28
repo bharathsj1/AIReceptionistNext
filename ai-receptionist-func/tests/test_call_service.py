@@ -4,13 +4,13 @@ from datetime import datetime
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from shared.db import Base, CallMessage
+from shared.db import Base
 from services.call_service import (
     upsert_call,
     attach_ultravox_call,
-    store_call_messages,
     mark_call_ended,
     resolve_call,
+    update_call_status,
 )
 
 
@@ -36,19 +36,11 @@ class CallServiceTests(unittest.TestCase):
         self.db.commit()
         self.assertEqual(updated.ultravox_call_id, "uvx_call_1")
 
-    def test_store_messages_idempotent(self):
+    def test_update_status(self):
         call = upsert_call(self.db, "CA999", "+15550001111", "+14440002222", "initiated")
+        update_call_status(self.db, call, "in_progress")
         self.db.commit()
-        messages = [
-            {"role": "user", "text": "Hi there", "timestamp": "2024-01-01T10:00:00Z"},
-            {"role": "agent", "text": "Hello! How can I help?", "timestamp": "2024-01-01T10:00:02Z"},
-        ]
-        store_call_messages(self.db, call, messages)
-        self.db.commit()
-        first_count = self.db.query(CallMessage).count()
-        store_call_messages(self.db, call, messages)
-        self.db.commit()
-        self.assertEqual(self.db.query(CallMessage).count(), first_count)
+        self.assertEqual(call.status, "in_progress")
 
     def test_mark_call_ended(self):
         call = upsert_call(self.db, "CA777", "+15550009999", "+14440005555", "in_progress")

@@ -18,6 +18,8 @@ def build_ultravox_agent_payload(
     summary: str,
     agent_name_override: Optional[str] = None,
     system_prompt_override: Optional[str] = None,
+    voice_override: Optional[str] = None,
+    greeting_override: Optional[str] = None,
 ) -> Dict:
     """
     Build the Ultravox agent payload exactly as shown in the docs example.
@@ -30,17 +32,18 @@ def build_ultravox_agent_payload(
         "You are talking to {{customerName}}. Help with questions about our "
         "products and services. If you cannot answer, offer to transfer to a human."
     )
+    greeting_text = greeting_override or "Hello! This is Anna from Acme customer support. How can I help you today?"
 
     return {
         "name": safe_name,
         "callTemplate": {
             "systemPrompt": system_prompt,
-            "voice": "Jessica",
+            "voice": voice_override or "Jessica",
             "temperature": 0.4,
             "recordingEnabled": True,
             "firstSpeakerSettings": {
                 "agent": {
-                    "text": "Hello! This is Anna from Acme customer support. How can I help you today?"
+                    "text": greeting_text
                 }
             },
             "selectedTools": [],

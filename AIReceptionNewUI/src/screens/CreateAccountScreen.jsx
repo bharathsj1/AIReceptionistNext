@@ -1,3 +1,6 @@
+import { useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
+
 export default function CreateAccountScreen({
   name,
   email,
@@ -10,6 +13,7 @@ export default function CreateAccountScreen({
   loading = false,
   error = ""
 }) {
+  const [showPassword, setShowPassword] = useState(false);
   const passwordValid = (() => {
     if (!password) return false;
     const hasLower = /[a-z]/.test(password);
@@ -62,13 +66,24 @@ export default function CreateAccountScreen({
               </label>
               <label className="signup-label">
                 Password
-                <input
-                  type="password"
-                  placeholder="Create Password"
-                  value={password}
-                  onChange={(e) => onPasswordChange(e.target.value)}
-                  required
-                />
+                <div className="password-field">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    placeholder="Create Password"
+                    value={password}
+                    onChange={(e) => onPasswordChange(e.target.value)}
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="password-toggle"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    aria-pressed={showPassword}
+                  >
+                    {showPassword ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
+                  </button>
+                </div>
               </label>
               <p
                 className={`password-hint ${showPasswordStatus ? (passwordValid ? "is-valid" : "is-invalid") : ""}`.trim()}

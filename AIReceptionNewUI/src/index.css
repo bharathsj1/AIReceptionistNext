@@ -144,6 +144,181 @@ html {
     linear-gradient(180deg, rgba(0, 0, 0, 0.15), transparent 60%);
 }
 
+.email-manager-shell.email-theme-light {
+  background:
+    radial-gradient(1200px 700px at 12% -10%, rgba(59, 130, 246, 0.18), transparent 60%),
+    radial-gradient(900px 600px at 92% 0%, rgba(99, 102, 241, 0.16), transparent 62%),
+    radial-gradient(800px 600px at 88% 95%, rgba(16, 185, 129, 0.12), transparent 65%),
+    #f8fafc;
+  color: #0f172a;
+}
+
+.email-theme-light,
+.email-theme-light * {
+  color: #0f172a !important;
+}
+
+.email-theme-light svg {
+  color: inherit !important;
+}
+
+.email-theme-light .text-slate-400 {
+  color: #64748b !important;
+}
+
+.email-theme-light .text-slate-300 {
+  color: #475569 !important;
+}
+
+.email-theme-light .text-slate-200 {
+  color: #334155 !important;
+}
+
+.email-theme-light .text-slate-100 {
+  color: #1e293b !important;
+}
+
+.email-theme-light .text-indigo-200 {
+  color: #4f46e5 !important;
+}
+
+.email-theme-light .text-emerald-100,
+.email-theme-light .text-emerald-200 {
+  color: #059669 !important;
+}
+
+.email-theme-light .text-rose-100,
+.email-theme-light .text-rose-300 {
+  color: #e11d48 !important;
+}
+
+.email-theme-light .text-amber-200 {
+  color: #d97706 !important;
+}
+
+.email-theme-light .text-sky-100 {
+  color: #0284c7 !important;
+}
+
+.email-theme-light .bg-white\/5,
+.email-theme-light .bg-white\/10,
+.email-theme-light .bg-slate-900\/40,
+.email-theme-light .bg-slate-900\/50,
+.email-theme-light .bg-slate-900\/60,
+.email-theme-light .bg-slate-950\/70,
+.email-theme-light .bg-slate-950\/95,
+.email-theme-light .bg-slate-950\/90,
+.email-theme-light .bg-slate-950\/40 {
+  background-color: #ffffff !important;
+}
+
+.email-theme-light .bg-indigo-500\/15,
+.email-theme-light .bg-indigo-500\/20 {
+  background-color: #e0e7ff !important;
+}
+
+.email-theme-light .bg-emerald-500\/10,
+.email-theme-light .bg-emerald-500\/20 {
+  background-color: #dcfce7 !important;
+}
+
+.email-theme-light .bg-emerald-500\/30 {
+  background-color: #bbf7d0 !important;
+}
+
+.email-theme-light .bg-amber-400\/20 {
+  background-color: #fef3c7 !important;
+}
+
+.email-theme-light .bg-rose-500\/10 {
+  background-color: #ffe4e6 !important;
+}
+
+.email-theme-light .border-white\/10,
+.email-theme-light .border-white\/15,
+.email-theme-light .border-white\/20 {
+  border-color: #e2e8f0 !important;
+}
+
+.email-theme-light .border-indigo-400\/50,
+.email-theme-light .border-indigo-400\/60 {
+  border-color: #c7d2fe !important;
+}
+
+.email-theme-light .border-emerald-300\/50,
+.email-theme-light .border-emerald-300\/60,
+.email-theme-light .border-emerald-400\/30 {
+  border-color: #86efac !important;
+}
+
+.email-theme-light .border-rose-400\/30 {
+  border-color: #fecdd3 !important;
+}
+
+.ai-shimmer {
+  background: linear-gradient(90deg, rgba(148, 163, 184, 0.2) 0%, rgba(99, 102, 241, 0.35) 50%, rgba(148, 163, 184, 0.2) 100%);
+  background-size: 200% 100%;
+  animation: ai-shimmer 1.5s infinite linear;
+}
+
+.ai-dot {
+  height: 6px;
+  width: 6px;
+  border-radius: 9999px;
+  background: currentColor;
+  opacity: 0.5;
+  animation: ai-dot 1s infinite ease-in-out;
+}
+
+@keyframes ai-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes ai-dot {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  50% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+
+.email-html img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 12px;
+  display: block;
+}
+
+.email-html a {
+  color: #7aa7ff;
+  text-decoration: underline;
+}
+
+.email-html {
+  color: #e2e8f0;
+}
+
+.email-html * {
+  color: inherit;
+}
+
+.email-theme-light .email-html {
+  color: #0f172a;
+}
+
+.email-theme-light .email-html a {
+  color: #1d4ed8;
+}
+
 .page-content {
   position: relative;
   min-height: 100vh;
@@ -299,6 +474,7 @@ html {
 
 .content.content-wide {
   max-width: min(1520px, 98vw);
+  margin-top: 0;
 }
 
 .content.content-landing {
@@ -2072,6 +2248,14 @@ html {
   max-height: 520px;
 }
 
+.transcript-scroll {
+  overflow-y: auto;
+  max-height: 16rem;
+  min-height: 16rem;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
 .calendar-shell .fc .fc-timegrid-body {
   min-height: 640px;
 }
@@ -3025,6 +3209,61 @@ html {
 
 .password-hint.is-valid {
   color: #86efac;
+}
+
+.password-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-field input {
+  width: 100%;
+  padding-right: 54px;
+}
+
+.password-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  background: rgba(15, 23, 42, 0.85);
+  color: #f8fafc;
+  width: 32px;
+  height: 32px;
+  font-size: 0;
+  font-weight: 600;
+  padding: 0;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.password-toggle svg {
+  width: 16px;
+  height: 16px;
+}
+
+.signup-form .password-toggle {
+  background: rgba(15, 23, 42, 0.85);
+  border-color: rgba(148, 163, 184, 0.5);
+  color: #f8fafc;
+}
+
+.password-toggle:hover {
+  background: rgba(15, 23, 42, 0.95);
+}
+
+.signup-form .password-toggle:hover {
+  background: rgba(15, 23, 42, 0.95);
+}
+
+.password-toggle:focus-visible {
+  outline: 2px solid rgba(99, 102, 241, 0.6);
+  outline-offset: 2px;
 }
 
 .signup-label {
