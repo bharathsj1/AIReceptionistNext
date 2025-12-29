@@ -1605,20 +1605,24 @@ export default function App() {
   );
 
   const handleBusinessSave = useCallback(
-    async ({ businessName: name, businessPhone: phone, websiteUrl }) => {
+    async ({ businessName: name, businessPhone: phone, websiteUrl, websiteData } = {}) => {
       if (!user?.email) return;
       setBusinessSaveStatus({ status: "loading", message: "" });
       try {
+        const payload = {
+          email: user.email,
+          businessName: name || businessName,
+          businessPhone: phone || businessPhone,
+          websiteUrl: websiteUrl || clientData?.website_url || url || ""
+        };
+        if (websiteData !== undefined) {
+          payload.websiteData = websiteData;
+        }
         const res = await fetch(API_URLS.clientsBusinessDetails, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           mode: "cors",
-          body: JSON.stringify({
-            email: user.email,
-            businessName: name || businessName,
-            businessPhone: phone || businessPhone,
-            websiteUrl: websiteUrl || clientData?.website_url || url || ""
-          })
+          body: JSON.stringify(payload)
         });
         if (!res.ok) {
           const text = await res.text();
@@ -2554,6 +2558,7 @@ export default function App() {
             businessSaveStatus={businessSaveStatus}
             onBusinessSave={handleBusinessSave}
             clientData={clientData}
+            manualBusinessInfo={manualBusinessInfo}
             userProfile={userProfile}
             bookingSettings={bookingSettings}
             bookingStatus={bookingStatus}

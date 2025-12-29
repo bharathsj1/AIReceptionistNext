@@ -54,6 +54,13 @@ const formatDate = (iso) => {
   }
 };
 
+const formatStatusLabel = (value) => {
+  if (!value) return "Inactive";
+  return String(value)
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
 const formatMessageTimestamp = (message) => {
   const internalDate = Number(message?.internalDate || 0);
   if (internalDate) {
@@ -215,6 +222,74 @@ const getMessageTimestampValue = (message) => {
   return 0;
 };
 
+const languageDisplayNames =
+  typeof Intl !== "undefined" && typeof Intl.DisplayNames === "function"
+    ? new Intl.DisplayNames(["en"], { type: "language" })
+    : null;
+const regionDisplayNames =
+  typeof Intl !== "undefined" && typeof Intl.DisplayNames === "function"
+    ? new Intl.DisplayNames(["en"], { type: "region" })
+    : null;
+const scriptDisplayNames =
+  typeof Intl !== "undefined" && typeof Intl.DisplayNames === "function"
+    ? new Intl.DisplayNames(["en"], { type: "script" })
+    : null;
+
+const formatLanguageLabel = (code) => {
+  const normalized = String(code || "").replace(/_/g, "-").trim();
+  if (!normalized) return "";
+  if (!languageDisplayNames) return normalized;
+
+  const parts = normalized.split("-");
+  const languageCode = parts[0];
+  const detailParts = parts.slice(1);
+  const languageLabel = languageDisplayNames.of(languageCode) || normalized;
+  if (!detailParts.length) return languageLabel;
+
+  const details = detailParts
+    .map((part) => {
+      if (part.length === 4 && scriptDisplayNames) {
+        return scriptDisplayNames.of(part) || part;
+      }
+      if (regionDisplayNames) {
+        return regionDisplayNames.of(part.toUpperCase()) || part;
+      }
+      return part;
+    })
+    .filter(Boolean);
+
+  return details.length ? `${languageLabel} (${details.join(", ")})` : languageLabel;
+};
+
+const SUMMARY_LIMIT = 5000;
+const FIELD_LIMIT = 1000;
+
+const parseWebsiteData = (value) => {
+  if (!value) return null;
+  if (typeof value === "object") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+};
+
+const extractBusinessProfile = (websiteData) => {
+  if (!websiteData || typeof websiteData !== "object") return {};
+  let profile = websiteData.business_profile || websiteData.businessProfile || websiteData.profile;
+  if (!profile && websiteData.raw_website_data && typeof websiteData.raw_website_data === "object") {
+    profile = websiteData.raw_website_data;
+  }
+  if (typeof profile === "string") {
+    profile = parseWebsiteData(profile);
+  }
+  if (!profile || typeof profile !== "object" || Array.isArray(profile)) {
+    profile = websiteData;
+  }
+  if (!profile || typeof profile !== "object" || Array.isArray(profile)) return {};
+  return profile;
+};
+
 const StatCard = ({ label, value, hint, icon: Icon, tone = "default" }) => {
   const tones = {
     default: "bg-slate-900/60 border-slate-800 text-slate-200",
@@ -327,6 +402,7 @@ export default function DashboardScreen({
   businessSaveStatus,
   onBusinessSave,
   clientData,
+  manualBusinessInfo,
   userProfile,
   bookingSettings,
   bookingStatus,
@@ -356,6 +432,20 @@ export default function DashboardScreen({
     phone: clientData?.business_phone || "",
     website: clientData?.website_url || ""
   });
+  const [isBusinessEditing, setIsBusinessEditing] = useState(false);
+  const [businessProfileForm, setBusinessProfileForm] = useState({
+    businessName: clientData?.business_name || clientData?.name || "",
+    contactNumber: clientData?.business_phone || "",
+    contactEmail: manualBusinessInfo?.businessEmail || user?.email || "",
+    websiteUrl: manualBusinessInfo?.websiteUrl || clientData?.website_url || "",
+    businessSummary: "",
+    hours: "",
+    location: "",
+    services: "",
+    notes: "",
+    openings: ""
+  });
+  const [isBusinessProfileEditing, setIsBusinessProfileEditing] = useState(false);
   const [userForm, setUserForm] = useState({
     email: user?.email || "",
     businessName: userProfile?.business_name || "",
@@ -2073,6 +2163,138 @@ export default function DashboardScreen({
   const emailSelectionCount = selectedEmailIds.length;
   const emailAllSelected = Boolean(emailMessages.length && emailSelectionCount === emailMessages.length);
   const emailActionLoading = emailActionStatus.status === "loading";
+  const websiteData = useMemo(
+    () => parseWebsiteData(clientData?.website_data),
+    [clientData?.website_data]
+  );
+  const businessProfileData = useMemo(
+    () => extractBusinessProfile(websiteData),
+    [websiteData]
+  );
+  const derivedBusinessProfile = useMemo(
+    () => ({
+      businessName:
+        businessProfileData.business_name ||
+        businessProfileData.businessName ||
+        clientData?.business_name ||
+        clientData?.name ||
+        manualBusinessInfo?.businessName ||
+        "",
+      contactNumber:
+        businessProfileData.contact_phone ||
+        businessProfileData.business_phone ||
+        businessProfileData.businessPhone ||
+        clientData?.business_phone ||
+        manualBusinessInfo?.businessPhone ||
+        "",
+      contactEmail:
+        businessProfileData.contact_email ||
+        businessProfileData.businessEmail ||
+        manualBusinessInfo?.businessEmail ||
+        user?.email ||
+        "",
+      websiteUrl:
+        clientData?.website_url ||
+        businessProfileData.website_url ||
+        businessProfileData.websiteUrl ||
+        manualBusinessInfo?.websiteUrl ||
+        "",
+      businessSummary:
+        businessProfileData.business_summary ||
+        businessProfileData.businessSummary ||
+        manualBusinessInfo?.businessSummary ||
+        "",
+      hours:
+        businessProfileData.business_hours ||
+        businessProfileData.hours ||
+        manualBusinessInfo?.hours ||
+        "",
+      location:
+        businessProfileData.business_location ||
+        businessProfileData.location ||
+        manualBusinessInfo?.location ||
+        "",
+      services:
+        businessProfileData.business_services ||
+        businessProfileData.services ||
+        manualBusinessInfo?.services ||
+        "",
+      notes:
+        businessProfileData.business_notes ||
+        businessProfileData.notes ||
+        manualBusinessInfo?.notes ||
+        "",
+      openings:
+        businessProfileData.business_openings ||
+        businessProfileData.openings ||
+        manualBusinessInfo?.openings ||
+        ""
+    }),
+    [
+      businessProfileData.business_name,
+      businessProfileData.businessName,
+      businessProfileData.contact_phone,
+      businessProfileData.business_phone,
+      businessProfileData.businessPhone,
+      businessProfileData.contact_email,
+      businessProfileData.businessEmail,
+      businessProfileData.business_summary,
+      businessProfileData.businessSummary,
+      businessProfileData.business_hours,
+      businessProfileData.hours,
+      businessProfileData.business_location,
+      businessProfileData.location,
+      businessProfileData.business_services,
+      businessProfileData.services,
+      businessProfileData.business_notes,
+      businessProfileData.notes,
+      businessProfileData.business_openings,
+      businessProfileData.openings,
+      businessProfileData.website_url,
+      businessProfileData.websiteUrl,
+      clientData?.business_name,
+      clientData?.name,
+      clientData?.business_phone,
+      clientData?.website_url,
+      manualBusinessInfo?.businessName,
+      manualBusinessInfo?.businessPhone,
+      manualBusinessInfo?.businessEmail,
+      manualBusinessInfo?.websiteUrl,
+      manualBusinessInfo?.businessSummary,
+      manualBusinessInfo?.hours,
+      manualBusinessInfo?.location,
+      manualBusinessInfo?.services,
+      manualBusinessInfo?.notes,
+      manualBusinessInfo?.openings,
+      user?.email
+    ]
+  );
+  const businessProfileFieldClass = `w-full rounded-xl border border-white/10 px-3 py-2 text-sm outline-none transition ${
+    isBusinessProfileEditing
+      ? "bg-slate-900/60 text-slate-100 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
+      : "bg-slate-900/40 text-slate-200"
+  }`;
+  const subscriptionDetails = useMemo(() => {
+    if (!toolSubscriptions) return [];
+    const list = Object.entries(toolSubscriptions)
+      .map(([toolId, entry]) => {
+        if (!entry) return null;
+        const toolMeta = toolTabs.find((tool) => tool.id === toolId);
+        return {
+          id: toolId,
+          label: toolMeta?.label || toolId.replace(/_/g, " "),
+          active: Boolean(entry.active),
+          status: entry.status,
+          planId: entry.planId,
+          currentPeriodEnd: entry.currentPeriodEnd
+        };
+      })
+      .filter(Boolean);
+    return list.sort((a, b) => {
+      if (a.active !== b.active) return a.active ? -1 : 1;
+      return String(a.label || "").localeCompare(String(b.label || ""));
+    });
+  }, [toolSubscriptions, toolTabs]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -2168,6 +2390,42 @@ export default function DashboardScreen({
       website: clientData?.website_url || ""
     });
   }, [clientData?.business_name, clientData?.business_phone, clientData?.name, clientData?.website_url]);
+
+  useEffect(() => {
+    if (businessSaveStatus?.status === "success") {
+      setIsBusinessEditing(false);
+      setIsBusinessProfileEditing(false);
+    }
+  }, [businessSaveStatus?.status]);
+
+  useEffect(() => {
+    if (isBusinessProfileEditing) return;
+    setBusinessProfileForm({
+      businessName: derivedBusinessProfile.businessName || "",
+      contactNumber: derivedBusinessProfile.contactNumber || "",
+      contactEmail: derivedBusinessProfile.contactEmail || user?.email || "",
+      websiteUrl: derivedBusinessProfile.websiteUrl || "",
+      businessSummary: derivedBusinessProfile.businessSummary || "",
+      hours: derivedBusinessProfile.hours || "",
+      location: derivedBusinessProfile.location || "",
+      services: derivedBusinessProfile.services || "",
+      notes: derivedBusinessProfile.notes || "",
+      openings: derivedBusinessProfile.openings || ""
+    });
+  }, [
+    derivedBusinessProfile.businessName,
+    derivedBusinessProfile.contactNumber,
+    derivedBusinessProfile.contactEmail,
+    derivedBusinessProfile.websiteUrl,
+    derivedBusinessProfile.businessSummary,
+    derivedBusinessProfile.hours,
+    derivedBusinessProfile.location,
+    derivedBusinessProfile.services,
+    derivedBusinessProfile.notes,
+    derivedBusinessProfile.openings,
+    isBusinessProfileEditing,
+    user?.email
+  ]);
 
   useEffect(() => {
     setUserForm({
@@ -3026,7 +3284,7 @@ export default function DashboardScreen({
                   <option value="all">All languages</option>
                   {voiceLanguageOptions.map((lang) => (
                     <option key={lang} value={lang}>
-                      {lang}
+                      {formatLanguageLabel(lang)}
                     </option>
                   ))}
                 </select>
@@ -3064,6 +3322,7 @@ export default function DashboardScreen({
                 onChange={(e) => setAgentDetails({ ...agentDetails, systemPrompt: e.target.value })}
                 className="w-full max-h-64 min-h-[160px] overflow-y-auto rounded-2xl border border-white/10 bg-slate-900/60 p-3 text-sm text-slate-100 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
                 placeholder="Guide your agent's behavior and personality."
+                data-lenis-prevent
               />
 
               <div className="grid gap-3 rounded-2xl border border-white/10 bg-slate-900/40 p-3 md:grid-cols-2">
@@ -3145,42 +3404,92 @@ export default function DashboardScreen({
                 </div>
               </div>
               <div className="grid gap-3">
-                <input
-                  type="text"
-                  value={businessForm.name}
-                  onChange={(e) => setBusinessForm({ ...businessForm, name: e.target.value })}
-                  placeholder="Business name"
-                  className="rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
-                />
-                <input
-                  type="tel"
-                  value={businessForm.phone}
-                  onChange={(e) => setBusinessForm({ ...businessForm, phone: e.target.value })}
-                  placeholder="Business phone"
-                  className="rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
-                />
-                <input
-                  type="url"
-                  value={businessForm.website}
-                  onChange={(e) => setBusinessForm({ ...businessForm, website: e.target.value })}
-                  placeholder="Website URL"
-                  className="rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
-                />
+                <div className="grid gap-1">
+                  <label className="text-xs uppercase tracking-[0.2em] text-slate-400">Business name</label>
+                  <input
+                    type="text"
+                    value={businessForm.name}
+                    onChange={(e) => setBusinessForm({ ...businessForm, name: e.target.value })}
+                    placeholder="Business name"
+                    readOnly={!isBusinessEditing}
+                    className={`rounded-xl border border-white/10 px-3 py-2 text-sm outline-none transition ${
+                      isBusinessEditing
+                        ? "bg-slate-900/60 text-slate-100 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
+                        : "bg-slate-900/40 text-slate-200"
+                    }`}
+                  />
+                </div>
+                <div className="grid gap-1">
+                  <label className="text-xs uppercase tracking-[0.2em] text-slate-400">Business phone</label>
+                  <input
+                    type="tel"
+                    value={businessForm.phone}
+                    onChange={(e) => setBusinessForm({ ...businessForm, phone: e.target.value })}
+                    placeholder="Business phone"
+                    readOnly={!isBusinessEditing}
+                    className={`rounded-xl border border-white/10 px-3 py-2 text-sm outline-none transition ${
+                      isBusinessEditing
+                        ? "bg-slate-900/60 text-slate-100 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
+                        : "bg-slate-900/40 text-slate-200"
+                    }`}
+                  />
+                </div>
+                <div className="grid gap-1">
+                  <label className="text-xs uppercase tracking-[0.2em] text-slate-400">Website URL</label>
+                  <input
+                    type="url"
+                    value={businessForm.website}
+                    onChange={(e) => setBusinessForm({ ...businessForm, website: e.target.value })}
+                    placeholder="Website URL"
+                    readOnly={!isBusinessEditing}
+                    className={`rounded-xl border border-white/10 px-3 py-2 text-sm outline-none transition ${
+                      isBusinessEditing
+                        ? "bg-slate-900/60 text-slate-100 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
+                        : "bg-slate-900/40 text-slate-200"
+                    }`}
+                  />
+                </div>
                 <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onBusinessSave?.({
-                        businessName: businessForm.name,
-                        businessPhone: businessForm.phone,
-                        websiteUrl: businessForm.website
-                      })
-                    }
-                    className="inline-flex items-center gap-2 rounded-xl border border-emerald-300/60 bg-emerald-500/20 px-3 py-2 text-xs font-semibold text-emerald-50 transition hover:-translate-y-0.5 hover:border-emerald-200 hover:bg-emerald-500/30"
-                  >
-                    <CheckCircle2 className="h-4 w-4" />
-                    Save business
-                  </button>
+                  {isBusinessEditing ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onBusinessSave?.({
+                            businessName: businessForm.name,
+                            businessPhone: businessForm.phone,
+                            websiteUrl: businessForm.website
+                          })
+                        }
+                        className="inline-flex items-center gap-2 rounded-xl border border-emerald-300/60 bg-emerald-500/20 px-3 py-2 text-xs font-semibold text-emerald-50 transition hover:-translate-y-0.5 hover:border-emerald-200 hover:bg-emerald-500/30"
+                      >
+                        <CheckCircle2 className="h-4 w-4" />
+                        Save business
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBusinessForm({
+                            name: clientData?.business_name || clientData?.name || "",
+                            phone: clientData?.business_phone || "",
+                            website: clientData?.website_url || ""
+                          });
+                          setIsBusinessEditing(false);
+                        }}
+                        className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:border-white/30 hover:bg-white/20"
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setIsBusinessEditing(true)}
+                      className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:border-white/30 hover:bg-white/20"
+                    >
+                      Edit business
+                    </button>
+                  )}
                   {businessSaveStatus?.message && (
                     <span
                       className={`text-xs ${
@@ -3193,51 +3502,6 @@ export default function DashboardScreen({
                     </span>
                   )}
                 </div>
-              </div>
-            </div>
-
-            <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
-              <div className="mb-3 flex items-center gap-2">
-                <UserIcon className="h-5 w-5 text-indigo-200" />
-                <div>
-                  <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">User</p>
-                  <h4 className="text-lg font-semibold text-white">Your profile</h4>
-                </div>
-              </div>
-              <div className="grid gap-3">
-                <input
-                  type="email"
-                  value={userForm.email}
-                  readOnly
-                  className="rounded-xl border border-white/10 bg-slate-900/40 px-3 py-2 text-sm text-slate-200"
-                />
-                <input
-                  type="text"
-                  value={userForm.businessName}
-                  onChange={(e) => setUserForm({ ...userForm, businessName: e.target.value })}
-                  placeholder="Business name"
-                  className="rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
-                />
-                <input
-                  type="tel"
-                  value={userForm.businessNumber}
-                  onChange={(e) => setUserForm({ ...userForm, businessNumber: e.target.value })}
-                  placeholder="Business number"
-                  className="rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
-                />
-                <button
-                  type="button"
-                  onClick={() =>
-                    onBusinessSave?.({
-                      businessName: userForm.businessName,
-                      businessPhone: userForm.businessNumber,
-                      websiteUrl: businessForm.website
-                    })
-                  }
-                  className="inline-flex items-center gap-2 self-start rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:border-white/30 hover:bg-white/20"
-                >
-                  Update profile
-                </button>
               </div>
             </div>
           </section>
@@ -4807,77 +5071,463 @@ export default function DashboardScreen({
                   </div>
                   </div>
                 ) : emailSubTab === "settings" ? (
-                  <div className="grid gap-4 lg:grid-cols-[1.25fr_1fr]">
-                    <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Automation</p>
-                        <h4 className="text-lg font-semibold text-white">Summary settings</h4>
+                  <div
+                    className="grid gap-4 lg:grid-cols-[1.25fr_1fr] sm:h-full sm:min-h-0 sm:overflow-y-auto"
+                    data-lenis-prevent
+                  >
+                    <div className="grid gap-4">
+                      <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Automation</p>
+                          <h4 className="text-lg font-semibold text-white">Summary settings</h4>
+                        </div>
+                        <span className={`text-xs ${gmailConnected ? "text-emerald-200" : "text-slate-400"}`}>
+                          {gmailStatusLabel}
+                        </span>
                       </div>
-                      <span className={`text-xs ${gmailConnected ? "text-emerald-200" : "text-slate-400"}`}>
-                        {gmailStatusLabel}
-                      </span>
+                      <div className="mt-4 grid gap-3 text-sm text-slate-200">
+                        <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-slate-900/40 p-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-white">Theme</p>
+                            <p className="text-xs text-slate-400">Switch the email manager appearance.</p>
+                          </div>
+                          <div className="flex items-center gap-1 rounded-full border border-white/10 bg-white/5 p-1 text-xs">
+                            <button
+                              type="button"
+                              onClick={() => setEmailTheme("dark")}
+                              className={`rounded-full px-3 py-1 font-semibold transition ${
+                                emailTheme === "dark"
+                                  ? "bg-indigo-500/30 text-white"
+                                  : "text-slate-300 hover:text-white"
+                              }`}
+                              aria-pressed={emailTheme === "dark"}
+                            >
+                              Dark
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEmailTheme("light")}
+                              className={`rounded-full px-3 py-1 font-semibold transition ${
+                                emailTheme === "light"
+                                  ? "bg-indigo-500/30 text-white"
+                                  : "text-slate-300 hover:text-white"
+                              }`}
+                              aria-pressed={emailTheme === "light"}
+                            >
+                              Light
+                            </button>
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-slate-900/40 p-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-white">Auto-summarize on open</p>
+                            <p className="text-xs text-slate-400">
+                              Generate a summary whenever you select an email.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setEmailAutoSummarize((prev) => !prev)}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
+                              emailAutoSummarize ? "bg-emerald-400" : "bg-white/10"
+                            }`}
+                          >
+                            <span
+                              className={`inline-block h-5 w-5 transform rounded-full bg-white transition ${
+                                emailAutoSummarize ? "translate-x-5" : "translate-x-1"
+                              }`}
+                            />
+                          </button>
+                        </div>
+                        <div className="rounded-2xl border border-white/10 bg-slate-900/40 p-3 text-xs text-slate-300">
+                          Summaries are generated using OpenAI. We only send the selected email content.
+                        </div>
+                      </div>
                     </div>
-                    <div className="mt-4 grid gap-3 text-sm text-slate-200">
-                      <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-slate-900/40 p-3 sm:flex-row sm:items-center sm:justify-between">
+
+                    <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                         <div>
-                          <p className="text-sm font-semibold text-white">Theme</p>
-                          <p className="text-xs text-slate-400">Switch the email manager appearance.</p>
+                          <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Business</p>
+                          <h4 className="text-lg font-semibold text-white">Business profile</h4>
                         </div>
-                        <div className="flex items-center gap-1 rounded-full border border-white/10 bg-white/5 p-1 text-xs">
+                        {!isBusinessProfileEditing ? (
                           <button
                             type="button"
-                            onClick={() => setEmailTheme("dark")}
-                            className={`rounded-full px-3 py-1 font-semibold transition ${
-                              emailTheme === "dark"
-                                ? "bg-indigo-500/30 text-white"
-                                : "text-slate-300 hover:text-white"
-                            }`}
-                            aria-pressed={emailTheme === "dark"}
+                            onClick={() => setIsBusinessProfileEditing(true)}
+                            className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:border-white/30 hover:bg-white/20"
                           >
-                            Dark
+                            Edit business profile
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => setEmailTheme("light")}
-                            className={`rounded-full px-3 py-1 font-semibold transition ${
-                              emailTheme === "light"
-                                ? "bg-indigo-500/30 text-white"
-                                : "text-slate-300 hover:text-white"
-                            }`}
-                            aria-pressed={emailTheme === "light"}
-                          >
-                            Light
-                          </button>
-                        </div>
+                        ) : null}
                       </div>
-                      <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-slate-900/40 p-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                          <p className="text-sm font-semibold text-white">Auto-summarize on open</p>
-                          <p className="text-xs text-slate-400">
-                            Generate a summary whenever you select an email.
-                          </p>
+                      <div className="grid gap-3 text-sm text-slate-200">
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <div className="grid gap-1">
+                            <label className="text-xs uppercase tracking-[0.2em] text-slate-400">Business name</label>
+                            <input
+                              type="text"
+                              value={businessProfileForm.businessName}
+                              onChange={(e) =>
+                                setBusinessProfileForm((prev) => ({
+                                  ...prev,
+                                  businessName: e.target.value
+                                }))
+                              }
+                              placeholder="Business name"
+                              readOnly={!isBusinessProfileEditing}
+                              className={businessProfileFieldClass}
+                            />
+                          </div>
+                          <div className="grid gap-1">
+                            <label className="text-xs uppercase tracking-[0.2em] text-slate-400">Contact number</label>
+                            <input
+                              type="tel"
+                              value={businessProfileForm.contactNumber}
+                              onChange={(e) =>
+                                setBusinessProfileForm((prev) => ({
+                                  ...prev,
+                                  contactNumber: e.target.value
+                                }))
+                              }
+                              placeholder="Contact number"
+                              readOnly={!isBusinessProfileEditing}
+                              className={businessProfileFieldClass}
+                            />
+                          </div>
+                          <div className="grid gap-1">
+                            <label className="text-xs uppercase tracking-[0.2em] text-slate-400">Contact email</label>
+                            <input
+                              type="email"
+                              value={businessProfileForm.contactEmail}
+                              onChange={(e) =>
+                                setBusinessProfileForm((prev) => ({
+                                  ...prev,
+                                  contactEmail: e.target.value
+                                }))
+                              }
+                              placeholder="Contact email"
+                              readOnly={!isBusinessProfileEditing}
+                              className={businessProfileFieldClass}
+                            />
+                          </div>
+                          <div className="grid gap-1">
+                            <label className="text-xs uppercase tracking-[0.2em] text-slate-400">Website</label>
+                            <input
+                              type="url"
+                              value={businessProfileForm.websiteUrl}
+                              onChange={(e) =>
+                                setBusinessProfileForm((prev) => ({
+                                  ...prev,
+                                  websiteUrl: e.target.value
+                                }))
+                              }
+                              placeholder="https://example.com"
+                              readOnly={!isBusinessProfileEditing}
+                              className={businessProfileFieldClass}
+                            />
+                          </div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => setEmailAutoSummarize((prev) => !prev)}
-                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
-                            emailAutoSummarize ? "bg-emerald-400" : "bg-white/10"
-                          }`}
-                        >
-                          <span
-                            className={`inline-block h-5 w-5 transform rounded-full bg-white transition ${
-                              emailAutoSummarize ? "translate-x-5" : "translate-x-1"
-                            }`}
+
+                        <div className="grid gap-1">
+                          <label className="text-xs uppercase tracking-[0.2em] text-slate-400">What do you do? *</label>
+                          <textarea
+                            rows={3}
+                            maxLength={SUMMARY_LIMIT}
+                            value={businessProfileForm.businessSummary}
+                            onChange={(e) =>
+                              setBusinessProfileForm((prev) => ({
+                                ...prev,
+                                businessSummary: e.target.value
+                              }))
+                            }
+                            placeholder="Explain what you sell, who you serve, and the tone you want."
+                            readOnly={!isBusinessProfileEditing}
+                            className={businessProfileFieldClass}
+                            data-lenis-prevent
                           />
-                        </button>
-                      </div>
-                      <div className="rounded-2xl border border-white/10 bg-slate-900/40 p-3 text-xs text-slate-300">
-                        Summaries are generated using OpenAI. We only send the selected email content.
+                          <div className="text-xs text-slate-400 text-right">
+                            {(businessProfileForm.businessSummary || "").length}/{SUMMARY_LIMIT}
+                          </div>
+                        </div>
+
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <div className="grid gap-1">
+                            <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                              Business openings / hours
+                            </label>
+                            <textarea
+                              rows={2}
+                              maxLength={FIELD_LIMIT}
+                              value={businessProfileForm.hours}
+                              onChange={(e) =>
+                                setBusinessProfileForm((prev) => ({
+                                  ...prev,
+                                  hours: e.target.value
+                                }))
+                              }
+                              placeholder="Mon–Fri 9am–6pm; Sat by appointment."
+                              readOnly={!isBusinessProfileEditing}
+                              className={businessProfileFieldClass}
+                              data-lenis-prevent
+                            />
+                            <div className="text-xs text-slate-400 text-right">
+                              {(businessProfileForm.hours || "").length}/{FIELD_LIMIT}
+                            </div>
+                          </div>
+                          <div className="grid gap-1">
+                            <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                              Location / service area
+                            </label>
+                            <textarea
+                              rows={2}
+                              maxLength={FIELD_LIMIT}
+                              value={businessProfileForm.location}
+                              onChange={(e) =>
+                                setBusinessProfileForm((prev) => ({
+                                  ...prev,
+                                  location: e.target.value
+                                }))
+                              }
+                              placeholder="City, region, or service area."
+                              readOnly={!isBusinessProfileEditing}
+                              className={businessProfileFieldClass}
+                              data-lenis-prevent
+                            />
+                            <div className="text-xs text-slate-400 text-right">
+                              {(businessProfileForm.location || "").length}/{FIELD_LIMIT}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <div className="grid gap-1">
+                            <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                              Key services or offerings
+                            </label>
+                            <textarea
+                              rows={2}
+                              maxLength={FIELD_LIMIT}
+                              value={businessProfileForm.services}
+                              onChange={(e) =>
+                                setBusinessProfileForm((prev) => ({
+                                  ...prev,
+                                  services: e.target.value
+                                }))
+                              }
+                              placeholder="Top services, prices, and qualifications."
+                              readOnly={!isBusinessProfileEditing}
+                              className={businessProfileFieldClass}
+                              data-lenis-prevent
+                            />
+                            <div className="text-xs text-slate-400 text-right">
+                              {(businessProfileForm.services || "").length}/{FIELD_LIMIT}
+                            </div>
+                          </div>
+                          <div className="grid gap-1">
+                            <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                              Must-know notes for the AI
+                            </label>
+                            <textarea
+                              rows={2}
+                              maxLength={FIELD_LIMIT}
+                              value={businessProfileForm.notes}
+                              onChange={(e) =>
+                                setBusinessProfileForm((prev) => ({
+                                  ...prev,
+                                  notes: e.target.value
+                                }))
+                              }
+                              placeholder="Escalation rules, blocked topics, VIP instructions."
+                              readOnly={!isBusinessProfileEditing}
+                              className={businessProfileFieldClass}
+                              data-lenis-prevent
+                            />
+                            <div className="text-xs text-slate-400 text-right">
+                              {(businessProfileForm.notes || "").length}/{FIELD_LIMIT}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="grid gap-1">
+                          <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                            Additional openings or availability
+                          </label>
+                          <textarea
+                            rows={2}
+                            maxLength={FIELD_LIMIT}
+                            value={businessProfileForm.openings}
+                            onChange={(e) =>
+                              setBusinessProfileForm((prev) => ({
+                                ...prev,
+                                openings: e.target.value
+                              }))
+                            }
+                            placeholder="Seasonal availability, holiday closures, special notes."
+                            readOnly={!isBusinessProfileEditing}
+                            className={businessProfileFieldClass}
+                            data-lenis-prevent
+                          />
+                          <div className="text-xs text-slate-400 text-right">
+                            {(businessProfileForm.openings || "").length}/{FIELD_LIMIT}
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          {isBusinessProfileEditing ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onBusinessSave?.({
+                                    businessName: businessProfileForm.businessName,
+                                    businessPhone: businessProfileForm.contactNumber,
+                                    websiteUrl: businessProfileForm.websiteUrl,
+                                    websiteData: {
+                                      businessName: businessProfileForm.businessName,
+                                      businessPhone: businessProfileForm.contactNumber,
+                                      businessEmail: businessProfileForm.contactEmail,
+                                      businessSummary: businessProfileForm.businessSummary,
+                                      location: businessProfileForm.location,
+                                      hours: businessProfileForm.hours,
+                                      openings: businessProfileForm.openings,
+                                      services: businessProfileForm.services,
+                                      notes: businessProfileForm.notes,
+                                      websiteUrl: businessProfileForm.websiteUrl
+                                    }
+                                  })
+                                }
+                                disabled={businessSaveStatus?.status === "loading"}
+                                className="inline-flex items-center gap-2 rounded-xl border border-emerald-300/60 bg-emerald-500/20 px-3 py-2 text-xs font-semibold text-emerald-50 transition hover:-translate-y-0.5 hover:border-emerald-200 hover:bg-emerald-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                <CheckCircle2 className="h-4 w-4" />
+                                Save business profile
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setBusinessProfileForm({
+                                    businessName: derivedBusinessProfile.businessName || "",
+                                    contactNumber: derivedBusinessProfile.contactNumber || "",
+                                    contactEmail: derivedBusinessProfile.contactEmail || user?.email || "",
+                                    websiteUrl: derivedBusinessProfile.websiteUrl || "",
+                                    businessSummary: derivedBusinessProfile.businessSummary || "",
+                                    hours: derivedBusinessProfile.hours || "",
+                                    location: derivedBusinessProfile.location || "",
+                                    services: derivedBusinessProfile.services || "",
+                                    notes: derivedBusinessProfile.notes || "",
+                                    openings: derivedBusinessProfile.openings || ""
+                                  });
+                                  setIsBusinessProfileEditing(false);
+                                }}
+                                className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:border-white/30 hover:bg-white/20"
+                              >
+                                Cancel
+                              </button>
+                            </>
+                          ) : null}
+                          {businessSaveStatus?.message && (
+                            <span
+                              className={`text-xs ${
+                                businessSaveStatus.status === "error"
+                                  ? "text-rose-300"
+                                  : "text-emerald-200"
+                              }`}
+                            >
+                              {businessSaveStatus.message}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
                   <div className="grid gap-4">
+                    <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
+                      <div className="mb-3 flex items-center gap-2">
+                        <UserIcon className="h-5 w-5 text-indigo-200" />
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">User</p>
+                          <h4 className="text-lg font-semibold text-white">Your profile</h4>
+                        </div>
+                      </div>
+                      <div className="grid gap-3">
+                        <input
+                          type="email"
+                          value={userForm.email}
+                          readOnly
+                          className="rounded-xl border border-white/10 bg-slate-900/40 px-3 py-2 text-sm text-slate-200"
+                        />
+                        <input
+                          type="text"
+                          value={userForm.businessName}
+                          onChange={(e) => setUserForm({ ...userForm, businessName: e.target.value })}
+                          placeholder="Business name"
+                          className="rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
+                        />
+                        <input
+                          type="tel"
+                          value={userForm.businessNumber}
+                          onChange={(e) => setUserForm({ ...userForm, businessNumber: e.target.value })}
+                          placeholder="Business number"
+                          className="rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
+                        />
+                        <div className="rounded-2xl border border-white/10 bg-slate-900/40 p-3 text-xs text-slate-200">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Subscriptions</p>
+                            {subscriptionsLoading ? (
+                              <span className="text-[11px] text-slate-400">Checking...</span>
+                            ) : null}
+                          </div>
+                          {subscriptionsLoading ? (
+                            <p className="mt-2 text-[11px] text-slate-400">Loading subscription details.</p>
+                          ) : subscriptionDetails.length ? (
+                            <div className="mt-2 grid gap-2">
+                              {subscriptionDetails.map((sub) => (
+                                <div
+                                  key={sub.id}
+                                  className="rounded-lg border border-white/10 bg-slate-900/60 px-2 py-2"
+                                >
+                                  <div className="flex items-center justify-between gap-2 text-xs">
+                                    <span className="font-semibold text-slate-100">{sub.label}</span>
+                                    <span
+                                      className={`text-[11px] ${
+                                        sub.active ? "text-emerald-200" : "text-slate-400"
+                                      }`}
+                                    >
+                                      {formatStatusLabel(sub.status || (sub.active ? "active" : "inactive"))}
+                                    </span>
+                                  </div>
+                                  {(sub.planId || sub.currentPeriodEnd) ? (
+                                    <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-400">
+                                      {sub.planId ? <span>Plan: {sub.planId}</span> : null}
+                                      {sub.currentPeriodEnd ? (
+                                        <span>Period ends: {formatDate(sub.currentPeriodEnd)}</span>
+                                      ) : null}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="mt-2 text-[11px] text-slate-400">No subscription details yet.</p>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onBusinessSave?.({
+                              businessName: userForm.businessName,
+                              businessPhone: userForm.businessNumber,
+                              websiteUrl: businessForm.website
+                            })
+                          }
+                          className="inline-flex items-center gap-2 self-start rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:border-white/30 hover:bg-white/20"
+                        >
+                          Update profile
+                        </button>
+                      </div>
+                    </div>
                     <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                         <div>

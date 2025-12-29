@@ -151,6 +151,7 @@ def _build_dashboard_payload(db, email: str) -> dict:
                 "name": client.name,
                 "website_url": client.website_url,
                 "ultravox_agent_id": client.ultravox_agent_id,
+                "website_data": client.website_data,
                 "business_name": client.business_name,
                 "business_phone": client.business_phone,
                 "booking_enabled": bool(client.booking_enabled),

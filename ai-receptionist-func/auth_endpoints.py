@@ -7,7 +7,7 @@ import re
 import smtplib
 import ssl
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 from zoneinfo import ZoneInfo
 from urllib.parse import parse_qs, quote
 
@@ -79,6 +79,56 @@ def _build_event_id(raw_id: Optional[str]) -> Optional[str]:
     if not re.match(r"^[a-zA-Z0-9_]{5,1024}$", safe):
         return None
     return safe
+
+
+def _merge_website_data(existing: Optional[str], additions: Dict[str, Any]) -> str:
+    if not additions:
+        return existing or ""
+    base: Dict[str, Any] = {}
+    if existing:
+        try:
+            parsed = json.loads(existing)
+            if isinstance(parsed, dict):
+                base = parsed
+            else:
+                base = {"raw_website_data": parsed}
+        except json.JSONDecodeError:
+            base = {"raw_website_data": existing}
+    base.update(additions)
+    return json.dumps(base)
+
+
+def _normalize_business_profile(raw: Any) -> Optional[Dict[str, str]]:
+    if raw is None:
+        return None
+    payload = raw
+    if isinstance(raw, str):
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(payload, dict):
+        return None
+    source = payload.get("business_profile") if isinstance(payload.get("business_profile"), dict) else payload
+    if not isinstance(source, dict):
+        return None
+    return {
+        "business_name": str(source.get("business_name") or source.get("businessName") or source.get("name") or ""),
+        "business_summary": str(source.get("business_summary") or source.get("businessSummary") or ""),
+        "business_location": str(source.get("business_location") or source.get("location") or ""),
+        "business_hours": str(source.get("business_hours") or source.get("hours") or ""),
+        "business_openings": str(source.get("business_openings") or source.get("openings") or ""),
+        "business_services": str(source.get("business_services") or source.get("services") or ""),
+        "business_notes": str(source.get("business_notes") or source.get("notes") or ""),
+        "contact_email": str(source.get("contact_email") or source.get("businessEmail") or source.get("contactEmail") or ""),
+        "contact_phone": str(
+            source.get("contact_phone")
+            or source.get("businessPhone")
+            or source.get("contactNumber")
+            or source.get("business_phone")
+            or ""
+        ),
+    }
 
 
 def _parse_dt_with_london_default(value: str) -> datetime:
@@ -755,7 +805,10 @@ def client_business_details(req: func.HttpRequest) -> func.HttpResponse:
     email = (body or {}).get("email")
     business_name = (body or {}).get("businessName")
     business_phone = (body or {}).get("businessPhone")
-    website_url = (body or {}).get("websiteUrl") or "pending"
+    website_url = (body or {}).get("websiteUrl")
+    website_data = (body or {}).get("websiteData")
+    profile = _normalize_business_profile(website_data)
+    website_payload = {"business_profile": profile} if profile else None
 
     if not email or not business_name or not business_phone:
         return func.HttpResponse(
@@ -778,6 +831,10 @@ def client_business_details(req: func.HttpRequest) -> func.HttpResponse:
             client.business_phone = business_phone
             client.name = business_name
             client.user_id = user.id if user else client.user_id
+            if website_url:
+                client.website_url = website_url
+            if website_payload:
+                client.website_data = _merge_website_data(client.website_data, website_payload)
             db.commit()
             return func.HttpResponse(
                 json.dumps({"client_id": client.id, "email": client.email}),
@@ -786,6 +843,7 @@ def client_business_details(req: func.HttpRequest) -> func.HttpResponse:
                 headers=cors,
             )
 
+        website_url = website_url or "pending"
         client = Client(
             email=email,
             website_url=website_url,
@@ -793,6 +851,7 @@ def client_business_details(req: func.HttpRequest) -> func.HttpResponse:
             business_name=business_name,
             business_phone=business_phone,
             user_id=user.id if user else None,
+            website_data=_merge_website_data(None, website_payload) if website_payload else None,
         )
         db.add(client)
         db.commit()
@@ -891,6 +950,7 @@ def client_by_email(req: func.HttpRequest) -> func.HttpResponse:
             "business_name": client.business_name,
             "business_phone": client.business_phone,
             "website_url": client.website_url,
+            "website_data": client.website_data,
             "user_id": client.user_id,
             "user_business_name": user.business_name if user else None,
             "user_business_number": user.business_number if user else None,
