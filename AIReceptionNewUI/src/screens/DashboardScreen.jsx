@@ -27,6 +27,7 @@ import {
   PhoneCall,
   RefreshCw,
   Reply,
+  Settings,
   Shield,
   Star,
   Tag,
@@ -2022,11 +2023,6 @@ export default function DashboardScreen({
     { id: "SPAM", label: "Spam", icon: AlertTriangle },
     { id: "TRASH", label: "Trash", icon: Trash2 }
   ];
-  const emailSubTabItems = [
-    { id: "email", label: "Email", icon: Mail },
-    { id: "settings", label: "Settings", icon: Edit3 },
-    { id: "analytics", label: "Analytics", icon: Activity }
-  ];
   const socialSubTabs = [
     { id: "connect", label: "Connect" },
     { id: "inbox", label: "Inbox" },
@@ -2048,6 +2044,10 @@ export default function DashboardScreen({
   const activeToolCopy =
     activeToolMeta?.copy || "Full control over your AI agents, analytics, and automations.";
   const ActiveIcon = activeToolMeta?.icon || Shield;
+  const isLightTheme = emailTheme === "light";
+  const lightThemeActive = isEmailManager && isLightTheme;
+  const settingsActive = currentTool === "email_manager" && emailSubTab === "settings";
+  const showEmailSidePanel = emailSubTab !== "settings";
   const hasTwilioNumber = Boolean(aiNumber);
   const hasReceptionistSubscription = !subscriptionsLoading && !isToolLocked("ai_receptionist");
   const needsNumberAssignment = !hasTwilioNumber;
@@ -2591,12 +2591,18 @@ export default function DashboardScreen({
 
   return (
     <section
-      className={`relative bg-slate-950 px-0 sm:px-2 lg:px-4 pt-2 pb-4 text-slate-100 ${
-        isEmailManager ? "min-h-screen sm:h-screen sm:overflow-hidden" : "min-h-screen"
-      }`}
+      className={`relative px-0 sm:px-2 lg:px-4 pt-2 pb-4 ${
+        lightThemeActive
+          ? "bg-slate-50 text-slate-900 email-theme-light"
+          : "bg-slate-950 text-slate-100"
+      } ${isEmailManager ? "min-h-screen sm:h-screen sm:overflow-hidden" : "min-h-screen"}`}
     >
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(99,102,241,0.08),transparent_32%),radial-gradient(circle_at_80%_0%,rgba(16,185,129,0.08),transparent_32%)]" />
-      <div className="absolute -left-6 -right-6 -top-6 bottom-0 bg-slate-950/60 backdrop-blur-3xl" />
+      <div
+        className={`absolute -left-6 -right-6 -top-6 bottom-0 backdrop-blur-3xl ${
+          lightThemeActive ? "bg-white/45" : "bg-slate-950/60"
+        }`}
+      />
       <div className={`relative mx-auto w-full max-w-none ${isEmailManager ? "h-full" : ""}`}>
         {sideNavHidden && (
           <div
@@ -2670,6 +2676,7 @@ export default function DashboardScreen({
                     onClick={() => {
                       setActiveTool?.(tool.id);
                       if (tool.id === "ai_receptionist") setActiveTab?.("dashboard");
+                      if (tool.id === "email_manager") setEmailSubTab("email");
                     }}
                     className={`flex items-center ${
                       sideNavOpen ? "justify-start gap-3 px-3" : "justify-center"
@@ -2716,6 +2723,26 @@ export default function DashboardScreen({
                 {sideNavOpen ? "Enter business details" : "Go"}
               </button>
             )}
+            <div className="mt-2 border-t border-white/10 pt-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTool?.("email_manager");
+                  setEmailSubTab("settings");
+                }}
+                aria-current={settingsActive ? "page" : undefined}
+                className={`flex items-center ${
+                  sideNavOpen ? "justify-start gap-3 px-3" : "justify-center w-full"
+                } rounded-2xl border py-2 text-left transition ${
+                  settingsActive
+                    ? "border-indigo-400/70 bg-indigo-500/10 text-white"
+                    : "border-white/10 bg-white/5 text-slate-200 hover:border-white/25 hover:bg-white/10"
+                }`}
+              >
+                <Settings className="h-5 w-5 text-indigo-200" />
+                {sideNavOpen && <span className="text-sm font-semibold text-white">Settings</span>}
+              </button>
+            </div>
           </aside>
 
           <div className={`flex flex-1 flex-col gap-5 ${isEmailManager ? "min-h-0" : ""}`}>
@@ -3606,20 +3633,23 @@ export default function DashboardScreen({
             className="flex-1 min-h-0"
           >
             <div
-              className={`email-manager-shell min-h-screen sm:h-full sm:min-h-0 ${emailTheme === "light" ? "email-theme-light" : ""}`}
+              className={`email-manager-shell min-h-screen sm:h-full sm:min-h-0 ${lightThemeActive ? "email-theme-light" : ""}`}
             >
               <div className="relative grid gap-4 sm:h-full sm:min-h-0 sm:grid-rows-[auto,1fr] sm:overflow-hidden">
               <section
                 className={`grid gap-4 sm:h-full sm:min-h-0 sm:overflow-hidden ${
-                  emailSubTab === "email"
-                    ? emailPanelOpen
-                      ? "lg:grid-cols-[180px_1.25fr_1.6fr]"
-                      : "lg:grid-cols-[64px_1.41fr_1.6fr]"
-                    : emailPanelOpen
-                      ? "lg:grid-cols-[180px_1.55fr]"
-                      : "lg:grid-cols-[64px_1.84fr]"
+                  showEmailSidePanel
+                    ? emailSubTab === "email"
+                      ? emailPanelOpen
+                        ? "lg:grid-cols-[180px_1.25fr_1.6fr]"
+                        : "lg:grid-cols-[64px_1.41fr_1.6fr]"
+                      : emailPanelOpen
+                        ? "lg:grid-cols-[180px_1.55fr]"
+                        : "lg:grid-cols-[64px_1.84fr]"
+                    : "lg:grid-cols-1"
                 }`}
               >
+                {showEmailSidePanel && (
                 <aside
                   className={`rounded-3xl border border-white/10 bg-white/5 shadow-xl backdrop-blur overflow-hidden flex flex-col sm:min-h-0 sm:h-full ${
                     emailPanelOpen ? "p-3 sm:p-4" : "p-2"
@@ -3686,29 +3716,6 @@ export default function DashboardScreen({
                           </div>
                         </div>
                       ) : null}
-                      <div className="mt-auto border-t border-white/10 pt-4">
-                        <div className="grid gap-2">
-                          {emailSubTabItems.map((item) => {
-                            const Icon = item.icon;
-                            const isActive = emailSubTab === item.id;
-                            return (
-                              <button
-                                key={`email-nav-${item.id}`}
-                                type="button"
-                                onClick={() => setEmailSubTab(item.id)}
-                                className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition ${
-                                  isActive
-                                    ? "border-indigo-400 bg-indigo-500/20 text-indigo-100"
-                                    : "border-white/10 bg-white/5 text-slate-200 hover:border-white/30"
-                                }`}
-                              >
-                                <Icon className="h-4 w-4" />
-                                {item.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
                     </>
                   ) : (
                     <div className="mt-4 flex w-full flex-1 flex-col items-center">
@@ -3736,31 +3743,10 @@ export default function DashboardScreen({
                           })}
                         </div>
                       ) : null}
-                      <div className="mt-auto flex flex-col items-center gap-2 border-t border-white/10 pt-3">
-                        {emailSubTabItems.map((item) => {
-                          const Icon = item.icon;
-                          const isActive = emailSubTab === item.id;
-                          return (
-                            <button
-                              key={`email-nav-collapsed-${item.id}`}
-                              type="button"
-                              onClick={() => setEmailSubTab(item.id)}
-                              className={`flex h-9 w-9 items-center justify-center rounded-lg border transition ${
-                                isActive
-                                  ? "border-indigo-400/60 bg-indigo-500/15 text-indigo-100"
-                                  : "border-white/10 bg-slate-900/40 text-slate-200 hover:border-white/30"
-                              }`}
-                              aria-label={item.label}
-                              title={item.label}
-                            >
-                              <Icon className="h-4 w-4" />
-                            </button>
-                          );
-                        })}
-                      </div>
                     </div>
                   )}
                 </aside>
+                )}
 
                 {emailSubTab === "email" ? (
                   <div className="contents">
