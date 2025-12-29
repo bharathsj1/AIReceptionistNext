@@ -66,10 +66,12 @@ html {
   overflow: hidden;
 }
 
+
 .page,
 .page * {
   border-radius: 0 !important;
 }
+
 
 .global-logo-bar {
   position: fixed;
@@ -145,11 +147,7 @@ html {
 }
 
 .email-manager-shell.email-theme-light {
-  background:
-    radial-gradient(1200px 700px at 12% -10%, rgba(59, 130, 246, 0.18), transparent 60%),
-    radial-gradient(900px 600px at 92% 0%, rgba(99, 102, 241, 0.16), transparent 62%),
-    radial-gradient(800px 600px at 88% 95%, rgba(16, 185, 129, 0.12), transparent 65%),
-    #f8fafc;
+  background: #f1f5f9;
   color: #0f172a;
 }
 

@@ -2045,7 +2045,7 @@ export default function DashboardScreen({
     activeToolMeta?.copy || "Full control over your AI agents, analytics, and automations.";
   const ActiveIcon = activeToolMeta?.icon || Shield;
   const isLightTheme = emailTheme === "light";
-  const lightThemeActive = isEmailManager && isLightTheme;
+  const lightThemeActive = isLightTheme;
   const settingsActive = currentTool === "email_manager" && emailSubTab === "settings";
   const showEmailSidePanel = emailSubTab !== "settings";
   const hasTwilioNumber = Boolean(aiNumber);
@@ -2073,6 +2073,16 @@ export default function DashboardScreen({
   const emailSelectionCount = selectedEmailIds.length;
   const emailAllSelected = Boolean(emailMessages.length && emailSelectionCount === emailMessages.length);
   const emailActionLoading = emailActionStatus.status === "loading";
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (lightThemeActive) {
+      root.classList.add("theme-light");
+    } else {
+      root.classList.remove("theme-light");
+    }
+    return () => root.classList.remove("theme-light");
+  }, [lightThemeActive]);
   const emailActionError = emailActionStatus.status === "error" ? emailActionStatus.message : "";
   const emailActionSuccess = emailActionStatus.status === "success" ? emailActionStatus.message : "";
   const gmailLabelOptions = emailLabels
@@ -2593,14 +2603,20 @@ export default function DashboardScreen({
     <section
       className={`relative px-0 sm:px-2 lg:px-4 pt-2 pb-4 ${
         lightThemeActive
-          ? "bg-slate-50 text-slate-900 email-theme-light"
+          ? "bg-transparent text-slate-900 email-theme-light"
           : "bg-slate-950 text-slate-100"
       } ${isEmailManager ? "min-h-screen sm:h-screen sm:overflow-hidden" : "min-h-screen"}`}
     >
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(99,102,241,0.08),transparent_32%),radial-gradient(circle_at_80%_0%,rgba(16,185,129,0.08),transparent_32%)]" />
       <div
-        className={`absolute -left-6 -right-6 -top-6 bottom-0 backdrop-blur-3xl ${
-          lightThemeActive ? "bg-white/45" : "bg-slate-950/60"
+        className={`absolute inset-0 ${
+          lightThemeActive
+            ? "bg-white"
+            : "bg-[radial-gradient(circle_at_20%_20%,rgba(99,102,241,0.08),transparent_32%),radial-gradient(circle_at_80%_0%,rgba(16,185,129,0.08),transparent_32%)]"
+        }`}
+      />
+      <div
+        className={`absolute -left-6 -right-6 -top-6 bottom-0 ${
+          lightThemeActive ? "bg-transparent backdrop-blur-none" : "bg-slate-950/60 backdrop-blur-3xl"
         }`}
       />
       <div className={`relative mx-auto w-full max-w-none ${isEmailManager ? "h-full" : ""}`}>
@@ -2613,7 +2629,11 @@ export default function DashboardScreen({
             <button
               type="button"
               onClick={() => setSideNavHidden(false)}
-              className="mt-3 -translate-x-1/2 rounded-full border border-white/5 bg-white/5 px-2 py-1 text-[11px] text-slate-400 opacity-40"
+              className={`mt-3 -translate-x-1/2 rounded-full border px-2 py-1 text-[11px] transition ${
+                lightThemeActive
+                  ? "border-slate-300 bg-white text-slate-600 shadow-sm opacity-100"
+                  : "border-white/5 bg-white/5 text-slate-400 opacity-40"
+              }`}
               aria-label="Show menu"
             >
               ⟩
@@ -2870,7 +2890,6 @@ export default function DashboardScreen({
                     value={`${analytics.answeredRate}%`}
                     hint="Completed calls"
                     icon={CheckCircle2}
-                    tone="success"
                   />
               <StatCard
                 label="Avg Duration"
