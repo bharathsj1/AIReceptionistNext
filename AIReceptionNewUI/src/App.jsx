@@ -2378,17 +2378,19 @@ export default function App() {
 
   return (
     <div className={pageClassName} data-lenis-wrapper>
-      <div className="page-video-bg" aria-hidden="true">
-        <Aurora
-          colorStops={["#3A29FF", "#FF94B4", "#FF3232"]}
-          blend={0.5}
-          amplitude={1.0}
-          speed={0.5}
-        />
-        <div className="page-video-overlay" />
-      </div>
       <div className={pageContentClassName} data-lenis-content>
-        <div className="background-glow" />
+        <div className="page-video-bg" aria-hidden="true">
+          <div className="page-video-bg__glow" />
+          <div className="page-video-bg__aurora">
+            <Aurora
+              colorStops={["#3A29FF", "#FF94B4", "#FF3232"]}
+              blend={0.8}
+              amplitude={1.0}
+              speed={0.5}
+            />
+          </div>
+          <div className="page-video-bg__overlay" />
+        </div>
         {showGlobalLogo && (
           <header className="global-logo-bar">
             <button className="logo-link" onClick={handleGoHome} aria-label="Go to home">

@@ -35,6 +35,7 @@ export const API_URLS = {
   emailMessage: apiUrl("email/message"),
   emailAttachment: apiUrl("email/attachment"),
   emailReplyDraft: apiUrl("email/reply-draft"),
+  emailComposeDraft: apiUrl("email/compose-draft"),
   emailSummary: apiUrl("email/summary"),
   emailClassify: apiUrl("email/classify"),
   emailActions: apiUrl("email/actions"),

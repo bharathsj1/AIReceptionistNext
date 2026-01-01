@@ -700,6 +700,18 @@ def _build_reply_variants_prompt(context: str, tone: str, intent: str, draft: st
     )
 
 
+def _build_compose_prompt(draft: str, subject: str = "", recipient: str = "") -> str:
+    trimmed_draft = _trim_text(draft, 1800)
+    subject_line = f"Subject: {subject.strip()}\n" if subject else ""
+    recipient_line = f"To: {recipient.strip()}\n" if recipient else ""
+    return (
+        "Refine and complete the email draft so it is clear, professional, and ready to send. "
+        "Preserve the original intent and details. Return JSON only with key draft.\n\n"
+        f"{subject_line}{recipient_line}"
+        f"Draft:\n{trimmed_draft}\n"
+    )
+
+
 def _get_thread_context(access_token: Optional[str], thread_id: Optional[str]) -> str:
     if not access_token or not thread_id:
         return ""
@@ -1971,6 +1983,91 @@ def email_reply_draft(req: func.HttpRequest) -> func.HttpResponse:
         logger.error("Email reply draft failed: %s", exc)
         return func.HttpResponse(
             json.dumps({"error": "Email reply draft failed", "details": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+            headers=cors,
+        )
+    finally:
+        db.close()
+
+
+@app.function_name(name="EmailComposeDraft")
+@app.route(route="email/compose-draft", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def email_compose_draft(req: func.HttpRequest) -> func.HttpResponse:
+    cors = build_cors_headers(req, ["POST", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
+    try:
+        body = req.get_json()
+    except ValueError:
+        body = None
+    body = body or {}
+
+    email = body.get("email")
+    user_id = body.get("user_id") or body.get("userId")
+    draft = body.get("draft") or body.get("body") or ""
+    subject = body.get("subject") or ""
+    recipient = body.get("to") or ""
+
+    if not (email or user_id):
+        return func.HttpResponse(
+            json.dumps({"error": "user identifier is required"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    if not str(draft or "").strip():
+        return func.HttpResponse(
+            json.dumps({"error": "draft text is required"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    db = SessionLocal()
+    try:
+        user = _get_user(db, email, user_id)
+        if not user:
+            return func.HttpResponse(
+                json.dumps({"error": "User not found"}),
+                status_code=404,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        allowed, retry_after = _check_ai_rate_limit(req, user)
+        if not allowed:
+            return func.HttpResponse(
+                json.dumps({"error": "Rate limit exceeded", "retry_after": retry_after}),
+                status_code=429,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        messages = [
+            {
+                "role": "system",
+                "content": "You draft clear, concise outbound emails. Return JSON only.",
+            },
+            {"role": "user", "content": _build_compose_prompt(draft, subject, recipient)},
+        ]
+        result = _call_openai_json(messages, max_tokens=450, temperature=0.3)
+        draft_text = str(result.get("draft") or result.get("body") or "").strip()
+        if not draft_text:
+            raise RuntimeError("OpenAI returned empty draft")
+
+        return func.HttpResponse(
+            json.dumps({"draft": draft_text, "user": user.email}),
+            status_code=200,
+            mimetype="application/json",
+            headers=cors,
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.error("Email compose draft failed: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "Email compose draft failed", "details": str(exc)}),
             status_code=500,
             mimetype="application/json",
             headers=cors,

@@ -16,6 +16,7 @@ import {
   FileText,
   Globe2,
   Inbox,
+  LayoutGrid,
   Link2,
   Mail,
   MailOpen,
@@ -23,25 +24,41 @@ import {
   Megaphone,
   MessageSquare,
   Mic,
+  Pause,
   Paperclip,
+  Pin,
+  PinOff,
   PhoneCall,
+  Play,
+  Plug,
   RefreshCw,
   Reply,
   Settings,
   Shield,
+  Sparkles,
   Star,
   Tag,
   Trash2,
   X,
-  User as UserIcon
+  User as UserIcon,
+  Users,
+  Building2
 } from "lucide-react";
 import { API_URLS } from "../config/urls";
 
 const formatDuration = (seconds) => {
-  if (!seconds && seconds !== 0) return "—";
-  const mins = Math.floor(Number(seconds) / 60);
-  const secs = Number(seconds) % 60;
-  return `${mins}m ${secs.toString().padStart(2, "0")}s`;
+  if (seconds === null || seconds === undefined || seconds === "") return "—";
+  const totalSeconds = Number(seconds);
+  if (Number.isNaN(totalSeconds)) return "—";
+  const mins = Math.floor(totalSeconds / 60);
+  const rawSecs = totalSeconds % 60;
+  const trimmedSecs = rawSecs
+    .toFixed(3)
+    .replace(/\.?0+$/, "");
+  const [secWhole, secFrac] = trimmedSecs.split(".");
+  const paddedWhole = (secWhole || "0").padStart(2, "0");
+  const displaySecs = secFrac ? `${paddedWhole}.${secFrac}` : paddedWhole;
+  return `${mins}m ${displaySecs}s`;
 };
 
 const formatDate = (iso) => {
@@ -147,6 +164,14 @@ const EMAIL_TAG_OPTIONS = [
 ];
 
 const REPLY_TONE_PRESETS = ["Professional", "Friendly", "Short", "Empathetic"];
+
+const DASHBOARD_TABS = [
+  { id: "dashboard", label: "Dashboard", icon: LayoutGrid },
+  { id: "agents", label: "Agents", icon: Users },
+  { id: "calls", label: "Calls", icon: PhoneCall },
+  { id: "business", label: "Business", icon: Building2 },
+  { id: "integrations", label: "Integrations", icon: Plug }
+];
 
 const priorityBadgeStyles = {
   Urgent: "border-rose-400/60 bg-rose-500/20 text-rose-100",
@@ -465,10 +490,12 @@ export default function DashboardScreen({
   const [selectedCalendarProvider, setSelectedCalendarProvider] = useState("google");
   const [calendarEditMode, setCalendarEditMode] = useState("edit");
   const [emailSubTab, setEmailSubTab] = useState("email");
+  const [settingsSection, setSettingsSection] = useState("automation");
   const [emailMailbox, setEmailMailbox] = useState("INBOX");
   const [emailUnreadOnly, setEmailUnreadOnly] = useState(false);
   const [emailAutoSummarize, setEmailAutoSummarize] = useState(true);
   const [emailPanelOpen, setEmailPanelOpen] = useState(false);
+  const [emailPanelContentVisible, setEmailPanelContentVisible] = useState(false);
   const [emailMessages, setEmailMessages] = useState([]);
   const [emailLoading, setEmailLoading] = useState(false);
   const [emailError, setEmailError] = useState("");
@@ -508,6 +535,7 @@ export default function DashboardScreen({
     references: ""
   });
   const [emailComposerStatus, setEmailComposerStatus] = useState({ status: "idle", message: "" });
+  const [emailComposerAiStatus, setEmailComposerAiStatus] = useState({ status: "idle", message: "" });
   const [selectedEmailMessage, setSelectedEmailMessage] = useState(null);
   const [emailSummaries, setEmailSummaries] = useState({});
   const [emailSummaryStatus, setEmailSummaryStatus] = useState({
@@ -566,7 +594,10 @@ export default function DashboardScreen({
   const [socialScheduledError, setSocialScheduledError] = useState("");
   const [selectedCallDay, setSelectedCallDay] = useState("All days");
   const [sideNavOpen, setSideNavOpen] = useState(false);
+  const [sideNavPinned, setSideNavPinned] = useState(false);
+  const [sideNavContentVisible, setSideNavContentVisible] = useState(false);
   const [sideNavHidden, setSideNavHidden] = useState(false);
+  const [voiceSamplePlaying, setVoiceSamplePlaying] = useState(false);
   const [showHolidayCalendars, setShowHolidayCalendars] = useState(true);
   const [showBirthdayEvents, setShowBirthdayEvents] = useState(true);
   const calendarRef = useRef(null);
@@ -579,7 +610,11 @@ export default function DashboardScreen({
   const socialConnectionsLoadedRef = useRef(false);
   const socialDraftsLoadedRef = useRef(false);
   const socialScheduledLoadedRef = useRef(false);
-  const sideNavHideTimerRef = useRef(null);
+  const sideNavCloseTimerRef = useRef(null);
+  const sideNavContentTimerRef = useRef(null);
+  const emailPanelCloseTimerRef = useRef(null);
+  const emailPanelContentTimerRef = useRef(null);
+  const voiceSampleRef = useRef(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -594,33 +629,74 @@ export default function DashboardScreen({
   }, [sideNavOpen, sideNavHidden]);
 
   useEffect(() => {
-    if (sideNavHidden) {
-      if (sideNavHideTimerRef.current) {
-        clearTimeout(sideNavHideTimerRef.current);
-      }
-      return;
-    }
-
-    const resetTimer = () => {
-      if (sideNavHideTimerRef.current) {
-        clearTimeout(sideNavHideTimerRef.current);
-      }
-      sideNavHideTimerRef.current = setTimeout(() => {
-        setSideNavHidden(true);
-      }, 5000);
-    };
-
-    const activityEvents = ["mousemove", "mousedown", "keydown", "scroll", "touchstart"];
-    resetTimer();
-    activityEvents.forEach((eventName) => window.addEventListener(eventName, resetTimer));
-
     return () => {
-      if (sideNavHideTimerRef.current) {
-        clearTimeout(sideNavHideTimerRef.current);
+      if (sideNavCloseTimerRef.current) {
+        clearTimeout(sideNavCloseTimerRef.current);
       }
-      activityEvents.forEach((eventName) => window.removeEventListener(eventName, resetTimer));
+      if (sideNavContentTimerRef.current) {
+        clearTimeout(sideNavContentTimerRef.current);
+      }
+      if (emailPanelCloseTimerRef.current) {
+        clearTimeout(emailPanelCloseTimerRef.current);
+      }
+      if (emailPanelContentTimerRef.current) {
+        clearTimeout(emailPanelContentTimerRef.current);
+      }
     };
-  }, [sideNavHidden]);
+  }, []);
+
+  const openSideNav = () => {
+    if (sideNavCloseTimerRef.current) {
+      clearTimeout(sideNavCloseTimerRef.current);
+    }
+    if (sideNavContentTimerRef.current) {
+      clearTimeout(sideNavContentTimerRef.current);
+    }
+    setSideNavOpen(true);
+    setSideNavContentVisible(true);
+  };
+
+  const closeSideNav = () => {
+    if (sideNavCloseTimerRef.current) {
+      clearTimeout(sideNavCloseTimerRef.current);
+    }
+    if (sideNavContentTimerRef.current) {
+      clearTimeout(sideNavContentTimerRef.current);
+    }
+    sideNavCloseTimerRef.current = setTimeout(() => {
+      setSideNavOpen(false);
+      sideNavContentTimerRef.current = setTimeout(() => {
+        setSideNavContentVisible(false);
+      }, 200);
+    }, 120);
+  };
+
+  const openEmailPanel = () => {
+    if (emailPanelCloseTimerRef.current) {
+      clearTimeout(emailPanelCloseTimerRef.current);
+    }
+    if (emailPanelContentTimerRef.current) {
+      clearTimeout(emailPanelContentTimerRef.current);
+    }
+    setEmailPanelOpen(true);
+    setEmailPanelContentVisible(true);
+  };
+
+  const closeEmailPanel = () => {
+    if (emailPanelCloseTimerRef.current) {
+      clearTimeout(emailPanelCloseTimerRef.current);
+    }
+    if (emailPanelContentTimerRef.current) {
+      clearTimeout(emailPanelContentTimerRef.current);
+    }
+    emailPanelCloseTimerRef.current = setTimeout(() => {
+      setEmailPanelOpen(false);
+      emailPanelContentTimerRef.current = setTimeout(() => {
+        setEmailPanelContentVisible(false);
+      }, 200);
+    }, 120);
+  };
+
 
   const filteredCalendarEvents = useMemo(() => {
     return (calendarEvents || []).filter((event) => {
@@ -1089,9 +1165,27 @@ export default function DashboardScreen({
     });
   };
 
+  const handleVoiceSampleToggle = () => {
+    const audio = voiceSampleRef.current;
+    if (!audio || !selectedVoice?.sampleUrl) return;
+    if (voiceSamplePlaying) {
+      audio.pause();
+      setVoiceSamplePlaying(false);
+      return;
+    }
+    const playPromise = audio.play();
+    setVoiceSamplePlaying(true);
+    if (playPromise && typeof playPromise.catch === "function") {
+      playPromise.catch(() => {
+        setVoiceSamplePlaying(false);
+      });
+    }
+  };
+
   const openComposer = (mode = "new", message = null) => {
     setEmailComposerMode(mode);
     setEmailComposerStatus({ status: "idle", message: "" });
+    setEmailComposerAiStatus({ status: "idle", message: "" });
     if (!message || mode === "new") {
       setEmailComposerForm({
         to: "",
@@ -1183,6 +1277,50 @@ export default function DashboardScreen({
     } catch (err) {
       setEmailComposerStatus({ status: "error", message: err?.message || "Unable to send email." });
       return false;
+    }
+  };
+
+  const handleGenerateEmailDraft = async () => {
+    const emailAddress = user?.email || userForm.email;
+    if (!emailAddress) {
+      setEmailComposerAiStatus({ status: "error", message: "Missing user email." });
+      return;
+    }
+    const currentDraft = (emailComposerForm.body || "").trim();
+    if (!currentDraft) {
+      setEmailComposerAiStatus({
+        status: "error",
+        message: "Add a draft message to generate."
+      });
+      return;
+    }
+    setEmailComposerAiStatus({ status: "loading", message: "Generating..." });
+    try {
+      const res = await fetch(API_URLS.emailComposeDraft, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: emailAddress,
+          draft: currentDraft,
+          subject: emailComposerForm.subject,
+          to: emailComposerForm.to
+        })
+      });
+      if (!res.ok) {
+        throw new Error(await parseApiError(res, "Unable to generate email draft"));
+      }
+      const data = await res.json().catch(() => ({}));
+      const draftText = String(data?.draft || data?.body || "").trim();
+      if (!draftText) {
+        throw new Error("OpenAI returned an empty draft.");
+      }
+      setEmailComposerForm((prev) => ({ ...prev, body: draftText }));
+      setEmailComposerAiStatus({ status: "success", message: "AI draft ready." });
+    } catch (err) {
+      setEmailComposerAiStatus({
+        status: "error",
+        message: err?.message || "Unable to generate email draft."
+      });
     }
   };
 
@@ -2081,7 +2219,7 @@ export default function DashboardScreen({
   const toolTabs = [
     {
       id: "ai_receptionist",
-      label: "AI Receptionist",
+      label: "AI receptionist",
       eyebrow: "Voice + calls",
       icon: Shield,
       copy: "Route, transcribe, and analyze every customer conversation."
@@ -2095,7 +2233,7 @@ export default function DashboardScreen({
     },
     {
       id: "social_media_manager",
-      label: "Social Media Manager",
+      label: "Social media manager",
       eyebrow: "Content ops",
       icon: Megaphone,
       copy: "Plan content, enforce brand safety, and schedule multi-channel posts."
@@ -2117,6 +2255,11 @@ export default function DashboardScreen({
     { id: "connect", label: "Connect" },
     { id: "inbox", label: "Inbox" },
     { id: "posts", label: "Posts" }
+  ];
+  const settingsSections = [
+    { id: "automation", label: "Automation summary" },
+    { id: "business", label: "Business profile" },
+    { id: "user", label: "User profile" }
   ];
 
   const isToolLocked = (toolId) => {
@@ -2847,6 +2990,30 @@ export default function DashboardScreen({
     setAgentDetails((prev) => ({ ...prev, voice: filteredVoiceOptions[0].id }));
   }, [filteredVoiceOptions, primaryVoice, voiceLanguageFilter, setAgentDetails]);
 
+  useEffect(() => {
+    const audio = voiceSampleRef.current;
+    if (!audio) return;
+    const handleEnded = () => setVoiceSamplePlaying(false);
+    const handlePause = () => setVoiceSamplePlaying(false);
+    const handlePlay = () => setVoiceSamplePlaying(true);
+    audio.addEventListener("ended", handleEnded);
+    audio.addEventListener("pause", handlePause);
+    audio.addEventListener("play", handlePlay);
+    return () => {
+      audio.removeEventListener("ended", handleEnded);
+      audio.removeEventListener("pause", handlePause);
+      audio.removeEventListener("play", handlePlay);
+    };
+  }, [selectedVoice?.sampleUrl]);
+
+  useEffect(() => {
+    const audio = voiceSampleRef.current;
+    if (!audio) return;
+    audio.pause();
+    audio.currentTime = 0;
+    setVoiceSamplePlaying(false);
+  }, [selectedVoice?.sampleUrl]);
+
   const integrationStatus = calendarStatus || (calendarEvents?.length ? "Google" : null);
   const selectedProviderLabel = selectedCalendarProvider === "google" ? "Google" : "Outlook";
   const selectedProviderConnected =
@@ -2854,12 +3021,12 @@ export default function DashboardScreen({
   const sideNavWidthClass = sideNavHidden
     ? "w-0 min-w-0 max-w-0"
     : sideNavOpen
-      ? "w-full max-w-[22%] min-w-[220px]"
-      : "w-20";
+      ? "w-[154px]"
+      : "w-14";
 
   return (
     <section
-      className={`relative px-0 sm:px-2 lg:px-4 pt-2 pb-4 ${
+      className={`relative p-0 ${
         lightThemeActive
           ? "bg-transparent text-slate-900 email-theme-light"
           : "bg-slate-950 text-slate-100"
@@ -2915,39 +3082,44 @@ export default function DashboardScreen({
           <aside
             aria-hidden={sideNavHidden}
             inert={sideNavHidden ? "" : undefined}
-            className={`sticky top-0 flex h-fit flex-col gap-3 rounded-3xl border border-white/10 bg-white/5 p-4 shadow-2xl backdrop-blur transition-all ${sideNavWidthClass} ${
+            onMouseEnter={openSideNav}
+            onMouseLeave={() => {
+              if (!sideNavPinned) closeSideNav();
+            }}
+            className={`sticky top-0 flex h-fit flex-none flex-col gap-3 overflow-hidden p-2 transition-[width] duration-200 ${sideNavWidthClass} ${
               sideNavHidden
-                ? "pointer-events-none overflow-hidden border-transparent bg-transparent p-0 opacity-0 shadow-none"
+                ? "pointer-events-none overflow-hidden p-0 opacity-0"
                 : ""
             }`}
           >
-            <div className={`flex items-center ${sideNavOpen ? "justify-between" : "justify-center"} gap-2`}>
-              {sideNavOpen && (
-                <button
-                  type="button"
-                  onClick={handleGoHome}
-                  className="flex items-center gap-2 text-[11px] tracking-[0.2em] text-indigo-200 transition hover:text-indigo-100"
-                  aria-label="Go to home"
-                >
-                  <img src="/media/logo.png" alt="SmartConnect4u" className="h-5 w-5" />
-                  <span>SmartConnect4u</span>
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => setSideNavOpen((prev) => !prev)}
-                className={`rounded-full border border-white/10 bg-white/5 px-2 py-1 text-xs text-slate-200 transition hover:border-white/30 ${
-                  sideNavOpen ? "" : "mx-auto"
-                }`}
-                aria-label={sideNavOpen ? "Collapse menu" : "Expand menu"}
-              >
-                {sideNavOpen ? "⟨" : "⟩"}
-              </button>
+            <div className={`flex min-h-[40px] items-center ${sideNavContentVisible ? "justify-end" : "justify-center"} gap-2`}>
+              <div className={`flex items-center gap-2 ${sideNavContentVisible ? "" : "mx-auto"}`}>
+                {sideNavContentVisible && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSideNavPinned((prev) => !prev);
+                      if (!sideNavPinned) openSideNav();
+                    }}
+                    className={`flex h-8 w-8 items-center justify-center rounded-full text-xs transition ${
+                      sideNavPinned
+                        ? "bg-white/10 text-indigo-100"
+                        : "text-slate-300 hover:bg-white/10 hover:text-white"
+                    }`}
+                    aria-label={sideNavPinned ? "Unpin menu" : "Pin menu"}
+                  >
+                    {sideNavPinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
+                  </button>
+                )}
+                {!sideNavContentVisible && <span className="h-8 w-8" />}
+              </div>
             </div>
             <div className="mt-2 grid gap-2">
               {toolTabs.map((tool) => {
                 const Icon = tool.icon;
                 const locked = isToolLocked(tool.id);
+                const isToolActive =
+                  currentTool === tool.id && !(settingsActive && tool.id === "email_manager");
                 return (
                   <button
                     key={tool.id}
@@ -2956,34 +3128,53 @@ export default function DashboardScreen({
                       if (tool.id === "ai_receptionist") setActiveTab?.("dashboard");
                       if (tool.id === "email_manager") setEmailSubTab("email");
                     }}
-                    className={`flex items-center ${
-                      sideNavOpen ? "justify-start gap-3 px-3" : "justify-center"
-                    } rounded-2xl border py-2 text-left transition ${
-                      currentTool === tool.id
-                        ? "border-indigo-400/70 bg-indigo-500/10 text-white"
-                        : "border-white/10 bg-white/5 text-slate-200 hover:border-white/25 hover:bg-white/10"
-                    }`}
+                    className={`group flex h-10 w-full items-center gap-2 rounded-2xl px-2 text-left transition ${
+                      sideNavContentVisible
+                        ? "text-slate-200 hover:bg-white/10 hover:text-white"
+                        : "text-slate-300 hover:bg-white/10 hover:text-white hover:shadow-[0_10px_22px_rgba(79,70,229,0.25)]"
+                    } ${isToolActive ? "bg-white/15 text-white" : ""}`}
                   >
-                    <Icon className="h-5 w-5 text-indigo-200" />
-                    {sideNavOpen && (
-                      <div className="flex-1">
-                        <p className="text-[11px] uppercase tracking-[0.18em] text-indigo-200">{tool.eyebrow}</p>
-                        <p className="text-sm font-semibold text-white">{tool.label}</p>
-                      </div>
-                    )}
-                    {sideNavOpen && (
-                      <span
-                        className={`ml-auto rounded-full border px-2 py-1 text-[10px] font-semibold ${
-                          locked
-                            ? "border-white/15 bg-white/5 text-slate-200"
-                            : "border-emerald-200/60 bg-emerald-500/20 text-emerald-50"
+                    <span className="flex h-7 w-7 items-center justify-center">
+                      <Icon className="h-[18px] w-[18px] text-indigo-200" />
+                    </span>
+                      <div
+                        className={`min-w-0 transition-opacity ${
+                          sideNavContentVisible
+                            ? "flex-1 opacity-100"
+                            : "max-w-0 overflow-hidden opacity-0"
                         }`}
                       >
-                        {subscriptionsLoading && !toolSubscriptions?.[tool.id]
-                          ? "Checking..."
-                          : locked
-                            ? "Locked"
-                            : "Active"}
+                        <p className="text-[12px] font-semibold text-white leading-tight">
+                          {tool.label}
+                        </p>
+                      </div>
+                    {sideNavContentVisible && (
+                      <span
+                        className={`ml-auto inline-flex h-6 w-6 items-center justify-center ${
+                          locked ? "text-orange-300" : "text-emerald-200"
+                        }`}
+                        aria-label={
+                          subscriptionsLoading && !toolSubscriptions?.[tool.id]
+                            ? "Checking access"
+                            : locked
+                              ? "Subscription required"
+                              : "Active subscription"
+                        }
+                        title={
+                          subscriptionsLoading && !toolSubscriptions?.[tool.id]
+                            ? "Checking access"
+                            : locked
+                              ? "Subscription required"
+                              : "Active subscription"
+                        }
+                      >
+                        {subscriptionsLoading && !toolSubscriptions?.[tool.id] ? (
+                          <RefreshCw className="h-3 w-3 animate-spin" />
+                        ) : locked ? (
+                          <AlertTriangle className="h-3 w-3" />
+                        ) : (
+                          <CheckCircle2 className="h-3 w-3" />
+                        )}
                       </span>
                     )}
                   </button>
@@ -2995,10 +3186,10 @@ export default function DashboardScreen({
                 type="button"
                 onClick={onResumeBusinessDetails}
                 className={`mt-2 inline-flex items-center justify-center rounded-2xl border border-indigo-400/60 bg-indigo-500/15 px-3 py-2 text-xs font-semibold text-indigo-100 transition hover:-translate-y-0.5 hover:border-indigo-300 hover:bg-indigo-500/25 ${
-                  sideNavOpen ? "" : "px-0"
+                  sideNavContentVisible ? "" : "px-0"
                 }`}
               >
-                {sideNavOpen ? "Enter business details" : "Go"}
+                {sideNavContentVisible ? "Enter business details" : "Go"}
               </button>
             )}
             <div className="mt-2 border-t border-white/10 pt-3">
@@ -3009,16 +3200,26 @@ export default function DashboardScreen({
                   setEmailSubTab("settings");
                 }}
                 aria-current={settingsActive ? "page" : undefined}
-                className={`flex items-center ${
-                  sideNavOpen ? "justify-start gap-3 px-3" : "justify-center w-full"
-                } rounded-2xl border py-2 text-left transition ${
+                className={`group flex h-10 w-full items-center gap-2 rounded-2xl px-2 text-left transition ${
+                  sideNavContentVisible
+                    ? "text-slate-200 hover:bg-white/10 hover:text-white"
+                    : "text-slate-300 hover:bg-white/10 hover:text-white hover:shadow-[0_10px_22px_rgba(79,70,229,0.25)]"
+                } ${
                   settingsActive
-                    ? "border-indigo-400/70 bg-indigo-500/10 text-white"
-                    : "border-white/10 bg-white/5 text-slate-200 hover:border-white/25 hover:bg-white/10"
+                    ? "bg-white/15 text-white"
+                    : ""
                 }`}
               >
-                <Settings className="h-5 w-5 text-indigo-200" />
-                {sideNavOpen && <span className="text-sm font-semibold text-white">Settings</span>}
+                <span className="flex h-7 w-7 items-center justify-center">
+                  <Settings className="h-[18px] w-[18px] text-indigo-200" />
+                </span>
+                <span
+                  className={`truncate text-[12px] font-semibold text-white transition-opacity ${
+                    sideNavContentVisible ? "opacity-100 flex-1" : "opacity-0 max-w-0 overflow-hidden"
+                  }`}
+                >
+                  Settings
+                </span>
               </button>
             </div>
           </aside>
@@ -3104,19 +3305,24 @@ export default function DashboardScreen({
               </div>
               {currentTool === "ai_receptionist" && (
                 <div className="flex flex-wrap items-center gap-2">
-                  {["dashboard", "agents", "calls", "business", "integrations"].map((tab) => (
-                    <button
-                      key={tab}
-                      onClick={() => setActiveTab?.(tab)}
-                      className={`rounded-full border px-3 py-1 text-sm capitalize transition ${
-                        activeTab === tab
-                          ? "border-indigo-400 bg-indigo-500/20 text-indigo-100"
-                          : "border-white/10 bg-white/5 text-slate-200 hover:border-white/30"
-                      }`}
-                    >
-                      {tab}
-                    </button>
-                  ))}
+                  {DASHBOARD_TABS.map((tab) => {
+                    const Icon = tab.icon;
+                    const isActive = activeTab === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        onClick={() => setActiveTab?.(tab.id)}
+                        className={`inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-semibold tracking-tight transition sm:text-sm ${
+                          isActive
+                            ? "border-indigo-300/80 bg-white/15 text-indigo-50 shadow-[0_12px_24px_rgba(15,23,42,0.35)]"
+                            : "border-white/10 bg-white/5 text-slate-200 hover:border-white/30 hover:bg-white/10"
+                        }`}
+                      >
+                        <Icon className={`h-4 w-4 ${isActive ? "text-indigo-100" : "text-slate-300"}`} />
+                        <span>{tab.label}</span>
+                      </button>
+                    );
+                  })}
                   <span className="ml-auto text-xs text-slate-400">
                     {subscriptionsLoading
                       ? "Checking access..."
@@ -3306,13 +3512,25 @@ export default function DashboardScreen({
                     ? "Loading Ultravox voices..."
                     : `${filteredVoiceOptions.length} voices available`}
                 </span>
+                {selectedVoice?.sampleUrl ? (
+                  <button
+                    type="button"
+                    onClick={handleVoiceSampleToggle}
+                    className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-100 transition hover:border-white/30 hover:bg-white/10"
+                  >
+                    {voiceSamplePlaying ? "Pause sample" : "Play sample"}
+                    {voiceSamplePlaying ? (
+                      <Pause className="h-3 w-3" />
+                    ) : (
+                      <Play className="h-3 w-3" />
+                    )}
+                  </button>
+                ) : null}
               </div>
               {selectedVoice?.sampleUrl ? (
-                <div className="mt-2">
-                  <audio controls className="w-full" src={selectedVoice.sampleUrl}>
-                    Your browser does not support audio playback.
-                  </audio>
-                </div>
+                <audio ref={voiceSampleRef} preload="none" src={selectedVoice.sampleUrl} className="hidden">
+                  Your browser does not support audio playback.
+                </audio>
               ) : null}
 
               <label className="mt-2 text-sm text-slate-200">System prompt</label>
@@ -3920,7 +4138,7 @@ export default function DashboardScreen({
             >
               <div className="relative grid gap-4 sm:h-full sm:min-h-0 sm:grid-rows-[auto,1fr] sm:overflow-hidden">
               <section
-                className={`grid gap-4 sm:h-full sm:min-h-0 sm:overflow-hidden ${
+                className={`grid gap-4 transition-[grid-template-columns] duration-200 ease-out sm:h-full sm:min-h-0 sm:overflow-hidden ${
                   showEmailSidePanel
                     ? emailSubTab === "email"
                       ? emailPanelOpen
@@ -3934,100 +4152,82 @@ export default function DashboardScreen({
               >
                 {showEmailSidePanel && (
                 <aside
-                  className={`rounded-3xl border border-white/10 bg-white/5 shadow-xl backdrop-blur overflow-hidden flex flex-col sm:min-h-0 sm:h-full ${
-                    emailPanelOpen ? "p-3 sm:p-4" : "p-2"
-                  }`}
+                  className="rounded-3xl border border-white/10 bg-white/5 shadow-xl backdrop-blur overflow-hidden flex flex-col p-3 sm:p-4 sm:min-h-0 sm:h-full"
                 >
-                  <div className={`flex items-center ${emailPanelOpen ? "justify-between" : "justify-center"}`}>
-                    {emailPanelOpen && (
-                      <p className="text-[11px] uppercase tracking-[0.28em] text-indigo-200">Gmail inbox</p>
-                    )}
+                  <div className="relative flex min-h-[32px] items-center justify-center">
+                    <span />
                     <button
                       type="button"
-                      onClick={() => setEmailPanelOpen((prev) => !prev)}
-                      className={`rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs text-slate-200 transition hover:border-white/30 ${
-                        emailPanelOpen ? "" : "mx-auto"
-                      }`}
+                      onClick={() => {
+                        if (emailPanelOpen) {
+                          closeEmailPanel();
+                        } else {
+                          openEmailPanel();
+                        }
+                      }}
+                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-xs text-slate-200 transition hover:border-white/30"
                       aria-label={emailPanelOpen ? "Collapse inbox panel" : "Expand inbox panel"}
                     >
                       {emailPanelOpen ? "⟨" : "⟩"}
                     </button>
                   </div>
 
-                  <div className={`mt-4 ${emailPanelOpen ? "" : "flex justify-center"}`}>
-                    <button
-                      type="button"
-                      onClick={() => openComposer("new")}
-                      className={`inline-flex items-center justify-center rounded-xl border border-emerald-300/50 bg-emerald-500/20 text-xs font-semibold text-emerald-50 transition hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-emerald-500/30 ${
-                        emailPanelOpen ? "w-full gap-2 px-3 py-2" : "h-10 w-10"
-                      }`}
-                      aria-label="Compose email"
-                    >
-                      <MailPlus className="h-4 w-4" />
-                      {emailPanelOpen ? "New mail" : null}
-                    </button>
-                  </div>
-
-                  {emailPanelOpen ? (
-                    <>
-                      {emailSubTab === "email" ? (
-                        <div className="mt-4 border-t border-white/10 pt-4">
-                          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Mailboxes</p>
-                          <div className="mt-2 grid gap-1">
-                            {mailboxItems.map((item) => {
-                              const Icon = item.icon;
-                              const isActive = emailMailbox === item.id;
-                              return (
-                                <button
-                                  key={item.id}
-                                  type="button"
-                                  onClick={() => handleMailboxSelect(item.id)}
-                                  className={`flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-xs transition ${
-                                    isActive
-                                      ? "border-indigo-400/50 bg-indigo-500/15 text-indigo-100"
-                                      : "border-white/10 bg-slate-900/40 text-slate-200 hover:border-white/30"
-                                  }`}
-                                >
-                                  <span className="flex items-center gap-2">
-                                    <Icon className="h-4 w-4" />
-                                    {item.label}
-                                  </span>
-                                  {isActive ? null : null}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ) : null}
-                    </>
-                  ) : (
-                    <div className="mt-4 flex w-full flex-1 flex-col items-center">
-                      {emailSubTab === "email" ? (
-                        <div className="flex w-full flex-row flex-wrap items-center justify-center gap-3 sm:flex-col">
-                          {mailboxItems.map((item) => {
-                            const Icon = item.icon;
-                            const isActive = emailMailbox === item.id;
-                            return (
-                              <button
-                                key={item.id}
-                                type="button"
-                                onClick={() => handleMailboxSelect(item.id)}
-                                className={`flex h-9 w-9 items-center justify-center rounded-lg border transition ${
-                                  isActive
-                                    ? "border-indigo-400/60 bg-indigo-500/15 text-indigo-100"
-                                    : "border-white/10 bg-slate-900/40 text-slate-200 hover:border-white/30"
+                  {emailSubTab === "email" ? (
+                    <div className="mt-4 border-t border-white/10 pt-4">
+                      <div className={`mt-2 grid gap-1 ${emailPanelOpen ? "" : "justify-items-center"}`}>
+                        <button
+                          type="button"
+                          onClick={() => openComposer("new")}
+                          className="flex h-10 w-full items-center gap-2 rounded-xl px-2 text-xs font-semibold text-emerald-100 transition hover:bg-white/10 hover:text-emerald-200"
+                          aria-label="New mail"
+                        >
+                          <span className="flex h-7 w-7 items-center justify-center">
+                            <MailPlus className="h-4 w-4" />
+                          </span>
+                          <span
+                            className={`whitespace-nowrap transition-[max-width,opacity] duration-300 ease-out ${
+                              emailPanelContentVisible
+                                ? "max-w-[140px] opacity-100"
+                                : "max-w-0 overflow-hidden opacity-0"
+                            }`}
+                          >
+                            New mail
+                          </span>
+                        </button>
+                        {mailboxItems.map((item) => {
+                          const Icon = item.icon;
+                          const isActive = emailMailbox === item.id;
+                          return (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() => handleMailboxSelect(item.id)}
+                              className={`flex h-10 w-full items-center gap-2 rounded-xl px-2 text-xs transition ${
+                                isActive
+                                  ? "bg-white/15 text-white"
+                                  : "text-slate-200 hover:bg-white/10 hover:text-white"
+                              }`}
+                              aria-label={item.label}
+                              title={item.label}
+                            >
+                              <span className="flex h-7 w-7 items-center justify-center">
+                                <Icon className="h-4 w-4" />
+                              </span>
+                              <span
+                                className={`whitespace-nowrap transition-[max-width,opacity] duration-300 ease-out ${
+                                  emailPanelContentVisible
+                                    ? "max-w-[140px] opacity-100"
+                                    : "max-w-0 overflow-hidden opacity-0"
                                 }`}
-                                aria-label={item.label}
-                                title={item.label}
                               >
-                                <Icon className="h-5 w-5" />
-                              </button>
-                            );
-                          })}
-                        </div>
-                      ) : null}
+                                {item.label}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                  )}
+                  ) : null}
                 </aside>
                 )}
 
@@ -5072,504 +5272,528 @@ export default function DashboardScreen({
                   </div>
                 ) : emailSubTab === "settings" ? (
                   <div
-                    className="grid gap-4 lg:grid-cols-[1.25fr_1fr] sm:h-full sm:min-h-0 sm:overflow-y-auto"
+                    className="grid gap-4 lg:grid-cols-[200px_minmax(0,1fr)] sm:h-full sm:min-h-0 sm:overflow-y-auto"
                     data-lenis-prevent
                   >
-                    <div className="grid gap-4">
-                      <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                          <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Automation</p>
-                          <h4 className="text-lg font-semibold text-white">Summary settings</h4>
-                        </div>
-                        <span className={`text-xs ${gmailConnected ? "text-emerald-200" : "text-slate-400"}`}>
-                          {gmailStatusLabel}
-                        </span>
-                      </div>
-                      <div className="mt-4 grid gap-3 text-sm text-slate-200">
-                        <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-slate-900/40 p-3 sm:flex-row sm:items-center sm:justify-between">
-                          <div>
-                            <p className="text-sm font-semibold text-white">Theme</p>
-                            <p className="text-xs text-slate-400">Switch the email manager appearance.</p>
-                          </div>
-                          <div className="flex items-center gap-1 rounded-full border border-white/10 bg-white/5 p-1 text-xs">
-                            <button
-                              type="button"
-                              onClick={() => setEmailTheme("dark")}
-                              className={`rounded-full px-3 py-1 font-semibold transition ${
-                                emailTheme === "dark"
-                                  ? "bg-indigo-500/30 text-white"
-                                  : "text-slate-300 hover:text-white"
-                              }`}
-                              aria-pressed={emailTheme === "dark"}
-                            >
-                              Dark
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setEmailTheme("light")}
-                              className={`rounded-full px-3 py-1 font-semibold transition ${
-                                emailTheme === "light"
-                                  ? "bg-indigo-500/30 text-white"
-                                  : "text-slate-300 hover:text-white"
-                              }`}
-                              aria-pressed={emailTheme === "light"}
-                            >
-                              Light
-                            </button>
-                          </div>
-                        </div>
-                        <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-slate-900/40 p-3 sm:flex-row sm:items-center sm:justify-between">
-                          <div>
-                            <p className="text-sm font-semibold text-white">Auto-summarize on open</p>
-                            <p className="text-xs text-slate-400">
-                              Generate a summary whenever you select an email.
-                            </p>
-                          </div>
+                    <nav className="rounded-3xl border border-white/10 bg-white/5 p-3 shadow-xl backdrop-blur">
+                      <p className="text-[11px] uppercase tracking-[0.28em] text-indigo-200">Settings</p>
+                      <div className="mt-3 flex gap-2 overflow-x-auto pb-1 lg:flex-col lg:gap-2 lg:overflow-visible">
+                        {settingsSections.map((section) => (
                           <button
+                            key={section.id}
                             type="button"
-                            onClick={() => setEmailAutoSummarize((prev) => !prev)}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
-                              emailAutoSummarize ? "bg-emerald-400" : "bg-white/10"
+                            onClick={() => setSettingsSection(section.id)}
+                            className={`rounded-xl px-3 py-2 text-left text-xs font-semibold transition ${
+                              settingsSection === section.id
+                                ? "bg-white/15 text-white"
+                                : "text-slate-200 hover:bg-white/10 hover:text-white"
                             }`}
                           >
-                            <span
-                              className={`inline-block h-5 w-5 transform rounded-full bg-white transition ${
-                                emailAutoSummarize ? "translate-x-5" : "translate-x-1"
-                              }`}
-                            />
+                            {section.label}
                           </button>
-                        </div>
-                        <div className="rounded-2xl border border-white/10 bg-slate-900/40 p-3 text-xs text-slate-300">
-                          Summaries are generated using OpenAI. We only send the selected email content.
-                        </div>
+                        ))}
                       </div>
-                    </div>
-
-                    <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
-                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                        <div>
-                          <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Business</p>
-                          <h4 className="text-lg font-semibold text-white">Business profile</h4>
-                        </div>
-                        {!isBusinessProfileEditing ? (
-                          <button
-                            type="button"
-                            onClick={() => setIsBusinessProfileEditing(true)}
-                            className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:border-white/30 hover:bg-white/20"
-                          >
-                            Edit business profile
-                          </button>
-                        ) : null}
-                      </div>
-                      <div className="grid gap-3 text-sm text-slate-200">
-                        <div className="grid gap-3 md:grid-cols-2">
-                          <div className="grid gap-1">
-                            <label className="text-xs uppercase tracking-[0.2em] text-slate-400">Business name</label>
-                            <input
-                              type="text"
-                              value={businessProfileForm.businessName}
-                              onChange={(e) =>
-                                setBusinessProfileForm((prev) => ({
-                                  ...prev,
-                                  businessName: e.target.value
-                                }))
-                              }
-                              placeholder="Business name"
-                              readOnly={!isBusinessProfileEditing}
-                              className={businessProfileFieldClass}
-                            />
-                          </div>
-                          <div className="grid gap-1">
-                            <label className="text-xs uppercase tracking-[0.2em] text-slate-400">Contact number</label>
-                            <input
-                              type="tel"
-                              value={businessProfileForm.contactNumber}
-                              onChange={(e) =>
-                                setBusinessProfileForm((prev) => ({
-                                  ...prev,
-                                  contactNumber: e.target.value
-                                }))
-                              }
-                              placeholder="Contact number"
-                              readOnly={!isBusinessProfileEditing}
-                              className={businessProfileFieldClass}
-                            />
-                          </div>
-                          <div className="grid gap-1">
-                            <label className="text-xs uppercase tracking-[0.2em] text-slate-400">Contact email</label>
-                            <input
-                              type="email"
-                              value={businessProfileForm.contactEmail}
-                              onChange={(e) =>
-                                setBusinessProfileForm((prev) => ({
-                                  ...prev,
-                                  contactEmail: e.target.value
-                                }))
-                              }
-                              placeholder="Contact email"
-                              readOnly={!isBusinessProfileEditing}
-                              className={businessProfileFieldClass}
-                            />
-                          </div>
-                          <div className="grid gap-1">
-                            <label className="text-xs uppercase tracking-[0.2em] text-slate-400">Website</label>
-                            <input
-                              type="url"
-                              value={businessProfileForm.websiteUrl}
-                              onChange={(e) =>
-                                setBusinessProfileForm((prev) => ({
-                                  ...prev,
-                                  websiteUrl: e.target.value
-                                }))
-                              }
-                              placeholder="https://example.com"
-                              readOnly={!isBusinessProfileEditing}
-                              className={businessProfileFieldClass}
-                            />
-                          </div>
-                        </div>
-
-                        <div className="grid gap-1">
-                          <label className="text-xs uppercase tracking-[0.2em] text-slate-400">What do you do? *</label>
-                          <textarea
-                            rows={3}
-                            maxLength={SUMMARY_LIMIT}
-                            value={businessProfileForm.businessSummary}
-                            onChange={(e) =>
-                              setBusinessProfileForm((prev) => ({
-                                ...prev,
-                                businessSummary: e.target.value
-                              }))
-                            }
-                            placeholder="Explain what you sell, who you serve, and the tone you want."
-                            readOnly={!isBusinessProfileEditing}
-                            className={businessProfileFieldClass}
-                            data-lenis-prevent
-                          />
-                          <div className="text-xs text-slate-400 text-right">
-                            {(businessProfileForm.businessSummary || "").length}/{SUMMARY_LIMIT}
-                          </div>
-                        </div>
-
-                        <div className="grid gap-3 md:grid-cols-2">
-                          <div className="grid gap-1">
-                            <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
-                              Business openings / hours
-                            </label>
-                            <textarea
-                              rows={2}
-                              maxLength={FIELD_LIMIT}
-                              value={businessProfileForm.hours}
-                              onChange={(e) =>
-                                setBusinessProfileForm((prev) => ({
-                                  ...prev,
-                                  hours: e.target.value
-                                }))
-                              }
-                              placeholder="Mon–Fri 9am–6pm; Sat by appointment."
-                              readOnly={!isBusinessProfileEditing}
-                              className={businessProfileFieldClass}
-                              data-lenis-prevent
-                            />
-                            <div className="text-xs text-slate-400 text-right">
-                              {(businessProfileForm.hours || "").length}/{FIELD_LIMIT}
+                    </nav>
+                    <div className="grid gap-4">
+                      {settingsSection === "automation" && (
+                        <>
+                          <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                              <div>
+                                <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Automation</p>
+                                <h4 className="text-lg font-semibold text-white">Summary settings</h4>
+                              </div>
+                              <span className={`text-xs ${gmailConnected ? "text-emerald-200" : "text-slate-400"}`}>
+                                {gmailStatusLabel}
+                              </span>
+                            </div>
+                            <div className="mt-4 grid gap-3 text-sm text-slate-200">
+                              <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-slate-900/40 p-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                  <p className="text-sm font-semibold text-white">Theme</p>
+                                  <p className="text-xs text-slate-400">Switch the email manager appearance.</p>
+                                </div>
+                                <div className="flex items-center gap-1 rounded-full border border-white/10 bg-white/5 p-1 text-xs">
+                                  <button
+                                    type="button"
+                                    onClick={() => setEmailTheme("dark")}
+                                    className={`rounded-full px-3 py-1 font-semibold transition ${
+                                      emailTheme === "dark"
+                                        ? "bg-indigo-500/30 text-white"
+                                        : "text-slate-300 hover:text-white"
+                                    }`}
+                                    aria-pressed={emailTheme === "dark"}
+                                  >
+                                    Dark
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEmailTheme("light")}
+                                    className={`rounded-full px-3 py-1 font-semibold transition ${
+                                      emailTheme === "light"
+                                        ? "bg-indigo-500/30 text-white"
+                                        : "text-slate-300 hover:text-white"
+                                    }`}
+                                    aria-pressed={emailTheme === "light"}
+                                  >
+                                    Light
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-slate-900/40 p-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                  <p className="text-sm font-semibold text-white">Auto-summarize on open</p>
+                                  <p className="text-xs text-slate-400">
+                                    Generate a summary whenever you select an email.
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setEmailAutoSummarize((prev) => !prev)}
+                                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
+                                    emailAutoSummarize ? "bg-emerald-400" : "bg-white/10"
+                                  }`}
+                                >
+                                  <span
+                                    className={`inline-block h-5 w-5 transform rounded-full bg-white transition ${
+                                      emailAutoSummarize ? "translate-x-5" : "translate-x-1"
+                                    }`}
+                                  />
+                                </button>
+                              </div>
+                              <div className="rounded-2xl border border-white/10 bg-slate-900/40 p-3 text-xs text-slate-300">
+                                Summaries are generated using OpenAI. We only send the selected email content.
+                              </div>
                             </div>
                           </div>
-                          <div className="grid gap-1">
-                            <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
-                              Location / service area
-                            </label>
-                            <textarea
-                              rows={2}
-                              maxLength={FIELD_LIMIT}
-                              value={businessProfileForm.location}
-                              onChange={(e) =>
-                                setBusinessProfileForm((prev) => ({
-                                  ...prev,
-                                  location: e.target.value
-                                }))
-                              }
-                              placeholder="City, region, or service area."
-                              readOnly={!isBusinessProfileEditing}
-                              className={businessProfileFieldClass}
-                              data-lenis-prevent
-                            />
-                            <div className="text-xs text-slate-400 text-right">
-                              {(businessProfileForm.location || "").length}/{FIELD_LIMIT}
+                          <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                              <div>
+                                <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Connection</p>
+                                <h4 className="mt-1 text-lg font-semibold text-white">Gmail access</h4>
+                              </div>
                             </div>
-                          </div>
-                        </div>
-
-                        <div className="grid gap-3 md:grid-cols-2">
-                          <div className="grid gap-1">
-                            <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
-                              Key services or offerings
-                            </label>
-                            <textarea
-                              rows={2}
-                              maxLength={FIELD_LIMIT}
-                              value={businessProfileForm.services}
-                              onChange={(e) =>
-                                setBusinessProfileForm((prev) => ({
-                                  ...prev,
-                                  services: e.target.value
-                                }))
-                              }
-                              placeholder="Top services, prices, and qualifications."
-                              readOnly={!isBusinessProfileEditing}
-                              className={businessProfileFieldClass}
-                              data-lenis-prevent
-                            />
-                            <div className="text-xs text-slate-400 text-right">
-                              {(businessProfileForm.services || "").length}/{FIELD_LIMIT}
-                            </div>
-                          </div>
-                          <div className="grid gap-1">
-                            <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
-                              Must-know notes for the AI
-                            </label>
-                            <textarea
-                              rows={2}
-                              maxLength={FIELD_LIMIT}
-                              value={businessProfileForm.notes}
-                              onChange={(e) =>
-                                setBusinessProfileForm((prev) => ({
-                                  ...prev,
-                                  notes: e.target.value
-                                }))
-                              }
-                              placeholder="Escalation rules, blocked topics, VIP instructions."
-                              readOnly={!isBusinessProfileEditing}
-                              className={businessProfileFieldClass}
-                              data-lenis-prevent
-                            />
-                            <div className="text-xs text-slate-400 text-right">
-                              {(businessProfileForm.notes || "").length}/{FIELD_LIMIT}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="grid gap-1">
-                          <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
-                            Additional openings or availability
-                          </label>
-                          <textarea
-                            rows={2}
-                            maxLength={FIELD_LIMIT}
-                            value={businessProfileForm.openings}
-                            onChange={(e) =>
-                              setBusinessProfileForm((prev) => ({
-                                ...prev,
-                                openings: e.target.value
-                              }))
-                            }
-                            placeholder="Seasonal availability, holiday closures, special notes."
-                            readOnly={!isBusinessProfileEditing}
-                            className={businessProfileFieldClass}
-                            data-lenis-prevent
-                          />
-                          <div className="text-xs text-slate-400 text-right">
-                            {(businessProfileForm.openings || "").length}/{FIELD_LIMIT}
-                          </div>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-2">
-                          {isBusinessProfileEditing ? (
-                            <>
+                            <p className="mt-2 text-xs text-slate-300">
+                              {gmailAccountLabel ? `Connected account: ${gmailAccountLabel}` : "No account connected yet."}
+                            </p>
+                            <div className="mt-3 grid gap-2 text-xs text-slate-200">
                               <button
                                 type="button"
-                                onClick={() =>
-                                  onBusinessSave?.({
-                                    businessName: businessProfileForm.businessName,
-                                    businessPhone: businessProfileForm.contactNumber,
-                                    websiteUrl: businessProfileForm.websiteUrl,
-                                    websiteData: {
-                                      businessName: businessProfileForm.businessName,
-                                      businessPhone: businessProfileForm.contactNumber,
-                                      businessEmail: businessProfileForm.contactEmail,
-                                      businessSummary: businessProfileForm.businessSummary,
-                                      location: businessProfileForm.location,
-                                      hours: businessProfileForm.hours,
-                                      openings: businessProfileForm.openings,
-                                      services: businessProfileForm.services,
-                                      notes: businessProfileForm.notes,
-                                      websiteUrl: businessProfileForm.websiteUrl
-                                    }
-                                  })
-                                }
-                                disabled={businessSaveStatus?.status === "loading"}
-                                className="inline-flex items-center gap-2 rounded-xl border border-emerald-300/60 bg-emerald-500/20 px-3 py-2 text-xs font-semibold text-emerald-50 transition hover:-translate-y-0.5 hover:border-emerald-200 hover:bg-emerald-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+                                onClick={() => beginGoogleLogin?.({ force: true })}
+                                disabled={status === "loading"}
+                                className="inline-flex items-center justify-center rounded-xl border border-emerald-300/50 bg-emerald-500/20 px-3 py-2 font-semibold text-emerald-50"
                               >
-                                <CheckCircle2 className="h-4 w-4" />
-                                Save business profile
+                                Connect Gmail
                               </button>
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setBusinessProfileForm({
-                                    businessName: derivedBusinessProfile.businessName || "",
-                                    contactNumber: derivedBusinessProfile.contactNumber || "",
-                                    contactEmail: derivedBusinessProfile.contactEmail || user?.email || "",
-                                    websiteUrl: derivedBusinessProfile.websiteUrl || "",
-                                    businessSummary: derivedBusinessProfile.businessSummary || "",
-                                    hours: derivedBusinessProfile.hours || "",
-                                    location: derivedBusinessProfile.location || "",
-                                    services: derivedBusinessProfile.services || "",
-                                    notes: derivedBusinessProfile.notes || "",
-                                    openings: derivedBusinessProfile.openings || ""
-                                  });
-                                  setIsBusinessProfileEditing(false);
-                                }}
+                                onClick={handleEmailRefresh}
+                                className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-white"
+                              >
+                                Refresh inbox
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleEmailDisconnect}
+                                className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-white"
+                              >
+                                Disconnect
+                              </button>
+                            </div>
+                          </div>
+                          <div className="rounded-3xl border border-white/10 bg-white/5 p-4 text-xs text-slate-300 shadow-xl backdrop-blur">
+                            <p className="text-sm font-semibold text-white">Data handling</p>
+                            <p className="mt-2">
+                              Gmail permissions allow reading, labeling, and sending messages so inbox actions can run.
+                              You can revoke access at any time by disconnecting the account.
+                            </p>
+                          </div>
+                        </>
+                      )}
+                      {settingsSection === "business" && (
+                        <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
+                          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Business</p>
+                              <h4 className="text-lg font-semibold text-white">Business profile</h4>
+                            </div>
+                            {!isBusinessProfileEditing ? (
+                              <button
+                                type="button"
+                                onClick={() => setIsBusinessProfileEditing(true)}
                                 className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:border-white/30 hover:bg-white/20"
                               >
-                                Cancel
+                                Edit business profile
                               </button>
-                            </>
-                          ) : null}
-                          {businessSaveStatus?.message && (
-                            <span
-                              className={`text-xs ${
-                                businessSaveStatus.status === "error"
-                                  ? "text-rose-300"
-                                  : "text-emerald-200"
-                              }`}
-                            >
-                              {businessSaveStatus.message}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="grid gap-4">
-                    <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
-                      <div className="mb-3 flex items-center gap-2">
-                        <UserIcon className="h-5 w-5 text-indigo-200" />
-                        <div>
-                          <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">User</p>
-                          <h4 className="text-lg font-semibold text-white">Your profile</h4>
-                        </div>
-                      </div>
-                      <div className="grid gap-3">
-                        <input
-                          type="email"
-                          value={userForm.email}
-                          readOnly
-                          className="rounded-xl border border-white/10 bg-slate-900/40 px-3 py-2 text-sm text-slate-200"
-                        />
-                        <input
-                          type="text"
-                          value={userForm.businessName}
-                          onChange={(e) => setUserForm({ ...userForm, businessName: e.target.value })}
-                          placeholder="Business name"
-                          className="rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
-                        />
-                        <input
-                          type="tel"
-                          value={userForm.businessNumber}
-                          onChange={(e) => setUserForm({ ...userForm, businessNumber: e.target.value })}
-                          placeholder="Business number"
-                          className="rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
-                        />
-                        <div className="rounded-2xl border border-white/10 bg-slate-900/40 p-3 text-xs text-slate-200">
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Subscriptions</p>
-                            {subscriptionsLoading ? (
-                              <span className="text-[11px] text-slate-400">Checking...</span>
                             ) : null}
                           </div>
-                          {subscriptionsLoading ? (
-                            <p className="mt-2 text-[11px] text-slate-400">Loading subscription details.</p>
-                          ) : subscriptionDetails.length ? (
-                            <div className="mt-2 grid gap-2">
-                              {subscriptionDetails.map((sub) => (
-                                <div
-                                  key={sub.id}
-                                  className="rounded-lg border border-white/10 bg-slate-900/60 px-2 py-2"
+                          <div className="grid gap-3 text-sm text-slate-200">
+                            <div className="grid gap-3 md:grid-cols-2">
+                              <div className="grid gap-1">
+                                <label className="text-xs uppercase tracking-[0.2em] text-slate-400">Business name</label>
+                                <input
+                                  type="text"
+                                  value={businessProfileForm.businessName}
+                                  onChange={(e) =>
+                                    setBusinessProfileForm((prev) => ({
+                                      ...prev,
+                                      businessName: e.target.value
+                                    }))
+                                  }
+                                  placeholder="Business name"
+                                  readOnly={!isBusinessProfileEditing}
+                                  className={businessProfileFieldClass}
+                                />
+                              </div>
+                              <div className="grid gap-1">
+                                <label className="text-xs uppercase tracking-[0.2em] text-slate-400">Contact number</label>
+                                <input
+                                  type="tel"
+                                  value={businessProfileForm.contactNumber}
+                                  onChange={(e) =>
+                                    setBusinessProfileForm((prev) => ({
+                                      ...prev,
+                                      contactNumber: e.target.value
+                                    }))
+                                  }
+                                  placeholder="Contact number"
+                                  readOnly={!isBusinessProfileEditing}
+                                  className={businessProfileFieldClass}
+                                />
+                              </div>
+                              <div className="grid gap-1">
+                                <label className="text-xs uppercase tracking-[0.2em] text-slate-400">Contact email</label>
+                                <input
+                                  type="email"
+                                  value={businessProfileForm.contactEmail}
+                                  onChange={(e) =>
+                                    setBusinessProfileForm((prev) => ({
+                                      ...prev,
+                                      contactEmail: e.target.value
+                                    }))
+                                  }
+                                  placeholder="Contact email"
+                                  readOnly={!isBusinessProfileEditing}
+                                  className={businessProfileFieldClass}
+                                />
+                              </div>
+                              <div className="grid gap-1">
+                                <label className="text-xs uppercase tracking-[0.2em] text-slate-400">Website</label>
+                                <input
+                                  type="url"
+                                  value={businessProfileForm.websiteUrl}
+                                  onChange={(e) =>
+                                    setBusinessProfileForm((prev) => ({
+                                      ...prev,
+                                      websiteUrl: e.target.value
+                                    }))
+                                  }
+                                  placeholder="https://example.com"
+                                  readOnly={!isBusinessProfileEditing}
+                                  className={businessProfileFieldClass}
+                                />
+                              </div>
+                            </div>
+
+                            <div className="grid gap-1">
+                              <label className="text-xs uppercase tracking-[0.2em] text-slate-400">What do you do? *</label>
+                              <textarea
+                                rows={3}
+                                maxLength={SUMMARY_LIMIT}
+                                value={businessProfileForm.businessSummary}
+                                onChange={(e) =>
+                                  setBusinessProfileForm((prev) => ({
+                                    ...prev,
+                                    businessSummary: e.target.value
+                                  }))
+                                }
+                                placeholder="Explain what you sell, who you serve, and the tone you want."
+                                readOnly={!isBusinessProfileEditing}
+                                className={businessProfileFieldClass}
+                                data-lenis-prevent
+                              />
+                              <div className="text-xs text-slate-400 text-right">
+                                {(businessProfileForm.businessSummary || "").length}/{SUMMARY_LIMIT}
+                              </div>
+                            </div>
+
+                            <div className="grid gap-3 md:grid-cols-2">
+                              <div className="grid gap-1">
+                                <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                                  Business openings / hours
+                                </label>
+                                <textarea
+                                  rows={2}
+                                  maxLength={FIELD_LIMIT}
+                                  value={businessProfileForm.hours}
+                                  onChange={(e) =>
+                                    setBusinessProfileForm((prev) => ({
+                                      ...prev,
+                                      hours: e.target.value
+                                    }))
+                                  }
+                                  placeholder="Mon–Fri 9am–6pm; Sat by appointment."
+                                  readOnly={!isBusinessProfileEditing}
+                                  className={businessProfileFieldClass}
+                                  data-lenis-prevent
+                                />
+                                <div className="text-xs text-slate-400 text-right">
+                                  {(businessProfileForm.hours || "").length}/{FIELD_LIMIT}
+                                </div>
+                              </div>
+                              <div className="grid gap-1">
+                                <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                                  Location / service area
+                                </label>
+                                <textarea
+                                  rows={2}
+                                  maxLength={FIELD_LIMIT}
+                                  value={businessProfileForm.location}
+                                  onChange={(e) =>
+                                    setBusinessProfileForm((prev) => ({
+                                      ...prev,
+                                      location: e.target.value
+                                    }))
+                                  }
+                                  placeholder="City, region, or service area."
+                                  readOnly={!isBusinessProfileEditing}
+                                  className={businessProfileFieldClass}
+                                  data-lenis-prevent
+                                />
+                                <div className="text-xs text-slate-400 text-right">
+                                  {(businessProfileForm.location || "").length}/{FIELD_LIMIT}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="grid gap-3 md:grid-cols-2">
+                              <div className="grid gap-1">
+                                <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                                  Key services or offerings
+                                </label>
+                                <textarea
+                                  rows={2}
+                                  maxLength={FIELD_LIMIT}
+                                  value={businessProfileForm.services}
+                                  onChange={(e) =>
+                                    setBusinessProfileForm((prev) => ({
+                                      ...prev,
+                                      services: e.target.value
+                                    }))
+                                  }
+                                  placeholder="Top services, prices, and qualifications."
+                                  readOnly={!isBusinessProfileEditing}
+                                  className={businessProfileFieldClass}
+                                  data-lenis-prevent
+                                />
+                                <div className="text-xs text-slate-400 text-right">
+                                  {(businessProfileForm.services || "").length}/{FIELD_LIMIT}
+                                </div>
+                              </div>
+                              <div className="grid gap-1">
+                                <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                                  Must-know notes for the AI
+                                </label>
+                                <textarea
+                                  rows={2}
+                                  maxLength={FIELD_LIMIT}
+                                  value={businessProfileForm.notes}
+                                  onChange={(e) =>
+                                    setBusinessProfileForm((prev) => ({
+                                      ...prev,
+                                      notes: e.target.value
+                                    }))
+                                  }
+                                  placeholder="Escalation rules, blocked topics, VIP instructions."
+                                  readOnly={!isBusinessProfileEditing}
+                                  className={businessProfileFieldClass}
+                                  data-lenis-prevent
+                                />
+                                <div className="text-xs text-slate-400 text-right">
+                                  {(businessProfileForm.notes || "").length}/{FIELD_LIMIT}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="grid gap-1">
+                              <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                                Additional openings or availability
+                              </label>
+                              <textarea
+                                rows={2}
+                                maxLength={FIELD_LIMIT}
+                                value={businessProfileForm.openings}
+                                onChange={(e) =>
+                                  setBusinessProfileForm((prev) => ({
+                                    ...prev,
+                                    openings: e.target.value
+                                  }))
+                                }
+                                placeholder="Seasonal availability, holiday closures, special notes."
+                                readOnly={!isBusinessProfileEditing}
+                                className={businessProfileFieldClass}
+                                data-lenis-prevent
+                              />
+                              <div className="text-xs text-slate-400 text-right">
+                                {(businessProfileForm.openings || "").length}/{FIELD_LIMIT}
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                              {isBusinessProfileEditing ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      onBusinessSave?.({
+                                        businessName: businessProfileForm.businessName,
+                                        businessPhone: businessProfileForm.contactNumber,
+                                        websiteUrl: businessProfileForm.websiteUrl,
+                                        websiteData: {
+                                          businessName: businessProfileForm.businessName,
+                                          businessPhone: businessProfileForm.contactNumber,
+                                          businessEmail: businessProfileForm.contactEmail,
+                                          businessSummary: businessProfileForm.businessSummary,
+                                          location: businessProfileForm.location,
+                                          hours: businessProfileForm.hours,
+                                          openings: businessProfileForm.openings,
+                                          services: businessProfileForm.services,
+                                          notes: businessProfileForm.notes,
+                                          websiteUrl: businessProfileForm.websiteUrl
+                                        }
+                                      })
+                                    }
+                                    disabled={businessSaveStatus?.status === "loading"}
+                                    className="inline-flex items-center gap-2 rounded-xl border border-emerald-300/60 bg-emerald-500/20 px-3 py-2 text-xs font-semibold text-emerald-50 transition hover:-translate-y-0.5 hover:border-emerald-200 hover:bg-emerald-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    <CheckCircle2 className="h-4 w-4" />
+                                    Save business profile
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setBusinessProfileForm({
+                                        businessName: derivedBusinessProfile.businessName || "",
+                                        contactNumber: derivedBusinessProfile.contactNumber || "",
+                                        contactEmail: derivedBusinessProfile.contactEmail || user?.email || "",
+                                        websiteUrl: derivedBusinessProfile.websiteUrl || "",
+                                        businessSummary: derivedBusinessProfile.businessSummary || "",
+                                        hours: derivedBusinessProfile.hours || "",
+                                        location: derivedBusinessProfile.location || "",
+                                        services: derivedBusinessProfile.services || "",
+                                        notes: derivedBusinessProfile.notes || "",
+                                        openings: derivedBusinessProfile.openings || ""
+                                      });
+                                      setIsBusinessProfileEditing(false);
+                                    }}
+                                    className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:border-white/30 hover:bg-white/20"
+                                  >
+                                    Cancel
+                                  </button>
+                                </>
+                              ) : null}
+                              {businessSaveStatus?.message && (
+                                <span
+                                  className={`text-xs ${
+                                    businessSaveStatus.status === "error"
+                                      ? "text-rose-300"
+                                      : "text-emerald-200"
+                                  }`}
                                 >
-                                  <div className="flex items-center justify-between gap-2 text-xs">
-                                    <span className="font-semibold text-slate-100">{sub.label}</span>
-                                    <span
-                                      className={`text-[11px] ${
-                                        sub.active ? "text-emerald-200" : "text-slate-400"
-                                      }`}
+                                  {businessSaveStatus.message}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      {settingsSection === "user" && (
+                        <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
+                          <div className="mb-3 flex items-center gap-2">
+                            <UserIcon className="h-5 w-5 text-indigo-200" />
+                            <div>
+                              <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">User</p>
+                              <h4 className="text-lg font-semibold text-white">Your profile</h4>
+                            </div>
+                          </div>
+                          <div className="grid gap-3">
+                            <input
+                              type="email"
+                              value={userForm.email}
+                              readOnly
+                              className="rounded-xl border border-white/10 bg-slate-900/40 px-3 py-2 text-sm text-slate-200"
+                            />
+                            <input
+                              type="text"
+                              value={userForm.businessName}
+                              onChange={(e) => setUserForm({ ...userForm, businessName: e.target.value })}
+                              placeholder="Business name"
+                              className="rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
+                            />
+                            <input
+                              type="tel"
+                              value={userForm.businessNumber}
+                              onChange={(e) => setUserForm({ ...userForm, businessNumber: e.target.value })}
+                              placeholder="Business number"
+                              className="rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
+                            />
+                            <div className="rounded-2xl border border-white/10 bg-slate-900/40 p-3 text-xs text-slate-200">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Subscriptions</p>
+                                {subscriptionsLoading ? (
+                                  <span className="text-[11px] text-slate-400">Checking...</span>
+                                ) : null}
+                              </div>
+                              {subscriptionsLoading ? (
+                                <p className="mt-2 text-[11px] text-slate-400">Loading subscription details.</p>
+                              ) : subscriptionDetails.length ? (
+                                <div className="mt-2 grid gap-2">
+                                  {subscriptionDetails.map((sub) => (
+                                    <div
+                                      key={sub.id}
+                                      className="rounded-lg border border-white/10 bg-slate-900/60 px-2 py-2"
                                     >
-                                      {formatStatusLabel(sub.status || (sub.active ? "active" : "inactive"))}
-                                    </span>
-                                  </div>
-                                  {(sub.planId || sub.currentPeriodEnd) ? (
-                                    <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-400">
-                                      {sub.planId ? <span>Plan: {sub.planId}</span> : null}
-                                      {sub.currentPeriodEnd ? (
-                                        <span>Period ends: {formatDate(sub.currentPeriodEnd)}</span>
+                                      <div className="flex items-center justify-between gap-2 text-xs">
+                                        <span className="font-semibold text-slate-100">{sub.label}</span>
+                                        <span
+                                          className={`text-[11px] ${
+                                            sub.active ? "text-emerald-200" : "text-slate-400"
+                                          }`}
+                                        >
+                                          {formatStatusLabel(sub.status || (sub.active ? "active" : "inactive"))}
+                                        </span>
+                                      </div>
+                                      {(sub.planId || sub.currentPeriodEnd) ? (
+                                        <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-400">
+                                          {sub.planId ? <span>Plan: {sub.planId}</span> : null}
+                                          {sub.currentPeriodEnd ? (
+                                            <span>Period ends: {formatDate(sub.currentPeriodEnd)}</span>
+                                          ) : null}
+                                        </div>
                                       ) : null}
                                     </div>
-                                  ) : null}
+                                  ))}
                                 </div>
-                              ))}
+                              ) : (
+                                <p className="mt-2 text-[11px] text-slate-400">No subscription details yet.</p>
+                              )}
                             </div>
-                          ) : (
-                            <p className="mt-2 text-[11px] text-slate-400">No subscription details yet.</p>
-                          )}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onBusinessSave?.({
+                                  businessName: userForm.businessName,
+                                  businessPhone: userForm.businessNumber,
+                                  websiteUrl: businessForm.website
+                                })
+                              }
+                              className="inline-flex items-center gap-2 self-start rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:border-white/30 hover:bg-white/20"
+                            >
+                              Update profile
+                            </button>
+                          </div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            onBusinessSave?.({
-                              businessName: userForm.businessName,
-                              businessPhone: userForm.businessNumber,
-                              websiteUrl: businessForm.website
-                            })
-                          }
-                          className="inline-flex items-center gap-2 self-start rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:border-white/30 hover:bg-white/20"
-                        >
-                          Update profile
-                        </button>
-                      </div>
-                    </div>
-                    <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                          <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Connection</p>
-                          <h4 className="mt-1 text-lg font-semibold text-white">Gmail access</h4>
-                        </div>
-                      </div>
-                      <p className="mt-2 text-xs text-slate-300">
-                        {gmailAccountLabel ? `Connected account: ${gmailAccountLabel}` : "No account connected yet."}
-                      </p>
-                      <div className="mt-3 grid gap-2 text-xs text-slate-200">
-                        <button
-                          type="button"
-                          onClick={() => beginGoogleLogin?.({ force: true })}
-                          disabled={status === "loading"}
-                          className="inline-flex items-center justify-center rounded-xl border border-emerald-300/50 bg-emerald-500/20 px-3 py-2 font-semibold text-emerald-50"
-                        >
-                          Connect Gmail
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleEmailRefresh}
-                          className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-white"
-                        >
-                          Refresh inbox
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleEmailDisconnect}
-                          className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-white"
-                        >
-                          Disconnect
-                        </button>
-                      </div>
-                    </div>
-                    <div className="rounded-3xl border border-white/10 bg-white/5 p-4 text-xs text-slate-300 shadow-xl backdrop-blur">
-                      <p className="text-sm font-semibold text-white">Data handling</p>
-                      <p className="mt-2">
-                        Gmail permissions allow reading, labeling, and sending messages so inbox actions can run.
-                        You can revoke access at any time by disconnecting the account.
-                      </p>
-                    </div>
+                      )}
                     </div>
                   </div>
                 ) : (
@@ -5711,6 +5935,16 @@ export default function DashboardScreen({
                         rows={8}
                         className="w-full rounded-2xl border border-white/10 bg-slate-900/60 px-3 py-2 text-xs text-white placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none"
                       />
+                      {emailComposerAiStatus.status === "error" ? (
+                        <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+                          {emailComposerAiStatus.message}
+                        </div>
+                      ) : null}
+                      {emailComposerAiStatus.status === "success" ? (
+                        <div className="rounded-xl border border-indigo-400/30 bg-indigo-500/10 px-3 py-2 text-xs text-indigo-100">
+                          {emailComposerAiStatus.message}
+                        </div>
+                      ) : null}
                       {emailComposerStatus.status === "error" ? (
                         <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
                           {emailComposerStatus.message}
@@ -5729,6 +5963,20 @@ export default function DashboardScreen({
                         className="w-full rounded-xl border border-white/10 bg-white/10 px-4 py-2 text-xs text-white sm:w-auto"
                       >
                         Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleGenerateEmailDraft}
+                        disabled={
+                          emailComposerAiStatus.status === "loading" ||
+                          emailComposerStatus.status === "loading"
+                        }
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-indigo-300/50 bg-indigo-500/20 px-4 py-2 text-xs font-semibold text-indigo-100 disabled:opacity-60 sm:w-auto"
+                      >
+                        {emailComposerAiStatus.status === "loading"
+                          ? "Generating..."
+                          : "Generate with AI"}
+                        <Sparkles className="h-3.5 w-3.5" />
                       </button>
                       <button
                         type="button"

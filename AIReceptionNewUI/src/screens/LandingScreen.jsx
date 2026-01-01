@@ -183,6 +183,14 @@ export default function LandingScreen({ onTry, onLogin, onSelectPlan, onShowServ
                 <button className="nav-subitem" type="button" onClick={() => onShowService("crm-lead-manager")}>CRM &amp; Lead Manager</button>
               </div>
             </div>
+            <div className="nav-item-with-sub">
+              <button className="nav-link" type="button">Legal</button>
+              <div className="nav-submenu">
+                <a className="nav-subitem" href="/terms.html">
+                  Terms &amp; Conditions
+                </a>
+              </div>
+            </div>
             <button className="nav-link">Blog</button>
           </div>
         </div>
@@ -333,6 +341,15 @@ export default function LandingScreen({ onTry, onLogin, onSelectPlan, onShowServ
           </section>
         </div>
       </section>
+
+      <footer className="landing-footer content content-landing">
+        <a className="landing-footer-link" href="/terms.html">
+          Terms &amp; Conditions
+        </a>
+        <a className="landing-footer-link" href="/privacy.html">
+          Privacy Policy
+        </a>
+      </footer>
 
       {/* Package plans removed from home screen */}
     </>

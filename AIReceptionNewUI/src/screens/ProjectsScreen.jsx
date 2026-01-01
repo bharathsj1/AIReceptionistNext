@@ -1,5 +1,135 @@
 import UltravoxDemo from "../components/UltravoxDemo";
 
+const emailManagerSteps = [
+  {
+    title: "Connect your inbox",
+    copy: "Securely link Gmail or Outlook and let us pull in every active thread.",
+    img: "/media/email-step-connect.svg",
+    alt: "Screenshot showing an email inbox connection setup."
+  },
+  {
+    title: "Triage and label",
+    copy: "We categorize by priority, intent, and SLA so nothing slips through.",
+    img: "/media/email-step-triage.svg",
+    alt: "Screenshot showing inbox triage with tags."
+  },
+  {
+    title: "Draft smart replies",
+    copy: "AI suggests responses with full context, ready for one-click approval.",
+    img: "/media/email-step-draft.svg",
+    alt: "Screenshot showing AI drafted replies."
+  },
+  {
+    title: "Track outcomes",
+    copy: "We log resolutions, surface follow-ups, and keep the team aligned.",
+    img: "/media/email-step-track.svg",
+    alt: "Screenshot showing resolution tracking and status updates."
+  }
+];
+
+const socialManagerSteps = [
+  {
+    title: "Connect channels",
+    copy: "Link Facebook, Instagram, and LinkedIn so we can manage every feed.",
+    img: "/media/social-step-connect.svg",
+    alt: "Screenshot showing social channel connections."
+  },
+  {
+    title: "Plan content",
+    copy: "Build a calendar with weekly themes, campaigns, and launch moments.",
+    img: "/media/social-step-plan.svg",
+    alt: "Screenshot showing a social content calendar plan."
+  },
+  {
+    title: "Draft and approve",
+    copy: "Generate captions, hashtags, and creatives ready for your review.",
+    img: "/media/social-step-draft.svg",
+    alt: "Screenshot showing drafted social posts."
+  },
+  {
+    title: "Insights and follow-up",
+    copy: "Track reach, engagement, and next actions from one place.",
+    img: "/media/social-step-insights.svg",
+    alt: "Screenshot showing social performance insights."
+  }
+];
+
+const EmailManagerExplainer = ({ steps }) => (
+  <div className="email-manager-explainer">
+    <div className="email-explainer-head">
+      <div>
+        <p className="eyebrow">Email Manager Flow</p>
+        <h4 className="email-explainer-title">We organize, reply, and close the loop.</h4>
+        <p className="hint">A simple four-step system that keeps customers informed and teams focused.</p>
+      </div>
+      <div className="email-explainer-badges">
+        <span className="email-explainer-badge">Live triage</span>
+        <span className="email-explainer-badge">AI replies</span>
+        <span className="email-explainer-badge">SLA tracking</span>
+      </div>
+    </div>
+    <div className="email-explainer-summary">
+      <p>
+        Summary: Your inbox stays clean, replies go out faster, and your team always knows what needs attention.
+        Replace this copy with your preferred summary when ready.
+      </p>
+    </div>
+    <div className="email-step-grid">
+      {steps.map((step, index) => (
+        <div key={step.title} className="email-step-card" style={{ "--step-delay": `${index * 0.2}s` }}>
+          <div className="email-step-head">
+            <span className="email-step-index">{String(index + 1).padStart(2, "0")}</span>
+            <div>
+              <p className="email-step-title">{step.title}</p>
+              <p className="email-step-copy">{step.copy}</p>
+            </div>
+          </div>
+          <div className="email-step-media">
+            <img src={step.img} alt={step.alt} loading="lazy" />
+            <div className="email-step-scan" aria-hidden="true" />
+            <div className="email-step-glow" aria-hidden="true" />
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+const SocialManagerExplainer = ({ steps }) => (
+  <div className="social-manager-explainer">
+    <div className="social-explainer-head">
+      <div>
+        <p className="eyebrow">Social Manager Flow</p>
+        <h4 className="social-explainer-title">We plan, publish, and learn.</h4>
+        <p className="hint">A simple loop that keeps your brand consistent and your team in sync.</p>
+      </div>
+      <div className="social-explainer-badges">
+        <span className="social-explainer-badge">Content calendar</span>
+        <span className="social-explainer-badge">Auto drafts</span>
+        <span className="social-explainer-badge">Performance</span>
+      </div>
+    </div>
+    <div className="social-step-grid">
+      {steps.map((step, index) => (
+        <div key={step.title} className="social-step-card" style={{ "--step-delay": `${index * 0.2}s` }}>
+          <div className="social-step-head">
+            <span className="social-step-index">{String(index + 1).padStart(2, "0")}</span>
+            <div>
+              <p className="social-step-title">{step.title}</p>
+              <p className="social-step-copy">{step.copy}</p>
+            </div>
+          </div>
+          <div className="social-step-media">
+            <img src={step.img} alt={step.alt} loading="lazy" />
+            <div className="social-step-scan" aria-hidden="true" />
+            <div className="social-step-glow" aria-hidden="true" />
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
 const services = {
   receptionist: {
     title: "AI Receptionist",
@@ -12,22 +142,14 @@ const services = {
     title: "AI Social Media Manager",
     eyebrow: "Solutions",
     summary: "Plan, draft, and schedule posts across channels with AI-assisted workflows.",
-    body: (
-      <p className="hint">
-        Automated content planning, brand-safe copy suggestions, and multi-channel scheduling with approval flows.
-      </p>
-    ),
+    body: <SocialManagerExplainer steps={socialManagerSteps} />,
     cta: "Talk to us"
   },
   "email-manager": {
     title: "Email Manager",
     eyebrow: "Solutions",
     summary: "Automate replies, triage inboxes, and keep SLAs on track.",
-    body: (
-      <p className="hint">
-        Smart routing, suggested replies, and CRM syncing to keep your inbox clean and customers informed.
-      </p>
-    ),
+    body: <EmailManagerExplainer steps={emailManagerSteps} />,
     cta: "Talk to us"
   },
   "crm-lead-manager": {
