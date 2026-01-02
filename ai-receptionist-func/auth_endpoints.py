@@ -792,7 +792,7 @@ def auth_email_exists(req: func.HttpRequest) -> func.HttpResponse:
 def client_business_details(req: func.HttpRequest) -> func.HttpResponse:
     """
     Create or update a client with business name/phone after signup.
-    Payload: { email, businessName, businessPhone, websiteUrl? }
+    Payload: { email, businessName, businessPhone, websiteUrl?, businessCategory?, businessSubType?, businessCustomType? }
     """
     cors = build_cors_headers(req, ["POST", "OPTIONS"])
     if req.method == "OPTIONS":
@@ -805,6 +805,9 @@ def client_business_details(req: func.HttpRequest) -> func.HttpResponse:
     email = (body or {}).get("email")
     business_name = (body or {}).get("businessName")
     business_phone = (body or {}).get("businessPhone")
+    business_category = (body or {}).get("businessCategory")
+    business_sub_type = (body or {}).get("businessSubType")
+    business_custom_type = (body or {}).get("businessCustomType")
     website_url = (body or {}).get("websiteUrl")
     website_data = (body or {}).get("websiteData")
     profile = _normalize_business_profile(website_data)
@@ -831,6 +834,12 @@ def client_business_details(req: func.HttpRequest) -> func.HttpResponse:
             client.business_phone = business_phone
             client.name = business_name
             client.user_id = user.id if user else client.user_id
+            if business_category is not None:
+                client.business_category = business_category
+            if business_sub_type is not None:
+                client.business_sub_type = business_sub_type
+            if business_custom_type is not None:
+                client.business_custom_type = business_custom_type
             if website_url:
                 client.website_url = website_url
             if website_payload:
@@ -850,6 +859,9 @@ def client_business_details(req: func.HttpRequest) -> func.HttpResponse:
             name=business_name,
             business_name=business_name,
             business_phone=business_phone,
+            business_category=business_category,
+            business_sub_type=business_sub_type,
+            business_custom_type=business_custom_type,
             user_id=user.id if user else None,
             website_data=_merge_website_data(None, website_payload) if website_payload else None,
         )
@@ -949,6 +961,9 @@ def client_by_email(req: func.HttpRequest) -> func.HttpResponse:
             "email": client.email,
             "business_name": client.business_name,
             "business_phone": client.business_phone,
+            "business_category": client.business_category,
+            "business_sub_type": client.business_sub_type,
+            "business_custom_type": client.business_custom_type,
             "website_url": client.website_url,
             "website_data": client.website_data,
             "user_id": client.user_id,
