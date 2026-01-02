@@ -3874,7 +3874,8 @@ html {
   gap: 6px;
 }
 
-.business-field input {
+.business-field input,
+.business-field select {
   border: 1px solid rgba(255, 255, 255, 0.35);
   border-radius: 12px;
   padding: 12px;
@@ -3882,6 +3883,12 @@ html {
   outline: none;
   color: #0b1224;
   background: #ffffff;
+}
+
+.business-field input:disabled,
+.business-field select:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 
 .business-left label,
@@ -3955,11 +3962,82 @@ html {
   font-weight: 600;
 }
 
+.field-error {
+  margin-top: 4px;
+  color: #fca5a5;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.field-hint {
+  margin-top: 4px;
+  color: rgba(226, 232, 240, 0.7);
+  font-size: 12px;
+}
+
+.business-preview-card {
+  width: 360px;
+  background: rgba(8, 12, 24, 0.92);
+  border-radius: 18px;
+  padding: 18px;
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.12);
+  display: grid;
+  gap: 12px;
+  color: #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.business-preview-title {
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.business-preview-subtitle {
+  font-size: 12px;
+  color: rgba(226, 232, 240, 0.7);
+  margin-top: 4px;
+}
+
+.business-preview-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.business-preview-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14px;
+  color: #e2e8f0;
+}
+
+.business-preview-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #7bc6ff, #7b9dff);
+  margin-top: 6px;
+  flex-shrink: 0;
+}
+
 @media (max-width: 900px) {
   .business-layout {
     grid-template-columns: 1fr;
   }
   .business-right {
     display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .business-type-layout .business-right {
+    display: block;
+    padding: 0 32px 24px;
+  }
+  .business-type-layout .business-preview-card {
+    width: 100%;
   }
 }

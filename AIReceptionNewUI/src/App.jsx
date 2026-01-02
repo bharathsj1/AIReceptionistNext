@@ -19,6 +19,7 @@ import PricingPackages from "./components/PricingPackages";
 import CreateAccountScreen from "./screens/CreateAccountScreen";
 import SignupSurveyScreen from "./screens/SignupSurveyScreen";
 import BusinessDetailsScreen from "./screens/BusinessDetailsScreen";
+import BusinessTypeScreen from "./screens/BusinessTypeScreen";
 import ProjectsScreen from "./screens/ProjectsScreen";
 import BusinessReviewScreen from "./screens/BusinessReviewScreen";
 
@@ -37,6 +38,7 @@ const STAGES = {
   SIGNUP: "signup",
   SIGNUP_SURVEY: "signupSurvey",
   BUSINESS_DETAILS: "businessDetails",
+  BUSINESS_TYPE: "businessType",
   BUSINESS_INFO_MANUAL: "businessInfoManual",
   BUSINESS_INFO_REVIEW: "businessInfoReview",
   PROJECTS: "projects"
@@ -156,11 +158,16 @@ export default function App() {
   const [signupReferral, setSignupReferral] = useState("");
   const [businessName, setBusinessName] = useState("");
   const [businessPhone, setBusinessPhone] = useState("");
+  const [businessCategory, setBusinessCategory] = useState("");
+  const [businessSubType, setBusinessSubType] = useState("");
+  const [businessCustomType, setBusinessCustomType] = useState("");
   const [manualBusinessInfo, setManualBusinessInfo] = useState(null);
   const [signupLoading, setSignupLoading] = useState(false);
   const [signupError, setSignupError] = useState("");
   const [businessLoading, setBusinessLoading] = useState(false);
   const [businessError, setBusinessError] = useState("");
+  const [businessTypeLoading, setBusinessTypeLoading] = useState(false);
+  const [businessTypeError, setBusinessTypeError] = useState("");
   const [paymentInfo, setPaymentInfo] = useState(null);
   const [serviceSlug, setServiceSlug] = useState("receptionist");
   const validStages = useMemo(() => new Set(Object.values(STAGES)), []);
@@ -741,13 +748,75 @@ export default function App() {
         setBusinessError(msg);
         return;
       }
-      setStage(STAGES.CRAWL_FORM);
+      setStage(STAGES.BUSINESS_TYPE);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Could not save business details.";
       setBusinessError(msg);
     } finally {
       setBusinessLoading(false);
     }
+  };
+
+  const handleBusinessTypeSubmit = async ({
+    category,
+    subType,
+    customType,
+    businessName: nameInput
+  }) => {
+    setBusinessTypeError("");
+    setBusinessTypeLoading(true);
+    try {
+      const targetEmail = signupEmail || user?.email || email || loginEmail || "";
+      if (!targetEmail) {
+        throw new Error("Please log in before adding business details.");
+      }
+      const normalizedName = (nameInput || businessName || "").trim();
+      const normalizedPhone = (businessPhone || "").trim();
+      const normalizedCustom = (customType || "").trim();
+
+      if (normalizedName && normalizedName !== businessName) {
+        setBusinessName(normalizedName);
+      }
+      if (category && category !== businessCategory) {
+        setBusinessCategory(category);
+      }
+      if (subType && subType !== businessSubType) {
+        setBusinessSubType(subType);
+      }
+      if (normalizedCustom !== businessCustomType) {
+        setBusinessCustomType(normalizedCustom);
+      }
+
+      const res = await fetch(API_URLS.clientsBusinessDetails, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: targetEmail,
+          businessName: normalizedName || businessName,
+          businessPhone: normalizedPhone,
+          businessCategory: category,
+          businessSubType: subType,
+          businessCustomType: normalizedCustom
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = data?.error || "Could not save business type.";
+        setBusinessTypeError(msg);
+        return;
+      }
+      setStage(STAGES.CRAWL_FORM);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Could not save business type.";
+      setBusinessTypeError(msg);
+    } finally {
+      setBusinessTypeLoading(false);
+    }
+  };
+
+  const handleBusinessTypeSkip = () => {
+    setBusinessTypeError("");
+    setStage(STAGES.CRAWL_FORM);
   };
 
   const handleManualBusinessSubmit = async (payload) => {
@@ -2042,6 +2111,7 @@ export default function App() {
     if (!isLoggedIn) return;
     const onboardingStages = new Set([
       STAGES.BUSINESS_DETAILS,
+      STAGES.BUSINESS_TYPE,
       STAGES.CRAWL_FORM,
       STAGES.LOADING,
       STAGES.EMAIL_CAPTURE,
@@ -2118,7 +2188,7 @@ export default function App() {
   }, [stage, user?.email, email]);
 
   useEffect(() => {
-    if (stage !== STAGES.BUSINESS_DETAILS) return;
+    if (stage !== STAGES.BUSINESS_DETAILS && stage !== STAGES.BUSINESS_TYPE) return;
     const targetEmail = signupEmail || user?.email || email || loginEmail || "";
     if (targetEmail) {
       if (!signupEmail) setSignupEmail(targetEmail);
@@ -2510,6 +2580,26 @@ export default function App() {
           </div>
         )}
 
+        {stage === STAGES.BUSINESS_TYPE && (
+          <div className="shell-card screen-panel">
+            <BusinessTypeScreen
+              businessName={businessName}
+              category={businessCategory}
+              subType={businessSubType}
+              customType={businessCustomType}
+              onBusinessNameChange={setBusinessName}
+              onCategoryChange={setBusinessCategory}
+              onSubTypeChange={setBusinessSubType}
+              onCustomTypeChange={setBusinessCustomType}
+              onContinue={handleBusinessTypeSubmit}
+              onBack={() => setStage(STAGES.BUSINESS_DETAILS)}
+              onSkip={handleBusinessTypeSkip}
+              loading={businessTypeLoading}
+              error={businessTypeError}
+            />
+          </div>
+        )}
+
         {stage === STAGES.RESET_PASSWORD && (
           <ResetPasswordScreen
             status={status}
@@ -2588,7 +2678,7 @@ export default function App() {
               responseMessage={responseMessage}
               onSubmit={handleSubmit}
               onUrlChange={setUrl}
-              onBack={() => setStage(STAGES.BUSINESS_DETAILS)}
+              onBack={() => setStage(STAGES.BUSINESS_TYPE)}
               onSkipWebsite={() => setStage(STAGES.BUSINESS_INFO_MANUAL)}
             />
           </div>
