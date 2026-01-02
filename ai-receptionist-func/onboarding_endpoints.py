@@ -14,10 +14,16 @@ from function_app import app
 
 from auth_endpoints import _generate_reset_token  # pylint: disable=protected-access
 from crawler_endpoints import crawl_site
-from services.ultravox_service import create_ultravox_agent, create_ultravox_call, list_ultravox_agents
+from services.ultravox_service import (
+    create_ultravox_agent,
+    create_ultravox_call,
+    list_ultravox_agents,
+    update_ultravox_agent_prompt,
+)
 from services.call_service import upsert_call, attach_ultravox_call, update_call_status
 from shared.config import get_required_setting, get_setting, get_smtp_settings
 from shared.db import Client, PhoneNumber, SessionLocal, User, init_db
+from services.prompt_registry_service import resolve_prompt_for_call
 from utils.cors import build_cors_headers
 
 logger = logging.getLogger(__name__)
@@ -80,6 +86,11 @@ def _build_summary_from_client(client: Client, user: User | None) -> Tuple[str, 
         "business_hours": None,
     }
     return _build_manual_summary(payload)
+
+
+def _dynamic_prompts_enabled() -> bool:
+    flag = str(get_setting("ENABLE_DYNAMIC_PROMPTS", "") or "").strip().lower()
+    return flag in {"1", "true", "yes", "on"}
 
 
 def purchase_twilio_number(twilio_client: TwilioClient, webhook_base: str, country: str) -> Dict[str, str]:
@@ -633,17 +644,41 @@ def twilio_incoming(req: func.HttpRequest) -> func.HttpResponse:
                 headers=cors,
             )
 
+        prompt_metadata: Dict[str, str] = {}
+        if _dynamic_prompts_enabled() and client_record.business_sub_type:
+            try:
+                prompt = resolve_prompt_for_call(
+                    db,
+                    client_id=client_record.id,
+                    category=client_record.business_category,
+                    sub_type=client_record.business_sub_type,
+                )
+                if prompt and prompt.prompt_text:
+                    update_ultravox_agent_prompt(client_record.ultravox_agent_id, prompt.prompt_text)
+                    prompt_metadata = {
+                        "promptId": str(prompt.id),
+                        "promptVersion": str(prompt.version),
+                        "promptTaskType": str(prompt.task_type or ""),
+                    }
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.warning("Dynamic prompt lookup failed: %s", exc)
+
+        call_metadata = None
+        if call_sid:
+            call_metadata = {
+                "twilioCallSid": call_sid,
+                "aiPhoneNumber": to_number,
+                "selectedAgentId": client_record.ultravox_agent_id,
+            }
+        if prompt_metadata:
+            call_metadata = call_metadata or {}
+            call_metadata.update(prompt_metadata)
+
         try:
             join_url, ultravox_call_id = create_ultravox_call(
                 client_record.ultravox_agent_id,
                 caller_number=from_number or "",
-                metadata={
-                    "twilioCallSid": call_sid,
-                    "aiPhoneNumber": to_number,
-                    "selectedAgentId": client_record.ultravox_agent_id,
-                }
-                if call_sid
-                else None,
+                metadata=call_metadata,
             )
         except Exception as exc:  # pylint: disable=broad-except
             logger.error("Failed to create Ultravox call: %s", exc)

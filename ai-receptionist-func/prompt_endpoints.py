@@ -1,5 +1,6 @@
 import json
 import logging
+import threading
 from typing import Any, Dict, Optional, List, Tuple
 
 import azure.functions as func
@@ -8,6 +9,7 @@ import httpx
 from function_app import app
 from shared.config import get_required_setting, get_setting
 from shared.db import SessionLocal, Client
+from services.prompt_registry_service import generate_prompt_record
 from utils.cors import build_cors_headers
 
 logger = logging.getLogger(__name__)
@@ -241,6 +243,45 @@ Rules:
     }
 
 
+def _trigger_prompt_generation_async(
+    *,
+    client_id: int,
+    category: Optional[str],
+    sub_type: Optional[str],
+    task_type: Optional[str],
+    business_profile: Optional[Dict[str, Any]],
+    knowledge_text: Optional[str],
+    created_by: str,
+) -> None:
+    if not client_id or not sub_type:
+        return
+
+    def _worker() -> None:
+        db = SessionLocal()
+        try:
+            generate_prompt_record(
+                db,
+                client_id=client_id,
+                category=category,
+                sub_type=sub_type,
+                task_type=task_type,
+                business_profile=business_profile,
+                knowledge_text=knowledge_text,
+                created_by=created_by,
+            )
+            db.commit()
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.warning("Prompt generation failed after profile save: %s", exc)
+            try:
+                db.rollback()
+            except Exception:  # pylint: disable=broad-except
+                pass
+        finally:
+            db.close()
+
+    threading.Thread(target=_worker, daemon=True).start()
+
+
 def _generate_business_profile(payload: Dict[str, Any]) -> Dict[str, str]:
     api_key = get_required_setting("OPENAI_API_KEY")
     base_url = get_setting("OPENAI_BASE_URL", "https://api.openai.com/v1")
@@ -432,6 +473,15 @@ def create_business_profile(req: func.HttpRequest) -> func.HttpResponse:
                     },
                 )
                 db.commit()
+                _trigger_prompt_generation_async(
+                    client_id=client.id,
+                    category=client.business_category,
+                    sub_type=client.business_sub_type,
+                    task_type=None,
+                    business_profile=profile,
+                    knowledge_text=website_text,
+                    created_by=f"user:{email}",
+                )
         except Exception as exc:  # pylint: disable=broad-except
             logger.warning("Failed to persist business profile: %s", exc)
             db.rollback()

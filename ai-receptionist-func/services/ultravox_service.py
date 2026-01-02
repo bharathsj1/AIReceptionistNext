@@ -119,6 +119,38 @@ def create_ultravox_call(agent_id: str, caller_number: str, metadata: dict | Non
     return join_url, call_id
 
 
+def update_ultravox_agent_prompt(agent_id: str, prompt_text: str) -> bool:
+    """Update an agent's system prompt. Returns True when the patch succeeds."""
+    if not agent_id or not prompt_text:
+        return False
+    try:
+        agent = get_ultravox_agent(agent_id)
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.warning("Unable to fetch Ultravox agent for prompt update: %s", exc)
+        return False
+
+    call_template = agent.get("callTemplate") or {}
+    updated_template = dict(call_template)
+    updated_template["systemPrompt"] = prompt_text
+
+    with httpx.Client(timeout=20) as client:
+        resp = client.patch(
+            f"{_base_url()}/agents/{agent_id}",
+            headers=_headers(),
+            json={"callTemplate": updated_template},
+        )
+    if resp.status_code >= 300:
+        logger.warning(
+            "Failed to update Ultravox agent prompt for %s: %s - %s",
+            agent_id,
+            resp.status_code,
+            resp.text,
+        )
+        return False
+    _ensure_prompt_instruction(agent_id)
+    return True
+
+
 def get_ultravox_call_messages(call_id: str) -> list[dict]:
     """Fetch Ultravox call messages for transcript rendering."""
     if not call_id:

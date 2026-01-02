@@ -6,6 +6,7 @@ import hashlib
 import re
 import smtplib
 import ssl
+import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional, Tuple
 from zoneinfo import ZoneInfo
@@ -25,6 +26,7 @@ from services.ultravox_service import (
     get_ultravox_agent,
     list_ultravox_tools,
 )
+from services.prompt_registry_service import generate_prompt_record
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +131,60 @@ def _normalize_business_profile(raw: Any) -> Optional[Dict[str, str]]:
             or ""
         ),
     }
+
+
+def _extract_knowledge_text(raw: Any) -> Optional[str]:
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        return raw.strip() or None
+    if not isinstance(raw, dict):
+        return None
+    for key in ("knowledgeText", "knowledge_text", "raw_website_data", "website_text"):
+        value = raw.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _trigger_prompt_generation_async(
+    *,
+    client_id: int,
+    category: Optional[str],
+    sub_type: Optional[str],
+    task_type: Optional[str],
+    business_profile: Optional[Dict[str, Any]],
+    knowledge_text: Optional[str],
+    created_by: str,
+) -> None:
+    if not client_id or not sub_type:
+        return
+
+    def _worker() -> None:
+        db = SessionLocal()
+        try:
+            generate_prompt_record(
+                db,
+                client_id=client_id,
+                category=category,
+                sub_type=sub_type,
+                task_type=task_type,
+                business_profile=business_profile,
+                knowledge_text=knowledge_text,
+                created_by=created_by,
+            )
+            db.commit()
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.warning("Prompt generation failed: %s", exc)
+            try:
+                db.rollback()
+            except Exception:  # pylint: disable=broad-except
+                pass
+        finally:
+            db.close()
+
+    thread = threading.Thread(target=_worker, daemon=True)
+    thread.start()
 
 
 def _parse_dt_with_london_default(value: str) -> datetime:
@@ -845,6 +901,19 @@ def client_business_details(req: func.HttpRequest) -> func.HttpResponse:
             if website_payload:
                 client.website_data = _merge_website_data(client.website_data, website_payload)
             db.commit()
+            profile_payload = _normalize_business_profile(website_data) or {
+                "businessName": business_name,
+                "businessPhone": business_phone,
+            }
+            _trigger_prompt_generation_async(
+                client_id=client.id,
+                category=client.business_category,
+                sub_type=client.business_sub_type,
+                task_type=None,
+                business_profile=profile_payload,
+                knowledge_text=_extract_knowledge_text(website_data),
+                created_by=f"user:{email}",
+            )
             return func.HttpResponse(
                 json.dumps({"client_id": client.id, "email": client.email}),
                 status_code=200,
@@ -867,6 +936,19 @@ def client_business_details(req: func.HttpRequest) -> func.HttpResponse:
         )
         db.add(client)
         db.commit()
+        profile_payload = _normalize_business_profile(website_data) or {
+            "businessName": business_name,
+            "businessPhone": business_phone,
+        }
+        _trigger_prompt_generation_async(
+            client_id=client.id,
+            category=client.business_category,
+            sub_type=client.business_sub_type,
+            task_type=None,
+            business_profile=profile_payload,
+            knowledge_text=_extract_knowledge_text(website_data),
+            created_by=f"user:{email}",
+        )
         return func.HttpResponse(
             json.dumps({"client_id": client.id, "email": client.email}),
             status_code=201,

@@ -471,6 +471,11 @@ export default function DashboardScreen({
     openings: ""
   });
   const [isBusinessProfileEditing, setIsBusinessProfileEditing] = useState(false);
+  const [promptStatus, setPromptStatus] = useState({ status: "idle", message: "", prompt: null });
+  const [promptHistory, setPromptHistory] = useState([]);
+  const [promptHistoryOpen, setPromptHistoryOpen] = useState(false);
+  const [promptHistoryStatus, setPromptHistoryStatus] = useState({ status: "idle", message: "" });
+  const [promptActionStatus, setPromptActionStatus] = useState({ status: "idle", message: "" });
   const [userForm, setUserForm] = useState({
     email: user?.email || "",
     businessName: userProfile?.business_name || "",
@@ -2526,6 +2531,148 @@ export default function DashboardScreen({
     }
   };
 
+  const promptClientId = clientData?.id || clientData?.client_id || null;
+  const promptSubType = clientData?.business_sub_type || "";
+  const promptCategory = clientData?.business_category || "";
+
+  const buildPromptKnowledgeText = (profile) => {
+    const lines = [
+      profile?.businessSummary ? `Summary: ${profile.businessSummary}` : "",
+      profile?.services ? `Services: ${profile.services}` : "",
+      profile?.hours ? `Hours: ${profile.hours}` : "",
+      profile?.location ? `Location: ${profile.location}` : "",
+      profile?.notes ? `Notes: ${profile.notes}` : "",
+      profile?.openings ? `Openings: ${profile.openings}` : ""
+    ];
+    return lines.filter(Boolean).join("\n");
+  };
+
+  const loadPromptStatus = async () => {
+    if (!user?.email || !promptClientId || !promptSubType) {
+      setPromptStatus({ status: "idle", message: "", prompt: null });
+      return;
+    }
+    setPromptStatus((prev) => ({ ...prev, status: "loading", message: "" }));
+    try {
+      const query = new URLSearchParams({
+        clientId: String(promptClientId),
+        subType: promptSubType,
+        email: user.email,
+        includeStatus: "true"
+      });
+      const res = await fetch(`${API_URLS.promptsActive}?${query.toString()}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to load prompt status");
+      }
+      setPromptStatus({ status: "success", message: "", prompt: data?.prompt || null });
+    } catch (error) {
+      setPromptStatus({
+        status: "error",
+        message: error?.message || "Failed to load prompt status",
+        prompt: null
+      });
+    }
+  };
+
+  const loadPromptHistory = async () => {
+    if (!user?.email || !promptClientId || !promptSubType) return;
+    setPromptHistoryStatus({ status: "loading", message: "" });
+    try {
+      const query = new URLSearchParams({
+        clientId: String(promptClientId),
+        subType: promptSubType,
+        email: user.email
+      });
+      const res = await fetch(`${API_URLS.promptsHistory}?${query.toString()}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to load prompt history");
+      }
+      setPromptHistory(data?.prompts || []);
+      setPromptHistoryStatus({ status: "success", message: "" });
+    } catch (error) {
+      setPromptHistoryStatus({
+        status: "error",
+        message: error?.message || "Failed to load prompt history"
+      });
+    }
+  };
+
+  const handlePromptRegenerate = async () => {
+    if (!user?.email || !promptClientId || !promptSubType) return;
+    setPromptActionStatus({ status: "loading", message: "Generating prompt..." });
+    const profilePayload = {
+      businessName: derivedBusinessProfile.businessName || "",
+      businessPhone: derivedBusinessProfile.contactNumber || "",
+      businessEmail: derivedBusinessProfile.contactEmail || "",
+      businessSummary: derivedBusinessProfile.businessSummary || "",
+      location: derivedBusinessProfile.location || "",
+      hours: derivedBusinessProfile.hours || "",
+      services: derivedBusinessProfile.services || "",
+      notes: derivedBusinessProfile.notes || "",
+      openings: derivedBusinessProfile.openings || "",
+      websiteUrl: derivedBusinessProfile.websiteUrl || ""
+    };
+    try {
+      const res = await fetch(API_URLS.promptsGenerate, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: user.email,
+          clientId: promptClientId,
+          category: promptCategory || null,
+          subType: promptSubType,
+          taskType: null,
+          businessProfile: profilePayload,
+          knowledgeText: buildPromptKnowledgeText(profilePayload)
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to generate prompt");
+      }
+      setPromptActionStatus({ status: "success", message: "Prompt generated" });
+      loadPromptStatus();
+      loadPromptHistory();
+    } catch (error) {
+      setPromptActionStatus({
+        status: "error",
+        message: error?.message || "Failed to generate prompt"
+      });
+    }
+  };
+
+  const handlePromptActivate = async (version) => {
+    if (!user?.email || !promptClientId || !promptSubType) return;
+    setPromptActionStatus({ status: "loading", message: "Activating prompt..." });
+    try {
+      const res = await fetch(API_URLS.promptsActivate, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: user.email,
+          clientId: promptClientId,
+          subType: promptSubType,
+          taskType: null,
+          version
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to activate prompt");
+      }
+      setPromptActionStatus({ status: "success", message: `Activated v${version}` });
+      loadPromptStatus();
+      loadPromptHistory();
+    } catch (error) {
+      setPromptActionStatus({
+        status: "error",
+        message: error?.message || "Failed to activate prompt"
+      });
+    }
+  };
+
   useEffect(() => {
     setBusinessForm({
       name: clientData?.business_name || clientData?.name || "",
@@ -2540,6 +2687,21 @@ export default function DashboardScreen({
       setIsBusinessProfileEditing(false);
     }
   }, [businessSaveStatus?.status]);
+
+  useEffect(() => {
+    if (settingsSection !== "business") return;
+    if (!promptClientId || !promptSubType || !user?.email) {
+      setPromptStatus({ status: "idle", message: "", prompt: null });
+      return;
+    }
+    loadPromptStatus();
+  }, [promptClientId, promptSubType, settingsSection, user?.email]);
+
+  useEffect(() => {
+    if (businessSaveStatus?.status !== "success") return;
+    if (!promptClientId || !promptSubType || !user?.email) return;
+    loadPromptStatus();
+  }, [businessSaveStatus?.status, promptClientId, promptSubType, user?.email]);
 
   useEffect(() => {
     if (isBusinessProfileEditing) return;
@@ -5411,7 +5573,8 @@ export default function DashboardScreen({
                         </>
                       )}
                       {settingsSection === "business" && (
-                        <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
+                        <>
+                          <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
                           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                             <div>
                               <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Business</p>
@@ -5706,6 +5869,89 @@ export default function DashboardScreen({
                             </div>
                           </div>
                         </div>
+                        <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                              <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">AI Agent Prompt</p>
+                              <h4 className="text-lg font-semibold text-white">Prompt registry</h4>
+                            </div>
+                            <span
+                              className={`text-xs ${
+                                promptStatus.status === "error"
+                                  ? "text-rose-300"
+                                  : promptStatus.prompt?.status === "needs_regen"
+                                    ? "text-amber-200"
+                                    : "text-emerald-200"
+                              }`}
+                            >
+                              {promptSubType
+                                ? promptStatus.status === "loading"
+                                  ? "Checking..."
+                                  : promptStatus.prompt?.status === "needs_regen"
+                                    ? "Needs regeneration"
+                                    : promptStatus.prompt
+                                      ? "Up to date"
+                                      : "Not generated"
+                                : "Missing business type"}
+                            </span>
+                          </div>
+                          <div className="mt-3 grid gap-2 text-xs text-slate-300">
+                            <div className="flex items-center justify-between">
+                              <span>Active version</span>
+                              <span className="text-slate-100">
+                                {promptStatus.prompt?.version ? `v${promptStatus.prompt.version}` : "—"}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span>Last generated</span>
+                              <span className="text-slate-100">
+                                {promptStatus.prompt?.updatedAt
+                                  ? formatDate(promptStatus.prompt.updatedAt)
+                                  : "—"}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={handlePromptRegenerate}
+                              disabled={!promptSubType || promptActionStatus.status === "loading"}
+                              className="inline-flex items-center gap-2 rounded-xl border border-emerald-300/60 bg-emerald-500/20 px-3 py-2 text-xs font-semibold text-emerald-50 transition hover:-translate-y-0.5 hover:border-emerald-200 hover:bg-emerald-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              <Sparkles className="h-4 w-4" />
+                              Regenerate
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPromptHistoryOpen(true);
+                                loadPromptHistory();
+                              }}
+                              disabled={!promptSubType || promptHistoryStatus.status === "loading"}
+                              className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:border-white/30 hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              <FileText className="h-4 w-4" />
+                              View versions
+                            </button>
+                          </div>
+                          {promptActionStatus.message ? (
+                            <div
+                              className={`mt-3 text-xs ${
+                                promptActionStatus.status === "error"
+                                  ? "text-rose-300"
+                                  : "text-emerald-200"
+                              }`}
+                            >
+                              {promptActionStatus.message}
+                            </div>
+                          ) : null}
+                          {promptHistoryStatus.status === "error" ? (
+                            <div className="mt-2 text-xs text-rose-300">
+                              {promptHistoryStatus.message}
+                            </div>
+                          ) : null}
+                        </div>
+                        </>
                       )}
                       {settingsSection === "user" && (
                         <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
@@ -6788,6 +7034,80 @@ export default function DashboardScreen({
                     : "Save changes"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {promptHistoryOpen && (
+        <div className="calendar-modal">
+          <div className="calendar-modal-card">
+            <div className="calendar-modal-header">
+              <div>
+                <p className="calendar-modal-eyebrow">AI prompt registry</p>
+                <h4 className="calendar-modal-title">Prompt versions</h4>
+              </div>
+              <button
+                type="button"
+                className="calendar-modal-close"
+                onClick={() => setPromptHistoryOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+            <div className="calendar-modal-body">
+              {promptHistoryStatus.status === "loading" ? (
+                <div className="text-xs text-slate-300">Loading prompt history...</div>
+              ) : promptHistoryStatus.status === "error" ? (
+                <div className="text-xs text-rose-300">{promptHistoryStatus.message}</div>
+              ) : promptHistory.length ? (
+                <div className="grid gap-2">
+                  {promptHistory.map((prompt) => (
+                    <div
+                      key={prompt.id}
+                      className="rounded-2xl border border-white/10 bg-slate-900/50 px-3 py-3 text-xs text-slate-200"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold">Version v{prompt.version}</span>
+                        <span
+                          className={`rounded-full border px-2 py-0.5 ${
+                            prompt.isActive
+                              ? "border-emerald-300/40 text-emerald-200"
+                              : "border-white/10 text-slate-300"
+                          }`}
+                        >
+                          {prompt.isActive ? "Active" : "Inactive"}
+                        </span>
+                      </div>
+                      <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
+                        <span>Updated</span>
+                        <span>{prompt.updatedAt ? formatDate(prompt.updatedAt) : "—"}</span>
+                      </div>
+                      <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
+                        <span>Task</span>
+                        <span>{prompt.taskType || "Default"}</span>
+                      </div>
+                      {!prompt.isActive ? (
+                        <div className="mt-3">
+                          <button
+                            type="button"
+                            onClick={() => handlePromptActivate(prompt.version)}
+                            className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/10 px-3 py-1 text-xs font-semibold text-white"
+                          >
+                            Activate
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-slate-300">No prompt versions yet.</div>
+              )}
+            </div>
+            {promptActionStatus.message ? (
+              <div className={`calendar-modal-message ${promptActionStatus.status}`}>
+                {promptActionStatus.message}
+              </div>
+            ) : null}
           </div>
         </div>
       )}

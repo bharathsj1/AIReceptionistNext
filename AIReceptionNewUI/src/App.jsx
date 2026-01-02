@@ -1673,6 +1673,34 @@ export default function App() {
     [agentDetails.systemPrompt, agentDetails.temperature, agentDetails.voice, loadDashboard, user?.email]
   );
 
+  const triggerPromptGeneration = useCallback(
+    async ({ businessProfile, knowledgeText } = {}) => {
+      if (!user?.email) return;
+      const clientId = clientData?.id || clientData?.client_id;
+      const subType = clientData?.business_sub_type;
+      if (!clientId || !subType) return;
+      try {
+        await fetch(API_URLS.promptsGenerate, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          mode: "cors",
+          body: JSON.stringify({
+            email: user.email,
+            clientId,
+            category: clientData?.business_category || null,
+            subType,
+            taskType: null,
+            businessProfile: businessProfile || {},
+            knowledgeText: knowledgeText || ""
+          })
+        });
+      } catch (error) {
+        console.warn("Prompt generation failed", error);
+      }
+    },
+    [clientData?.business_category, clientData?.business_sub_type, clientData?.client_id, clientData?.id, user?.email]
+  );
+
   const handleBusinessSave = useCallback(
     async ({ businessName: name, businessPhone: phone, websiteUrl, websiteData } = {}) => {
       if (!user?.email) return;
@@ -1701,6 +1729,10 @@ export default function App() {
         setBusinessName(name || businessName);
         setBusinessPhone(phone || businessPhone);
         await loadDashboard(user.email);
+        triggerPromptGeneration({
+          businessProfile: websiteData || {},
+          knowledgeText: websiteData?.businessSummary || websiteData?.business_summary || ""
+        });
       } catch (error) {
         setBusinessSaveStatus({
           status: "error",
@@ -1708,7 +1740,7 @@ export default function App() {
         });
       }
     },
-    [businessName, businessPhone, clientData?.website_url, loadDashboard, url, user?.email]
+    [businessName, businessPhone, clientData?.website_url, loadDashboard, triggerPromptGeneration, url, user?.email]
   );
 
   const handleBookingSettingsSave = useCallback(

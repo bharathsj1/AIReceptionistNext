@@ -104,6 +104,24 @@ class Client(Base):
     phone_numbers = relationship("PhoneNumber", back_populates="client")
 
 
+class PromptRegistry(Base):
+    __tablename__ = "prompt_registry"
+
+    id = Column(String, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
+    category = Column(String, nullable=True)
+    sub_type = Column(String, nullable=False, index=True)
+    task_type = Column(String, nullable=True, index=True)
+    version = Column(Integer, nullable=False)
+    is_active = Column(Boolean, default=False)
+    prompt_text = Column(Text, nullable=False)
+    prompt_hash = Column(String, nullable=False)
+    source_data_hash = Column(String, nullable=False)
+    created_by = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class PhoneNumber(Base):
     __tablename__ = "phone_numbers"
 
