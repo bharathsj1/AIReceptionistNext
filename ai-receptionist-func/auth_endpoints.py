@@ -23,6 +23,7 @@ from services.ultravox_service import (
     create_ultravox_webhook,
     ensure_booking_tool,
     ensure_availability_tool,
+    ensure_tasks_tool,
     get_ultravox_agent,
     list_ultravox_tools,
 )
@@ -646,6 +647,19 @@ def _ensure_ultravox_booking_tool_for_user(email: str, db):
             availability_created,
             availability_attached,
         )
+        if (get_setting("ENABLE_TASKS") or "").lower() in ("1", "true", "yes", "on"):
+            tasks_id, tasks_created, tasks_attached = ensure_tasks_tool(
+                client.ultravox_agent_id,
+                base,
+                str(client.id),
+            )
+            logger.info(
+                "Ultravox tasks tool ensure: agent=%s tasks_id=%s tasks_created=%s tasks_attached=%s",
+                client.ultravox_agent_id,
+                tasks_id,
+                tasks_created,
+                tasks_attached,
+            )
         # Keep the legacy call.ended webhook as non-blocking telemetry; avoid duplicates.
         try:
             from services.ultravox_service import list_ultravox_webhooks  # lazy import to avoid cycles

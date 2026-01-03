@@ -12,6 +12,7 @@ import {
   Archive,
   CalendarClock,
   CheckCircle2,
+  ClipboardList,
   Edit3,
   FileText,
   Globe2,
@@ -45,6 +46,22 @@ import {
   Building2
 } from "lucide-react";
 import { API_URLS } from "../config/urls";
+import TaskBoard from "./tasks/TaskBoard";
+
+const resolveFeatureFlag = (value) => {
+  if (value === undefined || value === null) return false;
+  return ["1", "true", "yes", "on"].includes(String(value).toLowerCase());
+};
+const TASKS_ENABLED = resolveFeatureFlag(
+  import.meta.env.VITE_ENABLE_TASKS ?? import.meta.env.NEXT_PUBLIC_ENABLE_TASKS
+);
+const TASKS_LIVE_ENABLED = (() => {
+  const raw =
+    import.meta.env.VITE_ENABLE_TASKS_LIVE ??
+    import.meta.env.NEXT_PUBLIC_ENABLE_TASKS_LIVE;
+  if (raw === undefined || raw === null || raw === "") return TASKS_ENABLED;
+  return resolveFeatureFlag(raw);
+})();
 
 const formatDuration = (seconds) => {
   if (seconds === null || seconds === undefined || seconds === "") return "—";
@@ -165,13 +182,20 @@ const EMAIL_TAG_OPTIONS = [
 
 const REPLY_TONE_PRESETS = ["Professional", "Friendly", "Short", "Empathetic"];
 
-const DASHBOARD_TABS = [
+const BASE_DASHBOARD_TABS = [
   { id: "dashboard", label: "Dashboard", icon: LayoutGrid },
   { id: "agents", label: "Agents", icon: Users },
   { id: "calls", label: "Calls", icon: PhoneCall },
   { id: "business", label: "Business", icon: Building2 },
   { id: "integrations", label: "Integrations", icon: Plug }
 ];
+const DASHBOARD_TABS = TASKS_ENABLED
+  ? [
+      ...BASE_DASHBOARD_TABS.slice(0, 3),
+      { id: "tasks", label: "Tasks", icon: ClipboardList },
+      ...BASE_DASHBOARD_TABS.slice(3)
+    ]
+  : BASE_DASHBOARD_TABS;
 
 const priorityBadgeStyles = {
   Urgent: "border-rose-400/60 bg-rose-500/20 text-rose-100",
@@ -452,6 +476,11 @@ export default function DashboardScreen({
   const pagedCalls = recentCalls.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   const [selectedCall, setSelectedCall] = useState(pagedCalls[0] || null);
+  useEffect(() => {
+    if (!TASKS_ENABLED && activeTab === "tasks") {
+      setActiveTab?.("dashboard");
+    }
+  }, [activeTab, setActiveTab]);
   const [businessForm, setBusinessForm] = useState({
     name: clientData?.business_name || clientData?.name || "",
     phone: clientData?.business_phone || "",
@@ -3885,6 +3914,14 @@ export default function DashboardScreen({
               </div>
             </div>
           </section>
+        )}
+
+        {activeTab === "tasks" && TASKS_ENABLED && (
+          <TaskBoard
+            email={user?.email}
+            businessName={clientData?.business_name || clientData?.name}
+            liveEnabled={TASKS_LIVE_ENABLED}
+          />
         )}
 
         {activeTab === "calls" && (

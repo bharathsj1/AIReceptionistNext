@@ -1,0 +1,112 @@
+from __future__ import annotations
+
+from datetime import datetime
+from typing import List, Optional
+from uuid import uuid4
+
+from sqlalchemy import or_
+
+from shared.db import Task
+
+
+def _format_dt(value: Optional[datetime]) -> Optional[str]:
+    if not value:
+        return None
+    try:
+        return value.isoformat()
+    except Exception:
+        return str(value)
+
+
+def task_to_dict(task: Task) -> dict:
+    return {
+        "id": task.id,
+        "clientId": task.client_id,
+        "callId": task.call_id,
+        "twilioCallSid": task.twilio_call_sid,
+        "type": task.type,
+        "status": task.status,
+        "title": task.title,
+        "summary": task.summary,
+        "detailsJson": task.details_json or {},
+        "customerName": task.customer_name,
+        "customerPhone": task.customer_phone,
+        "customerEmail": task.customer_email,
+        "createdAt": _format_dt(task.created_at),
+        "updatedAt": _format_dt(task.updated_at),
+        "decisionAt": _format_dt(task.decision_at),
+        "decisionReason": task.decision_reason,
+    }
+
+
+def create_task(db, payload: dict) -> Task:
+    task = Task(
+        id=payload.get("id") or str(uuid4()),
+        client_id=str(payload.get("clientId")),
+        call_id=payload.get("callId"),
+        twilio_call_sid=payload.get("twilioCallSid"),
+        type=payload.get("type"),
+        status=payload.get("status") or "NEW",
+        title=payload.get("title"),
+        summary=payload.get("summary"),
+        details_json=payload.get("detailsJson") or {},
+        customer_name=payload.get("customerName"),
+        customer_phone=payload.get("customerPhone"),
+        customer_email=payload.get("customerEmail"),
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    db.add(task)
+    db.flush()
+    return task
+
+
+def list_tasks(
+    db,
+    client_id: str,
+    status: Optional[str] = None,
+    search: Optional[str] = None,
+    limit: int = 200,
+) -> List[dict]:
+    query = db.query(Task).filter(Task.client_id == str(client_id))
+    if status and status != "ALL":
+        query = query.filter(Task.status == status)
+    if search:
+        pattern = f"%{search}%"
+        query = query.filter(
+            or_(
+                Task.title.ilike(pattern),
+                Task.summary.ilike(pattern),
+                Task.customer_name.ilike(pattern),
+                Task.customer_phone.ilike(pattern),
+                Task.customer_email.ilike(pattern),
+            )
+        )
+    query = query.order_by(Task.created_at.desc())
+    if limit:
+        query = query.limit(limit)
+    return [task_to_dict(task) for task in query.all()]
+
+
+def get_task(db, client_id: str, task_id: str) -> Optional[Task]:
+    return (
+        db.query(Task)
+        .filter(Task.client_id == str(client_id), Task.id == str(task_id))
+        .one_or_none()
+    )
+
+
+def update_task_status(
+    db,
+    task: Task,
+    status: str,
+    decision_at: Optional[datetime] = None,
+    decision_reason: Optional[str] = None,
+) -> Task:
+    task.status = status
+    task.decision_at = decision_at
+    task.decision_reason = decision_reason
+    task.updated_at = datetime.utcnow()
+    db.add(task)
+    db.flush()
+    return task

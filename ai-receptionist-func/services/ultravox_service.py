@@ -413,6 +413,17 @@ AVAILABILITY_TOOL_INSTRUCTION = (
     "When the caller proposes a time, you MUST call `calendar_availability` to check the slot before promising it. "
     "If the slot is busy, propose the next available option returned."
 )
+TASKS_TOOL_INSTRUCTION = (
+    "When the caller wants to place an order, booking, quote request, support ticket, lead, or message, "
+    "collect their name, phone, email, and key details (items, time, address, notes). "
+    "Then call the `create_task` tool with a concise title, summary, and detailsJson payload. "
+    "After creating the task, confirm: \"Your request has been sent to the owner. "
+    "You'll receive an email once it is accepted or rejected.\""
+)
+
+
+def _tasks_enabled() -> bool:
+    return (get_setting("ENABLE_TASKS") or "").lower() in ("1", "true", "yes", "on")
 
 
 def _ensure_prompt_instruction(agent_id: str) -> None:
@@ -430,6 +441,8 @@ def _ensure_prompt_instruction(agent_id: str) -> None:
         additions.append(BOOKING_TOOL_INSTRUCTION)
     if AVAILABILITY_TOOL_INSTRUCTION not in system_prompt:
         additions.append(AVAILABILITY_TOOL_INSTRUCTION)
+    if _tasks_enabled() and TASKS_TOOL_INSTRUCTION not in system_prompt:
+        additions.append(TASKS_TOOL_INSTRUCTION)
     if not additions:
         return
 
@@ -530,6 +543,55 @@ def _build_availability_tool_payload(public_api_base: str) -> Dict:
     }
 
 
+def _build_create_task_tool_payload(public_api_base: str) -> Dict:
+    """Construct the HTTP tool payload for creating tasks."""
+    url = f"{public_api_base.rstrip('/')}/api/tasks"
+
+    def _param(name: str, schema_type: str, required: bool, description: Optional[str] = None) -> Dict:
+        schema: Dict[str, str] = {"type": schema_type}
+        if description:
+            schema["description"] = description
+        return {
+            "name": name,
+            "location": "PARAMETER_LOCATION_BODY",
+            "required": required,
+            "schema": schema,
+        }
+
+    body_parameters = [
+        _param("clientId", "string", True, "Client identifier for the business owner"),
+        _param("type", "string", True, "ORDER, BOOKING, QUOTE_REQUEST, SUPPORT_TICKET, LEAD, MESSAGE"),
+        _param("title", "string", True, "Short title for the request"),
+        _param("summary", "string", True, "Short human-readable summary"),
+        _param("detailsJson", "object", False, "Structured details (items, time, address, notes)"),
+        _param("customerName", "string", False),
+        _param("customerPhone", "string", False),
+        _param("customerEmail", "string", False),
+        _param("callId", "string", False),
+        _param("twilioCallSid", "string", False),
+    ]
+
+    payload = {
+        "name": "create_task",
+        "definition": {
+            "modelToolName": "create_task",
+            "description": "Creates a task for the business owner to review.",
+            "dynamicParameters": body_parameters,
+            "http": {
+                "httpMethod": "POST",
+                "baseUrlPattern": url,
+            },
+        },
+    }
+
+    secret = get_setting("TASKS_TOOL_SECRET")
+    if secret:
+        payload["definition"]["http"]["headers"] = [
+            {"name": "X-TASKS-TOOL-SECRET", "value": secret}
+        ]
+    return payload
+
+
 def _find_existing_booking_tool(tools: List[Dict], public_api_base: str) -> Optional[Dict]:
     """Return an existing booking tool if present."""
     target_url = f"{public_api_base.rstrip('/')}/api/calendar/book"
@@ -560,6 +622,25 @@ def _find_existing_availability_tool(tools: List[Dict], public_api_base: str) ->
             or tool.get("name")
         )
         if str(model_name or "").lower() != "calendar_availability":
+            continue
+        http_cfg = tool.get("http") or tool.get("httpConfig") or {}
+        tool_url = http_cfg.get("baseUrlPattern") or http_cfg.get("url") or tool.get("url")
+        if tool_url and tool_url.rstrip("/") == target_url:
+            return tool
+        fallback = fallback or tool
+    return fallback
+
+
+def _find_existing_tasks_tool(tools: List[Dict], public_api_base: str) -> Optional[Dict]:
+    target_url = f"{public_api_base.rstrip('/')}/api/tasks"
+    fallback = None
+    for tool in tools:
+        model_name = (
+            tool.get("modelToolName")
+            or (tool.get("definition") or {}).get("modelToolName")
+            or tool.get("name")
+        )
+        if str(model_name or "").lower() != "create_task":
             continue
         http_cfg = tool.get("http") or tool.get("httpConfig") or {}
         tool_url = http_cfg.get("baseUrlPattern") or http_cfg.get("url") or tool.get("url")
@@ -675,6 +756,58 @@ def ensure_availability_tool(agent_id: str, public_api_base: str) -> Tuple[Optio
         ) or attached
     except Exception as exc:  # pylint: disable=broad-except
         logger.error("Failed to attach availability tool %s to agent %s: %s", tool_id, agent_id, exc)
+
+    _ensure_prompt_instruction(agent_id)
+    return tool_id, created, attached
+
+
+def ensure_tasks_tool(agent_id: str, public_api_base: str, client_id: str) -> Tuple[Optional[str], bool, bool]:
+    """
+    Ensure the create_task tool exists and is attached to the given agent.
+    Returns (tool_id, created, attached).
+    """
+    tool_id: Optional[str] = None
+    created = False
+    attached = False
+
+    try:
+        tools = list_ultravox_tools(model_tool_name="create_task")
+    except Exception:
+        tools = []
+    existing = _find_existing_tasks_tool(tools, public_api_base)
+    if not existing:
+        try:
+            all_tools = list_ultravox_tools()
+            existing = _find_existing_tasks_tool(all_tools, public_api_base) or existing
+        except Exception:
+            existing = existing
+    if existing:
+        tool_id = existing.get("id") or existing.get("toolId") or existing.get("tool_id")
+        logger.info("Ultravox create_task tool already exists: %s", tool_id)
+    else:
+        payload = _build_create_task_tool_payload(public_api_base)
+        created_tool = create_ultravox_tool(payload)
+        tool_id = created_tool.get("id") or created_tool.get("toolId") or created_tool.get("tool_id")
+        created = True
+        logger.info("Ultravox create_task tool created: %s", tool_id)
+
+    if not tool_id:
+        logger.warning("Ultravox create_task tool id missing; cannot attach to agent %s", agent_id)
+        _ensure_prompt_instruction(agent_id)
+        return None, created, attached
+
+    try:
+        attached = attach_tool_to_agent(
+            agent_id,
+            tool_id,
+            name_override="create_task",
+            description_override="Creates a task for the business owner to review.",
+            parameter_overrides={
+                "clientId": {"location": "PARAMETER_LOCATION_BODY", "value": client_id}
+            },
+        ) or attached
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.error("Failed to attach create_task tool %s to agent %s: %s", tool_id, agent_id, exc)
 
     _ensure_prompt_instruction(agent_id)
     return tool_id, created, attached
