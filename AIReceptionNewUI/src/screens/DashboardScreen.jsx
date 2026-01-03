@@ -19,6 +19,7 @@ import {
   Inbox,
   LayoutGrid,
   Link2,
+  LogOut,
   Mail,
   MailOpen,
   MailPlus,
@@ -697,9 +698,7 @@ export default function DashboardScreen({
     }
     sideNavCloseTimerRef.current = setTimeout(() => {
       setSideNavOpen(false);
-      sideNavContentTimerRef.current = setTimeout(() => {
-        setSideNavContentVisible(false);
-      }, 200);
+      setSideNavContentVisible(false);
     }, 120);
   };
 
@@ -2333,6 +2332,9 @@ export default function DashboardScreen({
     : googleConnected
       ? "Google connected (calendar only)"
       : "Not connected";
+  const emailActionButtonClass = lightThemeActive
+    ? "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+    : "border-white/10 bg-white/10 text-white hover:border-white/30 hover:bg-white/20";
   const emailHasNext = Boolean(emailPageTokens[emailCurrentPage]);
   const selectedEmailIds = Array.from(emailSelectedIds);
   const emailSelectionCount = selectedEmailIds.length;
@@ -3267,7 +3269,11 @@ export default function DashboardScreen({
             />
           </div>
         )}
-        <div className={`flex ${sideNavHidden ? "gap-0" : "gap-3"} ${isEmailManager ? "h-full min-h-0" : ""}`}>
+        <div
+          className={`flex h-screen overflow-hidden ${
+            sideNavHidden ? "gap-0" : "gap-3"
+          }`}
+        >
           <aside
             aria-hidden={sideNavHidden}
             inert={sideNavHidden ? "" : undefined}
@@ -3275,7 +3281,7 @@ export default function DashboardScreen({
             onMouseLeave={() => {
               if (!sideNavPinned) closeSideNav();
             }}
-            className={`sticky top-0 flex h-fit flex-none flex-col gap-3 overflow-hidden p-2 transition-[width] duration-200 ${sideNavWidthClass} ${
+            className={`sticky top-0 flex h-screen flex-none flex-col gap-3 overflow-hidden p-2 transition-[width] duration-200 ${sideNavWidthClass} ${
               sideNavHidden
                 ? "pointer-events-none overflow-hidden p-0 opacity-0"
                 : ""
@@ -3309,6 +3315,9 @@ export default function DashboardScreen({
                 const locked = isToolLocked(tool.id);
                 const isToolActive =
                   currentTool === tool.id && !(settingsActive && tool.id === "email_manager");
+                const toolActiveClass = lightThemeActive
+                  ? "bg-slate-200/80 text-slate-900 shadow-[0_10px_22px_rgba(15,23,42,0.08)]"
+                  : "bg-white/15 text-white";
                 return (
                   <button
                     key={tool.id}
@@ -3317,14 +3326,24 @@ export default function DashboardScreen({
                       if (tool.id === "ai_receptionist") setActiveTab?.("dashboard");
                       if (tool.id === "email_manager") setEmailSubTab("email");
                     }}
-                    className={`group flex h-10 w-full items-center gap-2 rounded-2xl px-2 text-left transition ${
+                    className={`group flex h-10 w-full items-center gap-2 rounded-2xl text-left transition ${
                       sideNavContentVisible
                         ? "text-slate-200 hover:bg-white/10 hover:text-white"
                         : "text-slate-300 hover:bg-white/10 hover:text-white hover:shadow-[0_10px_22px_rgba(79,70,229,0.25)]"
-                    } ${isToolActive ? "bg-white/15 text-white" : ""}`}
+                    } ${isToolActive ? toolActiveClass : ""}`}
                   >
                     <span className="flex h-7 w-7 items-center justify-center">
-                      <Icon className="h-[18px] w-[18px] text-indigo-200" />
+                      <Icon
+                        className={`h-[18px] w-[18px] ${
+                          isToolActive
+                            ? lightThemeActive
+                              ? "text-slate-900"
+                              : "text-indigo-100"
+                            : lightThemeActive
+                              ? "text-slate-700"
+                              : "text-indigo-200"
+                        }`}
+                      />
                     </span>
                       <div
                         className={`min-w-0 transition-opacity ${
@@ -3333,39 +3352,10 @@ export default function DashboardScreen({
                             : "max-w-0 overflow-hidden opacity-0"
                         }`}
                       >
-                        <p className="text-[12px] font-semibold text-white leading-tight">
+                        <p className="text-[11px] font-semibold text-white leading-none whitespace-nowrap">
                           {tool.label}
                         </p>
                       </div>
-                    {sideNavContentVisible && (
-                      <span
-                        className={`ml-auto inline-flex h-6 w-6 items-center justify-center ${
-                          locked ? "text-orange-300" : "text-emerald-200"
-                        }`}
-                        aria-label={
-                          subscriptionsLoading && !toolSubscriptions?.[tool.id]
-                            ? "Checking access"
-                            : locked
-                              ? "Subscription required"
-                              : "Active subscription"
-                        }
-                        title={
-                          subscriptionsLoading && !toolSubscriptions?.[tool.id]
-                            ? "Checking access"
-                            : locked
-                              ? "Subscription required"
-                              : "Active subscription"
-                        }
-                      >
-                        {subscriptionsLoading && !toolSubscriptions?.[tool.id] ? (
-                          <RefreshCw className="h-3 w-3 animate-spin" />
-                        ) : locked ? (
-                          <AlertTriangle className="h-3 w-3" />
-                        ) : (
-                          <CheckCircle2 className="h-3 w-3" />
-                        )}
-                      </span>
-                    )}
                   </button>
                 );
               })}
@@ -3381,7 +3371,15 @@ export default function DashboardScreen({
                 {sideNavContentVisible ? "Enter business details" : "Go"}
               </button>
             )}
-            <div className="mt-2 border-t border-white/10 pt-3">
+            <div className="mt-auto border-t border-white/10 pt-3">
+              {(() => {
+                const settingsActiveClass = lightThemeActive
+                  ? "bg-slate-200/80 text-slate-900 shadow-[0_10px_22px_rgba(15,23,42,0.08)]"
+                  : "bg-white/15 text-white";
+                const settingsBaseClass = sideNavContentVisible
+                  ? "text-slate-200 hover:bg-white/10 hover:text-white"
+                  : "text-slate-300 hover:bg-white/10 hover:text-white hover:shadow-[0_10px_22px_rgba(79,70,229,0.25)]";
+                return (
               <button
                 type="button"
                 onClick={() => {
@@ -3389,31 +3387,71 @@ export default function DashboardScreen({
                   setEmailSubTab("settings");
                 }}
                 aria-current={settingsActive ? "page" : undefined}
-                className={`group flex h-10 w-full items-center gap-2 rounded-2xl px-2 text-left transition ${
-                  sideNavContentVisible
-                    ? "text-slate-200 hover:bg-white/10 hover:text-white"
-                    : "text-slate-300 hover:bg-white/10 hover:text-white hover:shadow-[0_10px_22px_rgba(79,70,229,0.25)]"
-                } ${
-                  settingsActive
-                    ? "bg-white/15 text-white"
-                    : ""
+                className={`group flex h-10 w-full items-center gap-2 rounded-2xl text-left transition ${settingsBaseClass} ${
+                  settingsActive ? settingsActiveClass : ""
                 }`}
               >
                 <span className="flex h-7 w-7 items-center justify-center">
-                  <Settings className="h-[18px] w-[18px] text-indigo-200" />
+                  <Settings
+                    className={`h-[18px] w-[18px] ${
+                      settingsActive
+                        ? lightThemeActive
+                          ? "text-slate-900"
+                          : "text-indigo-100"
+                        : lightThemeActive
+                          ? "text-slate-700"
+                          : "text-indigo-200"
+                    }`}
+                  />
                 </span>
-                <span
-                  className={`truncate text-[12px] font-semibold text-white transition-opacity ${
-                    sideNavContentVisible ? "opacity-100 flex-1" : "opacity-0 max-w-0 overflow-hidden"
+                <div
+                  className={`min-w-0 transition-opacity ${
+                    sideNavContentVisible
+                      ? "flex-1 opacity-100"
+                      : "max-w-0 overflow-hidden opacity-0"
                   }`}
                 >
-                  Settings
-                </span>
+                  <p className="text-[11px] font-semibold text-white leading-none whitespace-nowrap">
+                    Settings
+                  </p>
+                </div>
               </button>
+                );
+              })()}
+              {onLogout && (
+                <button
+                  type="button"
+                  onClick={onLogout}
+                  className={`group mt-2 flex h-10 w-full items-center gap-2 rounded-2xl text-left transition ${
+                    sideNavContentVisible
+                      ? "text-rose-200 hover:bg-rose-500/10 hover:text-rose-100"
+                      : "text-rose-200 hover:bg-rose-500/10 hover:text-rose-100"
+                  }`}
+                >
+                  <span className="flex h-7 w-7 items-center justify-center">
+                    <LogOut className="h-[18px] w-[18px]" />
+                  </span>
+                  <div
+                    className={`min-w-0 transition-opacity ${
+                      sideNavContentVisible
+                        ? "flex-1 opacity-100"
+                        : "max-w-0 overflow-hidden opacity-0"
+                    }`}
+                  >
+                    <p className="text-[11px] font-semibold leading-none whitespace-nowrap">
+                      Logout
+                    </p>
+                  </div>
+                </button>
+              )}
             </div>
           </aside>
 
-          <div className={`flex flex-1 flex-col gap-5 ${isEmailManager ? "min-h-0" : ""}`}>
+          <div
+            className={`flex h-full min-h-0 flex-1 flex-col gap-5 ${
+              isEmailManager ? "overflow-hidden" : "overflow-y-auto"
+            }`}
+          >
             {currentTool !== "email_manager" && (
             <header className="flex flex-col gap-3 rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl backdrop-blur">
               <div className="flex flex-wrap items-center justify-between gap-4">
@@ -3480,15 +3518,6 @@ export default function DashboardScreen({
                         </div>
                       )}
                     </div>
-                  )}
-                  {onLogout && (
-                    <button
-                      className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:border-white/40 hover:bg-white/20"
-                      type="button"
-                      onClick={onLogout}
-                    >
-                      Logout
-                    </button>
                   )}
                 </div>
               </div>
@@ -4410,14 +4439,26 @@ export default function DashboardScreen({
                               onClick={() => handleMailboxSelect(item.id)}
                               className={`flex h-10 w-full items-center gap-2 rounded-xl px-2 text-xs transition ${
                                 isActive
-                                  ? "bg-white/15 text-white"
+                                  ? lightThemeActive
+                                    ? "bg-slate-200/80 text-slate-900 shadow-[0_10px_22px_rgba(15,23,42,0.08)]"
+                                    : "bg-white/15 text-white"
                                   : "text-slate-200 hover:bg-white/10 hover:text-white"
                               }`}
                               aria-label={item.label}
                               title={item.label}
                             >
                               <span className="flex h-7 w-7 items-center justify-center">
-                                <Icon className="h-4 w-4" />
+                                <Icon
+                                  className={`h-4 w-4 ${
+                                    isActive
+                                      ? lightThemeActive
+                                        ? "text-slate-900"
+                                        : "text-indigo-100"
+                                      : lightThemeActive
+                                        ? "text-slate-700"
+                                        : "text-slate-200"
+                                  }`}
+                                />
                               </span>
                               <span
                                 className={`whitespace-nowrap transition-[max-width,opacity] duration-300 ease-out ${
@@ -4455,7 +4496,7 @@ export default function DashboardScreen({
                         <button
                           type="button"
                           onClick={handleEmailRefresh}
-                          className="rounded-lg border border-white/10 bg-white/10 p-2 text-white"
+                          className={`rounded-lg border p-2 ${emailActionButtonClass}`}
                           aria-label="Refresh inbox"
                         >
                           <RefreshCw className="h-4 w-4" />
@@ -4501,7 +4542,7 @@ export default function DashboardScreen({
                           })
                         }
                         disabled={!emailSelectionCount || emailActionLoading}
-                        className="shrink-0 rounded-lg border border-white/10 bg-white/10 p-2 text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        className={`shrink-0 rounded-lg border p-2 disabled:cursor-not-allowed disabled:opacity-50 ${emailActionButtonClass}`}
                         aria-label="Archive"
                         title="Archive"
                       >
@@ -4517,7 +4558,7 @@ export default function DashboardScreen({
                           })
                         }
                         disabled={!emailSelectionCount || emailActionLoading}
-                        className="shrink-0 rounded-lg border border-white/10 bg-white/10 p-2 text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        className={`shrink-0 rounded-lg border p-2 disabled:cursor-not-allowed disabled:opacity-50 ${emailActionButtonClass}`}
                         aria-label="Report spam"
                         title="Report spam"
                       >
@@ -4532,7 +4573,7 @@ export default function DashboardScreen({
                           })
                         }
                         disabled={!emailSelectionCount || emailActionLoading}
-                        className="shrink-0 rounded-lg border border-white/10 bg-white/10 p-2 text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        className={`shrink-0 rounded-lg border p-2 disabled:cursor-not-allowed disabled:opacity-50 ${emailActionButtonClass}`}
                         aria-label="Delete"
                         title="Delete"
                       >
@@ -4547,7 +4588,7 @@ export default function DashboardScreen({
                           })
                         }
                         disabled={!emailSelectionCount || emailActionLoading}
-                        className="shrink-0 rounded-lg border border-white/10 bg-white/10 p-2 text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        className={`shrink-0 rounded-lg border p-2 disabled:cursor-not-allowed disabled:opacity-50 ${emailActionButtonClass}`}
                         aria-label="Mark as read"
                         title="Mark as read"
                       >
@@ -4562,7 +4603,7 @@ export default function DashboardScreen({
                           })
                         }
                         disabled={!emailSelectionCount || emailActionLoading}
-                        className="shrink-0 rounded-lg border border-white/10 bg-white/10 p-2 text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        className={`shrink-0 rounded-lg border p-2 disabled:cursor-not-allowed disabled:opacity-50 ${emailActionButtonClass}`}
                         aria-label="Mark as unread"
                         title="Mark as unread"
                       >
@@ -5045,7 +5086,7 @@ export default function DashboardScreen({
                                         setEmailInlineReplyMessageId(null);
                                         setEmailInlineAttachments([]);
                                       }}
-                                      className="rounded-lg border border-white/10 bg-white/10 p-2 text-white"
+                                      className={`rounded-lg border p-2 ${emailActionButtonClass}`}
                                       aria-label="Close summary"
                                     >
                                       <X className="h-4 w-4" />
@@ -6171,7 +6212,7 @@ export default function DashboardScreen({
                       <button
                         type="button"
                         onClick={() => setEmailComposerOpen(false)}
-                        className="rounded-lg border border-white/10 bg-white/10 p-2 text-white"
+                        className={`rounded-lg border p-2 ${emailActionButtonClass}`}
                         aria-label="Close composer"
                       >
                         <X className="h-4 w-4" />

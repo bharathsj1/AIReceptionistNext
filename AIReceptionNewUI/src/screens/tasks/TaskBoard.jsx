@@ -227,26 +227,16 @@ export default function TaskBoard({ email, businessName, liveEnabled }) {
           </CardHeader>
         </div>
         <CardContent className="relative grid gap-4">
-          <div className="flex flex-wrap items-center gap-3">
-            {statusTabs.map((tab) => (
-              <Badge
-                key={tab.id}
-                className={`${statusTone[tab.id]} flex items-center gap-2`}
-              >
-                <span>{tab.label}</span>
-                <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px]">
-                  {statusCounts[tab.id] ?? 0}
-                </span>
-              </Badge>
-            ))}
-          </div>
-
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <Tabs value={status} onValueChange={setStatus}>
               <TabsList>
                 {statusTabs.map((tab) => (
-                  <TabsTrigger key={tab.id} value={tab.id}>
-                    {tab.label}
+                  <TabsTrigger
+                    key={tab.id}
+                    value={tab.id}
+                    variant={tab.id.toLowerCase()}
+                  >
+                    {tab.label} {statusCounts[tab.id] ?? 0}
                   </TabsTrigger>
                 ))}
               </TabsList>
