@@ -22,17 +22,38 @@ export const TabsList = ({ className = "", children }) => (
   <div className={`flex flex-wrap gap-2 ${className}`.trim()}>{children}</div>
 );
 
-export const TabsTrigger = ({ value, className = "", children }) => {
+export const TabsTrigger = ({ value, className = "", variant = "default", children }) => {
   const ctx = useContext(TabsContext);
   const isActive = ctx?.value === value;
+  const variants = {
+    default: {
+      active: "border-emerald-300/70 bg-emerald-400/15 text-emerald-50",
+      inactive: "border-white/10 bg-white/5 text-slate-200 hover:border-white/30 hover:bg-white/10"
+    },
+    all: {
+      active: "border-slate-300/70 bg-slate-400/15 text-slate-900",
+      inactive: "border-slate-200 bg-white text-slate-800 hover:border-slate-300"
+    },
+    new: {
+      active: "border-emerald-300/80 bg-emerald-400/25 text-emerald-900",
+      inactive: "border-emerald-200 bg-emerald-50 text-emerald-900 hover:border-emerald-300"
+    },
+    accepted: {
+      active: "border-indigo-300/80 bg-indigo-400/25 text-indigo-900",
+      inactive: "border-indigo-200 bg-indigo-50 text-indigo-900 hover:border-indigo-300"
+    },
+    rejected: {
+      active: "border-rose-300/80 bg-rose-400/25 text-rose-900",
+      inactive: "border-rose-200 bg-rose-50 text-rose-900 hover:border-rose-300"
+    }
+  };
+  const tone = variants[variant] || variants.default;
   return (
     <button
       type="button"
       onClick={() => ctx?.onValueChange?.(value)}
       className={`rounded-full border px-3 py-1 text-xs font-semibold transition sm:text-sm ${
-        isActive
-          ? "border-emerald-300/70 bg-emerald-400/15 text-emerald-50"
-          : "border-white/10 bg-white/5 text-slate-200 hover:border-white/30 hover:bg-white/10"
+        isActive ? tone.active : tone.inactive
       } ${className}`.trim()}
     >
       {children}

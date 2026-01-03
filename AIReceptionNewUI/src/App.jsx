@@ -2360,17 +2360,30 @@ export default function App() {
     const userAgent = typeof navigator !== "undefined" ? navigator.userAgent : "";
     const isSafari = /safari/i.test(userAgent) && !/chrome|crios|android|fxios/i.test(userAgent);
     const isMobile = window.matchMedia("(max-width: 768px)").matches;
-    if (isMobile || isSafari) {
+    const isDashboard = stage === STAGES.DASHBOARD;
+    if (isMobile || isSafari || isDashboard) {
       const prevOverflow = document.body.style.overflow;
       scroller.style.position = "static";
-      scroller.style.overflow = "auto";
+      scroller.style.overflow = isDashboard ? "hidden" : "auto";
       scroller.style.webkitOverflowScrolling = "touch";
-      document.body.style.overflow = "auto";
+      scroller.style.inset = "auto";
+      document.body.style.overflow = isDashboard ? "hidden" : "auto";
       content.style.minHeight = "100%";
       return () => {
         document.body.style.overflow = prevOverflow;
+        scroller.style.position = "";
+        scroller.style.overflow = "";
+        scroller.style.webkitOverflowScrolling = "";
+        scroller.style.inset = "";
+        content.style.minHeight = "";
       };
     }
+
+    scroller.style.position = "";
+    scroller.style.overflow = "";
+    scroller.style.webkitOverflowScrolling = "";
+    scroller.style.inset = "";
+    content.style.minHeight = "";
 
     const lenis = new Lenis({
       wrapper: scroller,
@@ -2456,7 +2469,7 @@ export default function App() {
       gsap.ticker.remove(syncLenis);
       lenis.destroy();
     };
-  }, []);
+  }, [stage]);
 
   useEffect(() => {
     // handled via Lenis scroll listener above
