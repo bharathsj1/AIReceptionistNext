@@ -3287,27 +3287,35 @@ export default function DashboardScreen({
                 : ""
             }`}
           >
-            <div className={`flex min-h-[40px] items-center ${sideNavContentVisible ? "justify-end" : "justify-center"} gap-2`}>
-              <div className={`flex items-center gap-2 ${sideNavContentVisible ? "" : "mx-auto"}`}>
-                {sideNavContentVisible && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSideNavPinned((prev) => !prev);
-                      if (!sideNavPinned) openSideNav();
-                    }}
-                    className={`flex h-8 w-8 items-center justify-center rounded-full text-xs transition ${
-                      sideNavPinned
-                        ? "bg-white/10 text-indigo-100"
-                        : "text-slate-300 hover:bg-white/10 hover:text-white"
-                    }`}
-                    aria-label={sideNavPinned ? "Unpin menu" : "Pin menu"}
-                  >
-                    {sideNavPinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
-                  </button>
-                )}
-                {!sideNavContentVisible && <span className="h-8 w-8" />}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center">
+                <button
+                  type="button"
+                  className="flex h-10 w-10 items-center justify-center rounded-xl bg-transparent"
+                  aria-label="SmartConnect4u"
+                >
+                  <img
+                    src="/media/image.png"
+                    alt="SmartConnect4u"
+                    className="h-7 w-7"
+                  />
+                </button>
               </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSideNavPinned((prev) => !prev);
+                  if (!sideNavPinned) openSideNav();
+                }}
+                className={`flex h-8 w-8 items-center justify-center rounded-full text-xs transition ${
+                  sideNavPinned
+                    ? "bg-white/10 text-indigo-100"
+                    : "text-slate-300 hover:bg-white/10 hover:text-white"
+                } ${sideNavContentVisible ? "opacity-100" : "pointer-events-none opacity-0"}`}
+                aria-label={sideNavPinned ? "Unpin menu" : "Pin menu"}
+              >
+                {sideNavPinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
+              </button>
             </div>
             <div className="mt-2 grid gap-2">
               {toolTabs.map((tool) => {

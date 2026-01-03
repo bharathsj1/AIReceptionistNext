@@ -83,11 +83,13 @@ html {
 .logo-link {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
+  justify-content: center;
+  width: 170px;
+  height: 50px;
+  padding: 0;
   border-radius: 0;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(0, 0, 0, 0.45);
+  border: none;
+  background: transparent;
   color: #dbe7ff;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -98,8 +100,7 @@ html {
 
 .logo-link:hover {
   transform: translateY(-1px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: none;
 }
 
 .logo-link:focus-visible {
@@ -108,12 +109,14 @@ html {
 }
 
 .logo-img {
-  width: 28px;
-  height: 28px;
+  max-width: 170px;
+  max-height: 50px;
+  width: auto;
+  height: auto;
   object-fit: contain;
   border-radius: 0;
-  background: rgba(255, 255, 255, 0.08);
-  padding: 3px;
+  background: transparent;
+  padding: 0;
 }
 
 .logo-text {
@@ -444,16 +447,20 @@ html {
   color: #f3f5ff;
   cursor: pointer;
   user-select: none;
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 .brand-logo {
-  width: 32px;
-  height: 32px;
+  width: 120px;
+  height: 48px;
   object-fit: contain;
   border-radius: 0;
-  background: rgba(255, 255, 255, 0.08);
-  padding: 4px;
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35);
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
 }
 
 .brand-video {
@@ -1578,7 +1585,10 @@ html {
 .nav-left {
   display: flex;
   align-items: center;
-  gap: 28px;
+  flex: 1;
+  gap: 0;
+  justify-content: center;
+  position: relative;
 }
 
 .nav-links {
@@ -1586,6 +1596,7 @@ html {
   gap: 28px;
   flex-wrap: nowrap;
   align-items: flex-end;
+  justify-content: center;
 }
 
 .nav-link {
@@ -1606,6 +1617,7 @@ html {
 .nav-actions {
   display: flex;
   gap: 10px;
+  margin-left: auto;
 }
 
 .nav-item-with-sub {

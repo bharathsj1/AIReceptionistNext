@@ -2508,10 +2508,7 @@ export default function App() {
         </div>
         {showGlobalLogo && (
           <header className="global-logo-bar">
-            <button className="logo-link" onClick={handleGoHome} aria-label="Go to home">
-              <img src="/media/logo.png" alt="SmartConnect4u logo" className="logo-img" />
-              <span className="logo-text">SmartConnect4u</span>
-            </button>
+            <button className="logo-link" onClick={handleGoHome} aria-label="Go to home" />
           </header>
         )}
         <main className={contentClassName}>

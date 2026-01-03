@@ -167,8 +167,7 @@ export default function LandingScreen({ onTry, onLogin, onSelectPlan, onShowServ
       <div className="nav-card screen-panel sticky-nav">
         <div className="nav-left">
           <div className="brand">
-            <img src="/media/logo.png" alt="SmartConnect4u" className="brand-logo" />
-            <span className="brand-name">SmartConnect4u</span>
+            <img src="/media/smartconnect4u_white.png" alt="SmartConnect4u logo" className="brand-logo" />
           </div>
           <div className="nav-links">
             <button className="nav-link">Our purpose</button>
