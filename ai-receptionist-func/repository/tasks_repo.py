@@ -101,6 +101,21 @@ def list_tasks(
     return [task_to_dict(task) for task in query.all()]
 
 
+def list_task_updates(
+    db,
+    client_id: str,
+    since_dt: Optional[datetime] = None,
+    limit: int = 200,
+) -> List[Task]:
+    query = db.query(Task).filter(_client_id_filters(client_id))
+    if since_dt:
+        query = query.filter(Task.updated_at > since_dt)
+    query = query.order_by(Task.updated_at.asc())
+    if limit:
+        query = query.limit(limit)
+    return query.all()
+
+
 def get_task(db, client_id: str, task_id: str) -> Optional[Task]:
     return (
         db.query(Task)

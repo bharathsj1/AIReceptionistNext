@@ -10,7 +10,7 @@ from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
-_TABLE_NAME = os.getenv("TASK_EVENTS_TABLE", "task_events")
+_TABLE_NAME = os.getenv("TASK_EVENTS_TABLE", "taskevents")
 _MAX_MEMORY_EVENTS = 500
 
 _memory_events: List[dict] = []
