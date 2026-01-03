@@ -3,7 +3,7 @@ import sys
 
 
 def main() -> int:
-    conn_str = "DefaultEndpointsProtocol=https;AccountName=smartconnect4u;AccountKey=+rRQ8JG/hWkbmnwlZ+N7QTI32cBId3wNaVCW3hT3XG0MIdxvqADr/Q/03U+C6f7LVJzDVs56T4Mg+AStQWfm0w==;EndpointSuffix=core.windows.net"
+    conn_str = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
     if not conn_str:
         print("Missing AZURE_STORAGE_CONNECTION_STRING", file=sys.stderr)
         return 1
