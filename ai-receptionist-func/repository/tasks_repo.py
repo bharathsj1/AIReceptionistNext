@@ -61,6 +61,19 @@ def create_task(db, payload: dict) -> Task:
     return task
 
 
+def _client_id_filters(client_id: str):
+    client_id_str = str(client_id)
+    patterns = [
+        f"%value': '{client_id_str}%",
+        f"%\"value\"%{client_id_str}%",
+    ]
+    return or_(
+        Task.client_id == client_id_str,
+        Task.client_id.ilike(patterns[0]),
+        Task.client_id.ilike(patterns[1]),
+    )
+
+
 def list_tasks(
     db,
     client_id: str,
@@ -68,7 +81,7 @@ def list_tasks(
     search: Optional[str] = None,
     limit: int = 200,
 ) -> List[dict]:
-    query = db.query(Task).filter(Task.client_id == str(client_id))
+    query = db.query(Task).filter(_client_id_filters(client_id))
     if status and status != "ALL":
         query = query.filter(Task.status == status)
     if search:
@@ -91,7 +104,7 @@ def list_tasks(
 def get_task(db, client_id: str, task_id: str) -> Optional[Task]:
     return (
         db.query(Task)
-        .filter(Task.client_id == str(client_id), Task.id == str(task_id))
+        .filter(_client_id_filters(client_id), Task.id == str(task_id))
         .one_or_none()
     )
 

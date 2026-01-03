@@ -3976,6 +3976,12 @@ export default function DashboardScreen({
                         call.from_number ||
                         "Unknown";
                       const startLabel = call.start_time || call.started_at || call.startTime || null;
+                      const endLabel =
+                        call.end_time ||
+                        call.ended_at ||
+                        call.endTime ||
+                        call.endedAt ||
+                        null;
                       return (
                         <button
                           key={call.sid}
@@ -3986,9 +3992,12 @@ export default function DashboardScreen({
                           }`}
                           onClick={() => setSelectedCall(call)}
                         >
-                          <div className="flex items-center justify-between text-sm font-semibold">
+                          <div className="flex items-start justify-between text-sm font-semibold">
                             <span>{fromLabel}</span>
-                            <span className="text-xs text-slate-300">{formatDate(startLabel)}</span>
+                            <div className="text-right text-xs text-slate-300">
+                              <div>Start {formatDate(startLabel)}</div>
+                              <div>End {formatDate(endLabel)}</div>
+                            </div>
                           </div>
                           <div className="mt-1 flex items-center gap-2 text-xs text-slate-300">
                             <PhoneCall className="h-3.5 w-3.5" />

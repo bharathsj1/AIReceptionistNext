@@ -32,6 +32,23 @@ def _normalize_enum(value: Optional[str]) -> Optional[str]:
     return normalized
 
 
+def _extract_client_id(raw: Any) -> str:
+    if raw is None:
+        raise ValueError("clientId is required")
+    if isinstance(raw, dict):
+        for key in ("value", "id", "clientId"):
+            if key in raw and raw[key] is not None:
+                raw = raw[key]
+                break
+    text = str(raw).strip()
+    if not text:
+        raise ValueError("clientId is required")
+    match = re.search(r"['\"]value['\"]\s*:\s*['\"]([^'\"]+)['\"]", text)
+    if match:
+        return match.group(1).strip()
+    return text
+
+
 def _require_str(payload: Dict[str, Any], field: str) -> str:
     value = payload.get(field)
     if value is None:
@@ -67,7 +84,7 @@ def validate_task_create(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError("Invalid JSON payload")
 
-    client_id = _require_str(payload, "clientId")
+    client_id = _extract_client_id(payload.get("clientId"))
     type_raw = _require_str(payload, "type")
     task_type = _normalize_enum(type_raw)
     if task_type not in TASK_TYPES:
