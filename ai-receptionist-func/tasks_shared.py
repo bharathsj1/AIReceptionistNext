@@ -22,14 +22,11 @@ def _flag_enabled(name: str, default: bool = False) -> bool:
 
 
 def tasks_enabled() -> bool:
-    return _flag_enabled("ENABLE_TASKS", default=False)
+    return True
 
 
 def tasks_live_enabled() -> bool:
-    raw = get_setting("ENABLE_TASKS_LIVE")
-    if raw is None:
-        return tasks_enabled()
-    return _flag_enabled("ENABLE_TASKS_LIVE", default=False)
+    return True
 
 
 def disabled_response(cors: dict, status_code: int = 404) -> func.HttpResponse:
