@@ -1,7 +1,21 @@
 // Central place for API URLs and future endpoints.
 // Use environment variables to override defaults when needed.
 
-export const API_PROXY_BASE = import.meta.env.VITE_API_PROXY_BASE ?? "/api";
+const rawApiBase = import.meta.env.VITE_API_PROXY_BASE;
+const devHost = (import.meta.env.VITE_FUNCTION_HOST || "http://localhost:7071").replace(
+  /\/$/,
+  ""
+);
+const devApiBase = `${devHost}/api`;
+const isAzureHost =
+  typeof rawApiBase === "string" &&
+  rawApiBase.toLowerCase().includes("azurewebsites.net");
+
+export const API_PROXY_BASE = import.meta.env.DEV
+  ? rawApiBase && !isAzureHost
+    ? rawApiBase
+    : devApiBase
+  : rawApiBase ?? "/api";
 export const apiUrl = (path) =>
   `${API_PROXY_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
 

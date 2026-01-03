@@ -423,7 +423,7 @@ TASKS_TOOL_INSTRUCTION = (
 
 
 def _tasks_enabled() -> bool:
-    return (get_setting("ENABLE_TASKS") or "").lower() in ("1", "true", "yes", "on")
+    return True
 
 
 def _ensure_prompt_instruction(agent_id: str) -> None:

@@ -32,12 +32,15 @@ def tasks_stream(req: func.HttpRequest) -> func.HttpResponse:
             headers=cors,
         )
 
-    cursor = req.params.get("since") or req.params.get("cursor") or default_cursor()
+    cursor_param = req.params.get("since") or req.params.get("cursor")
+    cursor = cursor_param or default_cursor()
     timeout_raw = req.params.get("timeout")
     try:
         timeout = min(int(timeout_raw or 25), 25)
     except ValueError:
         timeout = 25
+    if cursor_param is None:
+        timeout = 0
 
     db = SessionLocal()
     try:
@@ -53,13 +56,14 @@ def tasks_stream(req: func.HttpRequest) -> func.HttpResponse:
     finally:
         db.close()
 
-    events = []
-    deadline = time.time() + max(timeout, 1)
-    while time.time() < deadline:
-        events = fetch_task_events(client_id, cursor)
-        if events:
-            break
-        time.sleep(1)
+    events = fetch_task_events(client_id, cursor)
+    if not events and timeout > 0:
+        deadline = time.time() + max(timeout, 0)
+        while time.time() < deadline:
+            events = fetch_task_events(client_id, cursor)
+            if events:
+                break
+            time.sleep(1)
 
     lines = ["retry: 5000"]
     if events:

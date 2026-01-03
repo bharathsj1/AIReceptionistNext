@@ -52,9 +52,7 @@ const resolveFeatureFlag = (value) => {
   if (value === undefined || value === null) return false;
   return ["1", "true", "yes", "on"].includes(String(value).toLowerCase());
 };
-const TASKS_ENABLED = resolveFeatureFlag(
-  import.meta.env.VITE_ENABLE_TASKS ?? import.meta.env.NEXT_PUBLIC_ENABLE_TASKS
-);
+const TASKS_ENABLED = true;
 const TASKS_LIVE_ENABLED = (() => {
   const raw =
     import.meta.env.VITE_ENABLE_TASKS_LIVE ??
