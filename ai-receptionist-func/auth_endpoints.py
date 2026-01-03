@@ -6,8 +6,9 @@ import hashlib
 import re
 import smtplib
 import ssl
+import threading
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 from zoneinfo import ZoneInfo
 from urllib.parse import parse_qs, quote
 
@@ -22,9 +23,11 @@ from services.ultravox_service import (
     create_ultravox_webhook,
     ensure_booking_tool,
     ensure_availability_tool,
+    ensure_tasks_tool,
     get_ultravox_agent,
     list_ultravox_tools,
 )
+from services.prompt_registry_service import generate_prompt_record
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +82,110 @@ def _build_event_id(raw_id: Optional[str]) -> Optional[str]:
     if not re.match(r"^[a-zA-Z0-9_]{5,1024}$", safe):
         return None
     return safe
+
+
+def _merge_website_data(existing: Optional[str], additions: Dict[str, Any]) -> str:
+    if not additions:
+        return existing or ""
+    base: Dict[str, Any] = {}
+    if existing:
+        try:
+            parsed = json.loads(existing)
+            if isinstance(parsed, dict):
+                base = parsed
+            else:
+                base = {"raw_website_data": parsed}
+        except json.JSONDecodeError:
+            base = {"raw_website_data": existing}
+    base.update(additions)
+    return json.dumps(base)
+
+
+def _normalize_business_profile(raw: Any) -> Optional[Dict[str, str]]:
+    if raw is None:
+        return None
+    payload = raw
+    if isinstance(raw, str):
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(payload, dict):
+        return None
+    source = payload.get("business_profile") if isinstance(payload.get("business_profile"), dict) else payload
+    if not isinstance(source, dict):
+        return None
+    return {
+        "business_name": str(source.get("business_name") or source.get("businessName") or source.get("name") or ""),
+        "business_summary": str(source.get("business_summary") or source.get("businessSummary") or ""),
+        "business_location": str(source.get("business_location") or source.get("location") or ""),
+        "business_hours": str(source.get("business_hours") or source.get("hours") or ""),
+        "business_openings": str(source.get("business_openings") or source.get("openings") or ""),
+        "business_services": str(source.get("business_services") or source.get("services") or ""),
+        "business_notes": str(source.get("business_notes") or source.get("notes") or ""),
+        "contact_email": str(source.get("contact_email") or source.get("businessEmail") or source.get("contactEmail") or ""),
+        "contact_phone": str(
+            source.get("contact_phone")
+            or source.get("businessPhone")
+            or source.get("contactNumber")
+            or source.get("business_phone")
+            or ""
+        ),
+    }
+
+
+def _extract_knowledge_text(raw: Any) -> Optional[str]:
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        return raw.strip() or None
+    if not isinstance(raw, dict):
+        return None
+    for key in ("knowledgeText", "knowledge_text", "raw_website_data", "website_text"):
+        value = raw.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _trigger_prompt_generation_async(
+    *,
+    client_id: int,
+    category: Optional[str],
+    sub_type: Optional[str],
+    task_type: Optional[str],
+    business_profile: Optional[Dict[str, Any]],
+    knowledge_text: Optional[str],
+    created_by: str,
+) -> None:
+    if not client_id or not sub_type:
+        return
+
+    def _worker() -> None:
+        db = SessionLocal()
+        try:
+            generate_prompt_record(
+                db,
+                client_id=client_id,
+                category=category,
+                sub_type=sub_type,
+                task_type=task_type,
+                business_profile=business_profile,
+                knowledge_text=knowledge_text,
+                created_by=created_by,
+            )
+            db.commit()
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.warning("Prompt generation failed: %s", exc)
+            try:
+                db.rollback()
+            except Exception:  # pylint: disable=broad-except
+                pass
+        finally:
+            db.close()
+
+    thread = threading.Thread(target=_worker, daemon=True)
+    thread.start()
 
 
 def _parse_dt_with_london_default(value: str) -> datetime:
@@ -540,6 +647,19 @@ def _ensure_ultravox_booking_tool_for_user(email: str, db):
             availability_created,
             availability_attached,
         )
+        if (get_setting("ENABLE_TASKS") or "").lower() in ("1", "true", "yes", "on"):
+            tasks_id, tasks_created, tasks_attached = ensure_tasks_tool(
+                client.ultravox_agent_id,
+                base,
+                str(client.id),
+            )
+            logger.info(
+                "Ultravox tasks tool ensure: agent=%s tasks_id=%s tasks_created=%s tasks_attached=%s",
+                client.ultravox_agent_id,
+                tasks_id,
+                tasks_created,
+                tasks_attached,
+            )
         # Keep the legacy call.ended webhook as non-blocking telemetry; avoid duplicates.
         try:
             from services.ultravox_service import list_ultravox_webhooks  # lazy import to avoid cycles
@@ -742,7 +862,7 @@ def auth_email_exists(req: func.HttpRequest) -> func.HttpResponse:
 def client_business_details(req: func.HttpRequest) -> func.HttpResponse:
     """
     Create or update a client with business name/phone after signup.
-    Payload: { email, businessName, businessPhone, websiteUrl? }
+    Payload: { email, businessName, businessPhone, websiteUrl?, businessCategory?, businessSubType?, businessCustomType? }
     """
     cors = build_cors_headers(req, ["POST", "OPTIONS"])
     if req.method == "OPTIONS":
@@ -755,7 +875,13 @@ def client_business_details(req: func.HttpRequest) -> func.HttpResponse:
     email = (body or {}).get("email")
     business_name = (body or {}).get("businessName")
     business_phone = (body or {}).get("businessPhone")
-    website_url = (body or {}).get("websiteUrl") or "pending"
+    business_category = (body or {}).get("businessCategory")
+    business_sub_type = (body or {}).get("businessSubType")
+    business_custom_type = (body or {}).get("businessCustomType")
+    website_url = (body or {}).get("websiteUrl")
+    website_data = (body or {}).get("websiteData")
+    profile = _normalize_business_profile(website_data)
+    website_payload = {"business_profile": profile} if profile else None
 
     if not email or not business_name or not business_phone:
         return func.HttpResponse(
@@ -778,7 +904,30 @@ def client_business_details(req: func.HttpRequest) -> func.HttpResponse:
             client.business_phone = business_phone
             client.name = business_name
             client.user_id = user.id if user else client.user_id
+            if business_category is not None:
+                client.business_category = business_category
+            if business_sub_type is not None:
+                client.business_sub_type = business_sub_type
+            if business_custom_type is not None:
+                client.business_custom_type = business_custom_type
+            if website_url:
+                client.website_url = website_url
+            if website_payload:
+                client.website_data = _merge_website_data(client.website_data, website_payload)
             db.commit()
+            profile_payload = _normalize_business_profile(website_data) or {
+                "businessName": business_name,
+                "businessPhone": business_phone,
+            }
+            _trigger_prompt_generation_async(
+                client_id=client.id,
+                category=client.business_category,
+                sub_type=client.business_sub_type,
+                task_type=None,
+                business_profile=profile_payload,
+                knowledge_text=_extract_knowledge_text(website_data),
+                created_by=f"user:{email}",
+            )
             return func.HttpResponse(
                 json.dumps({"client_id": client.id, "email": client.email}),
                 status_code=200,
@@ -786,16 +935,34 @@ def client_business_details(req: func.HttpRequest) -> func.HttpResponse:
                 headers=cors,
             )
 
+        website_url = website_url or "pending"
         client = Client(
             email=email,
             website_url=website_url,
             name=business_name,
             business_name=business_name,
             business_phone=business_phone,
+            business_category=business_category,
+            business_sub_type=business_sub_type,
+            business_custom_type=business_custom_type,
             user_id=user.id if user else None,
+            website_data=_merge_website_data(None, website_payload) if website_payload else None,
         )
         db.add(client)
         db.commit()
+        profile_payload = _normalize_business_profile(website_data) or {
+            "businessName": business_name,
+            "businessPhone": business_phone,
+        }
+        _trigger_prompt_generation_async(
+            client_id=client.id,
+            category=client.business_category,
+            sub_type=client.business_sub_type,
+            task_type=None,
+            business_profile=profile_payload,
+            knowledge_text=_extract_knowledge_text(website_data),
+            created_by=f"user:{email}",
+        )
         return func.HttpResponse(
             json.dumps({"client_id": client.id, "email": client.email}),
             status_code=201,
@@ -890,7 +1057,11 @@ def client_by_email(req: func.HttpRequest) -> func.HttpResponse:
             "email": client.email,
             "business_name": client.business_name,
             "business_phone": client.business_phone,
+            "business_category": client.business_category,
+            "business_sub_type": client.business_sub_type,
+            "business_custom_type": client.business_custom_type,
             "website_url": client.website_url,
+            "website_data": client.website_data,
             "user_id": client.user_id,
             "user_business_name": user.business_name if user else None,
             "user_business_number": user.business_number if user else None,

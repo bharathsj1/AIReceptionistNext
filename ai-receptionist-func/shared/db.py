@@ -90,6 +90,9 @@ class Client(Base):
     website_data = Column(Text, nullable=True)
     business_name = Column(String, nullable=True)
     business_phone = Column(String, nullable=True)
+    business_category = Column(String, nullable=True)
+    business_sub_type = Column(String, nullable=True)
+    business_custom_type = Column(String, nullable=True)
     booking_enabled = Column(Boolean, default=False)
     booking_duration_minutes = Column(Integer, nullable=True)
     booking_buffer_minutes = Column(Integer, nullable=True)
@@ -99,6 +102,24 @@ class Client(Base):
 
     user = relationship("User", back_populates="clients")
     phone_numbers = relationship("PhoneNumber", back_populates="client")
+
+
+class PromptRegistry(Base):
+    __tablename__ = "prompt_registry"
+
+    id = Column(String, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
+    category = Column(String, nullable=True)
+    sub_type = Column(String, nullable=False, index=True)
+    task_type = Column(String, nullable=True, index=True)
+    version = Column(Integer, nullable=False)
+    is_active = Column(Boolean, default=False)
+    prompt_text = Column(Text, nullable=False)
+    prompt_hash = Column(String, nullable=False)
+    source_data_hash = Column(String, nullable=False)
+    created_by = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class PhoneNumber(Base):
@@ -126,6 +147,27 @@ class Call(Base):
     status = Column(String, nullable=True)
     started_at = Column(DateTime, nullable=True, index=True)
     ended_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Task(Base):
+    __tablename__ = "tasks"
+
+    id = Column(String, primary_key=True, index=True)
+    client_id = Column(String, nullable=False, index=True)
+    call_id = Column(String, nullable=True, index=True)
+    twilio_call_sid = Column(String, nullable=True, index=True)
+    type = Column(String, nullable=False, index=True)
+    status = Column(String, nullable=False, index=True)
+    title = Column(String, nullable=False)
+    summary = Column(Text, nullable=True)
+    details_json = Column(JSON, nullable=True)
+    customer_name = Column(String, nullable=True)
+    customer_phone = Column(String, nullable=True)
+    customer_email = Column(String, nullable=True)
+    decision_at = Column(DateTime, nullable=True)
+    decision_reason = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -322,6 +364,12 @@ def _ensure_optional_columns() -> None:
             conn.execute(text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS business_name VARCHAR"))
         if "business_phone" not in client_columns:
             conn.execute(text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS business_phone VARCHAR"))
+        if "business_category" not in client_columns:
+            conn.execute(text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS business_category VARCHAR"))
+        if "business_sub_type" not in client_columns:
+            conn.execute(text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS business_sub_type VARCHAR"))
+        if "business_custom_type" not in client_columns:
+            conn.execute(text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS business_custom_type VARCHAR"))
         if "booking_enabled" not in client_columns:
             conn.execute(text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS booking_enabled BOOLEAN DEFAULT FALSE"))
         if "booking_duration_minutes" not in client_columns:
@@ -470,6 +518,46 @@ def _ensure_optional_columns() -> None:
                 conn.execute(text("ALTER TABLE calls ADD COLUMN IF NOT EXISTS selected_agent_id VARCHAR"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_calls_ai_phone_started ON calls (ai_phone_number, started_at)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_calls_agent_started ON calls (selected_agent_id, started_at)"))
+
+        if "tasks" not in existing_tables:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS tasks (
+                        id VARCHAR PRIMARY KEY,
+                        client_id VARCHAR NOT NULL,
+                        call_id VARCHAR,
+                        twilio_call_sid VARCHAR,
+                        type VARCHAR NOT NULL,
+                        status VARCHAR NOT NULL,
+                        title VARCHAR NOT NULL,
+                        summary TEXT,
+                        details_json JSONB,
+                        customer_name VARCHAR,
+                        customer_phone VARCHAR,
+                        customer_email VARCHAR,
+                        decision_at DATETIME,
+                        decision_reason TEXT,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_tasks_client_status ON tasks (client_id, status)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks (created_at DESC)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_tasks_call_id ON tasks (call_id)"))
+        else:
+            task_columns = {col["name"] for col in inspector.get_columns("tasks")}
+            if "decision_reason" not in task_columns:
+                conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS decision_reason TEXT"))
+            if "decision_at" not in task_columns:
+                conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS decision_at DATETIME"))
+            if "customer_email" not in task_columns:
+                conn.execute(text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS customer_email VARCHAR"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_tasks_client_status ON tasks (client_id, status)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks (created_at DESC)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_tasks_call_id ON tasks (call_id)"))
 
         if "social_connections" not in existing_tables:
             conn.execute(

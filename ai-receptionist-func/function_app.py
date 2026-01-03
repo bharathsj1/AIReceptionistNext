@@ -14,6 +14,7 @@ import health_endpoints  # noqa
 import crawler_endpoints  # noqa
 import onboarding_endpoints  # noqa
 import prompt_endpoints  # noqa
+import prompt_registry_endpoints  # noqa
 import auth_endpoints  # noqa
 import dashboard_endpoints  # noqa
 import ultravox_demo_endpoints  # noqa
@@ -21,3 +22,10 @@ import stripe_payment_endpoints  # noqa
 import call_endpoints  # noqa
 import email_endpoints  # noqa
 import social_endpoints  # noqa
+import tasks_create  # noqa
+import tasks_list  # noqa
+import tasks_detail  # noqa
+import tasks_accept  # noqa
+import tasks_reject  # noqa
+import tasks_stream  # noqa
+import tasks_changes  # noqa

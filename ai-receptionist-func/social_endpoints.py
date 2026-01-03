@@ -37,6 +37,15 @@ PLATFORM_X = "x"
 CHANNEL_FACEBOOK = "facebook"
 CHANNEL_INSTAGRAM = "instagram"
 
+_TRUTHY = {"1", "true", "yes", "y", "on"}
+
+
+def _social_scheduler_disabled() -> bool:
+    raw = get_setting("DISABLE_SOCIAL_SCHEDULER")
+    if raw is None:
+        return False
+    return str(raw).strip().lower() in _TRUTHY
+
 
 def _utcnow() -> datetime:
     return datetime.utcnow()
@@ -1744,6 +1753,9 @@ def _fetch_due_posts(db, limit: int = 5) -> list[SocialScheduledPost]:
 @app.function_name(name="SocialScheduler")
 @app.timer_trigger(schedule="0 */1 * * * *", arg_name="timer", run_on_startup=False, use_monitor=True)
 def social_scheduler(timer: func.TimerRequest) -> None:
+    if _social_scheduler_disabled():
+        logger.info("SocialScheduler disabled by DISABLE_SOCIAL_SCHEDULER")
+        return
     db = SessionLocal()
     try:
         due_posts = _fetch_due_posts(db)

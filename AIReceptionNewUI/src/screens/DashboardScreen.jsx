@@ -12,10 +12,12 @@ import {
   Archive,
   CalendarClock,
   CheckCircle2,
+  ClipboardList,
   Edit3,
   FileText,
   Globe2,
   Inbox,
+  LayoutGrid,
   Link2,
   Mail,
   MailOpen,
@@ -23,24 +25,57 @@ import {
   Megaphone,
   MessageSquare,
   Mic,
+  Pause,
   Paperclip,
+  Pin,
+  PinOff,
   PhoneCall,
+  Play,
+  Plug,
   RefreshCw,
   Reply,
+  Settings,
   Shield,
+  Sparkles,
   Star,
   Tag,
   Trash2,
   X,
-  User as UserIcon
+  User as UserIcon,
+  Users,
+  Building2
 } from "lucide-react";
 import { API_URLS } from "../config/urls";
+import TaskBoard from "./tasks/TaskBoard";
+
+const resolveFeatureFlag = (value) => {
+  if (value === undefined || value === null) return false;
+  return ["1", "true", "yes", "on"].includes(String(value).toLowerCase());
+};
+const TASKS_ENABLED = resolveFeatureFlag(
+  import.meta.env.VITE_ENABLE_TASKS ?? import.meta.env.NEXT_PUBLIC_ENABLE_TASKS
+);
+const TASKS_LIVE_ENABLED = (() => {
+  const raw =
+    import.meta.env.VITE_ENABLE_TASKS_LIVE ??
+    import.meta.env.NEXT_PUBLIC_ENABLE_TASKS_LIVE;
+  if (raw === undefined || raw === null || raw === "") return TASKS_ENABLED;
+  return resolveFeatureFlag(raw);
+})();
 
 const formatDuration = (seconds) => {
-  if (!seconds && seconds !== 0) return "—";
-  const mins = Math.floor(Number(seconds) / 60);
-  const secs = Number(seconds) % 60;
-  return `${mins}m ${secs.toString().padStart(2, "0")}s`;
+  if (seconds === null || seconds === undefined || seconds === "") return "—";
+  const totalSeconds = Number(seconds);
+  if (Number.isNaN(totalSeconds)) return "—";
+  const mins = Math.floor(totalSeconds / 60);
+  const rawSecs = totalSeconds % 60;
+  const trimmedSecs = rawSecs
+    .toFixed(3)
+    .replace(/\.?0+$/, "");
+  const [secWhole, secFrac] = trimmedSecs.split(".");
+  const paddedWhole = (secWhole || "0").padStart(2, "0");
+  const displaySecs = secFrac ? `${paddedWhole}.${secFrac}` : paddedWhole;
+  return `${mins}m ${displaySecs}s`;
 };
 
 const formatDate = (iso) => {
@@ -51,6 +86,13 @@ const formatDate = (iso) => {
   } catch {
     return iso;
   }
+};
+
+const formatStatusLabel = (value) => {
+  if (!value) return "Inactive";
+  return String(value)
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
 };
 
 const formatMessageTimestamp = (message) => {
@@ -140,6 +182,21 @@ const EMAIL_TAG_OPTIONS = [
 
 const REPLY_TONE_PRESETS = ["Professional", "Friendly", "Short", "Empathetic"];
 
+const BASE_DASHBOARD_TABS = [
+  { id: "dashboard", label: "Dashboard", icon: LayoutGrid },
+  { id: "agents", label: "Agents", icon: Users },
+  { id: "calls", label: "Calls", icon: PhoneCall },
+  { id: "business", label: "Business", icon: Building2 },
+  { id: "integrations", label: "Integrations", icon: Plug }
+];
+const DASHBOARD_TABS = TASKS_ENABLED
+  ? [
+      ...BASE_DASHBOARD_TABS.slice(0, 3),
+      { id: "tasks", label: "Tasks", icon: ClipboardList },
+      ...BASE_DASHBOARD_TABS.slice(3)
+    ]
+  : BASE_DASHBOARD_TABS;
+
 const priorityBadgeStyles = {
   Urgent: "border-rose-400/60 bg-rose-500/20 text-rose-100",
   Important: "border-amber-400/60 bg-amber-400/20 text-amber-200",
@@ -212,6 +269,74 @@ const getMessageTimestampValue = (message) => {
     if (!Number.isNaN(parsed.getTime())) return parsed.getTime();
   }
   return 0;
+};
+
+const languageDisplayNames =
+  typeof Intl !== "undefined" && typeof Intl.DisplayNames === "function"
+    ? new Intl.DisplayNames(["en"], { type: "language" })
+    : null;
+const regionDisplayNames =
+  typeof Intl !== "undefined" && typeof Intl.DisplayNames === "function"
+    ? new Intl.DisplayNames(["en"], { type: "region" })
+    : null;
+const scriptDisplayNames =
+  typeof Intl !== "undefined" && typeof Intl.DisplayNames === "function"
+    ? new Intl.DisplayNames(["en"], { type: "script" })
+    : null;
+
+const formatLanguageLabel = (code) => {
+  const normalized = String(code || "").replace(/_/g, "-").trim();
+  if (!normalized) return "";
+  if (!languageDisplayNames) return normalized;
+
+  const parts = normalized.split("-");
+  const languageCode = parts[0];
+  const detailParts = parts.slice(1);
+  const languageLabel = languageDisplayNames.of(languageCode) || normalized;
+  if (!detailParts.length) return languageLabel;
+
+  const details = detailParts
+    .map((part) => {
+      if (part.length === 4 && scriptDisplayNames) {
+        return scriptDisplayNames.of(part) || part;
+      }
+      if (regionDisplayNames) {
+        return regionDisplayNames.of(part.toUpperCase()) || part;
+      }
+      return part;
+    })
+    .filter(Boolean);
+
+  return details.length ? `${languageLabel} (${details.join(", ")})` : languageLabel;
+};
+
+const SUMMARY_LIMIT = 5000;
+const FIELD_LIMIT = 1000;
+
+const parseWebsiteData = (value) => {
+  if (!value) return null;
+  if (typeof value === "object") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+};
+
+const extractBusinessProfile = (websiteData) => {
+  if (!websiteData || typeof websiteData !== "object") return {};
+  let profile = websiteData.business_profile || websiteData.businessProfile || websiteData.profile;
+  if (!profile && websiteData.raw_website_data && typeof websiteData.raw_website_data === "object") {
+    profile = websiteData.raw_website_data;
+  }
+  if (typeof profile === "string") {
+    profile = parseWebsiteData(profile);
+  }
+  if (!profile || typeof profile !== "object" || Array.isArray(profile)) {
+    profile = websiteData;
+  }
+  if (!profile || typeof profile !== "object" || Array.isArray(profile)) return {};
+  return profile;
 };
 
 const StatCard = ({ label, value, hint, icon: Icon, tone = "default" }) => {
@@ -326,6 +451,7 @@ export default function DashboardScreen({
   businessSaveStatus,
   onBusinessSave,
   clientData,
+  manualBusinessInfo,
   userProfile,
   bookingSettings,
   bookingStatus,
@@ -350,11 +476,35 @@ export default function DashboardScreen({
   const pagedCalls = recentCalls.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   const [selectedCall, setSelectedCall] = useState(pagedCalls[0] || null);
+  useEffect(() => {
+    if (!TASKS_ENABLED && activeTab === "tasks") {
+      setActiveTab?.("dashboard");
+    }
+  }, [activeTab, setActiveTab]);
   const [businessForm, setBusinessForm] = useState({
     name: clientData?.business_name || clientData?.name || "",
     phone: clientData?.business_phone || "",
     website: clientData?.website_url || ""
   });
+  const [isBusinessEditing, setIsBusinessEditing] = useState(false);
+  const [businessProfileForm, setBusinessProfileForm] = useState({
+    businessName: clientData?.business_name || clientData?.name || "",
+    contactNumber: clientData?.business_phone || "",
+    contactEmail: manualBusinessInfo?.businessEmail || user?.email || "",
+    websiteUrl: manualBusinessInfo?.websiteUrl || clientData?.website_url || "",
+    businessSummary: "",
+    hours: "",
+    location: "",
+    services: "",
+    notes: "",
+    openings: ""
+  });
+  const [isBusinessProfileEditing, setIsBusinessProfileEditing] = useState(false);
+  const [promptStatus, setPromptStatus] = useState({ status: "idle", message: "", prompt: null });
+  const [promptHistory, setPromptHistory] = useState([]);
+  const [promptHistoryOpen, setPromptHistoryOpen] = useState(false);
+  const [promptHistoryStatus, setPromptHistoryStatus] = useState({ status: "idle", message: "" });
+  const [promptActionStatus, setPromptActionStatus] = useState({ status: "idle", message: "" });
   const [userForm, setUserForm] = useState({
     email: user?.email || "",
     businessName: userProfile?.business_name || "",
@@ -374,10 +524,12 @@ export default function DashboardScreen({
   const [selectedCalendarProvider, setSelectedCalendarProvider] = useState("google");
   const [calendarEditMode, setCalendarEditMode] = useState("edit");
   const [emailSubTab, setEmailSubTab] = useState("email");
+  const [settingsSection, setSettingsSection] = useState("automation");
   const [emailMailbox, setEmailMailbox] = useState("INBOX");
   const [emailUnreadOnly, setEmailUnreadOnly] = useState(false);
   const [emailAutoSummarize, setEmailAutoSummarize] = useState(true);
   const [emailPanelOpen, setEmailPanelOpen] = useState(false);
+  const [emailPanelContentVisible, setEmailPanelContentVisible] = useState(false);
   const [emailMessages, setEmailMessages] = useState([]);
   const [emailLoading, setEmailLoading] = useState(false);
   const [emailError, setEmailError] = useState("");
@@ -417,6 +569,7 @@ export default function DashboardScreen({
     references: ""
   });
   const [emailComposerStatus, setEmailComposerStatus] = useState({ status: "idle", message: "" });
+  const [emailComposerAiStatus, setEmailComposerAiStatus] = useState({ status: "idle", message: "" });
   const [selectedEmailMessage, setSelectedEmailMessage] = useState(null);
   const [emailSummaries, setEmailSummaries] = useState({});
   const [emailSummaryStatus, setEmailSummaryStatus] = useState({
@@ -475,7 +628,10 @@ export default function DashboardScreen({
   const [socialScheduledError, setSocialScheduledError] = useState("");
   const [selectedCallDay, setSelectedCallDay] = useState("All days");
   const [sideNavOpen, setSideNavOpen] = useState(false);
+  const [sideNavPinned, setSideNavPinned] = useState(false);
+  const [sideNavContentVisible, setSideNavContentVisible] = useState(false);
   const [sideNavHidden, setSideNavHidden] = useState(false);
+  const [voiceSamplePlaying, setVoiceSamplePlaying] = useState(false);
   const [showHolidayCalendars, setShowHolidayCalendars] = useState(true);
   const [showBirthdayEvents, setShowBirthdayEvents] = useState(true);
   const calendarRef = useRef(null);
@@ -488,7 +644,11 @@ export default function DashboardScreen({
   const socialConnectionsLoadedRef = useRef(false);
   const socialDraftsLoadedRef = useRef(false);
   const socialScheduledLoadedRef = useRef(false);
-  const sideNavHideTimerRef = useRef(null);
+  const sideNavCloseTimerRef = useRef(null);
+  const sideNavContentTimerRef = useRef(null);
+  const emailPanelCloseTimerRef = useRef(null);
+  const emailPanelContentTimerRef = useRef(null);
+  const voiceSampleRef = useRef(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -503,33 +663,74 @@ export default function DashboardScreen({
   }, [sideNavOpen, sideNavHidden]);
 
   useEffect(() => {
-    if (sideNavHidden) {
-      if (sideNavHideTimerRef.current) {
-        clearTimeout(sideNavHideTimerRef.current);
-      }
-      return;
-    }
-
-    const resetTimer = () => {
-      if (sideNavHideTimerRef.current) {
-        clearTimeout(sideNavHideTimerRef.current);
-      }
-      sideNavHideTimerRef.current = setTimeout(() => {
-        setSideNavHidden(true);
-      }, 5000);
-    };
-
-    const activityEvents = ["mousemove", "mousedown", "keydown", "scroll", "touchstart"];
-    resetTimer();
-    activityEvents.forEach((eventName) => window.addEventListener(eventName, resetTimer));
-
     return () => {
-      if (sideNavHideTimerRef.current) {
-        clearTimeout(sideNavHideTimerRef.current);
+      if (sideNavCloseTimerRef.current) {
+        clearTimeout(sideNavCloseTimerRef.current);
       }
-      activityEvents.forEach((eventName) => window.removeEventListener(eventName, resetTimer));
+      if (sideNavContentTimerRef.current) {
+        clearTimeout(sideNavContentTimerRef.current);
+      }
+      if (emailPanelCloseTimerRef.current) {
+        clearTimeout(emailPanelCloseTimerRef.current);
+      }
+      if (emailPanelContentTimerRef.current) {
+        clearTimeout(emailPanelContentTimerRef.current);
+      }
     };
-  }, [sideNavHidden]);
+  }, []);
+
+  const openSideNav = () => {
+    if (sideNavCloseTimerRef.current) {
+      clearTimeout(sideNavCloseTimerRef.current);
+    }
+    if (sideNavContentTimerRef.current) {
+      clearTimeout(sideNavContentTimerRef.current);
+    }
+    setSideNavOpen(true);
+    setSideNavContentVisible(true);
+  };
+
+  const closeSideNav = () => {
+    if (sideNavCloseTimerRef.current) {
+      clearTimeout(sideNavCloseTimerRef.current);
+    }
+    if (sideNavContentTimerRef.current) {
+      clearTimeout(sideNavContentTimerRef.current);
+    }
+    sideNavCloseTimerRef.current = setTimeout(() => {
+      setSideNavOpen(false);
+      sideNavContentTimerRef.current = setTimeout(() => {
+        setSideNavContentVisible(false);
+      }, 200);
+    }, 120);
+  };
+
+  const openEmailPanel = () => {
+    if (emailPanelCloseTimerRef.current) {
+      clearTimeout(emailPanelCloseTimerRef.current);
+    }
+    if (emailPanelContentTimerRef.current) {
+      clearTimeout(emailPanelContentTimerRef.current);
+    }
+    setEmailPanelOpen(true);
+    setEmailPanelContentVisible(true);
+  };
+
+  const closeEmailPanel = () => {
+    if (emailPanelCloseTimerRef.current) {
+      clearTimeout(emailPanelCloseTimerRef.current);
+    }
+    if (emailPanelContentTimerRef.current) {
+      clearTimeout(emailPanelContentTimerRef.current);
+    }
+    emailPanelCloseTimerRef.current = setTimeout(() => {
+      setEmailPanelOpen(false);
+      emailPanelContentTimerRef.current = setTimeout(() => {
+        setEmailPanelContentVisible(false);
+      }, 200);
+    }, 120);
+  };
+
 
   const filteredCalendarEvents = useMemo(() => {
     return (calendarEvents || []).filter((event) => {
@@ -998,9 +1199,27 @@ export default function DashboardScreen({
     });
   };
 
+  const handleVoiceSampleToggle = () => {
+    const audio = voiceSampleRef.current;
+    if (!audio || !selectedVoice?.sampleUrl) return;
+    if (voiceSamplePlaying) {
+      audio.pause();
+      setVoiceSamplePlaying(false);
+      return;
+    }
+    const playPromise = audio.play();
+    setVoiceSamplePlaying(true);
+    if (playPromise && typeof playPromise.catch === "function") {
+      playPromise.catch(() => {
+        setVoiceSamplePlaying(false);
+      });
+    }
+  };
+
   const openComposer = (mode = "new", message = null) => {
     setEmailComposerMode(mode);
     setEmailComposerStatus({ status: "idle", message: "" });
+    setEmailComposerAiStatus({ status: "idle", message: "" });
     if (!message || mode === "new") {
       setEmailComposerForm({
         to: "",
@@ -1092,6 +1311,50 @@ export default function DashboardScreen({
     } catch (err) {
       setEmailComposerStatus({ status: "error", message: err?.message || "Unable to send email." });
       return false;
+    }
+  };
+
+  const handleGenerateEmailDraft = async () => {
+    const emailAddress = user?.email || userForm.email;
+    if (!emailAddress) {
+      setEmailComposerAiStatus({ status: "error", message: "Missing user email." });
+      return;
+    }
+    const currentDraft = (emailComposerForm.body || "").trim();
+    if (!currentDraft) {
+      setEmailComposerAiStatus({
+        status: "error",
+        message: "Add a draft message to generate."
+      });
+      return;
+    }
+    setEmailComposerAiStatus({ status: "loading", message: "Generating..." });
+    try {
+      const res = await fetch(API_URLS.emailComposeDraft, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: emailAddress,
+          draft: currentDraft,
+          subject: emailComposerForm.subject,
+          to: emailComposerForm.to
+        })
+      });
+      if (!res.ok) {
+        throw new Error(await parseApiError(res, "Unable to generate email draft"));
+      }
+      const data = await res.json().catch(() => ({}));
+      const draftText = String(data?.draft || data?.body || "").trim();
+      if (!draftText) {
+        throw new Error("OpenAI returned an empty draft.");
+      }
+      setEmailComposerForm((prev) => ({ ...prev, body: draftText }));
+      setEmailComposerAiStatus({ status: "success", message: "AI draft ready." });
+    } catch (err) {
+      setEmailComposerAiStatus({
+        status: "error",
+        message: err?.message || "Unable to generate email draft."
+      });
     }
   };
 
@@ -1990,7 +2253,7 @@ export default function DashboardScreen({
   const toolTabs = [
     {
       id: "ai_receptionist",
-      label: "AI Receptionist",
+      label: "AI receptionist",
       eyebrow: "Voice + calls",
       icon: Shield,
       copy: "Route, transcribe, and analyze every customer conversation."
@@ -2004,7 +2267,7 @@ export default function DashboardScreen({
     },
     {
       id: "social_media_manager",
-      label: "Social Media Manager",
+      label: "Social media manager",
       eyebrow: "Content ops",
       icon: Megaphone,
       copy: "Plan content, enforce brand safety, and schedule multi-channel posts."
@@ -2022,15 +2285,15 @@ export default function DashboardScreen({
     { id: "SPAM", label: "Spam", icon: AlertTriangle },
     { id: "TRASH", label: "Trash", icon: Trash2 }
   ];
-  const emailSubTabItems = [
-    { id: "email", label: "Email", icon: Mail },
-    { id: "settings", label: "Settings", icon: Edit3 },
-    { id: "analytics", label: "Analytics", icon: Activity }
-  ];
   const socialSubTabs = [
     { id: "connect", label: "Connect" },
     { id: "inbox", label: "Inbox" },
     { id: "posts", label: "Posts" }
+  ];
+  const settingsSections = [
+    { id: "automation", label: "Automation summary" },
+    { id: "business", label: "Business profile" },
+    { id: "user", label: "User profile" }
   ];
 
   const isToolLocked = (toolId) => {
@@ -2048,6 +2311,10 @@ export default function DashboardScreen({
   const activeToolCopy =
     activeToolMeta?.copy || "Full control over your AI agents, analytics, and automations.";
   const ActiveIcon = activeToolMeta?.icon || Shield;
+  const isLightTheme = emailTheme === "light";
+  const lightThemeActive = isLightTheme;
+  const settingsActive = currentTool === "email_manager" && emailSubTab === "settings";
+  const showEmailSidePanel = emailSubTab !== "settings";
   const hasTwilioNumber = Boolean(aiNumber);
   const hasReceptionistSubscription = !subscriptionsLoading && !isToolLocked("ai_receptionist");
   const needsNumberAssignment = !hasTwilioNumber;
@@ -2073,6 +2340,148 @@ export default function DashboardScreen({
   const emailSelectionCount = selectedEmailIds.length;
   const emailAllSelected = Boolean(emailMessages.length && emailSelectionCount === emailMessages.length);
   const emailActionLoading = emailActionStatus.status === "loading";
+  const websiteData = useMemo(
+    () => parseWebsiteData(clientData?.website_data),
+    [clientData?.website_data]
+  );
+  const businessProfileData = useMemo(
+    () => extractBusinessProfile(websiteData),
+    [websiteData]
+  );
+  const derivedBusinessProfile = useMemo(
+    () => ({
+      businessName:
+        businessProfileData.business_name ||
+        businessProfileData.businessName ||
+        clientData?.business_name ||
+        clientData?.name ||
+        manualBusinessInfo?.businessName ||
+        "",
+      contactNumber:
+        businessProfileData.contact_phone ||
+        businessProfileData.business_phone ||
+        businessProfileData.businessPhone ||
+        clientData?.business_phone ||
+        manualBusinessInfo?.businessPhone ||
+        "",
+      contactEmail:
+        businessProfileData.contact_email ||
+        businessProfileData.businessEmail ||
+        manualBusinessInfo?.businessEmail ||
+        user?.email ||
+        "",
+      websiteUrl:
+        clientData?.website_url ||
+        businessProfileData.website_url ||
+        businessProfileData.websiteUrl ||
+        manualBusinessInfo?.websiteUrl ||
+        "",
+      businessSummary:
+        businessProfileData.business_summary ||
+        businessProfileData.businessSummary ||
+        manualBusinessInfo?.businessSummary ||
+        "",
+      hours:
+        businessProfileData.business_hours ||
+        businessProfileData.hours ||
+        manualBusinessInfo?.hours ||
+        "",
+      location:
+        businessProfileData.business_location ||
+        businessProfileData.location ||
+        manualBusinessInfo?.location ||
+        "",
+      services:
+        businessProfileData.business_services ||
+        businessProfileData.services ||
+        manualBusinessInfo?.services ||
+        "",
+      notes:
+        businessProfileData.business_notes ||
+        businessProfileData.notes ||
+        manualBusinessInfo?.notes ||
+        "",
+      openings:
+        businessProfileData.business_openings ||
+        businessProfileData.openings ||
+        manualBusinessInfo?.openings ||
+        ""
+    }),
+    [
+      businessProfileData.business_name,
+      businessProfileData.businessName,
+      businessProfileData.contact_phone,
+      businessProfileData.business_phone,
+      businessProfileData.businessPhone,
+      businessProfileData.contact_email,
+      businessProfileData.businessEmail,
+      businessProfileData.business_summary,
+      businessProfileData.businessSummary,
+      businessProfileData.business_hours,
+      businessProfileData.hours,
+      businessProfileData.business_location,
+      businessProfileData.location,
+      businessProfileData.business_services,
+      businessProfileData.services,
+      businessProfileData.business_notes,
+      businessProfileData.notes,
+      businessProfileData.business_openings,
+      businessProfileData.openings,
+      businessProfileData.website_url,
+      businessProfileData.websiteUrl,
+      clientData?.business_name,
+      clientData?.name,
+      clientData?.business_phone,
+      clientData?.website_url,
+      manualBusinessInfo?.businessName,
+      manualBusinessInfo?.businessPhone,
+      manualBusinessInfo?.businessEmail,
+      manualBusinessInfo?.websiteUrl,
+      manualBusinessInfo?.businessSummary,
+      manualBusinessInfo?.hours,
+      manualBusinessInfo?.location,
+      manualBusinessInfo?.services,
+      manualBusinessInfo?.notes,
+      manualBusinessInfo?.openings,
+      user?.email
+    ]
+  );
+  const businessProfileFieldClass = `w-full rounded-xl border border-white/10 px-3 py-2 text-sm outline-none transition ${
+    isBusinessProfileEditing
+      ? "bg-slate-900/60 text-slate-100 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
+      : "bg-slate-900/40 text-slate-200"
+  }`;
+  const subscriptionDetails = useMemo(() => {
+    if (!toolSubscriptions) return [];
+    const list = Object.entries(toolSubscriptions)
+      .map(([toolId, entry]) => {
+        if (!entry) return null;
+        const toolMeta = toolTabs.find((tool) => tool.id === toolId);
+        return {
+          id: toolId,
+          label: toolMeta?.label || toolId.replace(/_/g, " "),
+          active: Boolean(entry.active),
+          status: entry.status,
+          planId: entry.planId,
+          currentPeriodEnd: entry.currentPeriodEnd
+        };
+      })
+      .filter(Boolean);
+    return list.sort((a, b) => {
+      if (a.active !== b.active) return a.active ? -1 : 1;
+      return String(a.label || "").localeCompare(String(b.label || ""));
+    });
+  }, [toolSubscriptions, toolTabs]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (lightThemeActive) {
+      root.classList.add("theme-light");
+    } else {
+      root.classList.remove("theme-light");
+    }
+    return () => root.classList.remove("theme-light");
+  }, [lightThemeActive]);
   const emailActionError = emailActionStatus.status === "error" ? emailActionStatus.message : "";
   const emailActionSuccess = emailActionStatus.status === "success" ? emailActionStatus.message : "";
   const gmailLabelOptions = emailLabels
@@ -2151,6 +2560,148 @@ export default function DashboardScreen({
     }
   };
 
+  const promptClientId = clientData?.id || clientData?.client_id || null;
+  const promptSubType = clientData?.business_sub_type || "";
+  const promptCategory = clientData?.business_category || "";
+
+  const buildPromptKnowledgeText = (profile) => {
+    const lines = [
+      profile?.businessSummary ? `Summary: ${profile.businessSummary}` : "",
+      profile?.services ? `Services: ${profile.services}` : "",
+      profile?.hours ? `Hours: ${profile.hours}` : "",
+      profile?.location ? `Location: ${profile.location}` : "",
+      profile?.notes ? `Notes: ${profile.notes}` : "",
+      profile?.openings ? `Openings: ${profile.openings}` : ""
+    ];
+    return lines.filter(Boolean).join("\n");
+  };
+
+  const loadPromptStatus = async () => {
+    if (!user?.email || !promptClientId || !promptSubType) {
+      setPromptStatus({ status: "idle", message: "", prompt: null });
+      return;
+    }
+    setPromptStatus((prev) => ({ ...prev, status: "loading", message: "" }));
+    try {
+      const query = new URLSearchParams({
+        clientId: String(promptClientId),
+        subType: promptSubType,
+        email: user.email,
+        includeStatus: "true"
+      });
+      const res = await fetch(`${API_URLS.promptsActive}?${query.toString()}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to load prompt status");
+      }
+      setPromptStatus({ status: "success", message: "", prompt: data?.prompt || null });
+    } catch (error) {
+      setPromptStatus({
+        status: "error",
+        message: error?.message || "Failed to load prompt status",
+        prompt: null
+      });
+    }
+  };
+
+  const loadPromptHistory = async () => {
+    if (!user?.email || !promptClientId || !promptSubType) return;
+    setPromptHistoryStatus({ status: "loading", message: "" });
+    try {
+      const query = new URLSearchParams({
+        clientId: String(promptClientId),
+        subType: promptSubType,
+        email: user.email
+      });
+      const res = await fetch(`${API_URLS.promptsHistory}?${query.toString()}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to load prompt history");
+      }
+      setPromptHistory(data?.prompts || []);
+      setPromptHistoryStatus({ status: "success", message: "" });
+    } catch (error) {
+      setPromptHistoryStatus({
+        status: "error",
+        message: error?.message || "Failed to load prompt history"
+      });
+    }
+  };
+
+  const handlePromptRegenerate = async () => {
+    if (!user?.email || !promptClientId || !promptSubType) return;
+    setPromptActionStatus({ status: "loading", message: "Generating prompt..." });
+    const profilePayload = {
+      businessName: derivedBusinessProfile.businessName || "",
+      businessPhone: derivedBusinessProfile.contactNumber || "",
+      businessEmail: derivedBusinessProfile.contactEmail || "",
+      businessSummary: derivedBusinessProfile.businessSummary || "",
+      location: derivedBusinessProfile.location || "",
+      hours: derivedBusinessProfile.hours || "",
+      services: derivedBusinessProfile.services || "",
+      notes: derivedBusinessProfile.notes || "",
+      openings: derivedBusinessProfile.openings || "",
+      websiteUrl: derivedBusinessProfile.websiteUrl || ""
+    };
+    try {
+      const res = await fetch(API_URLS.promptsGenerate, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: user.email,
+          clientId: promptClientId,
+          category: promptCategory || null,
+          subType: promptSubType,
+          taskType: null,
+          businessProfile: profilePayload,
+          knowledgeText: buildPromptKnowledgeText(profilePayload)
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to generate prompt");
+      }
+      setPromptActionStatus({ status: "success", message: "Prompt generated" });
+      loadPromptStatus();
+      loadPromptHistory();
+    } catch (error) {
+      setPromptActionStatus({
+        status: "error",
+        message: error?.message || "Failed to generate prompt"
+      });
+    }
+  };
+
+  const handlePromptActivate = async (version) => {
+    if (!user?.email || !promptClientId || !promptSubType) return;
+    setPromptActionStatus({ status: "loading", message: "Activating prompt..." });
+    try {
+      const res = await fetch(API_URLS.promptsActivate, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: user.email,
+          clientId: promptClientId,
+          subType: promptSubType,
+          taskType: null,
+          version
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to activate prompt");
+      }
+      setPromptActionStatus({ status: "success", message: `Activated v${version}` });
+      loadPromptStatus();
+      loadPromptHistory();
+    } catch (error) {
+      setPromptActionStatus({
+        status: "error",
+        message: error?.message || "Failed to activate prompt"
+      });
+    }
+  };
+
   useEffect(() => {
     setBusinessForm({
       name: clientData?.business_name || clientData?.name || "",
@@ -2158,6 +2709,57 @@ export default function DashboardScreen({
       website: clientData?.website_url || ""
     });
   }, [clientData?.business_name, clientData?.business_phone, clientData?.name, clientData?.website_url]);
+
+  useEffect(() => {
+    if (businessSaveStatus?.status === "success") {
+      setIsBusinessEditing(false);
+      setIsBusinessProfileEditing(false);
+    }
+  }, [businessSaveStatus?.status]);
+
+  useEffect(() => {
+    if (settingsSection !== "business") return;
+    if (!promptClientId || !promptSubType || !user?.email) {
+      setPromptStatus({ status: "idle", message: "", prompt: null });
+      return;
+    }
+    loadPromptStatus();
+  }, [promptClientId, promptSubType, settingsSection, user?.email]);
+
+  useEffect(() => {
+    if (businessSaveStatus?.status !== "success") return;
+    if (!promptClientId || !promptSubType || !user?.email) return;
+    loadPromptStatus();
+  }, [businessSaveStatus?.status, promptClientId, promptSubType, user?.email]);
+
+  useEffect(() => {
+    if (isBusinessProfileEditing) return;
+    setBusinessProfileForm({
+      businessName: derivedBusinessProfile.businessName || "",
+      contactNumber: derivedBusinessProfile.contactNumber || "",
+      contactEmail: derivedBusinessProfile.contactEmail || user?.email || "",
+      websiteUrl: derivedBusinessProfile.websiteUrl || "",
+      businessSummary: derivedBusinessProfile.businessSummary || "",
+      hours: derivedBusinessProfile.hours || "",
+      location: derivedBusinessProfile.location || "",
+      services: derivedBusinessProfile.services || "",
+      notes: derivedBusinessProfile.notes || "",
+      openings: derivedBusinessProfile.openings || ""
+    });
+  }, [
+    derivedBusinessProfile.businessName,
+    derivedBusinessProfile.contactNumber,
+    derivedBusinessProfile.contactEmail,
+    derivedBusinessProfile.websiteUrl,
+    derivedBusinessProfile.businessSummary,
+    derivedBusinessProfile.hours,
+    derivedBusinessProfile.location,
+    derivedBusinessProfile.services,
+    derivedBusinessProfile.notes,
+    derivedBusinessProfile.openings,
+    isBusinessProfileEditing,
+    user?.email
+  ]);
 
   useEffect(() => {
     setUserForm({
@@ -2579,6 +3181,30 @@ export default function DashboardScreen({
     setAgentDetails((prev) => ({ ...prev, voice: filteredVoiceOptions[0].id }));
   }, [filteredVoiceOptions, primaryVoice, voiceLanguageFilter, setAgentDetails]);
 
+  useEffect(() => {
+    const audio = voiceSampleRef.current;
+    if (!audio) return;
+    const handleEnded = () => setVoiceSamplePlaying(false);
+    const handlePause = () => setVoiceSamplePlaying(false);
+    const handlePlay = () => setVoiceSamplePlaying(true);
+    audio.addEventListener("ended", handleEnded);
+    audio.addEventListener("pause", handlePause);
+    audio.addEventListener("play", handlePlay);
+    return () => {
+      audio.removeEventListener("ended", handleEnded);
+      audio.removeEventListener("pause", handlePause);
+      audio.removeEventListener("play", handlePlay);
+    };
+  }, [selectedVoice?.sampleUrl]);
+
+  useEffect(() => {
+    const audio = voiceSampleRef.current;
+    if (!audio) return;
+    audio.pause();
+    audio.currentTime = 0;
+    setVoiceSamplePlaying(false);
+  }, [selectedVoice?.sampleUrl]);
+
   const integrationStatus = calendarStatus || (calendarEvents?.length ? "Google" : null);
   const selectedProviderLabel = selectedCalendarProvider === "google" ? "Google" : "Outlook";
   const selectedProviderConnected =
@@ -2586,17 +3212,29 @@ export default function DashboardScreen({
   const sideNavWidthClass = sideNavHidden
     ? "w-0 min-w-0 max-w-0"
     : sideNavOpen
-      ? "w-full max-w-[22%] min-w-[220px]"
-      : "w-20";
+      ? "w-[154px]"
+      : "w-14";
 
   return (
     <section
-      className={`relative bg-slate-950 px-0 sm:px-2 lg:px-4 pt-2 pb-4 text-slate-100 ${
-        isEmailManager ? "min-h-screen sm:h-screen sm:overflow-hidden" : "min-h-screen"
-      }`}
+      className={`relative p-0 ${
+        lightThemeActive
+          ? "bg-transparent text-slate-900 email-theme-light"
+          : "bg-slate-950 text-slate-100"
+      } ${isEmailManager ? "min-h-screen sm:h-screen sm:overflow-hidden" : "min-h-screen"}`}
     >
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(99,102,241,0.08),transparent_32%),radial-gradient(circle_at_80%_0%,rgba(16,185,129,0.08),transparent_32%)]" />
-      <div className="absolute -left-6 -right-6 -top-6 bottom-0 bg-slate-950/60 backdrop-blur-3xl" />
+      <div
+        className={`absolute inset-0 ${
+          lightThemeActive
+            ? "bg-white"
+            : "bg-[radial-gradient(circle_at_20%_20%,rgba(99,102,241,0.08),transparent_32%),radial-gradient(circle_at_80%_0%,rgba(16,185,129,0.08),transparent_32%)]"
+        }`}
+      />
+      <div
+        className={`absolute -left-6 -right-6 -top-6 bottom-0 ${
+          lightThemeActive ? "bg-transparent backdrop-blur-none" : "bg-slate-950/60 backdrop-blur-3xl"
+        }`}
+      />
       <div className={`relative mx-auto w-full max-w-none ${isEmailManager ? "h-full" : ""}`}>
         {sideNavHidden && (
           <div
@@ -2607,7 +3245,11 @@ export default function DashboardScreen({
             <button
               type="button"
               onClick={() => setSideNavHidden(false)}
-              className="mt-3 -translate-x-1/2 rounded-full border border-white/5 bg-white/5 px-2 py-1 text-[11px] text-slate-400 opacity-40"
+              className={`mt-3 -translate-x-1/2 rounded-full border px-2 py-1 text-[11px] transition ${
+                lightThemeActive
+                  ? "border-slate-300 bg-white text-slate-600 shadow-sm opacity-100"
+                  : "border-white/5 bg-white/5 text-slate-400 opacity-40"
+              }`}
               aria-label="Show menu"
             >
               ⟩
@@ -2631,74 +3273,99 @@ export default function DashboardScreen({
           <aside
             aria-hidden={sideNavHidden}
             inert={sideNavHidden ? "" : undefined}
-            className={`sticky top-0 flex h-fit flex-col gap-3 rounded-3xl border border-white/10 bg-white/5 p-4 shadow-2xl backdrop-blur transition-all ${sideNavWidthClass} ${
+            onMouseEnter={openSideNav}
+            onMouseLeave={() => {
+              if (!sideNavPinned) closeSideNav();
+            }}
+            className={`sticky top-0 flex h-fit flex-none flex-col gap-3 overflow-hidden p-2 transition-[width] duration-200 ${sideNavWidthClass} ${
               sideNavHidden
-                ? "pointer-events-none overflow-hidden border-transparent bg-transparent p-0 opacity-0 shadow-none"
+                ? "pointer-events-none overflow-hidden p-0 opacity-0"
                 : ""
             }`}
           >
-            <div className={`flex items-center ${sideNavOpen ? "justify-between" : "justify-center"} gap-2`}>
-              {sideNavOpen && (
-                <button
-                  type="button"
-                  onClick={handleGoHome}
-                  className="flex items-center gap-2 text-[11px] tracking-[0.2em] text-indigo-200 transition hover:text-indigo-100"
-                  aria-label="Go to home"
-                >
-                  <img src="/media/logo.png" alt="SmartConnect4u" className="h-5 w-5" />
-                  <span>SmartConnect4u</span>
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => setSideNavOpen((prev) => !prev)}
-                className={`rounded-full border border-white/10 bg-white/5 px-2 py-1 text-xs text-slate-200 transition hover:border-white/30 ${
-                  sideNavOpen ? "" : "mx-auto"
-                }`}
-                aria-label={sideNavOpen ? "Collapse menu" : "Expand menu"}
-              >
-                {sideNavOpen ? "⟨" : "⟩"}
-              </button>
+            <div className={`flex min-h-[40px] items-center ${sideNavContentVisible ? "justify-end" : "justify-center"} gap-2`}>
+              <div className={`flex items-center gap-2 ${sideNavContentVisible ? "" : "mx-auto"}`}>
+                {sideNavContentVisible && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSideNavPinned((prev) => !prev);
+                      if (!sideNavPinned) openSideNav();
+                    }}
+                    className={`flex h-8 w-8 items-center justify-center rounded-full text-xs transition ${
+                      sideNavPinned
+                        ? "bg-white/10 text-indigo-100"
+                        : "text-slate-300 hover:bg-white/10 hover:text-white"
+                    }`}
+                    aria-label={sideNavPinned ? "Unpin menu" : "Pin menu"}
+                  >
+                    {sideNavPinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
+                  </button>
+                )}
+                {!sideNavContentVisible && <span className="h-8 w-8" />}
+              </div>
             </div>
             <div className="mt-2 grid gap-2">
               {toolTabs.map((tool) => {
                 const Icon = tool.icon;
                 const locked = isToolLocked(tool.id);
+                const isToolActive =
+                  currentTool === tool.id && !(settingsActive && tool.id === "email_manager");
                 return (
                   <button
                     key={tool.id}
                     onClick={() => {
                       setActiveTool?.(tool.id);
                       if (tool.id === "ai_receptionist") setActiveTab?.("dashboard");
+                      if (tool.id === "email_manager") setEmailSubTab("email");
                     }}
-                    className={`flex items-center ${
-                      sideNavOpen ? "justify-start gap-3 px-3" : "justify-center"
-                    } rounded-2xl border py-2 text-left transition ${
-                      currentTool === tool.id
-                        ? "border-indigo-400/70 bg-indigo-500/10 text-white"
-                        : "border-white/10 bg-white/5 text-slate-200 hover:border-white/25 hover:bg-white/10"
-                    }`}
+                    className={`group flex h-10 w-full items-center gap-2 rounded-2xl px-2 text-left transition ${
+                      sideNavContentVisible
+                        ? "text-slate-200 hover:bg-white/10 hover:text-white"
+                        : "text-slate-300 hover:bg-white/10 hover:text-white hover:shadow-[0_10px_22px_rgba(79,70,229,0.25)]"
+                    } ${isToolActive ? "bg-white/15 text-white" : ""}`}
                   >
-                    <Icon className="h-5 w-5 text-indigo-200" />
-                    {sideNavOpen && (
-                      <div className="flex-1">
-                        <p className="text-[11px] uppercase tracking-[0.18em] text-indigo-200">{tool.eyebrow}</p>
-                        <p className="text-sm font-semibold text-white">{tool.label}</p>
-                      </div>
-                    )}
-                    {sideNavOpen && (
-                      <span
-                        className={`ml-auto rounded-full border px-2 py-1 text-[10px] font-semibold ${
-                          locked
-                            ? "border-white/15 bg-white/5 text-slate-200"
-                            : "border-emerald-200/60 bg-emerald-500/20 text-emerald-50"
+                    <span className="flex h-7 w-7 items-center justify-center">
+                      <Icon className="h-[18px] w-[18px] text-indigo-200" />
+                    </span>
+                      <div
+                        className={`min-w-0 transition-opacity ${
+                          sideNavContentVisible
+                            ? "flex-1 opacity-100"
+                            : "max-w-0 overflow-hidden opacity-0"
                         }`}
                       >
-                        {subscriptionsLoading && !toolSubscriptions?.[tool.id]
-                          ? "Checking..."
-                          : locked
-                            ? "Locked"
-                            : "Active"}
+                        <p className="text-[12px] font-semibold text-white leading-tight">
+                          {tool.label}
+                        </p>
+                      </div>
+                    {sideNavContentVisible && (
+                      <span
+                        className={`ml-auto inline-flex h-6 w-6 items-center justify-center ${
+                          locked ? "text-orange-300" : "text-emerald-200"
+                        }`}
+                        aria-label={
+                          subscriptionsLoading && !toolSubscriptions?.[tool.id]
+                            ? "Checking access"
+                            : locked
+                              ? "Subscription required"
+                              : "Active subscription"
+                        }
+                        title={
+                          subscriptionsLoading && !toolSubscriptions?.[tool.id]
+                            ? "Checking access"
+                            : locked
+                              ? "Subscription required"
+                              : "Active subscription"
+                        }
+                      >
+                        {subscriptionsLoading && !toolSubscriptions?.[tool.id] ? (
+                          <RefreshCw className="h-3 w-3 animate-spin" />
+                        ) : locked ? (
+                          <AlertTriangle className="h-3 w-3" />
+                        ) : (
+                          <CheckCircle2 className="h-3 w-3" />
+                        )}
                       </span>
                     )}
                   </button>
@@ -2710,12 +3377,42 @@ export default function DashboardScreen({
                 type="button"
                 onClick={onResumeBusinessDetails}
                 className={`mt-2 inline-flex items-center justify-center rounded-2xl border border-indigo-400/60 bg-indigo-500/15 px-3 py-2 text-xs font-semibold text-indigo-100 transition hover:-translate-y-0.5 hover:border-indigo-300 hover:bg-indigo-500/25 ${
-                  sideNavOpen ? "" : "px-0"
+                  sideNavContentVisible ? "" : "px-0"
                 }`}
               >
-                {sideNavOpen ? "Enter business details" : "Go"}
+                {sideNavContentVisible ? "Enter business details" : "Go"}
               </button>
             )}
+            <div className="mt-2 border-t border-white/10 pt-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTool?.("email_manager");
+                  setEmailSubTab("settings");
+                }}
+                aria-current={settingsActive ? "page" : undefined}
+                className={`group flex h-10 w-full items-center gap-2 rounded-2xl px-2 text-left transition ${
+                  sideNavContentVisible
+                    ? "text-slate-200 hover:bg-white/10 hover:text-white"
+                    : "text-slate-300 hover:bg-white/10 hover:text-white hover:shadow-[0_10px_22px_rgba(79,70,229,0.25)]"
+                } ${
+                  settingsActive
+                    ? "bg-white/15 text-white"
+                    : ""
+                }`}
+              >
+                <span className="flex h-7 w-7 items-center justify-center">
+                  <Settings className="h-[18px] w-[18px] text-indigo-200" />
+                </span>
+                <span
+                  className={`truncate text-[12px] font-semibold text-white transition-opacity ${
+                    sideNavContentVisible ? "opacity-100 flex-1" : "opacity-0 max-w-0 overflow-hidden"
+                  }`}
+                >
+                  Settings
+                </span>
+              </button>
+            </div>
           </aside>
 
           <div className={`flex flex-1 flex-col gap-5 ${isEmailManager ? "min-h-0" : ""}`}>
@@ -2799,19 +3496,24 @@ export default function DashboardScreen({
               </div>
               {currentTool === "ai_receptionist" && (
                 <div className="flex flex-wrap items-center gap-2">
-                  {["dashboard", "agents", "calls", "business", "integrations"].map((tab) => (
-                    <button
-                      key={tab}
-                      onClick={() => setActiveTab?.(tab)}
-                      className={`rounded-full border px-3 py-1 text-sm capitalize transition ${
-                        activeTab === tab
-                          ? "border-indigo-400 bg-indigo-500/20 text-indigo-100"
-                          : "border-white/10 bg-white/5 text-slate-200 hover:border-white/30"
-                      }`}
-                    >
-                      {tab}
-                    </button>
-                  ))}
+                  {DASHBOARD_TABS.map((tab) => {
+                    const Icon = tab.icon;
+                    const isActive = activeTab === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        onClick={() => setActiveTab?.(tab.id)}
+                        className={`inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-semibold tracking-tight transition sm:text-sm ${
+                          isActive
+                            ? "border-indigo-300/80 bg-white/15 text-indigo-50 shadow-[0_12px_24px_rgba(15,23,42,0.35)]"
+                            : "border-white/10 bg-white/5 text-slate-200 hover:border-white/30 hover:bg-white/10"
+                        }`}
+                      >
+                        <Icon className={`h-4 w-4 ${isActive ? "text-indigo-100" : "text-slate-300"}`} />
+                        <span>{tab.label}</span>
+                      </button>
+                    );
+                  })}
                   <span className="ml-auto text-xs text-slate-400">
                     {subscriptionsLoading
                       ? "Checking access..."
@@ -2843,7 +3545,6 @@ export default function DashboardScreen({
                     value={`${analytics.answeredRate}%`}
                     hint="Completed calls"
                     icon={CheckCircle2}
-                    tone="success"
                   />
               <StatCard
                 label="Avg Duration"
@@ -2980,7 +3681,7 @@ export default function DashboardScreen({
                   <option value="all">All languages</option>
                   {voiceLanguageOptions.map((lang) => (
                     <option key={lang} value={lang}>
-                      {lang}
+                      {formatLanguageLabel(lang)}
                     </option>
                   ))}
                 </select>
@@ -3002,13 +3703,25 @@ export default function DashboardScreen({
                     ? "Loading Ultravox voices..."
                     : `${filteredVoiceOptions.length} voices available`}
                 </span>
+                {selectedVoice?.sampleUrl ? (
+                  <button
+                    type="button"
+                    onClick={handleVoiceSampleToggle}
+                    className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-100 transition hover:border-white/30 hover:bg-white/10"
+                  >
+                    {voiceSamplePlaying ? "Pause sample" : "Play sample"}
+                    {voiceSamplePlaying ? (
+                      <Pause className="h-3 w-3" />
+                    ) : (
+                      <Play className="h-3 w-3" />
+                    )}
+                  </button>
+                ) : null}
               </div>
               {selectedVoice?.sampleUrl ? (
-                <div className="mt-2">
-                  <audio controls className="w-full" src={selectedVoice.sampleUrl}>
-                    Your browser does not support audio playback.
-                  </audio>
-                </div>
+                <audio ref={voiceSampleRef} preload="none" src={selectedVoice.sampleUrl} className="hidden">
+                  Your browser does not support audio playback.
+                </audio>
               ) : null}
 
               <label className="mt-2 text-sm text-slate-200">System prompt</label>
@@ -3018,6 +3731,7 @@ export default function DashboardScreen({
                 onChange={(e) => setAgentDetails({ ...agentDetails, systemPrompt: e.target.value })}
                 className="w-full max-h-64 min-h-[160px] overflow-y-auto rounded-2xl border border-white/10 bg-slate-900/60 p-3 text-sm text-slate-100 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
                 placeholder="Guide your agent's behavior and personality."
+                data-lenis-prevent
               />
 
               <div className="grid gap-3 rounded-2xl border border-white/10 bg-slate-900/40 p-3 md:grid-cols-2">
@@ -3099,42 +3813,92 @@ export default function DashboardScreen({
                 </div>
               </div>
               <div className="grid gap-3">
-                <input
-                  type="text"
-                  value={businessForm.name}
-                  onChange={(e) => setBusinessForm({ ...businessForm, name: e.target.value })}
-                  placeholder="Business name"
-                  className="rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
-                />
-                <input
-                  type="tel"
-                  value={businessForm.phone}
-                  onChange={(e) => setBusinessForm({ ...businessForm, phone: e.target.value })}
-                  placeholder="Business phone"
-                  className="rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
-                />
-                <input
-                  type="url"
-                  value={businessForm.website}
-                  onChange={(e) => setBusinessForm({ ...businessForm, website: e.target.value })}
-                  placeholder="Website URL"
-                  className="rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
-                />
+                <div className="grid gap-1">
+                  <label className="text-xs uppercase tracking-[0.2em] text-slate-400">Business name</label>
+                  <input
+                    type="text"
+                    value={businessForm.name}
+                    onChange={(e) => setBusinessForm({ ...businessForm, name: e.target.value })}
+                    placeholder="Business name"
+                    readOnly={!isBusinessEditing}
+                    className={`rounded-xl border border-white/10 px-3 py-2 text-sm outline-none transition ${
+                      isBusinessEditing
+                        ? "bg-slate-900/60 text-slate-100 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
+                        : "bg-slate-900/40 text-slate-200"
+                    }`}
+                  />
+                </div>
+                <div className="grid gap-1">
+                  <label className="text-xs uppercase tracking-[0.2em] text-slate-400">Business phone</label>
+                  <input
+                    type="tel"
+                    value={businessForm.phone}
+                    onChange={(e) => setBusinessForm({ ...businessForm, phone: e.target.value })}
+                    placeholder="Business phone"
+                    readOnly={!isBusinessEditing}
+                    className={`rounded-xl border border-white/10 px-3 py-2 text-sm outline-none transition ${
+                      isBusinessEditing
+                        ? "bg-slate-900/60 text-slate-100 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
+                        : "bg-slate-900/40 text-slate-200"
+                    }`}
+                  />
+                </div>
+                <div className="grid gap-1">
+                  <label className="text-xs uppercase tracking-[0.2em] text-slate-400">Website URL</label>
+                  <input
+                    type="url"
+                    value={businessForm.website}
+                    onChange={(e) => setBusinessForm({ ...businessForm, website: e.target.value })}
+                    placeholder="Website URL"
+                    readOnly={!isBusinessEditing}
+                    className={`rounded-xl border border-white/10 px-3 py-2 text-sm outline-none transition ${
+                      isBusinessEditing
+                        ? "bg-slate-900/60 text-slate-100 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
+                        : "bg-slate-900/40 text-slate-200"
+                    }`}
+                  />
+                </div>
                 <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onBusinessSave?.({
-                        businessName: businessForm.name,
-                        businessPhone: businessForm.phone,
-                        websiteUrl: businessForm.website
-                      })
-                    }
-                    className="inline-flex items-center gap-2 rounded-xl border border-emerald-300/60 bg-emerald-500/20 px-3 py-2 text-xs font-semibold text-emerald-50 transition hover:-translate-y-0.5 hover:border-emerald-200 hover:bg-emerald-500/30"
-                  >
-                    <CheckCircle2 className="h-4 w-4" />
-                    Save business
-                  </button>
+                  {isBusinessEditing ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onBusinessSave?.({
+                            businessName: businessForm.name,
+                            businessPhone: businessForm.phone,
+                            websiteUrl: businessForm.website
+                          })
+                        }
+                        className="inline-flex items-center gap-2 rounded-xl border border-emerald-300/60 bg-emerald-500/20 px-3 py-2 text-xs font-semibold text-emerald-50 transition hover:-translate-y-0.5 hover:border-emerald-200 hover:bg-emerald-500/30"
+                      >
+                        <CheckCircle2 className="h-4 w-4" />
+                        Save business
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBusinessForm({
+                            name: clientData?.business_name || clientData?.name || "",
+                            phone: clientData?.business_phone || "",
+                            website: clientData?.website_url || ""
+                          });
+                          setIsBusinessEditing(false);
+                        }}
+                        className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:border-white/30 hover:bg-white/20"
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setIsBusinessEditing(true)}
+                      className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:border-white/30 hover:bg-white/20"
+                    >
+                      Edit business
+                    </button>
+                  )}
                   {businessSaveStatus?.message && (
                     <span
                       className={`text-xs ${
@@ -3149,52 +3913,15 @@ export default function DashboardScreen({
                 </div>
               </div>
             </div>
-
-            <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
-              <div className="mb-3 flex items-center gap-2">
-                <UserIcon className="h-5 w-5 text-indigo-200" />
-                <div>
-                  <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">User</p>
-                  <h4 className="text-lg font-semibold text-white">Your profile</h4>
-                </div>
-              </div>
-              <div className="grid gap-3">
-                <input
-                  type="email"
-                  value={userForm.email}
-                  readOnly
-                  className="rounded-xl border border-white/10 bg-slate-900/40 px-3 py-2 text-sm text-slate-200"
-                />
-                <input
-                  type="text"
-                  value={userForm.businessName}
-                  onChange={(e) => setUserForm({ ...userForm, businessName: e.target.value })}
-                  placeholder="Business name"
-                  className="rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
-                />
-                <input
-                  type="tel"
-                  value={userForm.businessNumber}
-                  onChange={(e) => setUserForm({ ...userForm, businessNumber: e.target.value })}
-                  placeholder="Business number"
-                  className="rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
-                />
-                <button
-                  type="button"
-                  onClick={() =>
-                    onBusinessSave?.({
-                      businessName: userForm.businessName,
-                      businessPhone: userForm.businessNumber,
-                      websiteUrl: businessForm.website
-                    })
-                  }
-                  className="inline-flex items-center gap-2 self-start rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:border-white/30 hover:bg-white/20"
-                >
-                  Update profile
-                </button>
-              </div>
-            </div>
           </section>
+        )}
+
+        {activeTab === "tasks" && TASKS_ENABLED && (
+          <TaskBoard
+            email={user?.email}
+            businessName={clientData?.business_name || clientData?.name}
+            liveEnabled={TASKS_LIVE_ENABLED}
+          />
         )}
 
         {activeTab === "calls" && (
@@ -3606,161 +4333,102 @@ export default function DashboardScreen({
             className="flex-1 min-h-0"
           >
             <div
-              className={`email-manager-shell min-h-screen sm:h-full sm:min-h-0 ${emailTheme === "light" ? "email-theme-light" : ""}`}
+              className={`email-manager-shell min-h-screen sm:h-full sm:min-h-0 ${lightThemeActive ? "email-theme-light" : ""}`}
             >
               <div className="relative grid gap-4 sm:h-full sm:min-h-0 sm:grid-rows-[auto,1fr] sm:overflow-hidden">
               <section
-                className={`grid gap-4 sm:h-full sm:min-h-0 sm:overflow-hidden ${
-                  emailSubTab === "email"
-                    ? emailPanelOpen
-                      ? "lg:grid-cols-[180px_1.25fr_1.6fr]"
-                      : "lg:grid-cols-[64px_1.41fr_1.6fr]"
-                    : emailPanelOpen
-                      ? "lg:grid-cols-[180px_1.55fr]"
-                      : "lg:grid-cols-[64px_1.84fr]"
+                className={`grid gap-4 transition-[grid-template-columns] duration-200 ease-out sm:h-full sm:min-h-0 sm:overflow-hidden ${
+                  showEmailSidePanel
+                    ? emailSubTab === "email"
+                      ? emailPanelOpen
+                        ? "lg:grid-cols-[180px_1.25fr_1.6fr]"
+                        : "lg:grid-cols-[64px_1.41fr_1.6fr]"
+                      : emailPanelOpen
+                        ? "lg:grid-cols-[180px_1.55fr]"
+                        : "lg:grid-cols-[64px_1.84fr]"
+                    : "lg:grid-cols-1"
                 }`}
               >
+                {showEmailSidePanel && (
                 <aside
-                  className={`rounded-3xl border border-white/10 bg-white/5 shadow-xl backdrop-blur overflow-hidden flex flex-col sm:min-h-0 sm:h-full ${
-                    emailPanelOpen ? "p-3 sm:p-4" : "p-2"
-                  }`}
+                  className="rounded-3xl border border-white/10 bg-white/5 shadow-xl backdrop-blur overflow-hidden flex flex-col p-3 sm:p-4 sm:min-h-0 sm:h-full"
                 >
-                  <div className={`flex items-center ${emailPanelOpen ? "justify-between" : "justify-center"}`}>
-                    {emailPanelOpen && (
-                      <p className="text-[11px] uppercase tracking-[0.28em] text-indigo-200">Gmail inbox</p>
-                    )}
+                  <div className="relative flex min-h-[32px] items-center justify-center">
+                    <span />
                     <button
                       type="button"
-                      onClick={() => setEmailPanelOpen((prev) => !prev)}
-                      className={`rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs text-slate-200 transition hover:border-white/30 ${
-                        emailPanelOpen ? "" : "mx-auto"
-                      }`}
+                      onClick={() => {
+                        if (emailPanelOpen) {
+                          closeEmailPanel();
+                        } else {
+                          openEmailPanel();
+                        }
+                      }}
+                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-xs text-slate-200 transition hover:border-white/30"
                       aria-label={emailPanelOpen ? "Collapse inbox panel" : "Expand inbox panel"}
                     >
                       {emailPanelOpen ? "⟨" : "⟩"}
                     </button>
                   </div>
 
-                  <div className={`mt-4 ${emailPanelOpen ? "" : "flex justify-center"}`}>
-                    <button
-                      type="button"
-                      onClick={() => openComposer("new")}
-                      className={`inline-flex items-center justify-center rounded-xl border border-emerald-300/50 bg-emerald-500/20 text-xs font-semibold text-emerald-50 transition hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-emerald-500/30 ${
-                        emailPanelOpen ? "w-full gap-2 px-3 py-2" : "h-10 w-10"
-                      }`}
-                      aria-label="Compose email"
-                    >
-                      <MailPlus className="h-4 w-4" />
-                      {emailPanelOpen ? "New mail" : null}
-                    </button>
-                  </div>
-
-                  {emailPanelOpen ? (
-                    <>
-                      {emailSubTab === "email" ? (
-                        <div className="mt-4 border-t border-white/10 pt-4">
-                          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Mailboxes</p>
-                          <div className="mt-2 grid gap-1">
-                            {mailboxItems.map((item) => {
-                              const Icon = item.icon;
-                              const isActive = emailMailbox === item.id;
-                              return (
-                                <button
-                                  key={item.id}
-                                  type="button"
-                                  onClick={() => handleMailboxSelect(item.id)}
-                                  className={`flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-xs transition ${
-                                    isActive
-                                      ? "border-indigo-400/50 bg-indigo-500/15 text-indigo-100"
-                                      : "border-white/10 bg-slate-900/40 text-slate-200 hover:border-white/30"
-                                  }`}
-                                >
-                                  <span className="flex items-center gap-2">
-                                    <Icon className="h-4 w-4" />
-                                    {item.label}
-                                  </span>
-                                  {isActive ? null : null}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ) : null}
-                      <div className="mt-auto border-t border-white/10 pt-4">
-                        <div className="grid gap-2">
-                          {emailSubTabItems.map((item) => {
-                            const Icon = item.icon;
-                            const isActive = emailSubTab === item.id;
-                            return (
-                              <button
-                                key={`email-nav-${item.id}`}
-                                type="button"
-                                onClick={() => setEmailSubTab(item.id)}
-                                className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition ${
-                                  isActive
-                                    ? "border-indigo-400 bg-indigo-500/20 text-indigo-100"
-                                    : "border-white/10 bg-white/5 text-slate-200 hover:border-white/30"
-                                }`}
-                              >
-                                <Icon className="h-4 w-4" />
-                                {item.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="mt-4 flex w-full flex-1 flex-col items-center">
-                      {emailSubTab === "email" ? (
-                        <div className="flex w-full flex-row flex-wrap items-center justify-center gap-3 sm:flex-col">
-                          {mailboxItems.map((item) => {
-                            const Icon = item.icon;
-                            const isActive = emailMailbox === item.id;
-                            return (
-                              <button
-                                key={item.id}
-                                type="button"
-                                onClick={() => handleMailboxSelect(item.id)}
-                                className={`flex h-9 w-9 items-center justify-center rounded-lg border transition ${
-                                  isActive
-                                    ? "border-indigo-400/60 bg-indigo-500/15 text-indigo-100"
-                                    : "border-white/10 bg-slate-900/40 text-slate-200 hover:border-white/30"
-                                }`}
-                                aria-label={item.label}
-                                title={item.label}
-                              >
-                                <Icon className="h-5 w-5" />
-                              </button>
-                            );
-                          })}
-                        </div>
-                      ) : null}
-                      <div className="mt-auto flex flex-col items-center gap-2 border-t border-white/10 pt-3">
-                        {emailSubTabItems.map((item) => {
+                  {emailSubTab === "email" ? (
+                    <div className="mt-4 border-t border-white/10 pt-4">
+                      <div className={`mt-2 grid gap-1 ${emailPanelOpen ? "" : "justify-items-center"}`}>
+                        <button
+                          type="button"
+                          onClick={() => openComposer("new")}
+                          className="flex h-10 w-full items-center gap-2 rounded-xl px-2 text-xs font-semibold text-emerald-100 transition hover:bg-white/10 hover:text-emerald-200"
+                          aria-label="New mail"
+                        >
+                          <span className="flex h-7 w-7 items-center justify-center">
+                            <MailPlus className="h-4 w-4" />
+                          </span>
+                          <span
+                            className={`whitespace-nowrap transition-[max-width,opacity] duration-300 ease-out ${
+                              emailPanelContentVisible
+                                ? "max-w-[140px] opacity-100"
+                                : "max-w-0 overflow-hidden opacity-0"
+                            }`}
+                          >
+                            New mail
+                          </span>
+                        </button>
+                        {mailboxItems.map((item) => {
                           const Icon = item.icon;
-                          const isActive = emailSubTab === item.id;
+                          const isActive = emailMailbox === item.id;
                           return (
                             <button
-                              key={`email-nav-collapsed-${item.id}`}
+                              key={item.id}
                               type="button"
-                              onClick={() => setEmailSubTab(item.id)}
-                              className={`flex h-9 w-9 items-center justify-center rounded-lg border transition ${
+                              onClick={() => handleMailboxSelect(item.id)}
+                              className={`flex h-10 w-full items-center gap-2 rounded-xl px-2 text-xs transition ${
                                 isActive
-                                  ? "border-indigo-400/60 bg-indigo-500/15 text-indigo-100"
-                                  : "border-white/10 bg-slate-900/40 text-slate-200 hover:border-white/30"
+                                  ? "bg-white/15 text-white"
+                                  : "text-slate-200 hover:bg-white/10 hover:text-white"
                               }`}
                               aria-label={item.label}
                               title={item.label}
                             >
-                              <Icon className="h-4 w-4" />
+                              <span className="flex h-7 w-7 items-center justify-center">
+                                <Icon className="h-4 w-4" />
+                              </span>
+                              <span
+                                className={`whitespace-nowrap transition-[max-width,opacity] duration-300 ease-out ${
+                                  emailPanelContentVisible
+                                    ? "max-w-[140px] opacity-100"
+                                    : "max-w-0 overflow-hidden opacity-0"
+                                }`}
+                              >
+                                {item.label}
+                              </span>
                             </button>
                           );
                         })}
                       </div>
                     </div>
-                  )}
+                  ) : null}
                 </aside>
+                )}
 
                 {emailSubTab === "email" ? (
                   <div className="contents">
@@ -4802,119 +5470,613 @@ export default function DashboardScreen({
                   </div>
                   </div>
                 ) : emailSubTab === "settings" ? (
-                  <div className="grid gap-4 lg:grid-cols-[1.25fr_1fr]">
-                    <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Automation</p>
-                        <h4 className="text-lg font-semibold text-white">Summary settings</h4>
-                      </div>
-                      <span className={`text-xs ${gmailConnected ? "text-emerald-200" : "text-slate-400"}`}>
-                        {gmailStatusLabel}
-                      </span>
-                    </div>
-                    <div className="mt-4 grid gap-3 text-sm text-slate-200">
-                      <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-slate-900/40 p-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                          <p className="text-sm font-semibold text-white">Theme</p>
-                          <p className="text-xs text-slate-400">Switch the email manager appearance.</p>
-                        </div>
-                        <div className="flex items-center gap-1 rounded-full border border-white/10 bg-white/5 p-1 text-xs">
+                  <div
+                    className="grid gap-4 lg:grid-cols-[200px_minmax(0,1fr)] sm:h-full sm:min-h-0 sm:overflow-y-auto"
+                    data-lenis-prevent
+                  >
+                    <nav className="rounded-3xl border border-white/10 bg-white/5 p-3 shadow-xl backdrop-blur">
+                      <p className="text-[11px] uppercase tracking-[0.28em] text-indigo-200">Settings</p>
+                      <div className="mt-3 flex gap-2 overflow-x-auto pb-1 lg:flex-col lg:gap-2 lg:overflow-visible">
+                        {settingsSections.map((section) => (
                           <button
+                            key={section.id}
                             type="button"
-                            onClick={() => setEmailTheme("dark")}
-                            className={`rounded-full px-3 py-1 font-semibold transition ${
-                              emailTheme === "dark"
-                                ? "bg-indigo-500/30 text-white"
-                                : "text-slate-300 hover:text-white"
+                            onClick={() => setSettingsSection(section.id)}
+                            className={`rounded-xl px-3 py-2 text-left text-xs font-semibold transition ${
+                              settingsSection === section.id
+                                ? "bg-white/15 text-white"
+                                : "text-slate-200 hover:bg-white/10 hover:text-white"
                             }`}
-                            aria-pressed={emailTheme === "dark"}
                           >
-                            Dark
+                            {section.label}
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => setEmailTheme("light")}
-                            className={`rounded-full px-3 py-1 font-semibold transition ${
-                              emailTheme === "light"
-                                ? "bg-indigo-500/30 text-white"
-                                : "text-slate-300 hover:text-white"
-                            }`}
-                            aria-pressed={emailTheme === "light"}
-                          >
-                            Light
-                          </button>
+                        ))}
+                      </div>
+                    </nav>
+                    <div className="grid gap-4">
+                      {settingsSection === "automation" && (
+                        <>
+                          <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                              <div>
+                                <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Automation</p>
+                                <h4 className="text-lg font-semibold text-white">Summary settings</h4>
+                              </div>
+                              <span className={`text-xs ${gmailConnected ? "text-emerald-200" : "text-slate-400"}`}>
+                                {gmailStatusLabel}
+                              </span>
+                            </div>
+                            <div className="mt-4 grid gap-3 text-sm text-slate-200">
+                              <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-slate-900/40 p-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                  <p className="text-sm font-semibold text-white">Theme</p>
+                                  <p className="text-xs text-slate-400">Switch the email manager appearance.</p>
+                                </div>
+                                <div className="flex items-center gap-1 rounded-full border border-white/10 bg-white/5 p-1 text-xs">
+                                  <button
+                                    type="button"
+                                    onClick={() => setEmailTheme("dark")}
+                                    className={`rounded-full px-3 py-1 font-semibold transition ${
+                                      emailTheme === "dark"
+                                        ? "bg-indigo-500/30 text-white"
+                                        : "text-slate-300 hover:text-white"
+                                    }`}
+                                    aria-pressed={emailTheme === "dark"}
+                                  >
+                                    Dark
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEmailTheme("light")}
+                                    className={`rounded-full px-3 py-1 font-semibold transition ${
+                                      emailTheme === "light"
+                                        ? "bg-indigo-500/30 text-white"
+                                        : "text-slate-300 hover:text-white"
+                                    }`}
+                                    aria-pressed={emailTheme === "light"}
+                                  >
+                                    Light
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-slate-900/40 p-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                  <p className="text-sm font-semibold text-white">Auto-summarize on open</p>
+                                  <p className="text-xs text-slate-400">
+                                    Generate a summary whenever you select an email.
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setEmailAutoSummarize((prev) => !prev)}
+                                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
+                                    emailAutoSummarize ? "bg-emerald-400" : "bg-white/10"
+                                  }`}
+                                >
+                                  <span
+                                    className={`inline-block h-5 w-5 transform rounded-full bg-white transition ${
+                                      emailAutoSummarize ? "translate-x-5" : "translate-x-1"
+                                    }`}
+                                  />
+                                </button>
+                              </div>
+                              <div className="rounded-2xl border border-white/10 bg-slate-900/40 p-3 text-xs text-slate-300">
+                                Summaries are generated using OpenAI. We only send the selected email content.
+                              </div>
+                            </div>
+                          </div>
+                          <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                              <div>
+                                <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Connection</p>
+                                <h4 className="mt-1 text-lg font-semibold text-white">Gmail access</h4>
+                              </div>
+                            </div>
+                            <p className="mt-2 text-xs text-slate-300">
+                              {gmailAccountLabel ? `Connected account: ${gmailAccountLabel}` : "No account connected yet."}
+                            </p>
+                            <div className="mt-3 grid gap-2 text-xs text-slate-200">
+                              <button
+                                type="button"
+                                onClick={() => beginGoogleLogin?.({ force: true })}
+                                disabled={status === "loading"}
+                                className="inline-flex items-center justify-center rounded-xl border border-emerald-300/50 bg-emerald-500/20 px-3 py-2 font-semibold text-emerald-50"
+                              >
+                                Connect Gmail
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleEmailRefresh}
+                                className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-white"
+                              >
+                                Refresh inbox
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleEmailDisconnect}
+                                className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-white"
+                              >
+                                Disconnect
+                              </button>
+                            </div>
+                          </div>
+                          <div className="rounded-3xl border border-white/10 bg-white/5 p-4 text-xs text-slate-300 shadow-xl backdrop-blur">
+                            <p className="text-sm font-semibold text-white">Data handling</p>
+                            <p className="mt-2">
+                              Gmail permissions allow reading, labeling, and sending messages so inbox actions can run.
+                              You can revoke access at any time by disconnecting the account.
+                            </p>
+                          </div>
+                        </>
+                      )}
+                      {settingsSection === "business" && (
+                        <>
+                          <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
+                          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Business</p>
+                              <h4 className="text-lg font-semibold text-white">Business profile</h4>
+                            </div>
+                            {!isBusinessProfileEditing ? (
+                              <button
+                                type="button"
+                                onClick={() => setIsBusinessProfileEditing(true)}
+                                className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:border-white/30 hover:bg-white/20"
+                              >
+                                Edit business profile
+                              </button>
+                            ) : null}
+                          </div>
+                          <div className="grid gap-3 text-sm text-slate-200">
+                            <div className="grid gap-3 md:grid-cols-2">
+                              <div className="grid gap-1">
+                                <label className="text-xs uppercase tracking-[0.2em] text-slate-400">Business name</label>
+                                <input
+                                  type="text"
+                                  value={businessProfileForm.businessName}
+                                  onChange={(e) =>
+                                    setBusinessProfileForm((prev) => ({
+                                      ...prev,
+                                      businessName: e.target.value
+                                    }))
+                                  }
+                                  placeholder="Business name"
+                                  readOnly={!isBusinessProfileEditing}
+                                  className={businessProfileFieldClass}
+                                />
+                              </div>
+                              <div className="grid gap-1">
+                                <label className="text-xs uppercase tracking-[0.2em] text-slate-400">Contact number</label>
+                                <input
+                                  type="tel"
+                                  value={businessProfileForm.contactNumber}
+                                  onChange={(e) =>
+                                    setBusinessProfileForm((prev) => ({
+                                      ...prev,
+                                      contactNumber: e.target.value
+                                    }))
+                                  }
+                                  placeholder="Contact number"
+                                  readOnly={!isBusinessProfileEditing}
+                                  className={businessProfileFieldClass}
+                                />
+                              </div>
+                              <div className="grid gap-1">
+                                <label className="text-xs uppercase tracking-[0.2em] text-slate-400">Contact email</label>
+                                <input
+                                  type="email"
+                                  value={businessProfileForm.contactEmail}
+                                  onChange={(e) =>
+                                    setBusinessProfileForm((prev) => ({
+                                      ...prev,
+                                      contactEmail: e.target.value
+                                    }))
+                                  }
+                                  placeholder="Contact email"
+                                  readOnly={!isBusinessProfileEditing}
+                                  className={businessProfileFieldClass}
+                                />
+                              </div>
+                              <div className="grid gap-1">
+                                <label className="text-xs uppercase tracking-[0.2em] text-slate-400">Website</label>
+                                <input
+                                  type="url"
+                                  value={businessProfileForm.websiteUrl}
+                                  onChange={(e) =>
+                                    setBusinessProfileForm((prev) => ({
+                                      ...prev,
+                                      websiteUrl: e.target.value
+                                    }))
+                                  }
+                                  placeholder="https://example.com"
+                                  readOnly={!isBusinessProfileEditing}
+                                  className={businessProfileFieldClass}
+                                />
+                              </div>
+                            </div>
+
+                            <div className="grid gap-1">
+                              <label className="text-xs uppercase tracking-[0.2em] text-slate-400">What do you do? *</label>
+                              <textarea
+                                rows={3}
+                                maxLength={SUMMARY_LIMIT}
+                                value={businessProfileForm.businessSummary}
+                                onChange={(e) =>
+                                  setBusinessProfileForm((prev) => ({
+                                    ...prev,
+                                    businessSummary: e.target.value
+                                  }))
+                                }
+                                placeholder="Explain what you sell, who you serve, and the tone you want."
+                                readOnly={!isBusinessProfileEditing}
+                                className={businessProfileFieldClass}
+                                data-lenis-prevent
+                              />
+                              <div className="text-xs text-slate-400 text-right">
+                                {(businessProfileForm.businessSummary || "").length}/{SUMMARY_LIMIT}
+                              </div>
+                            </div>
+
+                            <div className="grid gap-3 md:grid-cols-2">
+                              <div className="grid gap-1">
+                                <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                                  Business openings / hours
+                                </label>
+                                <textarea
+                                  rows={2}
+                                  maxLength={FIELD_LIMIT}
+                                  value={businessProfileForm.hours}
+                                  onChange={(e) =>
+                                    setBusinessProfileForm((prev) => ({
+                                      ...prev,
+                                      hours: e.target.value
+                                    }))
+                                  }
+                                  placeholder="Mon–Fri 9am–6pm; Sat by appointment."
+                                  readOnly={!isBusinessProfileEditing}
+                                  className={businessProfileFieldClass}
+                                  data-lenis-prevent
+                                />
+                                <div className="text-xs text-slate-400 text-right">
+                                  {(businessProfileForm.hours || "").length}/{FIELD_LIMIT}
+                                </div>
+                              </div>
+                              <div className="grid gap-1">
+                                <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                                  Location / service area
+                                </label>
+                                <textarea
+                                  rows={2}
+                                  maxLength={FIELD_LIMIT}
+                                  value={businessProfileForm.location}
+                                  onChange={(e) =>
+                                    setBusinessProfileForm((prev) => ({
+                                      ...prev,
+                                      location: e.target.value
+                                    }))
+                                  }
+                                  placeholder="City, region, or service area."
+                                  readOnly={!isBusinessProfileEditing}
+                                  className={businessProfileFieldClass}
+                                  data-lenis-prevent
+                                />
+                                <div className="text-xs text-slate-400 text-right">
+                                  {(businessProfileForm.location || "").length}/{FIELD_LIMIT}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="grid gap-3 md:grid-cols-2">
+                              <div className="grid gap-1">
+                                <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                                  Key services or offerings
+                                </label>
+                                <textarea
+                                  rows={2}
+                                  maxLength={FIELD_LIMIT}
+                                  value={businessProfileForm.services}
+                                  onChange={(e) =>
+                                    setBusinessProfileForm((prev) => ({
+                                      ...prev,
+                                      services: e.target.value
+                                    }))
+                                  }
+                                  placeholder="Top services, prices, and qualifications."
+                                  readOnly={!isBusinessProfileEditing}
+                                  className={businessProfileFieldClass}
+                                  data-lenis-prevent
+                                />
+                                <div className="text-xs text-slate-400 text-right">
+                                  {(businessProfileForm.services || "").length}/{FIELD_LIMIT}
+                                </div>
+                              </div>
+                              <div className="grid gap-1">
+                                <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                                  Must-know notes for the AI
+                                </label>
+                                <textarea
+                                  rows={2}
+                                  maxLength={FIELD_LIMIT}
+                                  value={businessProfileForm.notes}
+                                  onChange={(e) =>
+                                    setBusinessProfileForm((prev) => ({
+                                      ...prev,
+                                      notes: e.target.value
+                                    }))
+                                  }
+                                  placeholder="Escalation rules, blocked topics, VIP instructions."
+                                  readOnly={!isBusinessProfileEditing}
+                                  className={businessProfileFieldClass}
+                                  data-lenis-prevent
+                                />
+                                <div className="text-xs text-slate-400 text-right">
+                                  {(businessProfileForm.notes || "").length}/{FIELD_LIMIT}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="grid gap-1">
+                              <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                                Additional openings or availability
+                              </label>
+                              <textarea
+                                rows={2}
+                                maxLength={FIELD_LIMIT}
+                                value={businessProfileForm.openings}
+                                onChange={(e) =>
+                                  setBusinessProfileForm((prev) => ({
+                                    ...prev,
+                                    openings: e.target.value
+                                  }))
+                                }
+                                placeholder="Seasonal availability, holiday closures, special notes."
+                                readOnly={!isBusinessProfileEditing}
+                                className={businessProfileFieldClass}
+                                data-lenis-prevent
+                              />
+                              <div className="text-xs text-slate-400 text-right">
+                                {(businessProfileForm.openings || "").length}/{FIELD_LIMIT}
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                              {isBusinessProfileEditing ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      onBusinessSave?.({
+                                        businessName: businessProfileForm.businessName,
+                                        businessPhone: businessProfileForm.contactNumber,
+                                        websiteUrl: businessProfileForm.websiteUrl,
+                                        websiteData: {
+                                          businessName: businessProfileForm.businessName,
+                                          businessPhone: businessProfileForm.contactNumber,
+                                          businessEmail: businessProfileForm.contactEmail,
+                                          businessSummary: businessProfileForm.businessSummary,
+                                          location: businessProfileForm.location,
+                                          hours: businessProfileForm.hours,
+                                          openings: businessProfileForm.openings,
+                                          services: businessProfileForm.services,
+                                          notes: businessProfileForm.notes,
+                                          websiteUrl: businessProfileForm.websiteUrl
+                                        }
+                                      })
+                                    }
+                                    disabled={businessSaveStatus?.status === "loading"}
+                                    className="inline-flex items-center gap-2 rounded-xl border border-emerald-300/60 bg-emerald-500/20 px-3 py-2 text-xs font-semibold text-emerald-50 transition hover:-translate-y-0.5 hover:border-emerald-200 hover:bg-emerald-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    <CheckCircle2 className="h-4 w-4" />
+                                    Save business profile
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setBusinessProfileForm({
+                                        businessName: derivedBusinessProfile.businessName || "",
+                                        contactNumber: derivedBusinessProfile.contactNumber || "",
+                                        contactEmail: derivedBusinessProfile.contactEmail || user?.email || "",
+                                        websiteUrl: derivedBusinessProfile.websiteUrl || "",
+                                        businessSummary: derivedBusinessProfile.businessSummary || "",
+                                        hours: derivedBusinessProfile.hours || "",
+                                        location: derivedBusinessProfile.location || "",
+                                        services: derivedBusinessProfile.services || "",
+                                        notes: derivedBusinessProfile.notes || "",
+                                        openings: derivedBusinessProfile.openings || ""
+                                      });
+                                      setIsBusinessProfileEditing(false);
+                                    }}
+                                    className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:border-white/30 hover:bg-white/20"
+                                  >
+                                    Cancel
+                                  </button>
+                                </>
+                              ) : null}
+                              {businessSaveStatus?.message && (
+                                <span
+                                  className={`text-xs ${
+                                    businessSaveStatus.status === "error"
+                                      ? "text-rose-300"
+                                      : "text-emerald-200"
+                                  }`}
+                                >
+                                  {businessSaveStatus.message}
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                      <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-slate-900/40 p-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                          <p className="text-sm font-semibold text-white">Auto-summarize on open</p>
-                          <p className="text-xs text-slate-400">
-                            Generate a summary whenever you select an email.
-                          </p>
+                        <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                              <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">AI Agent Prompt</p>
+                              <h4 className="text-lg font-semibold text-white">Prompt registry</h4>
+                            </div>
+                            <span
+                              className={`text-xs ${
+                                promptStatus.status === "error"
+                                  ? "text-rose-300"
+                                  : promptStatus.prompt?.status === "needs_regen"
+                                    ? "text-amber-200"
+                                    : "text-emerald-200"
+                              }`}
+                            >
+                              {promptSubType
+                                ? promptStatus.status === "loading"
+                                  ? "Checking..."
+                                  : promptStatus.prompt?.status === "needs_regen"
+                                    ? "Needs regeneration"
+                                    : promptStatus.prompt
+                                      ? "Up to date"
+                                      : "Not generated"
+                                : "Missing business type"}
+                            </span>
+                          </div>
+                          <div className="mt-3 grid gap-2 text-xs text-slate-300">
+                            <div className="flex items-center justify-between">
+                              <span>Active version</span>
+                              <span className="text-slate-100">
+                                {promptStatus.prompt?.version ? `v${promptStatus.prompt.version}` : "—"}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span>Last generated</span>
+                              <span className="text-slate-100">
+                                {promptStatus.prompt?.updatedAt
+                                  ? formatDate(promptStatus.prompt.updatedAt)
+                                  : "—"}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={handlePromptRegenerate}
+                              disabled={!promptSubType || promptActionStatus.status === "loading"}
+                              className="inline-flex items-center gap-2 rounded-xl border border-emerald-300/60 bg-emerald-500/20 px-3 py-2 text-xs font-semibold text-emerald-50 transition hover:-translate-y-0.5 hover:border-emerald-200 hover:bg-emerald-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              <Sparkles className="h-4 w-4" />
+                              Regenerate
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPromptHistoryOpen(true);
+                                loadPromptHistory();
+                              }}
+                              disabled={!promptSubType || promptHistoryStatus.status === "loading"}
+                              className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:border-white/30 hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              <FileText className="h-4 w-4" />
+                              View versions
+                            </button>
+                          </div>
+                          {promptActionStatus.message ? (
+                            <div
+                              className={`mt-3 text-xs ${
+                                promptActionStatus.status === "error"
+                                  ? "text-rose-300"
+                                  : "text-emerald-200"
+                              }`}
+                            >
+                              {promptActionStatus.message}
+                            </div>
+                          ) : null}
+                          {promptHistoryStatus.status === "error" ? (
+                            <div className="mt-2 text-xs text-rose-300">
+                              {promptHistoryStatus.message}
+                            </div>
+                          ) : null}
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => setEmailAutoSummarize((prev) => !prev)}
-                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
-                            emailAutoSummarize ? "bg-emerald-400" : "bg-white/10"
-                          }`}
-                        >
-                          <span
-                            className={`inline-block h-5 w-5 transform rounded-full bg-white transition ${
-                              emailAutoSummarize ? "translate-x-5" : "translate-x-1"
-                            }`}
-                          />
-                        </button>
-                      </div>
-                      <div className="rounded-2xl border border-white/10 bg-slate-900/40 p-3 text-xs text-slate-300">
-                        Summaries are generated using OpenAI. We only send the selected email content.
-                      </div>
-                    </div>
-                  </div>
-                  <div className="grid gap-4">
-                    <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                          <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Connection</p>
-                          <h4 className="mt-1 text-lg font-semibold text-white">Gmail access</h4>
+                        </>
+                      )}
+                      {settingsSection === "user" && (
+                        <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
+                          <div className="mb-3 flex items-center gap-2">
+                            <UserIcon className="h-5 w-5 text-indigo-200" />
+                            <div>
+                              <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">User</p>
+                              <h4 className="text-lg font-semibold text-white">Your profile</h4>
+                            </div>
+                          </div>
+                          <div className="grid gap-3">
+                            <input
+                              type="email"
+                              value={userForm.email}
+                              readOnly
+                              className="rounded-xl border border-white/10 bg-slate-900/40 px-3 py-2 text-sm text-slate-200"
+                            />
+                            <input
+                              type="text"
+                              value={userForm.businessName}
+                              onChange={(e) => setUserForm({ ...userForm, businessName: e.target.value })}
+                              placeholder="Business name"
+                              className="rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
+                            />
+                            <input
+                              type="tel"
+                              value={userForm.businessNumber}
+                              onChange={(e) => setUserForm({ ...userForm, businessNumber: e.target.value })}
+                              placeholder="Business number"
+                              className="rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
+                            />
+                            <div className="rounded-2xl border border-white/10 bg-slate-900/40 p-3 text-xs text-slate-200">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Subscriptions</p>
+                                {subscriptionsLoading ? (
+                                  <span className="text-[11px] text-slate-400">Checking...</span>
+                                ) : null}
+                              </div>
+                              {subscriptionsLoading ? (
+                                <p className="mt-2 text-[11px] text-slate-400">Loading subscription details.</p>
+                              ) : subscriptionDetails.length ? (
+                                <div className="mt-2 grid gap-2">
+                                  {subscriptionDetails.map((sub) => (
+                                    <div
+                                      key={sub.id}
+                                      className="rounded-lg border border-white/10 bg-slate-900/60 px-2 py-2"
+                                    >
+                                      <div className="flex items-center justify-between gap-2 text-xs">
+                                        <span className="font-semibold text-slate-100">{sub.label}</span>
+                                        <span
+                                          className={`text-[11px] ${
+                                            sub.active ? "text-emerald-200" : "text-slate-400"
+                                          }`}
+                                        >
+                                          {formatStatusLabel(sub.status || (sub.active ? "active" : "inactive"))}
+                                        </span>
+                                      </div>
+                                      {(sub.planId || sub.currentPeriodEnd) ? (
+                                        <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-400">
+                                          {sub.planId ? <span>Plan: {sub.planId}</span> : null}
+                                          {sub.currentPeriodEnd ? (
+                                            <span>Period ends: {formatDate(sub.currentPeriodEnd)}</span>
+                                          ) : null}
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="mt-2 text-[11px] text-slate-400">No subscription details yet.</p>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onBusinessSave?.({
+                                  businessName: userForm.businessName,
+                                  businessPhone: userForm.businessNumber,
+                                  websiteUrl: businessForm.website
+                                })
+                              }
+                              className="inline-flex items-center gap-2 self-start rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:border-white/30 hover:bg-white/20"
+                            >
+                              Update profile
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                      <p className="mt-2 text-xs text-slate-300">
-                        {gmailAccountLabel ? `Connected account: ${gmailAccountLabel}` : "No account connected yet."}
-                      </p>
-                      <div className="mt-3 grid gap-2 text-xs text-slate-200">
-                        <button
-                          type="button"
-                          onClick={() => beginGoogleLogin?.({ force: true })}
-                          disabled={status === "loading"}
-                          className="inline-flex items-center justify-center rounded-xl border border-emerald-300/50 bg-emerald-500/20 px-3 py-2 font-semibold text-emerald-50"
-                        >
-                          Connect Gmail
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleEmailRefresh}
-                          className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-white"
-                        >
-                          Refresh inbox
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleEmailDisconnect}
-                          className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-white"
-                        >
-                          Disconnect
-                        </button>
-                      </div>
-                    </div>
-                    <div className="rounded-3xl border border-white/10 bg-white/5 p-4 text-xs text-slate-300 shadow-xl backdrop-blur">
-                      <p className="text-sm font-semibold text-white">Data handling</p>
-                      <p className="mt-2">
-                        Gmail permissions allow reading, labeling, and sending messages so inbox actions can run.
-                        You can revoke access at any time by disconnecting the account.
-                      </p>
-                    </div>
+                      )}
                     </div>
                   </div>
                 ) : (
@@ -5056,6 +6218,16 @@ export default function DashboardScreen({
                         rows={8}
                         className="w-full rounded-2xl border border-white/10 bg-slate-900/60 px-3 py-2 text-xs text-white placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none"
                       />
+                      {emailComposerAiStatus.status === "error" ? (
+                        <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+                          {emailComposerAiStatus.message}
+                        </div>
+                      ) : null}
+                      {emailComposerAiStatus.status === "success" ? (
+                        <div className="rounded-xl border border-indigo-400/30 bg-indigo-500/10 px-3 py-2 text-xs text-indigo-100">
+                          {emailComposerAiStatus.message}
+                        </div>
+                      ) : null}
                       {emailComposerStatus.status === "error" ? (
                         <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
                           {emailComposerStatus.message}
@@ -5074,6 +6246,20 @@ export default function DashboardScreen({
                         className="w-full rounded-xl border border-white/10 bg-white/10 px-4 py-2 text-xs text-white sm:w-auto"
                       >
                         Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleGenerateEmailDraft}
+                        disabled={
+                          emailComposerAiStatus.status === "loading" ||
+                          emailComposerStatus.status === "loading"
+                        }
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-indigo-300/50 bg-indigo-500/20 px-4 py-2 text-xs font-semibold text-indigo-100 disabled:opacity-60 sm:w-auto"
+                      >
+                        {emailComposerAiStatus.status === "loading"
+                          ? "Generating..."
+                          : "Generate with AI"}
+                        <Sparkles className="h-3.5 w-3.5" />
                       </button>
                       <button
                         type="button"
@@ -5885,6 +7071,80 @@ export default function DashboardScreen({
                     : "Save changes"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {promptHistoryOpen && (
+        <div className="calendar-modal">
+          <div className="calendar-modal-card">
+            <div className="calendar-modal-header">
+              <div>
+                <p className="calendar-modal-eyebrow">AI prompt registry</p>
+                <h4 className="calendar-modal-title">Prompt versions</h4>
+              </div>
+              <button
+                type="button"
+                className="calendar-modal-close"
+                onClick={() => setPromptHistoryOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+            <div className="calendar-modal-body">
+              {promptHistoryStatus.status === "loading" ? (
+                <div className="text-xs text-slate-300">Loading prompt history...</div>
+              ) : promptHistoryStatus.status === "error" ? (
+                <div className="text-xs text-rose-300">{promptHistoryStatus.message}</div>
+              ) : promptHistory.length ? (
+                <div className="grid gap-2">
+                  {promptHistory.map((prompt) => (
+                    <div
+                      key={prompt.id}
+                      className="rounded-2xl border border-white/10 bg-slate-900/50 px-3 py-3 text-xs text-slate-200"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold">Version v{prompt.version}</span>
+                        <span
+                          className={`rounded-full border px-2 py-0.5 ${
+                            prompt.isActive
+                              ? "border-emerald-300/40 text-emerald-200"
+                              : "border-white/10 text-slate-300"
+                          }`}
+                        >
+                          {prompt.isActive ? "Active" : "Inactive"}
+                        </span>
+                      </div>
+                      <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
+                        <span>Updated</span>
+                        <span>{prompt.updatedAt ? formatDate(prompt.updatedAt) : "—"}</span>
+                      </div>
+                      <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
+                        <span>Task</span>
+                        <span>{prompt.taskType || "Default"}</span>
+                      </div>
+                      {!prompt.isActive ? (
+                        <div className="mt-3">
+                          <button
+                            type="button"
+                            onClick={() => handlePromptActivate(prompt.version)}
+                            className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/10 px-3 py-1 text-xs font-semibold text-white"
+                          >
+                            Activate
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-slate-300">No prompt versions yet.</div>
+              )}
+            </div>
+            {promptActionStatus.message ? (
+              <div className={`calendar-modal-message ${promptActionStatus.status}`}>
+                {promptActionStatus.message}
+              </div>
+            ) : null}
           </div>
         </div>
       )}
