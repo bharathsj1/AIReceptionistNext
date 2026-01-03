@@ -4439,14 +4439,26 @@ export default function DashboardScreen({
                               onClick={() => handleMailboxSelect(item.id)}
                               className={`flex h-10 w-full items-center gap-2 rounded-xl px-2 text-xs transition ${
                                 isActive
-                                  ? "bg-white/15 text-white"
+                                  ? lightThemeActive
+                                    ? "bg-slate-200/80 text-slate-900 shadow-[0_10px_22px_rgba(15,23,42,0.08)]"
+                                    : "bg-white/15 text-white"
                                   : "text-slate-200 hover:bg-white/10 hover:text-white"
                               }`}
                               aria-label={item.label}
                               title={item.label}
                             >
                               <span className="flex h-7 w-7 items-center justify-center">
-                                <Icon className="h-4 w-4" />
+                                <Icon
+                                  className={`h-4 w-4 ${
+                                    isActive
+                                      ? lightThemeActive
+                                        ? "text-slate-900"
+                                        : "text-indigo-100"
+                                      : lightThemeActive
+                                        ? "text-slate-700"
+                                        : "text-slate-200"
+                                  }`}
+                                />
                               </span>
                               <span
                                 className={`whitespace-nowrap transition-[max-width,opacity] duration-300 ease-out ${
