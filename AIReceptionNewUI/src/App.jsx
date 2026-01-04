@@ -1114,10 +1114,12 @@ export default function App() {
 
   const isLandingStage = stage === STAGES.LANDING;
   const isDashboardStage = stage === STAGES.DASHBOARD;
+  const showHeader = stage !== STAGES.DASHBOARD;
   const pageClassName = `page${isLandingStage ? " page-landing" : ""}`;
-  const pageContentClassName = `page-content${isLandingStage ? " page-content-landing" : ""}`;
+  const pageContentClassName = `page-content${isLandingStage ? " page-content-landing" : ""}${
+    showHeader ? " page-content-with-header" : ""
+  }`;
   const contentClassName = `content${isLandingStage ? " content-landing" : ""}${isDashboardStage ? " content-wide" : ""}`;
-  const showGlobalLogo = stage !== STAGES.LANDING && stage !== STAGES.DASHBOARD;
 
   const handleEmailSubmit = async (event) => {
     event.preventDefault();
@@ -2506,9 +2508,50 @@ export default function App() {
           </div>
           <div className="page-video-bg__overlay" />
         </div>
-        {showGlobalLogo && (
-          <header className="global-logo-bar">
-            <button className="logo-link" onClick={handleGoHome} aria-label="Go to home" />
+        {showHeader && (
+          <header className="nav-card screen-panel">
+            <div className="nav-left">
+              <button type="button" className="brand" onClick={handleGoHome} aria-label="Go to home">
+                <img src="/media/smartconnect4u_white.png" alt="SmartConnect4u logo" className="brand-logo" />
+              </button>
+              <div className="nav-links">
+                <button className="nav-link">Our purpose</button>
+                <button className="nav-link">What we do</button>
+                <button className="nav-link">How we work</button>
+                <div className="nav-item-with-sub">
+                  <button className="nav-link" type="button">Services</button>
+                  <div className="nav-submenu">
+                    <button className="nav-subitem" type="button" onClick={() => handleGoProjects("receptionist")}>
+                      AI Receptionist
+                    </button>
+                    <button className="nav-subitem" type="button" onClick={() => handleGoProjects("social-manager")}>
+                      AI Social Media Manager
+                    </button>
+                    <button className="nav-subitem" type="button" onClick={() => handleGoProjects("email-manager")}>
+                      Email Manager
+                    </button>
+                    <button className="nav-subitem" type="button" onClick={() => handleGoProjects("crm-lead-manager")}>
+                      CRM &amp; Lead Manager
+                    </button>
+                  </div>
+                </div>
+                <div className="nav-item-with-sub">
+                  <button className="nav-link" type="button">Legal</button>
+                  <div className="nav-submenu">
+                    <a className="nav-subitem" href="/terms.html">
+                      Terms &amp; Conditions
+                    </a>
+                  </div>
+                </div>
+                <button className="nav-link">Blog</button>
+              </div>
+            </div>
+            <div className="nav-actions">
+              <button className="login-cta" onClick={() => setStage(STAGES.LOGIN)}>
+                <span aria-hidden>→</span>
+                <span>Login</span>
+              </button>
+            </div>
           </header>
         )}
         <main className={contentClassName}>

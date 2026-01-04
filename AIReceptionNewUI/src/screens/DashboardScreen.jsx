@@ -339,20 +339,18 @@ const extractBusinessProfile = (websiteData) => {
 };
 
 const StatCard = ({ label, value, hint, icon: Icon, tone = "default" }) => {
-  const tones = {
-    default: "bg-slate-900/60 border-slate-800 text-slate-200",
-    success: "bg-emerald-900/50 border-emerald-800 text-emerald-100",
-    warning: "bg-amber-900/40 border-amber-800 text-amber-100"
-  };
+  const toneClass = `stat-card--${tone}`;
   return (
-    <div className={`rounded-2xl border p-4 shadow-lg backdrop-blur ${tones[tone] || tones.default}`}>
-      <div className="flex items-center justify-between gap-2">
-        <div>
-          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">{label}</p>
-          <div className="mt-1 text-2xl font-semibold leading-tight">{value}</div>
-          {hint && <p className="text-xs text-slate-400">{hint}</p>}
-        </div>
-        {Icon ? <Icon className="h-5 w-5 text-slate-400" /> : null}
+    <div className={`stat-card ${toneClass}`}>
+      {Icon ? (
+        <span className="stat-card-icon">
+          <Icon className="h-5 w-5" />
+        </span>
+      ) : null}
+      <div className="stat-card-body">
+        <p className="stat-card-label">{label}</p>
+        <div className="stat-card-value">{value}</div>
+        {hint ? <p className="stat-card-hint">{hint}</p> : null}
       </div>
     </div>
   );
@@ -754,8 +752,8 @@ export default function DashboardScreen({
           end,
           allDay,
           display: "block",
-          backgroundColor: allDay ? "rgba(59, 130, 246, 0.8)" : "rgba(59, 130, 246, 0.95)",
-          borderColor: allDay ? "rgba(30, 64, 175, 0.9)" : "rgba(30, 64, 175, 1)",
+          backgroundColor: allDay ? "rgba(124, 58, 237, 0.75)" : "rgba(124, 58, 237, 0.92)",
+          borderColor: allDay ? "rgba(109, 40, 217, 0.9)" : "rgba(109, 40, 217, 1)",
           textColor: "#f8fafc",
           className: "calendar-event",
           extendedProps: { raw: event, provider: "google" }
@@ -3223,24 +3221,12 @@ export default function DashboardScreen({
 
   return (
     <section
-      className={`relative p-0 dashboard-no-borders ${
-        lightThemeActive
-          ? "bg-transparent text-slate-900 email-theme-light"
-          : "bg-slate-950 text-slate-100"
-      } ${isEmailManager ? "min-h-screen sm:h-screen sm:overflow-hidden" : "min-h-screen"}`}
+      className={`relative p-0 dashboard-theme ${lightThemeActive ? "" : "dashboard-theme--dark"} ${
+        isEmailManager ? "min-h-screen sm:h-screen sm:overflow-hidden" : "min-h-screen"
+      }`}
     >
-      <div
-        className={`absolute inset-0 ${
-          lightThemeActive
-            ? "bg-white"
-            : "bg-[radial-gradient(circle_at_20%_20%,rgba(99,102,241,0.08),transparent_32%),radial-gradient(circle_at_80%_0%,rgba(16,185,129,0.08),transparent_32%)]"
-        }`}
-      />
-      <div
-        className={`absolute -left-6 -right-6 -top-6 bottom-0 ${
-          lightThemeActive ? "bg-transparent backdrop-blur-none" : "bg-slate-950/60 backdrop-blur-3xl"
-        }`}
-      />
+      <div className="absolute inset-0 dashboard-bg" />
+      <div className="absolute -left-6 -right-6 -top-6 bottom-0 dashboard-bg-overlay" />
       <div className={`relative mx-auto w-full max-w-none ${isEmailManager ? "h-full" : ""}`}>
         {sideNavHidden && (
           <div
@@ -3275,11 +3261,7 @@ export default function DashboardScreen({
             />
           </div>
         )}
-        <div
-          className={`flex h-screen overflow-hidden ${
-            sideNavHidden ? "gap-0" : "gap-3"
-          }`}
-        >
+        <div className={`flex h-screen overflow-hidden ${sideNavHidden ? "gap-0" : "gap-1"}`}>
           <aside
             aria-hidden={sideNavHidden}
             inert={sideNavHidden ? "" : undefined}
@@ -3287,7 +3269,7 @@ export default function DashboardScreen({
             onMouseLeave={() => {
               if (!sideNavPinned) closeSideNav();
             }}
-            className={`sticky top-0 flex h-screen flex-none flex-col gap-3 overflow-hidden p-2 transition-[width] duration-200 ${sideNavWidthClass} ${
+            className={`dashboard-sidenav sticky top-0 flex h-screen flex-none flex-col gap-3 overflow-hidden p-2 transition-[width] duration-200 ${sideNavWidthClass} ${
               sideNavHidden
                 ? "pointer-events-none overflow-hidden p-0 opacity-0"
                 : ""
@@ -3341,11 +3323,12 @@ export default function DashboardScreen({
                       if (tool.id === "ai_receptionist") setActiveTab?.("dashboard");
                       if (tool.id === "email_manager") setEmailSubTab("email");
                     }}
-                    className={`group flex h-10 w-full items-center gap-0.5 rounded-2xl text-left transition ${
+                    className={`dashboard-nav-item group flex h-10 w-full items-center gap-0.5 rounded-2xl text-left transition ${
                       sideNavContentVisible
                         ? "text-slate-200 hover:bg-white/10 hover:text-white"
                         : "text-slate-300 hover:bg-white/10 hover:text-white hover:shadow-[0_10px_22px_rgba(79,70,229,0.25)]"
                     } ${isToolActive ? toolActiveClass : ""}`}
+                    data-active={isToolActive}
                   >
                     <span className="flex h-7 w-7 items-center justify-center">
                       <Icon
@@ -3379,7 +3362,7 @@ export default function DashboardScreen({
               <button
                 type="button"
                 onClick={onResumeBusinessDetails}
-                className={`mt-2 inline-flex items-center justify-center rounded-2xl border border-indigo-400/60 bg-indigo-500/15 px-3 py-2 text-xs font-semibold text-indigo-100 transition hover:-translate-y-0.5 hover:border-indigo-300 hover:bg-indigo-500/25 ${
+                className={`dashboard-cta mt-2 inline-flex items-center justify-center rounded-2xl border border-indigo-400/60 bg-indigo-500/15 px-3 py-2 text-xs font-semibold text-indigo-100 transition hover:-translate-y-0.5 hover:border-indigo-300 hover:bg-indigo-500/25 ${
                   sideNavContentVisible ? "" : "px-0"
                 }`}
               >
@@ -3402,9 +3385,10 @@ export default function DashboardScreen({
                   setEmailSubTab("settings");
                 }}
                 aria-current={settingsActive ? "page" : undefined}
-                className={`group flex h-10 w-full items-center gap-0.5 rounded-2xl text-left transition ${settingsBaseClass} ${
+                className={`dashboard-nav-item group flex h-10 w-full items-center gap-0.5 rounded-2xl text-left transition ${settingsBaseClass} ${
                   settingsActive ? settingsActiveClass : ""
                 }`}
+                data-active={settingsActive}
               >
                 <span className="flex h-7 w-7 items-center justify-center">
                   <Settings
@@ -3437,7 +3421,7 @@ export default function DashboardScreen({
                 <button
                   type="button"
                   onClick={onLogout}
-                  className={`group mt-2 flex h-10 w-full items-center gap-0.5 rounded-2xl text-left transition ${
+                  className={`dashboard-nav-item dashboard-nav-item--danger group mt-2 flex h-10 w-full items-center gap-0.5 rounded-2xl text-left transition ${
                     sideNavContentVisible
                       ? "text-rose-200 hover:bg-rose-500/10 hover:text-rose-100"
                       : "text-rose-200 hover:bg-rose-500/10 hover:text-rose-100"
@@ -3463,12 +3447,12 @@ export default function DashboardScreen({
           </aside>
 
           <div
-            className={`flex h-full min-h-0 flex-1 flex-col gap-5 ${
+            className={`dashboard-main flex h-full min-h-0 flex-1 flex-col gap-5 ${
               isEmailManager ? "overflow-hidden" : "overflow-y-auto"
             }`}
           >
             {currentTool !== "email_manager" && (
-            <header className="flex flex-col gap-3 rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl backdrop-blur">
+            <header className="dashboard-hero flex flex-col gap-3 rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl backdrop-blur">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <ActiveIcon className="h-10 w-10 text-indigo-300" />
@@ -3643,7 +3627,7 @@ export default function DashboardScreen({
                           return (
                             <div
                               key={entry.hour}
-                              className="flex-1 rounded-full bg-gradient-to-t from-indigo-500/30 via-indigo-400/60 to-emerald-300/80"
+                              className="flex-1 rounded-full bg-gradient-to-t from-purple-500/30 via-purple-500/60 to-purple-600/80"
                               style={{ height: `${height}%`, minWidth: 6 }}
                               title={`${formatHourLabel(entry.hour)} • ${entry.count} calls`}
                             />
@@ -4892,7 +4876,6 @@ export default function DashboardScreen({
                       </div>
                       <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
                         <div className="flex flex-wrap items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-slate-200">
-                          <span className="text-[10px] uppercase tracking-[0.2em] text-slate-400">AI</span>
                           <button
                             type="button"
                             onClick={() => summarizeEmailMessage(selectedEmailMessage, { force: true })}
@@ -5079,10 +5062,10 @@ export default function DashboardScreen({
                               </div>
                             </div>
                             {emailSummaryVisible ? (
-                              <div className="absolute inset-0 flex items-center justify-center p-4">
+                              <div className="absolute inset-0 z-20 flex items-center justify-center p-4">
                                 <div className="pointer-events-none absolute inset-0 rounded-2xl bg-slate-950/70 backdrop-blur-xl" />
                                 <div
-                                  className="relative z-10 w-full max-w-xl max-h-[80vh] overflow-y-auto overscroll-contain rounded-2xl border border-white/10 bg-slate-950/95 p-3 shadow-xl backdrop-blur pointer-events-auto sm:p-4"
+                                  className="relative z-10 w-full max-w-xl max-h-[min(80vh,calc(100%-2rem))] overflow-y-auto overscroll-contain rounded-2xl border border-white/10 bg-slate-950/95 p-3 shadow-xl backdrop-blur pointer-events-auto sm:p-4"
                                   data-lenis-prevent
                                   onWheel={(event) => event.stopPropagation()}
                                   onTouchMove={(event) => event.stopPropagation()}

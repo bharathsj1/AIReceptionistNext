@@ -164,43 +164,6 @@ export default function LandingScreen({ onTry, onLogin, onSelectPlan, onShowServ
 
   return (
     <>
-      <div className="nav-card screen-panel sticky-nav">
-        <div className="nav-left">
-          <div className="brand">
-            <img src="/media/smartconnect4u_white.png" alt="SmartConnect4u logo" className="brand-logo" />
-          </div>
-          <div className="nav-links">
-            <button className="nav-link">Our purpose</button>
-            <button className="nav-link">What we do</button>
-            <button className="nav-link">How we work</button>
-            <div className="nav-item-with-sub">
-              <button className="nav-link" type="button">Services</button>
-              <div className="nav-submenu">
-                <button className="nav-subitem" type="button" onClick={() => onShowService("receptionist")}>AI Receptionist</button>
-                <button className="nav-subitem" type="button" onClick={() => onShowService("social-manager")}>AI Social Media Manager</button>
-                <button className="nav-subitem" type="button" onClick={() => onShowService("email-manager")}>Email Manager</button>
-                <button className="nav-subitem" type="button" onClick={() => onShowService("crm-lead-manager")}>CRM &amp; Lead Manager</button>
-              </div>
-            </div>
-            <div className="nav-item-with-sub">
-              <button className="nav-link" type="button">Legal</button>
-              <div className="nav-submenu">
-                <a className="nav-subitem" href="/terms.html">
-                  Terms &amp; Conditions
-                </a>
-              </div>
-            </div>
-            <button className="nav-link">Blog</button>
-          </div>
-        </div>
-        <div className="nav-actions">
-          <button className="login-cta" onClick={onLogin}>
-            <span aria-hidden>→</span>
-            <span>Login</span>
-          </button>
-        </div>
-      </div>
-
       <section className="content content-landing hero hero-split hero-centered reveal-section">
         <div className="hero-copy hero-centered-copy">
           <h1 className="hero-title large">
