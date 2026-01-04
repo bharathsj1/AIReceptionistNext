@@ -82,6 +82,22 @@ export const rejectTask = async ({ email, id, reason }) => {
   return payload;
 };
 
+export const deleteTask = async ({ email, id }) => {
+  const url = withParams(`${API_URLS.tasks}/${id}`, { email });
+  const res = await fetch(url, { method: "DELETE" });
+  const text = await res.text();
+  let payload = {};
+  try {
+    payload = text ? JSON.parse(text) : {};
+  } catch {
+    payload = { raw: text };
+  }
+  if (!res.ok) {
+    throw new Error(payload?.error || payload?.message || "Failed to delete task");
+  }
+  return payload;
+};
+
 export const buildTaskStreamUrl = ({ email, since, timeout }) =>
   withParams(API_URLS.tasksStream, { email, since, timeout });
 

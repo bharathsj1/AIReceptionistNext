@@ -24,7 +24,7 @@ import {
 import TaskTile from "./TaskTile";
 import TaskDetailDialog from "./TaskDetailDialog";
 import { useTaskStream } from "./useTaskStream";
-import { acceptTask, fetchTasks, rejectTask } from "../../lib/api/tasks";
+import { acceptTask, deleteTask, fetchTasks, rejectTask } from "../../lib/api/tasks";
 
 const statusTabs = [
   { id: "ALL", label: "All" },
@@ -115,10 +115,20 @@ export default function TaskBoard({ email, businessName, liveEnabled }) {
     });
   }, []);
 
+  const removeTaskById = useCallback((taskId) => {
+    if (!taskId) return;
+    setTasks((prev) => prev.filter((item) => item.id !== taskId));
+    setSelectedTask((current) => (current?.id === taskId ? null : current));
+  }, []);
+
   const { connectionStatus } = useTaskStream({
     enabled: liveEnabled,
     email,
     onEvent: (evt) => {
+      if (evt?.type === "task.deleted") {
+        removeTaskById(evt.taskId || evt.task?.id);
+        return;
+      }
       if (evt?.task) {
         upsertTask(evt.task);
       }
@@ -180,6 +190,21 @@ export default function TaskBoard({ email, businessName, liveEnabled }) {
       setRejectReason("");
     } catch (err) {
       setError(err?.message || "Failed to reject task.");
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const handleDelete = async (task) => {
+    if (!task?.id) return;
+    const confirmed = window.confirm("Delete this task? This cannot be undone.");
+    if (!confirmed) return;
+    setActionBusy(true);
+    try {
+      await deleteTask({ email, id: task.id });
+      removeTaskById(task.id);
+    } catch (err) {
+      setError(err?.message || "Failed to delete task.");
     } finally {
       setActionBusy(false);
     }
@@ -288,6 +313,7 @@ export default function TaskBoard({ email, businessName, liveEnabled }) {
                 setRejectTaskTarget(target);
                 setRejectReason("");
               }}
+              onDelete={handleDelete}
               busy={actionBusy}
             />
           ))}

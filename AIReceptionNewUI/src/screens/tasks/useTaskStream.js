@@ -94,7 +94,7 @@ export const useTaskStream = ({ enabled, email, onEvent }) => {
         setConnectionStatus("connected");
       };
 
-      ["task.created", "task.updated", "task.status_changed"].forEach((evt) => {
+      ["task.created", "task.updated", "task.status_changed", "task.deleted"].forEach((evt) => {
         eventSource.addEventListener(evt, handleEvent);
       });
 

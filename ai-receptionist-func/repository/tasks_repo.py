@@ -124,6 +124,11 @@ def get_task(db, client_id: str, task_id: str) -> Optional[Task]:
     )
 
 
+def delete_task(db, task: Task) -> None:
+    db.delete(task)
+    db.flush()
+
+
 def update_task_status(
     db,
     task: Task,

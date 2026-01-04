@@ -91,11 +91,11 @@ export const Button = ({
   ...props
 }) => {
   const variants = {
-    default: "border-white/10 bg-white/10 text-white hover:border-white/30 hover:bg-white/20",
+    default: "border-white/10 bg-white/10 text-slate-100 hover:border-white/30 hover:bg-white/20",
     primary: "border-indigo-300/50 bg-indigo-500/25 text-indigo-50 hover:border-indigo-200/80 hover:bg-indigo-500/40",
     success: "border-emerald-300/60 bg-emerald-500/25 text-emerald-50 hover:border-emerald-200 hover:bg-emerald-500/40",
     danger: "border-rose-300/60 bg-rose-500/20 text-rose-100 hover:border-rose-200 hover:bg-rose-500/35",
-    ghost: "border-white/0 bg-transparent text-slate-200 hover:border-white/10 hover:bg-white/5"
+    ghost: "border-white/10 bg-white/5 text-slate-100 hover:border-white/30 hover:bg-white/10"
   };
   const sizes = {
     sm: "px-3 py-1 text-xs",
@@ -158,7 +158,7 @@ export const DropdownMenu = ({ className = "", children }) => (
 
 export const DropdownMenuTrigger = ({ className = "", children }) => (
   <summary
-    className={`list-none cursor-pointer rounded-full border border-white/10 bg-white/5 px-2 py-1 text-xs text-slate-200 hover:border-white/30 hover:bg-white/10 ${className}`.trim()}
+    className={`list-none cursor-pointer rounded-full border border-white/10 bg-white/5 px-2 py-1 text-xs text-slate-100 hover:border-white/30 hover:bg-white/10 ${className}`.trim()}
   >
     {children}
   </summary>
@@ -166,7 +166,7 @@ export const DropdownMenuTrigger = ({ className = "", children }) => (
 
 export const DropdownMenuContent = ({ className = "", children }) => (
   <div
-    className={`absolute right-0 z-10 mt-2 w-44 rounded-2xl border border-white/10 bg-slate-950/95 p-1 text-xs text-slate-200 shadow-xl ${className}`.trim()}
+    className={`absolute right-0 z-10 mt-2 w-44 rounded-2xl border border-white/10 bg-slate-950/95 p-1 text-xs text-slate-100 shadow-xl ${className}`.trim()}
   >
     {children}
   </div>

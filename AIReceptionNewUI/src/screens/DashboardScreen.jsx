@@ -2327,6 +2327,11 @@ export default function DashboardScreen({
   const gmailConnected = Boolean(emailAccountEmail || emailMessages.length);
   const googleConnected = Boolean(calendarAccountEmail || calendarStatus === "Google");
   const gmailAccountLabel = emailAccountEmail || calendarAccountEmail || "";
+  const inboxProviderLabel = gmailConnected
+    ? emailAccountEmail && /outlook|hotmail|live/i.test(emailAccountEmail)
+      ? "Outlook"
+      : "Gmail"
+    : "Not connected";
   const gmailStatusLabel = gmailConnected
     ? "Gmail connected"
     : googleConnected
@@ -3217,7 +3222,7 @@ export default function DashboardScreen({
 
   return (
     <section
-      className={`relative p-0 ${
+      className={`relative p-0 dashboard-no-borders ${
         lightThemeActive
           ? "bg-transparent text-slate-900 email-theme-light"
           : "bg-slate-950 text-slate-100"
@@ -3285,19 +3290,20 @@ export default function DashboardScreen({
               sideNavHidden
                 ? "pointer-events-none overflow-hidden p-0 opacity-0"
                 : ""
-            }`}
+            } ${lightThemeActive ? "bg-slate-50/90" : ""}`}
           >
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center">
                 <button
                   type="button"
-                  className="flex h-10 w-10 items-center justify-center rounded-xl bg-transparent"
+                  onClick={() => window.location.reload()}
+                  className="flex h-[34px] w-[34px] flex-none shrink-0 items-center justify-center rounded-xl bg-transparent"
                   aria-label="SmartConnect4u"
                 >
                   <img
                     src="/media/image.png"
                     alt="SmartConnect4u"
-                    className="h-7 w-7"
+                    className="h-[24px] w-[24px] shrink-0"
                   />
                 </button>
               </div>
@@ -3307,7 +3313,7 @@ export default function DashboardScreen({
                   setSideNavPinned((prev) => !prev);
                   if (!sideNavPinned) openSideNav();
                 }}
-                className={`flex h-8 w-8 items-center justify-center rounded-full text-xs transition ${
+                className={`flex h-8 w-8 flex-none shrink-0 items-center justify-center rounded-full text-xs transition ${
                   sideNavPinned
                     ? "bg-white/10 text-indigo-100"
                     : "text-slate-300 hover:bg-white/10 hover:text-white"
@@ -3334,7 +3340,7 @@ export default function DashboardScreen({
                       if (tool.id === "ai_receptionist") setActiveTab?.("dashboard");
                       if (tool.id === "email_manager") setEmailSubTab("email");
                     }}
-                    className={`group flex h-10 w-full items-center gap-2 rounded-2xl text-left transition ${
+                    className={`group flex h-10 w-full items-center gap-0.5 rounded-2xl text-left transition ${
                       sideNavContentVisible
                         ? "text-slate-200 hover:bg-white/10 hover:text-white"
                         : "text-slate-300 hover:bg-white/10 hover:text-white hover:shadow-[0_10px_22px_rgba(79,70,229,0.25)]"
@@ -3395,7 +3401,7 @@ export default function DashboardScreen({
                   setEmailSubTab("settings");
                 }}
                 aria-current={settingsActive ? "page" : undefined}
-                className={`group flex h-10 w-full items-center gap-2 rounded-2xl text-left transition ${settingsBaseClass} ${
+                className={`group flex h-10 w-full items-center gap-0.5 rounded-2xl text-left transition ${settingsBaseClass} ${
                   settingsActive ? settingsActiveClass : ""
                 }`}
               >
@@ -3430,7 +3436,7 @@ export default function DashboardScreen({
                 <button
                   type="button"
                   onClick={onLogout}
-                  className={`group mt-2 flex h-10 w-full items-center gap-2 rounded-2xl text-left transition ${
+                  className={`group mt-2 flex h-10 w-full items-center gap-0.5 rounded-2xl text-left transition ${
                     sideNavContentVisible
                       ? "text-rose-200 hover:bg-rose-500/10 hover:text-rose-100"
                       : "text-rose-200 hover:bg-rose-500/10 hover:text-rose-100"
@@ -3538,7 +3544,7 @@ export default function DashboardScreen({
                       <button
                         key={tab.id}
                         onClick={() => setActiveTab?.(tab.id)}
-                        className={`inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-semibold tracking-tight transition sm:text-sm ${
+                        className={`inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold tracking-tight transition sm:text-sm ${
                           isActive
                             ? "border-indigo-300/80 bg-white/15 text-indigo-50 shadow-[0_12px_24px_rgba(15,23,42,0.35)]"
                             : "border-white/10 bg-white/5 text-slate-200 hover:border-white/30 hover:bg-white/10"
@@ -4397,8 +4403,7 @@ export default function DashboardScreen({
                 <aside
                   className="rounded-3xl border border-white/10 bg-white/5 shadow-xl backdrop-blur overflow-hidden flex flex-col p-3 sm:p-4 sm:min-h-0 sm:h-full"
                 >
-                  <div className="relative flex min-h-[32px] items-center justify-center">
-                    <span />
+                  <div className="flex min-h-[32px] items-center justify-end gap-2">
                     <button
                       type="button"
                       onClick={() => {
@@ -4408,7 +4413,7 @@ export default function DashboardScreen({
                           openEmailPanel();
                         }
                       }}
-                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-xs text-slate-200 transition hover:border-white/30"
+                      className="flex h-[30px] w-[30px] items-center justify-center rounded-lg border border-white/10 bg-white/5 text-sm text-slate-200 transition hover:border-white/30"
                       aria-label={emailPanelOpen ? "Collapse inbox panel" : "Expand inbox panel"}
                     >
                       {emailPanelOpen ? "⟨" : "⟩"}
