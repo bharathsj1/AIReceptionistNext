@@ -754,9 +754,10 @@ export default function DashboardScreen({
           end,
           allDay,
           display: "block",
-          backgroundColor: allDay ? "rgba(59, 130, 246, 0.55)" : "rgba(59, 130, 246, 0.85)",
-          borderColor: allDay ? "rgba(59, 130, 246, 0.8)" : "rgba(59, 130, 246, 1)",
+          backgroundColor: allDay ? "rgba(59, 130, 246, 0.8)" : "rgba(59, 130, 246, 0.95)",
+          borderColor: allDay ? "rgba(30, 64, 175, 0.9)" : "rgba(30, 64, 175, 1)",
           textColor: "#f8fafc",
+          className: "calendar-event",
           extendedProps: { raw: event, provider: "google" }
         };
       }),

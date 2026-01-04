@@ -2655,7 +2655,20 @@ html {
 .calendar-shell .fc .fc-event {
   border-radius: 8px;
   padding: 2px 4px;
+  border: 1px solid var(--fc-event-border-color);
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.35);
   cursor: pointer;
+}
+
+.calendar-shell .fc .calendar-event {
+  border-width: 2px;
+  border-style: solid;
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.4), 0 6px 12px rgba(15, 23, 42, 0.2);
+}
+
+.calendar-shell .fc .fc-timegrid-slot,
+.calendar-shell .fc .fc-timegrid-slot-lane {
+  border-color: rgba(148, 163, 184, 0.35);
 }
 
 .calendar-shell .fc .fc-scroller,
