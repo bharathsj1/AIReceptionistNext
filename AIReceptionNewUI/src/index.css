@@ -3403,6 +3403,20 @@ html {
   min-height: 640px;
 }
 
+.task-manager-calendar .fc-timegrid-slot,
+.task-manager-calendar .fc-timegrid-slot-lane {
+  height: 56px;
+}
+
+.task-manager-calendar .fc-timegrid-event {
+  min-height: 30px;
+}
+
+.task-manager-calendar.task-manager-multi .fc-timegrid-event {
+  width: 25% !important;
+  max-width: 25% !important;
+}
+
 .calendar-modal {
   position: fixed;
   inset: 0;

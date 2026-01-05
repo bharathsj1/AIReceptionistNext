@@ -67,6 +67,7 @@ export const API_URLS = {
   dashboardAnalytics: apiUrl("dashboard/analytics"),
   dashboardRecordingMedia: apiUrl("dashboard/recordings"),
   dashboardAgent: apiUrl("dashboard/agent"),
+  taskManager: apiUrl("task-manager"),
   dashboardBookingSettings: apiUrl("dashboard/booking-settings"),
   dashboardCallTranscript: apiUrl("dashboard/call-transcript"),
   tasks: apiUrl("tasks"),

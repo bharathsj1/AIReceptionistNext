@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger
 } from "../../components/ui/index.jsx";
 import {
+  CalendarPlus,
   ClipboardCheck,
   ClipboardList,
   Clock,
@@ -54,7 +55,7 @@ const copyToClipboard = async (value) => {
   }
 };
 
-export default function TaskTile({ task, onOpen, onAccept, onReject, onDelete, busy }) {
+export default function TaskTile({ task, onOpen, onAccept, onReject, onDelete, onSchedule, busy }) {
   const statusStyle = statusStyles[task?.status] || "border-white/10 bg-white/5 text-slate-200";
   const typeStyle = typeStyles[task?.type] || "bg-white/10 text-slate-200";
   const decisionLocked = useMemo(
@@ -132,6 +133,15 @@ export default function TaskTile({ task, onOpen, onAccept, onReject, onDelete, b
               View details
             </Button>
             <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => onSchedule?.(task)}
+                disabled={busy}
+              >
+                <CalendarPlus className="h-4 w-4" />
+                Add to Task Manager
+              </Button>
               <Button
                 variant="success"
                 size="sm"

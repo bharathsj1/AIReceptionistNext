@@ -48,6 +48,8 @@ import {
 } from "lucide-react";
 import { API_URLS } from "../config/urls";
 import TaskBoard from "./tasks/TaskBoard";
+import TaskManagerScreen from "./TaskManagerScreen";
+import { createTaskManagerItem } from "../lib/api/taskManager";
 
 const resolveFeatureFlag = (value) => {
   if (value === undefined || value === null) return false;
@@ -85,6 +87,28 @@ const formatDate = (iso) => {
   } catch {
     return iso;
   }
+};
+
+const pad2 = (value) => String(value).padStart(2, "0");
+
+const toDateTimeInput = (value) => {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}T${pad2(
+    date.getHours()
+  )}:${pad2(date.getMinutes())}`;
+};
+
+const buildDefaultSchedule = () => {
+  const start = new Date();
+  start.setSeconds(0, 0);
+  const roundedMinutes = Math.ceil(start.getMinutes() / 15) * 15;
+  start.setMinutes(roundedMinutes % 60);
+  if (roundedMinutes >= 60) {
+    start.setHours(start.getHours() + 1);
+  }
+  const end = new Date(start.getTime() + 60 * 60 * 1000);
+  return { start: toDateTimeInput(start), end: toDateTimeInput(end) };
 };
 
 const formatStatusLabel = (value) => {
@@ -562,6 +586,17 @@ export default function DashboardScreen({
   const [emailInlineReplyOpen, setEmailInlineReplyOpen] = useState(false);
   const [emailInlineReplyMessageId, setEmailInlineReplyMessageId] = useState(null);
   const [emailInlineAttachments, setEmailInlineAttachments] = useState([]);
+  const [taskManagerEmailTarget, setTaskManagerEmailTarget] = useState(null);
+  const [taskManagerEmailForm, setTaskManagerEmailForm] = useState({
+    title: "",
+    description: "",
+    start: "",
+    end: ""
+  });
+  const [taskManagerEmailStatus, setTaskManagerEmailStatus] = useState({
+    status: "idle",
+    message: ""
+  });
   const [emailComposerOpen, setEmailComposerOpen] = useState(false);
   const [emailComposerMode, setEmailComposerMode] = useState("new");
   const [emailTheme, setEmailTheme] = useState(() => {
@@ -1592,6 +1627,58 @@ export default function DashboardScreen({
     }
   };
 
+  const openEmailTaskManager = (message) => {
+    if (!message?.id) return;
+    const defaults = buildDefaultSchedule();
+    const summaryText = emailSummaries?.[message.id] || "";
+    setTaskManagerEmailForm({
+      title: message.subject || "Email follow-up",
+      description: summaryText || message.snippet || "",
+      start: defaults.start,
+      end: defaults.end
+    });
+    setTaskManagerEmailTarget(message);
+    setTaskManagerEmailStatus({ status: "idle", message: "" });
+  };
+
+  const handleEmailTaskManagerSave = async () => {
+    const emailAddress = user?.email || userForm.email;
+    if (!emailAddress) {
+      setTaskManagerEmailStatus({ status: "error", message: "Missing user email." });
+      return;
+    }
+    if (!taskManagerEmailTarget?.id) return;
+    if (!taskManagerEmailForm.title || !taskManagerEmailForm.start) {
+      setTaskManagerEmailStatus({
+        status: "error",
+        message: "Title and start time are required."
+      });
+      return;
+    }
+    setTaskManagerEmailStatus({ status: "loading", message: "Saving..." });
+    try {
+      await createTaskManagerItem({
+        email: emailAddress,
+        title: taskManagerEmailForm.title,
+        description: taskManagerEmailForm.description,
+        start: taskManagerEmailForm.start,
+        end: taskManagerEmailForm.end,
+        sourceType: "email_summary",
+        sourceId: taskManagerEmailTarget.id
+      });
+      setTaskManagerEmailStatus({
+        status: "success",
+        message: "Task added to Task Manager."
+      });
+      setTaskManagerEmailTarget(null);
+    } catch (err) {
+      setTaskManagerEmailStatus({
+        status: "error",
+        message: err?.message || "Failed to add task."
+      });
+    }
+  };
+
   const buildEmailAiPayload = (message, overrides = {}) => {
     const emailAddress = user?.email || userForm.email;
     const bodyText = trimText(emailMessageBodies?.[message.id] || "", 3000);
@@ -2291,6 +2378,13 @@ export default function DashboardScreen({
       eyebrow: "Content ops",
       icon: Megaphone,
       copy: "Plan content, enforce brand safety, and schedule multi-channel posts."
+    },
+    {
+      id: "task_manager",
+      label: "Task Manager",
+      eyebrow: "Schedule",
+      icon: CalendarClock,
+      copy: "Organize tasks on a shared calendar and keep timelines visible."
     }
   ];
 
@@ -2324,6 +2418,7 @@ export default function DashboardScreen({
 
   const isToolLocked = (toolId) => {
     if (toolId === "dashboard_analytics") return false;
+    if (toolId === "task_manager") return false;
     const entry = toolSubscriptions?.[toolId];
     if (entry && typeof entry.active === "boolean") return !entry.active;
     if (subscriptionsLoading) return false;
@@ -3721,7 +3816,7 @@ export default function DashboardScreen({
               isEmailManager ? "overflow-hidden" : "overflow-y-auto"
             }`}
           >
-            {currentTool !== "email_manager" && (
+            {currentTool !== "email_manager" && currentTool !== "task_manager" && (
             <header className="dashboard-hero flex flex-col gap-3 rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl backdrop-blur">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
@@ -4043,6 +4138,13 @@ export default function DashboardScreen({
               )}
             </div>
           </div>
+        )}
+
+        {currentTool === "task_manager" && (
+          <TaskManagerScreen
+            email={user?.email}
+            businessName={clientData?.business_name || clientData?.name}
+          />
         )}
 
         {currentTool === "ai_receptionist" && (
@@ -5556,6 +5658,14 @@ export default function DashboardScreen({
                                       className="rounded-xl border border-white/10 bg-white/10 px-3 py-1 text-xs text-white disabled:opacity-60"
                                     >
                                       {emailSummaryLoading ? "Summarizing..." : "Refresh summary"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => openEmailTaskManager(selectedEmailMessage)}
+                                      disabled={!selectedEmailMessage}
+                                      className="rounded-xl border border-indigo-300/40 bg-indigo-500/20 px-3 py-1 text-xs text-indigo-100 disabled:opacity-60"
+                                    >
+                                      Add to Task Manager
                                     </button>
                                   </div>
                                   <div className="mt-4 grid gap-3">
@@ -7516,6 +7626,101 @@ export default function DashboardScreen({
           </div>
         </div>
       )}
+      {taskManagerEmailTarget ? (
+        <div className="calendar-modal">
+          <div className="calendar-modal-card">
+            <div className="calendar-modal-header">
+              <div>
+                <p className="calendar-modal-eyebrow">Task manager</p>
+                <h4 className="calendar-modal-title">Schedule email follow-up</h4>
+              </div>
+              <button
+                type="button"
+                className="calendar-modal-close"
+                onClick={() => {
+                  setTaskManagerEmailTarget(null);
+                  setTaskManagerEmailStatus({ status: "idle", message: "" });
+                }}
+              >
+                Close
+              </button>
+            </div>
+            <div className="calendar-modal-body">
+              <label>
+                Title
+                <input
+                  type="text"
+                  value={taskManagerEmailForm.title}
+                  onChange={(event) =>
+                    setTaskManagerEmailForm((prev) => ({ ...prev, title: event.target.value }))
+                  }
+                  placeholder="Task title"
+                />
+              </label>
+              <label>
+                Start time
+                <input
+                  type="datetime-local"
+                  value={taskManagerEmailForm.start}
+                  onChange={(event) =>
+                    setTaskManagerEmailForm((prev) => ({ ...prev, start: event.target.value }))
+                  }
+                />
+              </label>
+              <label>
+                End time
+                <input
+                  type="datetime-local"
+                  value={taskManagerEmailForm.end}
+                  onChange={(event) =>
+                    setTaskManagerEmailForm((prev) => ({ ...prev, end: event.target.value }))
+                  }
+                />
+              </label>
+              <label>
+                Notes
+                <textarea
+                  rows={3}
+                  value={taskManagerEmailForm.description}
+                  onChange={(event) =>
+                    setTaskManagerEmailForm((prev) => ({
+                      ...prev,
+                      description: event.target.value
+                    }))
+                  }
+                  placeholder="Add follow-up details"
+                />
+              </label>
+              {taskManagerEmailStatus.message ? (
+                <div className={`calendar-modal-message ${taskManagerEmailStatus.status}`}>
+                  {taskManagerEmailStatus.message}
+                </div>
+              ) : null}
+            </div>
+            <div className="calendar-modal-actions">
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => {
+                  setTaskManagerEmailTarget(null);
+                  setTaskManagerEmailStatus({ status: "idle", message: "" });
+                }}
+                disabled={taskManagerEmailStatus.status === "loading"}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="primary"
+                onClick={handleEmailTaskManagerSave}
+                disabled={taskManagerEmailStatus.status === "loading"}
+              >
+                Add to Task Manager
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {promptHistoryOpen && (
         <div className="calendar-modal">
           <div className="calendar-modal-card">

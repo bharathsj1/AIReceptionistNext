@@ -46,7 +46,16 @@ def _env_flag(names: Iterable[str], default: bool = False) -> bool:
 
 RAW_ALLOWED_ORIGINS = _raw_origins()
 ALLOWED_ORIGINS = _parse_origins(RAW_ALLOWED_ORIGINS)
-ALLOW_CREDENTIALS = _env_flag(["CORS_ALLOW_CREDENTIALS", "CORS_ALLOW_CREDENTIAL", "CORS_CREDENTIALS", "CORSCredentials"])
+ALLOW_CREDENTIALS = _env_flag(
+    ["CORS_ALLOW_CREDENTIALS", "CORS_ALLOW_CREDENTIAL", "CORS_CREDENTIALS", "CORSCredentials"]
+)
+ALLOW_LOCALHOST = _env_flag(["CORS_ALLOW_LOCALHOST", "ALLOW_LOCALHOST_CORS"], default=True)
+
+
+def _is_local_origin(origin: str | None) -> bool:
+    if not origin:
+        return False
+    return origin.startswith("http://localhost") or origin.startswith("http://127.0.0.1")
 
 
 def build_cors_headers(req: func.HttpRequest, allowed_methods: Iterable[str]) -> Dict[str, str]:
@@ -66,6 +75,8 @@ def build_cors_headers(req: func.HttpRequest, allowed_methods: Iterable[str]) ->
     headers: Dict[str, str] = {"Vary": "Origin"}
     allow_all = "*" in ALLOWED_ORIGINS
     origin_allowed = allow_all or (origin and origin in ALLOWED_ORIGINS)
+    if not origin_allowed and ALLOW_LOCALHOST and _is_local_origin(origin):
+        origin_allowed = True
 
     if origin_allowed:
         # When credentials are allowed, echo the caller's origin instead of "*".

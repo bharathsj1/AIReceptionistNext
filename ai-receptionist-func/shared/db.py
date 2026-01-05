@@ -171,6 +171,23 @@ class Task(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+
+class TaskManagerItem(Base):
+    __tablename__ = "task_manager_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    source_type = Column(String, nullable=True, index=True)
+    source_id = Column(String, nullable=True, index=True)
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    start_time = Column(DateTime, nullable=False, index=True)
+    end_time = Column(DateTime, nullable=False, index=True)
+    status = Column(String, nullable=False, default="scheduled")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 class Subscription(Base):
     __tablename__ = "subscriptions"
 
@@ -631,6 +648,33 @@ def _ensure_optional_columns() -> None:
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_tasks_client_status ON tasks (client_id, status)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks (created_at DESC)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_tasks_call_id ON tasks (call_id)"))
+
+        if "task_manager_items" not in existing_tables:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS task_manager_items (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        client_id INTEGER NOT NULL,
+                        user_id INTEGER,
+                        source_type VARCHAR,
+                        source_id VARCHAR,
+                        title VARCHAR NOT NULL,
+                        description TEXT,
+                        start_time DATETIME NOT NULL,
+                        end_time DATETIME NOT NULL,
+                        status VARCHAR DEFAULT 'scheduled',
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY(client_id) REFERENCES clients (id),
+                        FOREIGN KEY(user_id) REFERENCES users (id)
+                    )
+                    """
+                )
+            )
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_task_manager_client_start ON task_manager_items (client_id, start_time)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_task_manager_client_end ON task_manager_items (client_id, end_time)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_task_manager_source ON task_manager_items (source_type, source_id)"))
 
         if "social_connections" not in existing_tables:
             conn.execute(
