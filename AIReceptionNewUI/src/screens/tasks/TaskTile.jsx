@@ -10,11 +10,13 @@ import {
   DropdownMenuTrigger
 } from "../../components/ui/index.jsx";
 import {
+  CalendarPlus,
   ClipboardCheck,
   ClipboardList,
   Clock,
   Mail,
-  Phone
+  Phone,
+  Trash2
 } from "lucide-react";
 
 const statusStyles = {
@@ -53,7 +55,7 @@ const copyToClipboard = async (value) => {
   }
 };
 
-export default function TaskTile({ task, onOpen, onAccept, onReject, busy }) {
+export default function TaskTile({ task, onOpen, onAccept, onReject, onDelete, onSchedule, busy }) {
   const statusStyle = statusStyles[task?.status] || "border-white/10 bg-white/5 text-slate-200";
   const typeStyle = typeStyles[task?.type] || "bg-white/10 text-slate-200";
   const decisionLocked = useMemo(
@@ -132,6 +134,15 @@ export default function TaskTile({ task, onOpen, onAccept, onReject, busy }) {
             </Button>
             <div className="flex flex-wrap items-center gap-2">
               <Button
+                variant="primary"
+                size="sm"
+                onClick={() => onSchedule?.(task)}
+                disabled={busy}
+              >
+                <CalendarPlus className="h-4 w-4" />
+                Add to Task Manager
+              </Button>
+              <Button
                 variant="success"
                 size="sm"
                 onClick={() => onAccept?.(task)}
@@ -146,6 +157,17 @@ export default function TaskTile({ task, onOpen, onAccept, onReject, busy }) {
                 disabled={decisionLocked || busy}
               >
                 Reject
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-10 w-10 px-0 text-rose-200 hover:bg-rose-500/10 hover:text-rose-100"
+                onClick={() => onDelete?.(task)}
+                disabled={busy}
+                aria-label="Delete task"
+                title="Delete task"
+              >
+                <Trash2 className="h-5 w-5" />
               </Button>
             </div>
           </div>

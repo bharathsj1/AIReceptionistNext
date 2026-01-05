@@ -1,17 +1,35 @@
 import json
 import logging
+import re
 from typing import Optional
 
 import azure.functions as func
 from function_app import app
 from onboarding_endpoints import get_twilio_client
 from datetime import datetime, timedelta, timezone
-from services.ultravox_service import get_ultravox_agent
-from shared.db import Client, PhoneNumber, SessionLocal, Subscription, User
+from services.ultravox_service import get_ultravox_agent, get_ultravox_call_messages
+from shared.config import get_required_setting
+from shared.db import (
+    Call,
+    Client,
+    EmailAIEvent,
+    PhoneNumber,
+    SessionLocal,
+    SocialConnection,
+    SocialConversation,
+    SocialMessage,
+    SocialPostDraft,
+    SocialScheduledPost,
+    Subscription,
+    Task,
+    User,
+)
 from utils.cors import build_cors_headers
 from sqlalchemy.exc import OperationalError
+from sqlalchemy import and_, distinct, func as sa_func, or_
 from shared.db import engine
 from stripe_payment_endpoints import _tools_for_plan, DEFAULT_TOOL  # reuse mapping logic
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +74,50 @@ def _with_db_retry(work_fn, *, max_attempts: int = 2):
         raise last_exc
     raise RuntimeError("DB operation failed after retries")
 
+
+_LEAD_PATTERN = re.compile(r"\b(lead|demo|quote|pricing|trial|estimate|proposal|interested|inquiry|contact)\b", re.I)
+
+
+def _coerce_tag_list(value) -> list[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str):
+        trimmed = value.strip()
+        if not trimmed:
+            return []
+        try:
+            decoded = json.loads(trimmed)
+            if isinstance(decoded, list):
+                return [str(item).strip() for item in decoded if str(item).strip()]
+        except json.JSONDecodeError:
+            pass
+        return [tag.strip() for tag in trimmed.split(",") if tag.strip()]
+    return []
+
+
+def _lead_signal(text: Optional[str]) -> bool:
+    if not text:
+        return False
+    return bool(_LEAD_PATTERN.search(text))
+
+
+def _normalize_ultravox_messages(raw_messages: list[dict]) -> list[dict]:
+    normalized = []
+    for idx, msg in enumerate(raw_messages or []):
+        if not isinstance(msg, dict):
+            continue
+        text = msg.get("text") or msg.get("content") or msg.get("message") or ""
+        role = (msg.get("role") or msg.get("speaker") or msg.get("speakerRole") or "system").lower()
+        timestamp = msg.get("timestamp") or msg.get("created_at") or msg.get("createdAt") or msg.get("time")
+        normalized.append(
+            {
+                "role": role,
+                "text": text,
+                "timestamp": timestamp,
+                "ordinal": msg.get("ordinal", idx),
+            }
+        )
+    return normalized
 
 @app.function_name(name="DashboardGet")
 @app.route(route="dashboard", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
@@ -168,6 +230,206 @@ def _build_dashboard_payload(db, email: str) -> dict:
         "ultravox_agent": agent_info,
         "subscriptions": subscription_payload,
     }
+
+
+def _build_dashboard_analytics_payload(db, email: str, days: Optional[int] = None) -> dict:
+    client, user = _find_client_and_user(db, email)
+    start_dt = None
+    if days:
+        try:
+            start_dt = datetime.utcnow() - timedelta(days=int(days))
+        except (TypeError, ValueError):
+            start_dt = None
+
+    email_metrics = {
+        "summaryCount": 0,
+        "summaryTotal": 0,
+        "leadCount": 0,
+        "actionItemCount": 0,
+        "draftCount": 0,
+        "tagCounts": {},
+        "priorityCounts": {
+            "Urgent": 0,
+            "Important": 0,
+            "Normal": 0,
+            "Low": 0,
+        },
+        "sentimentCounts": {
+            "Angry": 0,
+            "Neutral": 0,
+            "Happy": 0,
+            "Concerned": 0,
+        },
+    }
+
+    if user or client:
+        event_query = db.query(EmailAIEvent)
+        if user:
+            event_query = event_query.filter(EmailAIEvent.user_id == user.id)
+        elif client:
+            event_query = event_query.filter(EmailAIEvent.client_id == client.id)
+        if start_dt:
+            event_query = event_query.filter(EmailAIEvent.created_at >= start_dt)
+
+        summary_query = event_query.filter(EmailAIEvent.event_type == "summary")
+        email_metrics["summaryCount"] = (
+            summary_query.with_entities(sa_func.count(distinct(EmailAIEvent.message_id))).scalar() or 0
+        )
+        email_metrics["summaryTotal"] = summary_query.count()
+
+        lead_query = event_query.filter(
+            EmailAIEvent.event_type == "classify",
+            EmailAIEvent.lead_flag.is_(True),
+        )
+        email_metrics["leadCount"] = (
+            lead_query.with_entities(sa_func.count(distinct(EmailAIEvent.message_id))).scalar() or 0
+        )
+
+        action_query = event_query.filter(EmailAIEvent.event_type == "actions")
+        email_metrics["actionItemCount"] = (
+            action_query.with_entities(sa_func.sum(EmailAIEvent.action_items_count)).scalar() or 0
+        )
+
+        draft_query = event_query.filter(EmailAIEvent.event_type == "reply_variants")
+        email_metrics["draftCount"] = (
+            draft_query.with_entities(sa_func.count(distinct(EmailAIEvent.message_id))).scalar() or 0
+        )
+
+        classify_rows = (
+            event_query.filter(EmailAIEvent.event_type == "classify")
+            .with_entities(EmailAIEvent.tags_json, EmailAIEvent.priority_label, EmailAIEvent.sentiment)
+            .all()
+        )
+        tag_counts = {}
+        priority_counts = dict(email_metrics["priorityCounts"])
+        sentiment_counts = dict(email_metrics["sentimentCounts"])
+        for tags_json, priority_label, sentiment in classify_rows:
+            tags = _coerce_tag_list(tags_json)
+            for tag in tags:
+                tag_counts[tag] = tag_counts.get(tag, 0) + 1
+            if priority_label:
+                label = str(priority_label).strip()
+                if label:
+                    priority_counts[label] = priority_counts.get(label, 0) + 1
+            if sentiment:
+                label = str(sentiment).strip()
+                if label:
+                    sentiment_counts[label] = sentiment_counts.get(label, 0) + 1
+        email_metrics["tagCounts"] = tag_counts
+        email_metrics["priorityCounts"] = priority_counts
+        email_metrics["sentimentCounts"] = sentiment_counts
+
+    social_metrics = {
+        "connections": 0,
+        "conversations": 0,
+        "messagesTotal": 0,
+        "messagesInbound": 0,
+        "messagesOutbound": 0,
+        "leadSignals": 0,
+        "drafts": 0,
+        "scheduled": 0,
+        "tasks": 0,
+    }
+
+    if client:
+        connections_query = db.query(SocialConnection).filter_by(business_id=client.id)
+        social_metrics["connections"] = connections_query.filter_by(status="connected").count()
+
+        conversations_query = db.query(SocialConversation).filter_by(business_id=client.id)
+        if start_dt:
+            conversations_query = conversations_query.filter(SocialConversation.last_message_at >= start_dt)
+        social_metrics["conversations"] = conversations_query.count()
+
+        messages_query = (
+            db.query(SocialMessage)
+            .join(SocialConversation, SocialConversation.id == SocialMessage.conversation_id)
+            .filter(SocialConversation.business_id == client.id)
+        )
+        if start_dt:
+            messages_query = messages_query.filter(
+                or_(
+                    SocialMessage.message_ts >= start_dt,
+                    and_(SocialMessage.message_ts.is_(None), SocialMessage.created_at >= start_dt),
+                )
+            )
+        social_metrics["messagesTotal"] = messages_query.count()
+        social_metrics["messagesInbound"] = messages_query.filter(SocialMessage.direction == "inbound").count()
+        social_metrics["messagesOutbound"] = messages_query.filter(SocialMessage.direction == "outbound").count()
+
+        lead_conversations = set()
+        for convo_id, text, direction in messages_query.with_entities(
+            SocialMessage.conversation_id, SocialMessage.text, SocialMessage.direction
+        ):
+            if direction != "inbound":
+                continue
+            if _lead_signal(text or ""):
+                lead_conversations.add(convo_id)
+        social_metrics["leadSignals"] = len(lead_conversations)
+
+        draft_query = db.query(SocialPostDraft).filter_by(business_id=client.id)
+        if start_dt:
+            draft_query = draft_query.filter(SocialPostDraft.created_at >= start_dt)
+        social_metrics["drafts"] = draft_query.count()
+
+        schedule_query = db.query(SocialScheduledPost).filter_by(business_id=client.id)
+        if start_dt:
+            schedule_query = schedule_query.filter(SocialScheduledPost.created_at >= start_dt)
+        social_metrics["scheduled"] = schedule_query.count()
+
+        tasks_query = db.query(Task).filter(Task.client_id == str(client.id))
+        if start_dt:
+            tasks_query = tasks_query.filter(Task.created_at >= start_dt)
+        social_metrics["tasks"] = tasks_query.count()
+
+    return {
+        "email": email_metrics,
+        "social": social_metrics,
+        "rangeDays": days,
+    }
+
+
+@app.function_name(name="DashboardAnalytics")
+@app.route(route="dashboard/analytics", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def dashboard_analytics(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    GET /api/dashboard/analytics?email=...&days=...
+    Returns aggregated analytics for email and social dashboards.
+    """
+    cors = build_cors_headers(req, ["GET", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
+    email = req.params.get("email")
+    if not email:
+        return func.HttpResponse(
+            json.dumps({"error": "email is required"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    days_param = req.params.get("days")
+    try:
+        days_value = int(days_param) if days_param else None
+    except ValueError:
+        days_value = None
+
+    try:
+        payload = _with_db_retry(lambda db: _build_dashboard_analytics_payload(db, email, days_value))
+        return func.HttpResponse(
+            json.dumps(payload),
+            status_code=200,
+            mimetype="application/json",
+            headers=cors,
+        )
+    except OperationalError as exc:  # pylint: disable=broad-except
+        logger.error("DashboardAnalytics database failure after retry: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "Database unavailable", "details": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+            headers=cors,
+        )
 
 
 @app.function_name(name="DashboardCallLogs")
@@ -337,6 +599,7 @@ def dashboard_update_agent(req: func.HttpRequest) -> func.HttpResponse:
     system_prompt = body.get("system_prompt")
     voice = body.get("voice")
     temperature = body.get("temperature")
+    greeting = body.get("greeting")
 
     db = SessionLocal()
     try:
@@ -356,6 +619,10 @@ def dashboard_update_agent(req: func.HttpRequest) -> func.HttpResponse:
             update_payload["callTemplate"]["voice"] = voice.strip()
         if isinstance(temperature, (int, float)):
             update_payload["callTemplate"]["temperature"] = float(temperature)
+        if isinstance(greeting, str) and greeting.strip():
+            update_payload["callTemplate"]["firstSpeakerSettings"] = {
+                "agent": {"text": greeting.strip()}
+            }
 
         if not update_payload["callTemplate"]:
             return func.HttpResponse(
@@ -468,6 +735,7 @@ def dashboard_call_transcript(req: func.HttpRequest) -> func.HttpResponse:
 
         recordings = []
         transcripts = []
+        messages = []
 
         try:
             recs = twilio_client.calls(call_sid).recordings.list(limit=10)
@@ -506,6 +774,14 @@ def dashboard_call_transcript(req: func.HttpRequest) -> func.HttpResponse:
                     }
                 )
 
+        try:
+            call_record = db.query(Call).filter_by(twilio_call_sid=call_sid).one_or_none()
+            if call_record and call_record.ultravox_call_id:
+                raw_messages = get_ultravox_call_messages(call_record.ultravox_call_id)
+                messages = _normalize_ultravox_messages(raw_messages)
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.warning("Ultravox transcript fetch failed for %s: %s", call_sid, exc)
+
         payload = {
             "call": {
                 "sid": call.sid,
@@ -519,6 +795,7 @@ def dashboard_call_transcript(req: func.HttpRequest) -> func.HttpResponse:
             },
             "recordings": recordings,
             "transcripts": transcripts,
+            "messages": messages,
         }
 
         return func.HttpResponse(
@@ -527,6 +804,121 @@ def dashboard_call_transcript(req: func.HttpRequest) -> func.HttpResponse:
             mimetype="application/json",
             headers=cors,
         )
+    finally:
+        db.close()
+
+
+@app.function_name(name="DashboardRecordingMedia")
+@app.route(
+    route="dashboard/recordings/{recording_sid}/media",
+    methods=["GET", "OPTIONS"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
+def dashboard_recording_media(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    GET /api/dashboard/recordings/{recording_sid}/media?email=...&format=mp3
+    Streams a Twilio recording for playback in the dashboard UI.
+    """
+    cors = build_cors_headers(req, ["GET", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
+    email = req.params.get("email")
+    recording_sid = req.route_params.get("recording_sid")
+    if not email or not recording_sid:
+        return func.HttpResponse(
+            json.dumps({"error": "email and recording_sid are required"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    fmt = (req.params.get("format") or "mp3").lower().strip()
+    if fmt not in {"mp3", "wav"}:
+        fmt = "mp3"
+
+    db = SessionLocal()
+    try:
+        client, _ = _find_client_and_user(db, email)
+        if not client:
+            return func.HttpResponse(
+                json.dumps({"error": "Client not found"}),
+                status_code=404,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        try:
+            twilio_client = get_twilio_client()
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.error("Failed to init Twilio client: %s", exc)
+            return func.HttpResponse(
+                json.dumps({"error": "Twilio client init failed", "details": str(exc)}),
+                status_code=500,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        try:
+            recording = twilio_client.recordings(recording_sid).fetch()
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.error("Recording fetch failed for %s: %s", recording_sid, exc)
+            return func.HttpResponse(
+                json.dumps({"error": "Recording not found", "details": str(exc)}),
+                status_code=404,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        call_sid = getattr(recording, "call_sid", None)
+        if call_sid:
+            phone_numbers = (
+                db.query(PhoneNumber).filter_by(client_id=client.id, is_active=True).all()
+            )
+            owned_numbers = {p.twilio_phone_number for p in phone_numbers}
+            try:
+                call = twilio_client.calls(call_sid).fetch()
+                call_from = getattr(call, "from_", None) or getattr(call, "from", None)
+                call_to = getattr(call, "to", None)
+                if owned_numbers and call_from not in owned_numbers and call_to not in owned_numbers:
+                    return func.HttpResponse(
+                        json.dumps({"error": "Recording does not belong to this client"}),
+                        status_code=403,
+                        mimetype="application/json",
+                        headers=cors,
+                    )
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.warning("Call verification failed for %s: %s", call_sid, exc)
+
+        uri = getattr(recording, "uri", None) or getattr(recording, "media_url", None)
+        if not uri:
+            return func.HttpResponse(
+                json.dumps({"error": "Recording media unavailable"}),
+                status_code=404,
+                mimetype="application/json",
+                headers=cors,
+            )
+        if uri.startswith("http"):
+            base_url = uri
+        else:
+            base_url = f"https://api.twilio.com{uri}"
+        if base_url.endswith(".json"):
+            base_url = base_url[: -len(".json")]
+        media_url = f"{base_url}.{fmt}"
+
+        account_sid = get_required_setting("TWILIO_ACCOUNT_SID")
+        auth_token = get_required_setting("TWILIO_AUTH_TOKEN")
+        resp = requests.get(media_url, auth=(account_sid, auth_token), timeout=20)
+        if resp.status_code >= 300:
+            return func.HttpResponse(
+                json.dumps({"error": "Failed to fetch recording media"}),
+                status_code=502,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        mimetype = "audio/mpeg" if fmt == "mp3" else "audio/wav"
+        return func.HttpResponse(resp.content, status_code=200, mimetype=mimetype, headers=cors)
     finally:
         db.close()
 

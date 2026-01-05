@@ -1,6 +1,7 @@
 import base64
 import json
 import logging
+import re
 import time
 from collections import OrderedDict, deque
 from datetime import datetime, timedelta
@@ -17,7 +18,7 @@ from bs4 import BeautifulSoup
 
 from function_app import app
 from shared.config import get_google_oauth_settings, get_required_setting, get_setting
-from shared.db import SessionLocal, User, GoogleToken
+from shared.db import Client, EmailAIEvent, SessionLocal, User, GoogleToken
 from utils.cors import build_cors_headers
 
 logger = logging.getLogger(__name__)
@@ -140,6 +141,84 @@ def _get_user(db: SessionLocal, email: Optional[str], user_id: Optional[str]) ->
             return None
     return None
 
+
+def _get_client_id(db: SessionLocal, user: Optional[User], email: Optional[str]) -> Optional[int]:
+    if user and user.id:
+        client = db.query(Client).filter_by(user_id=user.id).one_or_none()
+        if client:
+            return client.id
+    if email:
+        client = db.query(Client).filter_by(email=email).one_or_none()
+        if client:
+            return client.id
+    return None
+
+
+def _coerce_tag_list(value) -> list[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str):
+        trimmed = value.strip()
+        if not trimmed:
+            return []
+        try:
+            decoded = json.loads(trimmed)
+            if isinstance(decoded, list):
+                return [str(item).strip() for item in decoded if str(item).strip()]
+        except json.JSONDecodeError:
+            pass
+        return [tag.strip() for tag in trimmed.split(",") if tag.strip()]
+    return []
+
+
+def _is_lead_tag(tags: list[str]) -> bool:
+    if not tags:
+        return False
+    return any(re.search(r"(lead|demo|quote|pricing|trial|opportunity)", tag, re.IGNORECASE) for tag in tags)
+
+
+def _record_email_event(
+    db: SessionLocal,
+    *,
+    user: Optional[User],
+    email: Optional[str],
+    message_id: str,
+    thread_id: Optional[str],
+    event_type: str,
+    cached: bool = False,
+    tags: Optional[list[str]] = None,
+    priority_label: Optional[str] = None,
+    sentiment: Optional[str] = None,
+    action_items_count: int = 0,
+    lead_flag: Optional[bool] = None,
+) -> None:
+    if not user or not message_id or not event_type:
+        return
+    try:
+        client_id = _get_client_id(db, user, email)
+        safe_tags = _coerce_tag_list(tags)
+        record = EmailAIEvent(
+            user_id=user.id,
+            client_id=client_id,
+            message_id=message_id,
+            thread_id=thread_id,
+            event_type=event_type,
+            cached=bool(cached),
+            tags_json=safe_tags or None,
+            priority_label=priority_label,
+            sentiment=sentiment,
+            action_items_count=max(int(action_items_count or 0), 0),
+            lead_flag=_is_lead_tag(safe_tags) if lead_flag is None else bool(lead_flag),
+            created_at=datetime.utcnow(),
+        )
+        db.add(record)
+        db.commit()
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.warning("Failed to record email analytics event: %s", exc)
+        try:
+            db.rollback()
+        except Exception:  # pylint: disable=broad-except
+            pass
 
 def _get_google_token(db: SessionLocal, user: User) -> Optional[GoogleToken]:
     return (
@@ -1234,6 +1313,15 @@ def email_summary(req: func.HttpRequest) -> func.HttpResponse:
         cache_key = f"summary:{message_id}"
         cached = AI_RESPONSE_CACHE.get(cache_key)
         if cached:
+            _record_email_event(
+                db,
+                user=user,
+                email=email,
+                message_id=message_id,
+                thread_id=cached.get("threadId"),
+                event_type="summary",
+                cached=True,
+            )
             payload = {
                 "message_id": message_id,
                 **cached,
@@ -1283,6 +1371,16 @@ def email_summary(req: func.HttpRequest) -> func.HttpResponse:
             "summary": summary,
         }
         AI_RESPONSE_CACHE.set(cache_key, cache_payload)
+
+        _record_email_event(
+            db,
+            user=user,
+            email=email,
+            message_id=details.get("id") or message_id,
+            thread_id=details.get("threadId"),
+            event_type="summary",
+            cached=False,
+        )
 
         return func.HttpResponse(
             json.dumps(
@@ -1359,6 +1457,18 @@ def email_classify(req: func.HttpRequest) -> func.HttpResponse:
 
         cached = AI_RESPONSE_CACHE.get(cache_key)
         if cached:
+            _record_email_event(
+                db,
+                user=user,
+                email=email,
+                message_id=message_id,
+                thread_id=cached.get("threadId"),
+                event_type="classify",
+                cached=True,
+                tags=cached.get("tags"),
+                priority_label=cached.get("priorityLabel"),
+                sentiment=cached.get("sentiment"),
+            )
             payload = {
                 "message_id": message_id,
                 **cached,
@@ -1404,6 +1514,19 @@ def email_classify(req: func.HttpRequest) -> func.HttpResponse:
             "sentiment": sentiment,
         }
         AI_RESPONSE_CACHE.set(cache_key, cache_payload)
+
+        _record_email_event(
+            db,
+            user=user,
+            email=email,
+            message_id=message_id,
+            thread_id=thread_id,
+            event_type="classify",
+            cached=False,
+            tags=tags,
+            priority_label=priority_label,
+            sentiment=sentiment,
+        )
 
         return func.HttpResponse(
             json.dumps(
@@ -1480,6 +1603,17 @@ def email_actions(req: func.HttpRequest) -> func.HttpResponse:
 
         cached = AI_RESPONSE_CACHE.get(cache_key)
         if cached:
+            action_items = cached.get("actionItems") or []
+            _record_email_event(
+                db,
+                user=user,
+                email=email,
+                message_id=message_id,
+                thread_id=cached.get("threadId"),
+                event_type="actions",
+                cached=True,
+                action_items_count=len(action_items) if isinstance(action_items, list) else 0,
+            )
             payload = {
                 "message_id": message_id,
                 **cached,
@@ -1536,6 +1670,17 @@ def email_actions(req: func.HttpRequest) -> func.HttpResponse:
 
         cache_payload = {"threadId": thread_id or None, "actionItems": normalized_items}
         AI_RESPONSE_CACHE.set(cache_key, cache_payload)
+
+        _record_email_event(
+            db,
+            user=user,
+            email=email,
+            message_id=message_id,
+            thread_id=thread_id,
+            event_type="actions",
+            cached=False,
+            action_items_count=len(normalized_items),
+        )
 
         return func.HttpResponse(
             json.dumps(
@@ -1619,6 +1764,15 @@ def email_reply_variants(req: func.HttpRequest) -> func.HttpResponse:
         if allow_cache:
             cached = AI_RESPONSE_CACHE.get(cache_key)
             if cached:
+                _record_email_event(
+                    db,
+                    user=user,
+                    email=email,
+                    message_id=message_id,
+                    thread_id=cached.get("threadId"),
+                    event_type="reply_variants",
+                    cached=True,
+                )
                 payload = {
                     "message_id": message_id,
                     **cached,
@@ -1670,6 +1824,16 @@ def email_reply_variants(req: func.HttpRequest) -> func.HttpResponse:
         cache_payload = {"threadId": thread_id or None, "tone": tone, "intent": intent, "variants": normalized_variants}
         if allow_cache:
             AI_RESPONSE_CACHE.set(cache_key, cache_payload)
+
+        _record_email_event(
+            db,
+            user=user,
+            email=email,
+            message_id=message_id,
+            thread_id=thread_id,
+            event_type="reply_variants",
+            cached=False,
+        )
 
         return func.HttpResponse(
             json.dumps(

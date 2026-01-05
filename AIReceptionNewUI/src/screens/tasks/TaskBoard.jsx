@@ -14,6 +14,7 @@ import {
   TabsTrigger
 } from "../../components/ui/index.jsx";
 import {
+  CalendarPlus,
   ClipboardList,
   RefreshCw,
   Search,
@@ -24,7 +25,8 @@ import {
 import TaskTile from "./TaskTile";
 import TaskDetailDialog from "./TaskDetailDialog";
 import { useTaskStream } from "./useTaskStream";
-import { acceptTask, fetchTasks, rejectTask } from "../../lib/api/tasks";
+import { acceptTask, deleteTask, fetchTasks, rejectTask } from "../../lib/api/tasks";
+import { createTaskManagerItem } from "../../lib/api/taskManager";
 
 const statusTabs = [
   { id: "ALL", label: "All" },
@@ -72,6 +74,28 @@ const filterTasks = (tasks, status, search) => {
   return filtered;
 };
 
+const pad = (value) => String(value).padStart(2, "0");
+
+const toInputValue = (value) => {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
+    date.getHours()
+  )}:${pad(date.getMinutes())}`;
+};
+
+const buildDefaultSchedule = () => {
+  const start = new Date();
+  start.setSeconds(0, 0);
+  const roundedMinutes = Math.ceil(start.getMinutes() / 15) * 15;
+  start.setMinutes(roundedMinutes % 60);
+  if (roundedMinutes >= 60) {
+    start.setHours(start.getHours() + 1);
+  }
+  const end = new Date(start.getTime() + 60 * 60 * 1000);
+  return { start: toInputValue(start), end: toInputValue(end) };
+};
+
 export default function TaskBoard({ email, businessName, liveEnabled }) {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -82,6 +106,14 @@ export default function TaskBoard({ email, businessName, liveEnabled }) {
   const [rejectTaskTarget, setRejectTaskTarget] = useState(null);
   const [rejectReason, setRejectReason] = useState("");
   const [actionBusy, setActionBusy] = useState(false);
+  const [scheduleTaskTarget, setScheduleTaskTarget] = useState(null);
+  const [scheduleForm, setScheduleForm] = useState({
+    title: "",
+    description: "",
+    start: "",
+    end: ""
+  });
+  const [scheduleStatus, setScheduleStatus] = useState({ status: "idle", message: "" });
 
   const loadTasks = useCallback(async () => {
     if (!email) return;
@@ -115,10 +147,20 @@ export default function TaskBoard({ email, businessName, liveEnabled }) {
     });
   }, []);
 
+  const removeTaskById = useCallback((taskId) => {
+    if (!taskId) return;
+    setTasks((prev) => prev.filter((item) => item.id !== taskId));
+    setSelectedTask((current) => (current?.id === taskId ? null : current));
+  }, []);
+
   const { connectionStatus } = useTaskStream({
     enabled: liveEnabled,
     email,
     onEvent: (evt) => {
+      if (evt?.type === "task.deleted") {
+        removeTaskById(evt.taskId || evt.task?.id);
+        return;
+      }
       if (evt?.task) {
         upsertTask(evt.task);
       }
@@ -180,6 +222,60 @@ export default function TaskBoard({ email, businessName, liveEnabled }) {
       setRejectReason("");
     } catch (err) {
       setError(err?.message || "Failed to reject task.");
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const handleDelete = async (task) => {
+    if (!task?.id) return;
+    const confirmed = window.confirm("Delete this task? This cannot be undone.");
+    if (!confirmed) return;
+    setActionBusy(true);
+    try {
+      await deleteTask({ email, id: task.id });
+      removeTaskById(task.id);
+    } catch (err) {
+      setError(err?.message || "Failed to delete task.");
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const openScheduleDialog = (task) => {
+    const defaults = buildDefaultSchedule();
+    setScheduleForm({
+      title: task?.title || "Task",
+      description: task?.summary || "",
+      start: defaults.start,
+      end: defaults.end
+    });
+    setScheduleTaskTarget(task || null);
+    setScheduleStatus({ status: "idle", message: "" });
+  };
+
+  const handleScheduleSave = async () => {
+    if (!email || !scheduleTaskTarget?.id) return;
+    if (!scheduleForm.title || !scheduleForm.start) {
+      setScheduleStatus({ status: "error", message: "Title and start time are required." });
+      return;
+    }
+    setActionBusy(true);
+    setScheduleStatus({ status: "loading", message: "" });
+    try {
+      await createTaskManagerItem({
+        email,
+        title: scheduleForm.title,
+        description: scheduleForm.description,
+        start: scheduleForm.start,
+        end: scheduleForm.end,
+        sourceType: "ai_task",
+        sourceId: scheduleTaskTarget.id
+      });
+      setScheduleStatus({ status: "success", message: "Task added to Task Manager." });
+      setScheduleTaskTarget(null);
+    } catch (err) {
+      setScheduleStatus({ status: "error", message: err?.message || "Failed to add task." });
     } finally {
       setActionBusy(false);
     }
@@ -288,6 +384,8 @@ export default function TaskBoard({ email, businessName, liveEnabled }) {
                 setRejectTaskTarget(target);
                 setRejectReason("");
               }}
+              onSchedule={openScheduleDialog}
+              onDelete={handleDelete}
               busy={actionBusy}
             />
           ))}
@@ -317,6 +415,83 @@ export default function TaskBoard({ email, businessName, liveEnabled }) {
         }}
         busy={actionBusy}
       />
+
+      <Dialog open={Boolean(scheduleTaskTarget)} onOpenChange={() => setScheduleTaskTarget(null)}>
+        <DialogContent className="max-w-lg">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-500/20">
+              <CalendarPlus className="h-5 w-5 text-indigo-200" />
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-[0.25em] text-indigo-200">
+                Task manager
+              </p>
+              <h4 className="mt-1 text-lg font-semibold text-white">
+                Add task to schedule
+              </h4>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-3 text-sm text-slate-200">
+            <div>
+              <label className="text-xs text-slate-400">Title</label>
+              <Input
+                value={scheduleForm.title}
+                onChange={(event) => setScheduleForm((prev) => ({ ...prev, title: event.target.value }))}
+                placeholder="Task title"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-slate-400">Description</label>
+              <textarea
+                rows={3}
+                value={scheduleForm.description}
+                onChange={(event) =>
+                  setScheduleForm((prev) => ({ ...prev, description: event.target.value }))
+                }
+                className="w-full rounded-2xl border border-white/10 bg-slate-900/60 px-4 py-2 text-sm text-white outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/40"
+                placeholder="Add notes or context"
+              />
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div>
+                <label className="text-xs text-slate-400">Start</label>
+                <Input
+                  type="datetime-local"
+                  value={scheduleForm.start}
+                  onChange={(event) => setScheduleForm((prev) => ({ ...prev, start: event.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400">End</label>
+                <Input
+                  type="datetime-local"
+                  value={scheduleForm.end}
+                  onChange={(event) => setScheduleForm((prev) => ({ ...prev, end: event.target.value }))}
+                />
+              </div>
+            </div>
+            {scheduleStatus.message ? (
+              <div
+                className={`rounded-xl border px-3 py-2 text-xs ${
+                  scheduleStatus.status === "error"
+                    ? "border-rose-400/40 bg-rose-500/10 text-rose-200"
+                    : "border-emerald-300/40 bg-emerald-500/10 text-emerald-100"
+                }`}
+              >
+                {scheduleStatus.message}
+              </div>
+            ) : null}
+          </div>
+          <div className="mt-4 flex items-center justify-end gap-2">
+            <Button variant="ghost" onClick={() => setScheduleTaskTarget(null)}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={handleScheduleSave} disabled={actionBusy}>
+              Add to Task Manager
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={Boolean(rejectTaskTarget)} onOpenChange={() => setRejectTaskTarget(null)}>
         <DialogContent className="max-w-lg">

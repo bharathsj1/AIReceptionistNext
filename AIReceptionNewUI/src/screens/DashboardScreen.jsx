@@ -48,6 +48,8 @@ import {
 } from "lucide-react";
 import { API_URLS } from "../config/urls";
 import TaskBoard from "./tasks/TaskBoard";
+import TaskManagerScreen from "./TaskManagerScreen";
+import { createTaskManagerItem } from "../lib/api/taskManager";
 
 const resolveFeatureFlag = (value) => {
   if (value === undefined || value === null) return false;
@@ -85,6 +87,28 @@ const formatDate = (iso) => {
   } catch {
     return iso;
   }
+};
+
+const pad2 = (value) => String(value).padStart(2, "0");
+
+const toDateTimeInput = (value) => {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}T${pad2(
+    date.getHours()
+  )}:${pad2(date.getMinutes())}`;
+};
+
+const buildDefaultSchedule = () => {
+  const start = new Date();
+  start.setSeconds(0, 0);
+  const roundedMinutes = Math.ceil(start.getMinutes() / 15) * 15;
+  start.setMinutes(roundedMinutes % 60);
+  if (roundedMinutes >= 60) {
+    start.setHours(start.getHours() + 1);
+  }
+  const end = new Date(start.getTime() + 60 * 60 * 1000);
+  return { start: toDateTimeInput(start), end: toDateTimeInput(end) };
 };
 
 const formatStatusLabel = (value) => {
@@ -182,7 +206,6 @@ const EMAIL_TAG_OPTIONS = [
 const REPLY_TONE_PRESETS = ["Professional", "Friendly", "Short", "Empathetic"];
 
 const BASE_DASHBOARD_TABS = [
-  { id: "dashboard", label: "Dashboard", icon: LayoutGrid },
   { id: "agents", label: "Agents", icon: Users },
   { id: "calls", label: "Calls", icon: PhoneCall },
   { id: "business", label: "Business", icon: Building2 },
@@ -190,11 +213,12 @@ const BASE_DASHBOARD_TABS = [
 ];
 const DASHBOARD_TABS = TASKS_ENABLED
   ? [
-      ...BASE_DASHBOARD_TABS.slice(0, 3),
+      ...BASE_DASHBOARD_TABS.slice(0, 2),
       { id: "tasks", label: "Tasks", icon: ClipboardList },
-      ...BASE_DASHBOARD_TABS.slice(3)
+      ...BASE_DASHBOARD_TABS.slice(2)
     ]
   : BASE_DASHBOARD_TABS;
+const DASHBOARD_TAB_IDS = new Set(DASHBOARD_TABS.map((tab) => tab.id));
 
 const priorityBadgeStyles = {
   Urgent: "border-rose-400/60 bg-rose-500/20 text-rose-100",
@@ -339,20 +363,18 @@ const extractBusinessProfile = (websiteData) => {
 };
 
 const StatCard = ({ label, value, hint, icon: Icon, tone = "default" }) => {
-  const tones = {
-    default: "bg-slate-900/60 border-slate-800 text-slate-200",
-    success: "bg-emerald-900/50 border-emerald-800 text-emerald-100",
-    warning: "bg-amber-900/40 border-amber-800 text-amber-100"
-  };
+  const toneClass = `stat-card--${tone}`;
   return (
-    <div className={`rounded-2xl border p-4 shadow-lg backdrop-blur ${tones[tone] || tones.default}`}>
-      <div className="flex items-center justify-between gap-2">
-        <div>
-          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">{label}</p>
-          <div className="mt-1 text-2xl font-semibold leading-tight">{value}</div>
-          {hint && <p className="text-xs text-slate-400">{hint}</p>}
-        </div>
-        {Icon ? <Icon className="h-5 w-5 text-slate-400" /> : null}
+    <div className={`stat-card ${toneClass}`}>
+      {Icon ? (
+        <span className="stat-card-icon">
+          <Icon className="h-5 w-5" />
+        </span>
+      ) : null}
+      <div className="stat-card-body">
+        <p className="stat-card-label">{label}</p>
+        <div className="stat-card-value">{value}</div>
+        {hint ? <p className="stat-card-hint">{hint}</p> : null}
       </div>
     </div>
   );
@@ -477,9 +499,17 @@ export default function DashboardScreen({
   const [selectedCall, setSelectedCall] = useState(pagedCalls[0] || null);
   useEffect(() => {
     if (!TASKS_ENABLED && activeTab === "tasks") {
-      setActiveTab?.("dashboard");
+      setActiveTab?.("agents");
     }
   }, [activeTab, setActiveTab]);
+
+  useEffect(() => {
+    const resolvedTool = activeTool || "ai_receptionist";
+    if (resolvedTool !== "ai_receptionist") return;
+    if (!DASHBOARD_TAB_IDS.has(activeTab)) {
+      setActiveTab?.(DASHBOARD_TABS[0]?.id || "agents");
+    }
+  }, [activeTab, activeTool, setActiveTab]);
   const [businessForm, setBusinessForm] = useState({
     name: clientData?.business_name || clientData?.name || "",
     phone: clientData?.business_phone || "",
@@ -522,6 +552,12 @@ export default function DashboardScreen({
   });
   const [selectedCalendarProvider, setSelectedCalendarProvider] = useState("google");
   const [calendarEditMode, setCalendarEditMode] = useState("edit");
+  const [analyticsTab, setAnalyticsTab] = useState("ai_receptionist");
+  const [dashboardAnalyticsData, setDashboardAnalyticsData] = useState(null);
+  const [dashboardAnalyticsStatus, setDashboardAnalyticsStatus] = useState({
+    status: "idle",
+    message: ""
+  });
   const [emailSubTab, setEmailSubTab] = useState("email");
   const [settingsSection, setSettingsSection] = useState("automation");
   const [emailMailbox, setEmailMailbox] = useState("INBOX");
@@ -550,6 +586,17 @@ export default function DashboardScreen({
   const [emailInlineReplyOpen, setEmailInlineReplyOpen] = useState(false);
   const [emailInlineReplyMessageId, setEmailInlineReplyMessageId] = useState(null);
   const [emailInlineAttachments, setEmailInlineAttachments] = useState([]);
+  const [taskManagerEmailTarget, setTaskManagerEmailTarget] = useState(null);
+  const [taskManagerEmailForm, setTaskManagerEmailForm] = useState({
+    title: "",
+    description: "",
+    start: "",
+    end: ""
+  });
+  const [taskManagerEmailStatus, setTaskManagerEmailStatus] = useState({
+    status: "idle",
+    message: ""
+  });
   const [emailComposerOpen, setEmailComposerOpen] = useState(false);
   const [emailComposerMode, setEmailComposerMode] = useState("new");
   const [emailTheme, setEmailTheme] = useState(() => {
@@ -754,9 +801,10 @@ export default function DashboardScreen({
           end,
           allDay,
           display: "block",
-          backgroundColor: allDay ? "rgba(59, 130, 246, 0.55)" : "rgba(59, 130, 246, 0.85)",
-          borderColor: allDay ? "rgba(59, 130, 246, 0.8)" : "rgba(59, 130, 246, 1)",
+          backgroundColor: allDay ? "rgba(124, 58, 237, 0.75)" : "rgba(124, 58, 237, 0.92)",
+          borderColor: allDay ? "rgba(109, 40, 217, 0.9)" : "rgba(109, 40, 217, 1)",
           textColor: "#f8fafc",
+          className: "calendar-event",
           extendedProps: { raw: event, provider: "google" }
         };
       }),
@@ -1254,6 +1302,7 @@ export default function DashboardScreen({
   };
 
   const handleSendEmail = async (attachments = []) => {
+    const safeAttachments = Array.isArray(attachments) ? attachments : [];
     const emailAddress = user?.email || userForm.email;
     if (!emailAddress) {
       setEmailComposerStatus({ status: "error", message: "Missing user email." });
@@ -1265,7 +1314,7 @@ export default function DashboardScreen({
     }
     setEmailComposerStatus({ status: "loading", message: "Sending..." });
     try {
-      const attachmentPayload = (attachments || [])
+      const attachmentPayload = safeAttachments
         .filter((item) => item?.data)
         .map((item) => ({
           filename: item.name,
@@ -1575,6 +1624,58 @@ export default function DashboardScreen({
       setEmailSummaryStatus({
         status: "error",
         message: err?.message || "Unable to summarize email"
+      });
+    }
+  };
+
+  const openEmailTaskManager = (message) => {
+    if (!message?.id) return;
+    const defaults = buildDefaultSchedule();
+    const summaryText = emailSummaries?.[message.id] || "";
+    setTaskManagerEmailForm({
+      title: message.subject || "Email follow-up",
+      description: summaryText || message.snippet || "",
+      start: defaults.start,
+      end: defaults.end
+    });
+    setTaskManagerEmailTarget(message);
+    setTaskManagerEmailStatus({ status: "idle", message: "" });
+  };
+
+  const handleEmailTaskManagerSave = async () => {
+    const emailAddress = user?.email || userForm.email;
+    if (!emailAddress) {
+      setTaskManagerEmailStatus({ status: "error", message: "Missing user email." });
+      return;
+    }
+    if (!taskManagerEmailTarget?.id) return;
+    if (!taskManagerEmailForm.title || !taskManagerEmailForm.start) {
+      setTaskManagerEmailStatus({
+        status: "error",
+        message: "Title and start time are required."
+      });
+      return;
+    }
+    setTaskManagerEmailStatus({ status: "loading", message: "Saving..." });
+    try {
+      await createTaskManagerItem({
+        email: emailAddress,
+        title: taskManagerEmailForm.title,
+        description: taskManagerEmailForm.description,
+        start: taskManagerEmailForm.start,
+        end: taskManagerEmailForm.end,
+        sourceType: "email_summary",
+        sourceId: taskManagerEmailTarget.id
+      });
+      setTaskManagerEmailStatus({
+        status: "success",
+        message: "Task added to Task Manager."
+      });
+      setTaskManagerEmailTarget(null);
+    } catch (err) {
+      setTaskManagerEmailStatus({
+        status: "error",
+        message: err?.message || "Failed to add task."
       });
     }
   };
@@ -2247,6 +2348,16 @@ export default function DashboardScreen({
     }
   };
 
+  const dashboardMenuItems = [
+    {
+      id: "dashboard_analytics",
+      label: "Dashboard",
+      eyebrow: "Analytics",
+      icon: LayoutGrid,
+      copy: "Track performance across all AI tools."
+    }
+  ];
+
   const toolTabs = [
     {
       id: "ai_receptionist",
@@ -2268,7 +2379,20 @@ export default function DashboardScreen({
       eyebrow: "Content ops",
       icon: Megaphone,
       copy: "Plan content, enforce brand safety, and schedule multi-channel posts."
+    },
+    {
+      id: "task_manager",
+      label: "Task Manager",
+      eyebrow: "Schedule",
+      icon: CalendarClock,
+      copy: "Organize tasks on a shared calendar and keep timelines visible."
     }
+  ];
+
+  const analyticsTabs = [
+    { id: "ai_receptionist", label: "AI Receptionist", icon: Shield },
+    { id: "email_manager", label: "Email Manager", icon: Mail },
+    { id: "social_media_manager", label: "Social Media Manager", icon: Megaphone }
   ];
 
   const baseMailboxItems = [
@@ -2294,6 +2418,8 @@ export default function DashboardScreen({
   ];
 
   const isToolLocked = (toolId) => {
+    if (toolId === "dashboard_analytics") return false;
+    if (toolId === "task_manager") return false;
     const entry = toolSubscriptions?.[toolId];
     if (entry && typeof entry.active === "boolean") return !entry.active;
     if (subscriptionsLoading) return false;
@@ -2303,7 +2429,8 @@ export default function DashboardScreen({
   const currentTool = activeTool || "ai_receptionist";
   const isEmailManager = currentTool === "email_manager";
   const activeToolLocked = isToolLocked(currentTool);
-  const activeToolMeta = toolTabs.find((tool) => tool.id === currentTool);
+  const navTabs = [...dashboardMenuItems, ...toolTabs];
+  const activeToolMeta = navTabs.find((tool) => tool.id === currentTool);
   const activeToolLabel = activeToolMeta?.label || "AI tool";
   const activeToolCopy =
     activeToolMeta?.copy || "Full control over your AI agents, analytics, and automations.";
@@ -2327,6 +2454,11 @@ export default function DashboardScreen({
   const gmailConnected = Boolean(emailAccountEmail || emailMessages.length);
   const googleConnected = Boolean(calendarAccountEmail || calendarStatus === "Google");
   const gmailAccountLabel = emailAccountEmail || calendarAccountEmail || "";
+  const inboxProviderLabel = gmailConnected
+    ? emailAccountEmail && /outlook|hotmail|live/i.test(emailAccountEmail)
+      ? "Outlook"
+      : "Gmail"
+    : "Not connected";
   const gmailStatusLabel = gmailConnected
     ? "Gmail connected"
     : googleConnected
@@ -2482,8 +2614,112 @@ export default function DashboardScreen({
     }
     return () => root.classList.remove("theme-light");
   }, [lightThemeActive]);
+
+  useEffect(() => {
+    if (!user?.email) return;
+    let cancelled = false;
+
+    const loadAnalytics = async () => {
+      setDashboardAnalyticsStatus({ status: "loading", message: "" });
+      try {
+        const res = await fetch(
+          `${API_URLS.dashboardAnalytics}?email=${encodeURIComponent(user.email)}`
+        );
+        const payload = await res.json();
+        if (!res.ok) {
+          throw new Error(payload?.error || "Unable to load analytics");
+        }
+        if (!cancelled) {
+          setDashboardAnalyticsData(payload);
+          setDashboardAnalyticsStatus({ status: "success", message: "" });
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setDashboardAnalyticsStatus({
+            status: "error",
+            message: err?.message || "Unable to load analytics"
+          });
+        }
+      }
+    };
+
+    loadAnalytics();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.email]);
+
+  useEffect(() => {
+    if (currentTool === "dashboard_analytics") {
+      setAnalyticsTab("ai_receptionist");
+    }
+  }, [currentTool]);
   const emailActionError = emailActionStatus.status === "error" ? emailActionStatus.message : "";
   const emailActionSuccess = emailActionStatus.status === "success" ? emailActionStatus.message : "";
+  const dashboardAnalyticsMessage =
+    dashboardAnalyticsStatus.status === "error"
+      ? dashboardAnalyticsStatus.message
+      : dashboardAnalyticsStatus.status === "loading"
+        ? "Syncing analytics..."
+        : "";
+  const emailAnalyticsData = dashboardAnalyticsData?.email || null;
+  const socialAnalyticsData = dashboardAnalyticsData?.social || null;
+  const emailSummaryCountLocal = Object.values(emailSummaries || {}).filter(
+    (summary) => summary && String(summary).trim()
+  ).length;
+  const emailActionCountLocal = Object.values(emailActionsById || {}).reduce((sum, items) => {
+    if (!Array.isArray(items)) return sum;
+    return sum + items.length;
+  }, 0);
+  const emailDraftCountLocal = Object.values(emailReplyVariantsById || {}).reduce((sum, entry) => {
+    const variants = entry?.variants;
+    if (!Array.isArray(variants)) return sum;
+    return sum + variants.length;
+  }, 0);
+  const emailUnreadCount = (emailMessages || []).filter((message) =>
+    (message?.labelIds || []).includes("UNREAD")
+  ).length;
+  const emailLeadCountLocal = Object.values(emailClassifications || {}).reduce((sum, entry) => {
+    const tags = Array.isArray(entry?.tags) ? entry.tags : [];
+    const hasLead = tags.some((tag) =>
+      /lead|opportunity|demo|quote|pricing|trial/i.test(String(tag || ""))
+    );
+    return sum + (hasLead ? 1 : 0);
+  }, 0);
+  const emailTagCountsLocal = Object.values(emailClassifications || {}).reduce((acc, entry) => {
+    const tags = Array.isArray(entry?.tags) ? entry.tags : [];
+    tags.forEach((tag) => {
+      const key = String(tag || "").trim();
+      if (!key) return;
+      acc[key] = (acc[key] || 0) + 1;
+    });
+    return acc;
+  }, {});
+  const emailSummaryCount = emailAnalyticsData?.summaryCount ?? emailSummaryCountLocal;
+  const emailActionCount = emailAnalyticsData?.actionItemCount ?? emailActionCountLocal;
+  const emailDraftCount = emailAnalyticsData?.draftCount ?? emailDraftCountLocal;
+  const emailLeadCount = emailAnalyticsData?.leadCount ?? emailLeadCountLocal;
+  const emailTagCounts = emailAnalyticsData?.tagCounts || emailTagCountsLocal;
+  const emailTopTags = Object.entries(emailTagCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5);
+  const socialLeadCountLocal = (socialConversations || []).reduce((sum, convo) => {
+    const hint = `${convo?.subject || ""} ${convo?.name || ""} ${convo?.snippet || ""}`.trim();
+    if (!hint) return sum;
+    return sum + (/lead|demo|quote|pricing|inquiry|interested/i.test(hint) ? 1 : 0);
+  }, 0);
+  const socialTaskCountLocal = (socialConversations || []).reduce((sum, convo) => {
+    if (!Array.isArray(convo?.tasks)) return sum;
+    return sum + convo.tasks.length;
+  }, 0);
+  const socialConnectionsCount = socialAnalyticsData?.connections ?? socialConnections.length;
+  const socialConversationsCount = socialAnalyticsData?.conversations ?? socialConversations.length;
+  const socialDraftCount = socialAnalyticsData?.drafts ?? socialDrafts.length;
+  const socialScheduledCount = socialAnalyticsData?.scheduled ?? socialScheduledPosts.length;
+  const socialMessagesOutboundCount =
+    socialAnalyticsData?.messagesOutbound ?? socialMessages.length;
+  const socialLeadCount = socialAnalyticsData?.leadSignals ?? socialLeadCountLocal;
+  const socialTaskCount = socialAnalyticsData?.tasks ?? socialTaskCountLocal;
   const gmailLabelOptions = emailLabels
     .filter((label) => label?.id && label?.type !== "system")
     .map((label) => ({ id: label.id, name: label.name }));
@@ -3013,11 +3249,11 @@ export default function DashboardScreen({
       (message) => getMessageTimestampValue(message) >= weekAgo
     ).length;
 
-    const tagCounts = EMAIL_TAG_OPTIONS.reduce((acc, tag) => {
+    const localTagCounts = EMAIL_TAG_OPTIONS.reduce((acc, tag) => {
       acc[tag] = 0;
       return acc;
     }, {});
-    const priorityCounts = {
+    const localPriorityCounts = {
       Urgent: 0,
       Important: 0,
       Normal: 0,
@@ -3027,13 +3263,13 @@ export default function DashboardScreen({
     Object.values(emailClassifications || {}).forEach((classification) => {
       const tags = classification?.tags || [];
       tags.forEach((tag) => {
-        if (tagCounts[tag] !== undefined) {
-          tagCounts[tag] += 1;
+        if (localTagCounts[tag] !== undefined) {
+          localTagCounts[tag] += 1;
         }
       });
       const label = classification?.priorityLabel;
-      if (label && priorityCounts[label] !== undefined) {
-        priorityCounts[label] += 1;
+      if (label && localPriorityCounts[label] !== undefined) {
+        localPriorityCounts[label] += 1;
       }
     });
 
@@ -3041,10 +3277,10 @@ export default function DashboardScreen({
       processedToday,
       processedWeek,
       totalLoaded: emailMessages.length,
-      tagCounts,
-      priorityCounts
+      tagCounts: emailAnalyticsData?.tagCounts || localTagCounts,
+      priorityCounts: emailAnalyticsData?.priorityCounts || localPriorityCounts
     };
-  }, [emailClassifications, emailMessages]);
+  }, [emailAnalyticsData, emailClassifications, emailMessages]);
 
   const analytics = useMemo(() => {
     const sourceCalls = (analyticsCalls?.length ? analyticsCalls : recentCalls) || [];
@@ -3212,29 +3448,185 @@ export default function DashboardScreen({
   const sideNavWidthClass = sideNavHidden
     ? "w-0 min-w-0 max-w-0"
     : sideNavOpen
-      ? "w-[154px]"
+      ? "w-[240px]"
       : "w-14";
+  const aiReceptionistDashboardPanel = (
+    <>
+      <section className="grid gap-4 md:grid-cols-4">
+        <StatCard label="Total Calls" value={analytics.totalCalls} hint="All time" icon={PhoneCall} />
+        <StatCard
+          label="Answered"
+          value={`${analytics.answeredRate}%`}
+          hint="Completed calls"
+          icon={CheckCircle2}
+        />
+        <StatCard
+          label="Avg Duration"
+          value={formatDuration(analytics.avgDuration)}
+          hint={`${analytics.totalMinutes} minutes total`}
+          icon={Activity}
+        />
+        <StatCard
+          label="Inbound vs Outbound"
+          value={`${analytics.inbound} / ${analytics.outbound}`}
+          hint="Direction split"
+          icon={Mic}
+        />
+      </section>
+
+      <section className="mt-4 grid gap-4 lg:grid-cols-[1.35fr_1fr]">
+        <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-2xl backdrop-blur">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-white">Overview</div>
+              <p className="text-xs text-slate-400">
+                Typical call times based on recent activity.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-slate-400">
+              <span>Day view</span>
+              <select
+                value={selectedCallDay}
+                onChange={(event) => setSelectedCallDay(event.target.value)}
+                className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs text-slate-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
+              >
+                {callDayOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-slate-900/40 p-4 shadow-inner">
+            <div className="flex items-center justify-between text-xs text-slate-400">
+              <span>
+                Peak window:{" "}
+                <span className="text-slate-200">{callTimeInsights.peakLabel}</span>
+              </span>
+              <span>{callTimeInsights.totalCalls} calls tracked</span>
+            </div>
+            <div className="mt-4 flex h-28 items-end gap-1">
+              {callTimeInsights.hours.map((entry) => {
+                const height = callTimeInsights.maxCount
+                  ? Math.max(12, Math.round((entry.count / callTimeInsights.maxCount) * 100))
+                  : 12;
+                return (
+                  <div
+                    key={entry.hour}
+                    className="flex-1 rounded-full bg-gradient-to-t from-purple-500/30 via-purple-500/60 to-purple-600/80"
+                    style={{ height: `${height}%`, minWidth: 6 }}
+                    title={`${formatHourLabel(entry.hour)} • ${entry.count} calls`}
+                  />
+                );
+              })}
+            </div>
+            <div className="mt-3 flex items-center justify-between text-[10px] uppercase tracking-[0.3em] text-slate-500">
+              <span>12A</span>
+              <span>4A</span>
+              <span>8A</span>
+              <span>12P</span>
+              <span>4P</span>
+              <span>8P</span>
+            </div>
+          </div>
+        </div>
+        <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
+          <div className="mb-2 flex items-center gap-2">
+            <Activity className="h-5 w-5 text-indigo-200" />
+            <div>
+              <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Data</p>
+              <h4 className="text-lg font-semibold text-white">Analysis snapshot</h4>
+            </div>
+          </div>
+          <div className="grid gap-3 text-xs text-slate-200">
+            <div className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-900/40 px-3 py-2">
+              <span>Total minutes</span>
+              <span className="font-semibold">{analytics.totalMinutes} min</span>
+            </div>
+            <div className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-900/40 px-3 py-2">
+              <span>Inbound</span>
+              <span className="font-semibold">{analytics.inbound}</span>
+            </div>
+            <div className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-900/40 px-3 py-2">
+              <span>Outbound</span>
+              <span className="font-semibold">{analytics.outbound}</span>
+            </div>
+            <div className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-900/40 px-3 py-2">
+              <span>Average length</span>
+              <span className="font-semibold">{formatDuration(analytics.avgDuration)}</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </>
+  );
+  const renderToolButton = (tool) => {
+    const Icon = tool.icon;
+    const locked = isToolLocked(tool.id);
+    const isToolActive =
+      currentTool === tool.id && !(settingsActive && tool.id === "email_manager");
+    const toolActiveClass = lightThemeActive
+      ? "bg-slate-200/80 text-slate-900 shadow-[0_10px_22px_rgba(15,23,42,0.08)]"
+      : "bg-white/15 text-white";
+    return (
+      <button
+        key={tool.id}
+        onClick={() => {
+          setActiveTool?.(tool.id);
+          if (tool.id === "ai_receptionist") setActiveTab?.("agents");
+          if (tool.id === "email_manager") setEmailSubTab("email");
+        }}
+        className={`dashboard-nav-item group flex h-10 w-full items-center gap-0.5 rounded-2xl text-left transition ${
+          sideNavContentVisible
+            ? "text-slate-200 hover:bg-white/10 hover:text-white"
+            : "text-slate-300 hover:bg-white/10 hover:text-white hover:shadow-[0_10px_22px_rgba(79,70,229,0.25)]"
+        } ${isToolActive ? toolActiveClass : ""}`}
+        data-active={isToolActive}
+        aria-disabled={locked ? "true" : undefined}
+      >
+        <span className="flex h-7 w-7 items-center justify-center">
+          <Icon
+            className={`h-[18px] w-[18px] ${
+              isToolActive
+                ? lightThemeActive
+                  ? "text-slate-900"
+                  : "text-indigo-100"
+                : lightThemeActive
+                  ? "text-slate-700"
+                  : "text-indigo-200"
+            }`}
+          />
+        </span>
+        <div
+          className={`min-w-0 transition-opacity ${
+            sideNavContentVisible
+              ? "flex-1 opacity-100"
+              : "max-w-0 overflow-hidden opacity-0"
+          }`}
+        >
+          <p className="text-[11px] font-semibold text-white leading-none whitespace-nowrap">
+            {tool.label}
+          </p>
+          {tool.eyebrow ? (
+            <span className="text-[9px] uppercase tracking-[0.24em] text-slate-400">
+              {tool.eyebrow}
+            </span>
+          ) : null}
+        </div>
+      </button>
+    );
+  };
 
   return (
     <section
-      className={`relative p-0 ${
-        lightThemeActive
-          ? "bg-transparent text-slate-900 email-theme-light"
-          : "bg-slate-950 text-slate-100"
-      } ${isEmailManager ? "min-h-screen sm:h-screen sm:overflow-hidden" : "min-h-screen"}`}
+      className={`relative p-0 dashboard-theme ${lightThemeActive ? "" : "dashboard-theme--dark"} ${
+        isEmailManager ? "min-h-screen sm:h-screen sm:overflow-hidden" : "min-h-screen"
+      }`}
     >
-      <div
-        className={`absolute inset-0 ${
-          lightThemeActive
-            ? "bg-white"
-            : "bg-[radial-gradient(circle_at_20%_20%,rgba(99,102,241,0.08),transparent_32%),radial-gradient(circle_at_80%_0%,rgba(16,185,129,0.08),transparent_32%)]"
-        }`}
-      />
-      <div
-        className={`absolute -left-6 -right-6 -top-6 bottom-0 ${
-          lightThemeActive ? "bg-transparent backdrop-blur-none" : "bg-slate-950/60 backdrop-blur-3xl"
-        }`}
-      />
+      <div className="absolute inset-0 dashboard-bg" />
+      <div className="absolute -left-6 -right-6 -top-6 bottom-0 dashboard-bg-overlay" />
       <div className={`relative mx-auto w-full max-w-none ${isEmailManager ? "h-full" : ""}`}>
         {sideNavHidden && (
           <div
@@ -3269,11 +3661,7 @@ export default function DashboardScreen({
             />
           </div>
         )}
-        <div
-          className={`flex h-screen overflow-hidden ${
-            sideNavHidden ? "gap-0" : "gap-3"
-          }`}
-        >
+        <div className={`flex h-screen overflow-hidden ${sideNavHidden ? "gap-0" : "gap-1"}`}>
           <aside
             aria-hidden={sideNavHidden}
             inert={sideNavHidden ? "" : undefined}
@@ -3281,90 +3669,66 @@ export default function DashboardScreen({
             onMouseLeave={() => {
               if (!sideNavPinned) closeSideNav();
             }}
-            className={`sticky top-0 flex h-screen flex-none flex-col gap-3 overflow-hidden p-2 transition-[width] duration-200 ${sideNavWidthClass} ${
+            className={`dashboard-sidenav sticky top-0 flex h-screen flex-none flex-col gap-3 overflow-hidden p-2 transition-[width] duration-200 ${sideNavWidthClass} ${
               sideNavHidden
                 ? "pointer-events-none overflow-hidden p-0 opacity-0"
                 : ""
-            }`}
+            } ${lightThemeActive ? "bg-slate-50/90" : ""}`}
           >
-            <div className={`flex min-h-[40px] items-center ${sideNavContentVisible ? "justify-end" : "justify-center"} gap-2`}>
-              <div className={`flex items-center gap-2 ${sideNavContentVisible ? "" : "mx-auto"}`}>
-                {sideNavContentVisible && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSideNavPinned((prev) => !prev);
-                      if (!sideNavPinned) openSideNav();
-                    }}
-                    className={`flex h-8 w-8 items-center justify-center rounded-full text-xs transition ${
-                      sideNavPinned
-                        ? "bg-white/10 text-indigo-100"
-                        : "text-slate-300 hover:bg-white/10 hover:text-white"
-                    }`}
-                    aria-label={sideNavPinned ? "Unpin menu" : "Pin menu"}
-                  >
-                    {sideNavPinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
-                  </button>
-                )}
-                {!sideNavContentVisible && <span className="h-8 w-8" />}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center">
+                <button
+                  type="button"
+                  onClick={() => window.location.reload()}
+                  className="flex h-[40px] w-[180px] flex-none shrink-0 items-center justify-center rounded-xl bg-transparent pl-[5px]"
+                  aria-label="SmartConnect4u"
+                >
+                  <img
+                    src={lightThemeActive ? "/media/SC_logo_light1.png" : "/media/SC_logo_dark1.png"}
+                    alt="SmartConnect4u"
+                    className="h-full w-full shrink-0 object-contain"
+                  />
+                </button>
               </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSideNavPinned((prev) => !prev);
+                  if (!sideNavPinned) openSideNav();
+                }}
+                className={`flex h-8 w-8 flex-none shrink-0 items-center justify-center rounded-full text-xs transition ${
+                  sideNavPinned
+                    ? "bg-white/10 text-indigo-100"
+                    : "text-slate-300 hover:bg-white/10 hover:text-white"
+                } ${sideNavContentVisible ? "opacity-100" : "pointer-events-none opacity-0"}`}
+                aria-label={sideNavPinned ? "Unpin menu" : "Pin menu"}
+              >
+                {sideNavPinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
+              </button>
             </div>
-            <div className="mt-2 grid gap-2">
-              {toolTabs.map((tool) => {
-                const Icon = tool.icon;
-                const locked = isToolLocked(tool.id);
-                const isToolActive =
-                  currentTool === tool.id && !(settingsActive && tool.id === "email_manager");
-                const toolActiveClass = lightThemeActive
-                  ? "bg-slate-200/80 text-slate-900 shadow-[0_10px_22px_rgba(15,23,42,0.08)]"
-                  : "bg-white/15 text-white";
-                return (
-                  <button
-                    key={tool.id}
-                    onClick={() => {
-                      setActiveTool?.(tool.id);
-                      if (tool.id === "ai_receptionist") setActiveTab?.("dashboard");
-                      if (tool.id === "email_manager") setEmailSubTab("email");
-                    }}
-                    className={`group flex h-10 w-full items-center gap-2 rounded-2xl text-left transition ${
-                      sideNavContentVisible
-                        ? "text-slate-200 hover:bg-white/10 hover:text-white"
-                        : "text-slate-300 hover:bg-white/10 hover:text-white hover:shadow-[0_10px_22px_rgba(79,70,229,0.25)]"
-                    } ${isToolActive ? toolActiveClass : ""}`}
-                  >
-                    <span className="flex h-7 w-7 items-center justify-center">
-                      <Icon
-                        className={`h-[18px] w-[18px] ${
-                          isToolActive
-                            ? lightThemeActive
-                              ? "text-slate-900"
-                              : "text-indigo-100"
-                            : lightThemeActive
-                              ? "text-slate-700"
-                              : "text-indigo-200"
-                        }`}
-                      />
-                    </span>
-                      <div
-                        className={`min-w-0 transition-opacity ${
-                          sideNavContentVisible
-                            ? "flex-1 opacity-100"
-                            : "max-w-0 overflow-hidden opacity-0"
-                        }`}
-                      >
-                        <p className="text-[11px] font-semibold text-white leading-none whitespace-nowrap">
-                          {tool.label}
-                        </p>
-                      </div>
-                  </button>
-                );
-              })}
+            <div className="mt-2 grid gap-3">
+              <div className="dashboard-nav-section">
+                <p className={`dashboard-nav-heading ${sideNavContentVisible ? "opacity-100" : "opacity-0"}`}>
+                  Dashboard
+                </p>
+                <div className="grid gap-2">
+                  {dashboardMenuItems.map((tool) => renderToolButton(tool))}
+                </div>
+              </div>
+              <div className="dashboard-nav-section">
+                <p className={`dashboard-nav-heading ${sideNavContentVisible ? "opacity-100" : "opacity-0"}`}>
+                  Tools
+                </p>
+                <div className="grid gap-2">
+                  {toolTabs.map((tool) => renderToolButton(tool))}
+                </div>
+              </div>
             </div>
             {showResumeBusinessAction && (
               <button
                 type="button"
                 onClick={onResumeBusinessDetails}
-                className={`mt-2 inline-flex items-center justify-center rounded-2xl border border-indigo-400/60 bg-indigo-500/15 px-3 py-2 text-xs font-semibold text-indigo-100 transition hover:-translate-y-0.5 hover:border-indigo-300 hover:bg-indigo-500/25 ${
+                className={`dashboard-cta mt-2 inline-flex items-center justify-center rounded-2xl border border-indigo-400/60 bg-indigo-500/15 px-3 py-2 text-xs font-semibold text-indigo-100 transition hover:-translate-y-0.5 hover:border-indigo-300 hover:bg-indigo-500/25 ${
                   sideNavContentVisible ? "" : "px-0"
                 }`}
               >
@@ -3387,9 +3751,10 @@ export default function DashboardScreen({
                   setEmailSubTab("settings");
                 }}
                 aria-current={settingsActive ? "page" : undefined}
-                className={`group flex h-10 w-full items-center gap-2 rounded-2xl text-left transition ${settingsBaseClass} ${
+                className={`dashboard-nav-item group flex h-10 w-full items-center gap-0.5 rounded-2xl text-left transition ${settingsBaseClass} ${
                   settingsActive ? settingsActiveClass : ""
                 }`}
+                data-active={settingsActive}
               >
                 <span className="flex h-7 w-7 items-center justify-center">
                   <Settings
@@ -3422,7 +3787,7 @@ export default function DashboardScreen({
                 <button
                   type="button"
                   onClick={onLogout}
-                  className={`group mt-2 flex h-10 w-full items-center gap-2 rounded-2xl text-left transition ${
+                  className={`dashboard-nav-item dashboard-nav-item--danger group mt-2 flex h-10 w-full items-center gap-0.5 rounded-2xl text-left transition ${
                     sideNavContentVisible
                       ? "text-rose-200 hover:bg-rose-500/10 hover:text-rose-100"
                       : "text-rose-200 hover:bg-rose-500/10 hover:text-rose-100"
@@ -3448,19 +3813,16 @@ export default function DashboardScreen({
           </aside>
 
           <div
-            className={`flex h-full min-h-0 flex-1 flex-col gap-5 ${
+            className={`dashboard-main flex h-full min-h-0 flex-1 flex-col gap-5 ${
               isEmailManager ? "overflow-hidden" : "overflow-y-auto"
             }`}
           >
-            {currentTool !== "email_manager" && (
-            <header className="flex flex-col gap-3 rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl backdrop-blur">
+            {currentTool !== "email_manager" && currentTool !== "task_manager" && (
+            <header className="dashboard-hero flex flex-col gap-3 rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl backdrop-blur">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <ActiveIcon className="h-10 w-10 text-indigo-300" />
                   <div>
-                    <p className="text-xs uppercase tracking-[0.28em] text-indigo-200">
-                      Dashboard · {activeToolLabel}
-                    </p>
                     <h1 className="text-3xl font-semibold text-white">
                       {clientData?.business_name || clientData?.name || "Your AI Receptionist"}
                     </h1>
@@ -3530,7 +3892,7 @@ export default function DashboardScreen({
                       <button
                         key={tab.id}
                         onClick={() => setActiveTab?.(tab.id)}
-                        className={`inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-semibold tracking-tight transition sm:text-sm ${
+                        className={`inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-semibold tracking-tight transition sm:text-sm ${
                           isActive
                             ? "border-indigo-300/80 bg-white/15 text-indigo-50 shadow-[0_12px_24px_rgba(15,23,42,0.35)]"
                             : "border-white/10 bg-white/5 text-slate-200 hover:border-white/30 hover:bg-white/10"
@@ -3555,6 +3917,237 @@ export default function DashboardScreen({
             </header>
             )}
 
+        {currentTool === "dashboard_analytics" && (
+          <div className="dashboard-analytics">
+            <div className="dashboard-analytics-header">
+              <div>
+                <p className="dashboard-analytics-eyebrow">Performance overview</p>
+                <h2 className="dashboard-analytics-title">Dashboard analytics</h2>
+                <p className="dashboard-analytics-subtitle">
+                  Track outcomes across AI Receptionist, Email Manager, and Social Media Manager.
+                </p>
+                {dashboardAnalyticsMessage ? (
+                  <p
+                    className={`mt-2 text-xs ${
+                      dashboardAnalyticsStatus.status === "error"
+                        ? "text-rose-300"
+                        : "text-slate-400"
+                    }`}
+                  >
+                    {dashboardAnalyticsMessage}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+            <div className="analytics-tabs">
+              {analyticsTabs.map((tab) => {
+                const Icon = tab.icon;
+                const isActive = analyticsTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setAnalyticsTab(tab.id)}
+                    className={`analytics-tab ${isActive ? "is-active" : ""}`}
+                  >
+                    <Icon className="h-4 w-4" />
+                    <span>{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="dashboard-analytics-body">
+              {analyticsTab === "ai_receptionist" && aiReceptionistDashboardPanel}
+              {analyticsTab === "email_manager" && (
+                <>
+                  <section className="analytics-grid">
+                    <div className="analytics-card analytics-card--purple">
+                      <div className="analytics-card-head">
+                        <MailOpen className="h-5 w-5" />
+                        <span>Summaries generated</span>
+                      </div>
+                      <div className="analytics-card-value">{emailSummaryCount}</div>
+                      <p className="analytics-card-meta">Auto summaries and manual refreshes.</p>
+                    </div>
+                    <div className="analytics-card analytics-card--emerald">
+                      <div className="analytics-card-head">
+                        <Users className="h-5 w-5" />
+                        <span>Leads identified</span>
+                      </div>
+                      <div className="analytics-card-value">{emailLeadCount}</div>
+                      <p className="analytics-card-meta">Tagged as lead, demo, or pricing.</p>
+                    </div>
+                    <div className="analytics-card analytics-card--blue">
+                      <div className="analytics-card-head">
+                        <ClipboardList className="h-5 w-5" />
+                        <span>Action items extracted</span>
+                      </div>
+                      <div className="analytics-card-value">{emailActionCount}</div>
+                      <p className="analytics-card-meta">Checklist items from AI extraction.</p>
+                    </div>
+                    <div className="analytics-card analytics-card--amber">
+                      <div className="analytics-card-head">
+                        <Sparkles className="h-5 w-5" />
+                        <span>Draft replies created</span>
+                      </div>
+                      <div className="analytics-card-value">{emailDraftCount}</div>
+                      <p className="analytics-card-meta">AI reply variants generated.</p>
+                    </div>
+                    <div className="analytics-card analytics-card--indigo">
+                      <div className="analytics-card-head">
+                        <Inbox className="h-5 w-5" />
+                        <span>Inbox loaded</span>
+                      </div>
+                      <div className="analytics-card-value">{emailMessages.length}</div>
+                      <p className="analytics-card-meta">Messages synced in the inbox.</p>
+                    </div>
+                    <div className="analytics-card analytics-card--rose">
+                      <div className="analytics-card-head">
+                        <AlertTriangle className="h-5 w-5" />
+                        <span>Unread in view</span>
+                      </div>
+                      <div className="analytics-card-value">{emailUnreadCount}</div>
+                      <p className="analytics-card-meta">Unread messages in current sync.</p>
+                    </div>
+                  </section>
+                  <section className="analytics-split">
+                    <div className="analytics-card analytics-card--glass">
+                      <div className="analytics-card-head">
+                        <Tag className="h-5 w-5" />
+                        <span>Top tags</span>
+                      </div>
+                      {emailTopTags.length ? (
+                        <div className="analytics-tag-list">
+                          {emailTopTags.map(([tag, count]) => (
+                            <span key={tag} className="analytics-tag">
+                              {tag} <span>{count}</span>
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="analytics-card-meta">No tags extracted yet.</p>
+                      )}
+                    </div>
+                    <div className="analytics-card analytics-card--glass">
+                      <div className="analytics-card-head">
+                        <Activity className="h-5 w-5" />
+                        <span>Automation status</span>
+                      </div>
+                      <div className="analytics-status-grid">
+                        <div>
+                          <p>Auto summarize</p>
+                          <strong>{emailAutoSummarize ? "On" : "Off"}</strong>
+                        </div>
+                        <div>
+                          <p>Unread filter</p>
+                          <strong>{emailUnreadOnly ? "On" : "Off"}</strong>
+                        </div>
+                        <div>
+                          <p>Mailbox</p>
+                          <strong>{activeMailboxLabel || "Inbox"}</strong>
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+                </>
+              )}
+              {analyticsTab === "social_media_manager" && (
+                <>
+                  <section className="analytics-grid">
+                    <div className="analytics-card analytics-card--purple">
+                      <div className="analytics-card-head">
+                        <Plug className="h-5 w-5" />
+                        <span>Connected channels</span>
+                      </div>
+                      <div className="analytics-card-value">{socialConnectionsCount}</div>
+                      <p className="analytics-card-meta">Active social integrations.</p>
+                    </div>
+                    <div className="analytics-card analytics-card--blue">
+                      <div className="analytics-card-head">
+                        <MessageSquare className="h-5 w-5" />
+                        <span>Active conversations</span>
+                      </div>
+                      <div className="analytics-card-value">{socialConversationsCount}</div>
+                      <p className="analytics-card-meta">Conversations synced in inbox.</p>
+                    </div>
+                    <div className="analytics-card analytics-card--emerald">
+                      <div className="analytics-card-head">
+                        <Users className="h-5 w-5" />
+                        <span>Lead signals</span>
+                      </div>
+                      <div className="analytics-card-value">{socialLeadCount}</div>
+                      <p className="analytics-card-meta">Messages flagged as inquiries.</p>
+                    </div>
+                    <div className="analytics-card analytics-card--amber">
+                      <div className="analytics-card-head">
+                        <Edit3 className="h-5 w-5" />
+                        <span>Draft posts</span>
+                      </div>
+                      <div className="analytics-card-value">{socialDraftCount}</div>
+                      <p className="analytics-card-meta">Content drafts ready to publish.</p>
+                    </div>
+                    <div className="analytics-card analytics-card--indigo">
+                      <div className="analytics-card-head">
+                        <CalendarClock className="h-5 w-5" />
+                        <span>Scheduled posts</span>
+                      </div>
+                      <div className="analytics-card-value">{socialScheduledCount}</div>
+                      <p className="analytics-card-meta">Upcoming scheduled content.</p>
+                    </div>
+                    <div className="analytics-card analytics-card--rose">
+                      <div className="analytics-card-head">
+                        <ClipboardList className="h-5 w-5" />
+                        <span>Tasks created</span>
+                      </div>
+                      <div className="analytics-card-value">{socialTaskCount}</div>
+                      <p className="analytics-card-meta">Tasks spawned from social threads.</p>
+                    </div>
+                  </section>
+                  <section className="analytics-split">
+                    <div className="analytics-card analytics-card--glass">
+                      <div className="analytics-card-head">
+                        <Megaphone className="h-5 w-5" />
+                        <span>Publishing pipeline</span>
+                      </div>
+                      <div className="analytics-status-grid">
+                        <div>
+                          <p>Drafts</p>
+                          <strong>{socialDraftCount}</strong>
+                        </div>
+                        <div>
+                          <p>Scheduled</p>
+                          <strong>{socialScheduledCount}</strong>
+                        </div>
+                        <div>
+                          <p>Replies sent</p>
+                          <strong>{socialMessagesOutboundCount}</strong>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="analytics-card analytics-card--glass">
+                      <div className="analytics-card-head">
+                        <Sparkles className="h-5 w-5" />
+                        <span>Automation coverage</span>
+                      </div>
+                      <p className="analytics-card-meta">
+                        Automations track replies, lead signals, and scheduled content. Connect more
+                        channels to increase coverage.
+                      </p>
+                    </div>
+                  </section>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {currentTool === "task_manager" && (
+          <TaskManagerScreen
+            email={user?.email}
+            businessName={clientData?.business_name || clientData?.name}
+          />
+        )}
+
         {currentTool === "ai_receptionist" && (
           <ToolGate
             locked={activeToolLocked}
@@ -3563,127 +4156,12 @@ export default function DashboardScreen({
           >
             <div className="relative">
               <div className={showNumberGate ? "pointer-events-none blur-[2px] opacity-60 transition" : "transition"}>
-                {activeTab === "dashboard" && (
-                  <>
-                <section className="grid gap-4 md:grid-cols-4">
-                  <StatCard label="Total Calls" value={analytics.totalCalls} hint="All time" icon={PhoneCall} />
-                  <StatCard
-                    label="Answered"
-                    value={`${analytics.answeredRate}%`}
-                    hint="Completed calls"
-                    icon={CheckCircle2}
-                  />
-              <StatCard
-                label="Avg Duration"
-                value={formatDuration(analytics.avgDuration)}
-                hint={`${analytics.totalMinutes} minutes total`}
-                icon={Activity}
-              />
-                  <StatCard
-                    label="Inbound vs Outbound"
-                    value={`${analytics.inbound} / ${analytics.outbound}`}
-                    hint="Direction split"
-                    icon={Mic}
-                  />
-                </section>
-
-                <section className="mt-4 grid gap-4 lg:grid-cols-[1.35fr_1fr]">
-                  <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-2xl backdrop-blur">
-                    <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <div className="text-sm font-semibold text-white">Overview</div>
-                        <p className="text-xs text-slate-400">
-                          Typical call times based on recent activity.
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2 text-xs text-slate-400">
-                        <span>Day view</span>
-                        <select
-                          value={selectedCallDay}
-                          onChange={(event) => setSelectedCallDay(event.target.value)}
-                          className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs text-slate-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
-                        >
-                          {callDayOptions.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="rounded-2xl border border-white/10 bg-slate-900/40 p-4 shadow-inner">
-                      <div className="flex items-center justify-between text-xs text-slate-400">
-                        <span>
-                          Peak window:{" "}
-                          <span className="text-slate-200">{callTimeInsights.peakLabel}</span>
-                        </span>
-                        <span>{callTimeInsights.totalCalls} calls tracked</span>
-                      </div>
-                      <div className="mt-4 flex h-28 items-end gap-1">
-                        {callTimeInsights.hours.map((entry) => {
-                          const height = callTimeInsights.maxCount
-                            ? Math.max(12, Math.round((entry.count / callTimeInsights.maxCount) * 100))
-                            : 12;
-                          return (
-                            <div
-                              key={entry.hour}
-                              className="flex-1 rounded-full bg-gradient-to-t from-indigo-500/30 via-indigo-400/60 to-emerald-300/80"
-                              style={{ height: `${height}%`, minWidth: 6 }}
-                              title={`${formatHourLabel(entry.hour)} • ${entry.count} calls`}
-                            />
-                          );
-                        })}
-                      </div>
-                      <div className="mt-3 flex items-center justify-between text-[10px] uppercase tracking-[0.3em] text-slate-500">
-                        <span>12A</span>
-                        <span>4A</span>
-                        <span>8A</span>
-                        <span>12P</span>
-                        <span>4P</span>
-                        <span>8P</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
-                    <div className="mb-2 flex items-center gap-2">
-                      <Activity className="h-5 w-5 text-indigo-200" />
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Data</p>
-                        <h4 className="text-lg font-semibold text-white">Analysis snapshot</h4>
-                      </div>
-                    </div>
-                    <div className="grid gap-3 text-xs text-slate-200">
-                      <div className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-900/40 px-3 py-2">
-                        <span>Total minutes</span>
-                        <span className="font-semibold">{analytics.totalMinutes} min</span>
-                      </div>
-                      <div className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-900/40 px-3 py-2">
-                        <span>Inbound</span>
-                        <span className="font-semibold">{analytics.inbound}</span>
-                      </div>
-                      <div className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-900/40 px-3 py-2">
-                        <span>Outbound</span>
-                        <span className="font-semibold">{analytics.outbound}</span>
-                      </div>
-                      <div className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-900/40 px-3 py-2">
-                        <span>Average length</span>
-                        <span className="font-semibold">{formatDuration(analytics.avgDuration)}</span>
-                      </div>
-                    </div>
-                  </div>
-                </section>
-              </>
-            )}
-
         {activeTab === "agents" && (
           <section className="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-xl backdrop-blur">
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Agent control</p>
-                <h3 className="text-xl font-semibold text-white">
-                  {agentDetails.agentName || "Ultravox Agent"}
-                </h3>
+                <h3 className="text-xl font-semibold text-white">AI Receptionist</h3>
                 <p className="text-sm text-slate-300">
                   Edit prompt, choose a voice, and tune the temperature for your live agent.
                 </p>
@@ -3750,16 +4228,6 @@ export default function DashboardScreen({
                   Your browser does not support audio playback.
                 </audio>
               ) : null}
-
-              <label className="mt-2 text-sm text-slate-200">System prompt</label>
-              <textarea
-                rows={6}
-                value={agentDetails.systemPrompt || ""}
-                onChange={(e) => setAgentDetails({ ...agentDetails, systemPrompt: e.target.value })}
-                className="w-full max-h-64 min-h-[160px] overflow-y-auto rounded-2xl border border-white/10 bg-slate-900/60 p-3 text-sm text-slate-100 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
-                placeholder="Guide your agent's behavior and personality."
-                data-lenis-prevent
-              />
 
               <div className="grid gap-3 rounded-2xl border border-white/10 bg-slate-900/40 p-3 md:grid-cols-2">
                 <div>
@@ -4119,12 +4587,43 @@ export default function DashboardScreen({
                       ))
                     )}
                   </div>
-                  {callTranscript?.recordings?.length ? (
-                    <div className="mt-2 text-xs text-slate-400">
-                      Recordings:{" "}
-                      {callTranscript.recordings.map((r) => r.sid).join(", ")}
-                    </div>
-                  ) : null}
+                  <div className="mt-3 rounded-xl border border-white/10 bg-slate-900/40 p-3">
+                    <div className="text-xs font-semibold text-slate-200">Recordings</div>
+                    {callTranscript?.recordings?.length ? (
+                      <div className="mt-2 space-y-3">
+                        {callTranscript.recordings.map((rec, idx) => {
+                          const emailParam = user?.email ? encodeURIComponent(user.email) : "";
+                          const playbackUrl = emailParam
+                            ? `${API_URLS.dashboardRecordingMedia}/${rec.sid}/media?email=${emailParam}`
+                            : "";
+                          return (
+                            <div
+                              key={rec.sid || `recording-${idx}`}
+                              className="rounded-lg border border-white/10 bg-slate-950/50 p-2"
+                            >
+                              <div className="flex items-center justify-between text-xs text-slate-400">
+                                <span>Recording {idx + 1}</span>
+                                <span>
+                                  {rec.duration ? `${rec.duration}s` : "—"} · {formatDate(rec.date_created)}
+                                </span>
+                              </div>
+                              {playbackUrl ? (
+                                <audio controls preload="none" className="mt-2 w-full">
+                                  <source src={playbackUrl} type="audio/mpeg" />
+                                </audio>
+                              ) : (
+                                <p className="mt-2 text-xs text-slate-400">
+                                  Recording available once the account email is loaded.
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-xs text-slate-400">No recordings available yet.</p>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -4389,8 +4888,7 @@ export default function DashboardScreen({
                 <aside
                   className="rounded-3xl border border-white/10 bg-white/5 shadow-xl backdrop-blur overflow-hidden flex flex-col p-3 sm:p-4 sm:min-h-0 sm:h-full"
                 >
-                  <div className="relative flex min-h-[32px] items-center justify-center">
-                    <span />
+                  <div className="flex min-h-[32px] items-center justify-end gap-2">
                     <button
                       type="button"
                       onClick={() => {
@@ -4400,7 +4898,7 @@ export default function DashboardScreen({
                           openEmailPanel();
                         }
                       }}
-                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-xs text-slate-200 transition hover:border-white/30"
+                      className="flex h-[30px] w-[30px] items-center justify-center rounded-lg border border-white/10 bg-white/5 text-sm text-slate-200 transition hover:border-white/30"
                       aria-label={emailPanelOpen ? "Collapse inbox panel" : "Expand inbox panel"}
                     >
                       {emailPanelOpen ? "⟨" : "⟩"}
@@ -4878,7 +5376,6 @@ export default function DashboardScreen({
                       </div>
                       <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
                         <div className="flex flex-wrap items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-slate-200">
-                          <span className="text-[10px] uppercase tracking-[0.2em] text-slate-400">AI</span>
                           <button
                             type="button"
                             onClick={() => summarizeEmailMessage(selectedEmailMessage, { force: true })}
@@ -5065,10 +5562,10 @@ export default function DashboardScreen({
                               </div>
                             </div>
                             {emailSummaryVisible ? (
-                              <div className="absolute inset-0 flex items-center justify-center p-4">
+                              <div className="absolute inset-0 z-20 flex items-center justify-center p-4">
                                 <div className="pointer-events-none absolute inset-0 rounded-2xl bg-slate-950/70 backdrop-blur-xl" />
                                 <div
-                                  className="relative z-10 w-full max-w-xl max-h-[80vh] overflow-y-auto overscroll-contain rounded-2xl border border-white/10 bg-slate-950/95 p-3 shadow-xl backdrop-blur pointer-events-auto sm:p-4"
+                                  className="relative z-10 w-full max-w-xl max-h-[min(80vh,calc(100%-2rem))] overflow-y-auto overscroll-contain rounded-2xl border border-white/10 bg-slate-950/95 p-3 shadow-xl backdrop-blur pointer-events-auto sm:p-4"
                                   data-lenis-prevent
                                   onWheel={(event) => event.stopPropagation()}
                                   onTouchMove={(event) => event.stopPropagation()}
@@ -5162,6 +5659,14 @@ export default function DashboardScreen({
                                       className="rounded-xl border border-white/10 bg-white/10 px-3 py-1 text-xs text-white disabled:opacity-60"
                                     >
                                       {emailSummaryLoading ? "Summarizing..." : "Refresh summary"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => openEmailTaskManager(selectedEmailMessage)}
+                                      disabled={!selectedEmailMessage}
+                                      className="rounded-xl border border-indigo-300/40 bg-indigo-500/20 px-3 py-1 text-xs text-indigo-100 disabled:opacity-60"
+                                    >
+                                      Add to Task Manager
                                     </button>
                                   </div>
                                   <div className="mt-4 grid gap-3">
@@ -6311,7 +6816,7 @@ export default function DashboardScreen({
                       </button>
                       <button
                         type="button"
-                        onClick={handleSendEmail}
+                        onClick={() => handleSendEmail()}
                         disabled={emailComposerStatus.status === "loading"}
                         className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-300/50 bg-emerald-500/20 px-4 py-2 text-xs font-semibold text-emerald-100 disabled:opacity-60 sm:w-auto"
                       >
@@ -7122,6 +7627,101 @@ export default function DashboardScreen({
           </div>
         </div>
       )}
+      {taskManagerEmailTarget ? (
+        <div className="calendar-modal">
+          <div className="calendar-modal-card">
+            <div className="calendar-modal-header">
+              <div>
+                <p className="calendar-modal-eyebrow">Task manager</p>
+                <h4 className="calendar-modal-title">Schedule email follow-up</h4>
+              </div>
+              <button
+                type="button"
+                className="calendar-modal-close"
+                onClick={() => {
+                  setTaskManagerEmailTarget(null);
+                  setTaskManagerEmailStatus({ status: "idle", message: "" });
+                }}
+              >
+                Close
+              </button>
+            </div>
+            <div className="calendar-modal-body">
+              <label>
+                Title
+                <input
+                  type="text"
+                  value={taskManagerEmailForm.title}
+                  onChange={(event) =>
+                    setTaskManagerEmailForm((prev) => ({ ...prev, title: event.target.value }))
+                  }
+                  placeholder="Task title"
+                />
+              </label>
+              <label>
+                Start time
+                <input
+                  type="datetime-local"
+                  value={taskManagerEmailForm.start}
+                  onChange={(event) =>
+                    setTaskManagerEmailForm((prev) => ({ ...prev, start: event.target.value }))
+                  }
+                />
+              </label>
+              <label>
+                End time
+                <input
+                  type="datetime-local"
+                  value={taskManagerEmailForm.end}
+                  onChange={(event) =>
+                    setTaskManagerEmailForm((prev) => ({ ...prev, end: event.target.value }))
+                  }
+                />
+              </label>
+              <label>
+                Notes
+                <textarea
+                  rows={3}
+                  value={taskManagerEmailForm.description}
+                  onChange={(event) =>
+                    setTaskManagerEmailForm((prev) => ({
+                      ...prev,
+                      description: event.target.value
+                    }))
+                  }
+                  placeholder="Add follow-up details"
+                />
+              </label>
+              {taskManagerEmailStatus.message ? (
+                <div className={`calendar-modal-message ${taskManagerEmailStatus.status}`}>
+                  {taskManagerEmailStatus.message}
+                </div>
+              ) : null}
+            </div>
+            <div className="calendar-modal-actions">
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => {
+                  setTaskManagerEmailTarget(null);
+                  setTaskManagerEmailStatus({ status: "idle", message: "" });
+                }}
+                disabled={taskManagerEmailStatus.status === "loading"}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="primary"
+                onClick={handleEmailTaskManagerSave}
+                disabled={taskManagerEmailStatus.status === "loading"}
+              >
+                Add to Task Manager
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {promptHistoryOpen && (
         <div className="calendar-modal">
           <div className="calendar-modal-card">

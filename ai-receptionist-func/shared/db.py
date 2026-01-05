@@ -171,6 +171,23 @@ class Task(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+
+class TaskManagerItem(Base):
+    __tablename__ = "task_manager_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    source_type = Column(String, nullable=True, index=True)
+    source_id = Column(String, nullable=True, index=True)
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    start_time = Column(DateTime, nullable=False, index=True)
+    end_time = Column(DateTime, nullable=False, index=True)
+    status = Column(String, nullable=False, default="scheduled")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 class Subscription(Base):
     __tablename__ = "subscriptions"
 
@@ -229,6 +246,30 @@ class GoogleToken(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     user = relationship("User")
+
+
+class EmailAIEvent(Base):
+    __tablename__ = "email_ai_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=True, index=True)
+    message_id = Column(String, nullable=False, index=True)
+    thread_id = Column(String, nullable=True, index=True)
+    event_type = Column(String, nullable=False, index=True)
+    cached = Column(Boolean, default=False)
+    tags_json = Column(JSON, nullable=True)
+    priority_label = Column(String, nullable=True)
+    sentiment = Column(String, nullable=True)
+    action_items_count = Column(Integer, default=0)
+    lead_flag = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_email_ai_events_user_type", "user_id", "event_type"),
+        Index("ix_email_ai_events_client_type", "client_id", "event_type"),
+        Index("ix_email_ai_events_created_at", "created_at"),
+    )
 
 
 class SocialConnection(Base):
@@ -414,6 +455,55 @@ def _ensure_optional_columns() -> None:
                     text("ALTER TABLE google_tokens ADD COLUMN IF NOT EXISTS google_account_email VARCHAR")
                 )
 
+        if "email_ai_events" not in existing_tables:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS email_ai_events (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL,
+                        client_id INTEGER,
+                        message_id VARCHAR NOT NULL,
+                        thread_id VARCHAR,
+                        event_type VARCHAR NOT NULL,
+                        cached BOOLEAN DEFAULT FALSE,
+                        tags_json JSONB,
+                        priority_label VARCHAR,
+                        sentiment VARCHAR,
+                        action_items_count INTEGER DEFAULT 0,
+                        lead_flag BOOLEAN DEFAULT FALSE,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY(user_id) REFERENCES users (id),
+                        FOREIGN KEY(client_id) REFERENCES clients (id)
+                    )
+                    """
+                )
+            )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_email_ai_events_user_type "
+                "ON email_ai_events (user_id, event_type)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_email_ai_events_client_type "
+                "ON email_ai_events (client_id, event_type)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_email_ai_events_message_id "
+                "ON email_ai_events (message_id)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_email_ai_events_created_at "
+                "ON email_ai_events (created_at DESC)"
+            )
+        )
+
         if "subscriptions" not in existing_tables:
             conn.execute(
                 text(
@@ -558,6 +648,33 @@ def _ensure_optional_columns() -> None:
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_tasks_client_status ON tasks (client_id, status)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks (created_at DESC)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_tasks_call_id ON tasks (call_id)"))
+
+        if "task_manager_items" not in existing_tables:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS task_manager_items (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        client_id INTEGER NOT NULL,
+                        user_id INTEGER,
+                        source_type VARCHAR,
+                        source_id VARCHAR,
+                        title VARCHAR NOT NULL,
+                        description TEXT,
+                        start_time DATETIME NOT NULL,
+                        end_time DATETIME NOT NULL,
+                        status VARCHAR DEFAULT 'scheduled',
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY(client_id) REFERENCES clients (id),
+                        FOREIGN KEY(user_id) REFERENCES users (id)
+                    )
+                    """
+                )
+            )
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_task_manager_client_start ON task_manager_items (client_id, start_time)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_task_manager_client_end ON task_manager_items (client_id, end_time)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_task_manager_source ON task_manager_items (source_type, source_id)"))
 
         if "social_connections" not in existing_tables:
             conn.execute(
