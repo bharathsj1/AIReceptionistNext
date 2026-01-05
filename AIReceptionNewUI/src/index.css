@@ -143,6 +143,8 @@ html {
   --dash-bg-accent: rgba(124, 58, 237, 0.14);
   --dash-overlay-start: rgba(255, 255, 255, 0.86);
   --dash-overlay-end: rgba(245, 246, 248, 0.96);
+  --dash-modal-overlay: rgba(248, 250, 252, 0.6);
+  --dash-modal-overlay-soft: rgba(248, 250, 252, 0.45);
   --dash-surface: #ffffff;
   --dash-surface-soft: #f8fafc;
   --dash-surface-alt: #f1f5f9;
@@ -178,6 +180,24 @@ html {
   background: linear-gradient(180deg, var(--dash-overlay-start) 0%, var(--dash-overlay-end) 100%);
 }
 
+.dashboard-modal-backdrop {
+  background: rgba(2, 6, 23, 0.55);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.dashboard-modal-backdrop--soft {
+  background: rgba(2, 6, 23, 0.35);
+}
+
+.dashboard-theme .dashboard-modal-backdrop {
+  background: var(--dash-modal-overlay);
+}
+
+.dashboard-theme .dashboard-modal-backdrop--soft {
+  background: var(--dash-modal-overlay-soft);
+}
+
 .dashboard-theme--dark {
   --dash-bg: #0b0f1d;
   --dash-bg-1: #11162a;
@@ -185,6 +205,8 @@ html {
   --dash-bg-accent: rgba(124, 58, 237, 0.2);
   --dash-overlay-start: rgba(2, 6, 23, 0.6);
   --dash-overlay-end: rgba(2, 6, 23, 0.85);
+  --dash-modal-overlay: rgba(2, 6, 23, 0.6);
+  --dash-modal-overlay-soft: rgba(2, 6, 23, 0.4);
   --dash-surface: rgba(15, 23, 42, 0.92);
   --dash-surface-soft: rgba(15, 23, 42, 0.72);
   --dash-surface-alt: rgba(15, 23, 42, 0.6);
@@ -215,6 +237,10 @@ html {
   .dashboard-theme .dashboard-main {
     padding: 24px 4px 32px;
   }
+}
+
+.dashboard-theme .dashboard-main.dashboard-main--full {
+  padding: 0;
 }
 
 .dashboard-theme .dashboard-sidenav {

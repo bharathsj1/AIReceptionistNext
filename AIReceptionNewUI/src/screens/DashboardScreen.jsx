@@ -429,7 +429,7 @@ const ToolGate = ({ locked, loading, message, children, className = "" }) => (
       </div>
     )}
     {loading && !locked && (
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-3xl bg-slate-950/30 backdrop-blur-sm">
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-3xl dashboard-modal-backdrop dashboard-modal-backdrop--soft">
         <p className="text-xs font-semibold text-slate-200">Checking access...</p>
       </div>
     )}
@@ -3813,8 +3813,10 @@ export default function DashboardScreen({
           </aside>
 
           <div
-            className={`dashboard-main flex h-full min-h-0 flex-1 flex-col gap-5 ${
-              isEmailManager ? "overflow-hidden" : "overflow-y-auto"
+            className={`dashboard-main flex h-full min-h-0 flex-1 flex-col ${
+              isEmailManager
+                ? "dashboard-main--full gap-0 overflow-hidden"
+                : "gap-5 overflow-y-auto"
             }`}
           >
             {currentTool !== "email_manager" && currentTool !== "task_manager" && (
@@ -4769,7 +4771,7 @@ export default function DashboardScreen({
               {selectedCalendarProvider === "google" && selectedProviderConnected ? (
                 <div className="relative rounded-2xl border border-white/10 bg-slate-950/40 p-2">
                   {calendarLoading ? (
-                    <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-slate-950/60 backdrop-blur">
+                    <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl dashboard-modal-backdrop">
                       <InlineLoader label="Loading events..." />
                     </div>
                   ) : null}
@@ -5563,7 +5565,7 @@ export default function DashboardScreen({
                             </div>
                             {emailSummaryVisible ? (
                               <div className="absolute inset-0 z-20 flex items-center justify-center p-4">
-                                <div className="pointer-events-none absolute inset-0 rounded-2xl bg-slate-950/70 backdrop-blur-xl" />
+                                <div className="pointer-events-none absolute inset-0 rounded-2xl dashboard-modal-backdrop" />
                                 <div
                                   className="relative z-10 w-full max-w-xl max-h-[min(80vh,calc(100%-2rem))] overflow-y-auto overscroll-contain rounded-2xl border border-white/10 bg-slate-950/95 p-3 shadow-xl backdrop-blur pointer-events-auto sm:p-4"
                                   data-lenis-prevent
@@ -6707,7 +6709,7 @@ export default function DashboardScreen({
                 )}
               </section>
               {emailComposerOpen && (
-                <div className="absolute inset-0 z-40 flex items-center justify-center bg-slate-950/70 px-4 py-6 backdrop-blur">
+                <div className="absolute inset-0 z-40 flex items-center justify-center px-4 py-6 dashboard-modal-backdrop">
                   <div className="w-full max-w-2xl rounded-3xl border border-white/10 bg-slate-950/90 p-4 shadow-2xl sm:p-5">
                     <div className="flex items-center justify-between">
                       <div>
