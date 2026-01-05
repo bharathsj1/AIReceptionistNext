@@ -17,11 +17,12 @@ from crawler_endpoints import crawl_site
 from services.ultravox_service import (
     create_ultravox_agent,
     create_ultravox_call,
+    ensure_tasks_tool,
     list_ultravox_agents,
     update_ultravox_agent_prompt,
 )
 from services.call_service import upsert_call, attach_ultravox_call, update_call_status
-from shared.config import get_required_setting, get_setting, get_smtp_settings
+from shared.config import get_public_api_base, get_required_setting, get_setting, get_smtp_settings
 from shared.db import Client, PhoneNumber, SessionLocal, User, init_db
 from services.prompt_registry_service import resolve_prompt_for_call
 from utils.cors import build_cors_headers
@@ -369,6 +370,21 @@ def clients_provision(req: func.HttpRequest) -> func.HttpResponse:
                 )
             client_record.ultravox_agent_id = agent_id
 
+        if client_record.ultravox_agent_id:
+            try:
+                base = get_public_api_base()
+                ensure_tasks_tool(
+                    client_record.ultravox_agent_id,
+                    base,
+                    str(client_record.id),
+                )
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.warning(
+                    "Ultravox create_task tool attach failed for agent %s: %s",
+                    client_record.ultravox_agent_id,
+                    exc,
+                )
+
         phone_record: PhoneNumber = (
             db.query(PhoneNumber).filter_by(client_id=client_record.id, is_active=True).one_or_none()
         )
@@ -484,6 +500,21 @@ def clients_assign_number(req: func.HttpRequest) -> func.HttpResponse:
                 summary,
             )
             client_record.ultravox_agent_id = agent_id
+
+        if client_record.ultravox_agent_id:
+            try:
+                base = get_public_api_base()
+                ensure_tasks_tool(
+                    client_record.ultravox_agent_id,
+                    base,
+                    str(client_record.id),
+                )
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.warning(
+                    "Ultravox create_task tool attach failed for agent %s: %s",
+                    client_record.ultravox_agent_id,
+                    exc,
+                )
 
         phone_record: PhoneNumber = (
             db.query(PhoneNumber).filter_by(client_id=client_record.id, is_active=True).one_or_none()

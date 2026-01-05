@@ -64,6 +64,8 @@ export const API_URLS = {
   emailDelete: apiUrl("email/delete"),
   emailSend: apiUrl("email/send"),
   dashboardCalls: apiUrl("dashboard/calls"),
+  dashboardAnalytics: apiUrl("dashboard/analytics"),
+  dashboardRecordingMedia: apiUrl("dashboard/recordings"),
   dashboardAgent: apiUrl("dashboard/agent"),
   dashboardBookingSettings: apiUrl("dashboard/booking-settings"),
   dashboardCallTranscript: apiUrl("dashboard/call-transcript"),

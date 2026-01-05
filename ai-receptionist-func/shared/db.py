@@ -231,6 +231,30 @@ class GoogleToken(Base):
     user = relationship("User")
 
 
+class EmailAIEvent(Base):
+    __tablename__ = "email_ai_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=True, index=True)
+    message_id = Column(String, nullable=False, index=True)
+    thread_id = Column(String, nullable=True, index=True)
+    event_type = Column(String, nullable=False, index=True)
+    cached = Column(Boolean, default=False)
+    tags_json = Column(JSON, nullable=True)
+    priority_label = Column(String, nullable=True)
+    sentiment = Column(String, nullable=True)
+    action_items_count = Column(Integer, default=0)
+    lead_flag = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_email_ai_events_user_type", "user_id", "event_type"),
+        Index("ix_email_ai_events_client_type", "client_id", "event_type"),
+        Index("ix_email_ai_events_created_at", "created_at"),
+    )
+
+
 class SocialConnection(Base):
     __tablename__ = "social_connections"
 
@@ -413,6 +437,55 @@ def _ensure_optional_columns() -> None:
                 conn.execute(
                     text("ALTER TABLE google_tokens ADD COLUMN IF NOT EXISTS google_account_email VARCHAR")
                 )
+
+        if "email_ai_events" not in existing_tables:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS email_ai_events (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL,
+                        client_id INTEGER,
+                        message_id VARCHAR NOT NULL,
+                        thread_id VARCHAR,
+                        event_type VARCHAR NOT NULL,
+                        cached BOOLEAN DEFAULT FALSE,
+                        tags_json JSONB,
+                        priority_label VARCHAR,
+                        sentiment VARCHAR,
+                        action_items_count INTEGER DEFAULT 0,
+                        lead_flag BOOLEAN DEFAULT FALSE,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY(user_id) REFERENCES users (id),
+                        FOREIGN KEY(client_id) REFERENCES clients (id)
+                    )
+                    """
+                )
+            )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_email_ai_events_user_type "
+                "ON email_ai_events (user_id, event_type)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_email_ai_events_client_type "
+                "ON email_ai_events (client_id, event_type)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_email_ai_events_message_id "
+                "ON email_ai_events (message_id)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_email_ai_events_created_at "
+                "ON email_ai_events (created_at DESC)"
+            )
+        )
 
         if "subscriptions" not in existing_tables:
             conn.execute(

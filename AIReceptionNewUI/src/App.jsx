@@ -120,7 +120,7 @@ export default function App() {
   const [recentCalls, setRecentCalls] = useState([]);
   const [allCalls, setAllCalls] = useState([]);
   const [callsPage, setCallsPage] = useState(1);
-  const [activeTab, setActiveTab] = useState("dashboard");
+  const [activeTab, setActiveTab] = useState("agents");
   const [activeTool, setActiveTool] = useState(DEFAULT_TOOL_ID);
   const [toolSubscriptions, setToolSubscriptions] = useState({});
   const [subscriptionsLoading, setSubscriptionsLoading] = useState(true);
@@ -484,7 +484,7 @@ export default function App() {
         !websiteUrlFromProfile || !String(websiteUrlFromProfile).trim() || websiteUrlFromProfile === "pending";
 
       setIsLoggedIn(true);
-      setActiveTab("dashboard");
+      setActiveTab("agents");
       setActiveTool(DEFAULT_TOOL_ID);
       if (missingBiz) {
         setStage(STAGES.BUSINESS_DETAILS);
@@ -1066,7 +1066,7 @@ export default function App() {
   };
 
   const handleGoToDashboard = () => {
-    setActiveTab("dashboard");
+    setActiveTab("agents");
     setActiveTool(DEFAULT_TOOL_ID);
     setIsLoggedIn(true);
     setUser((current) => {
@@ -1088,7 +1088,7 @@ export default function App() {
     if (!signupName && user?.name) {
       setSignupName(user.name);
     }
-    setActiveTab("dashboard");
+    setActiveTab("agents");
     setActiveTool(DEFAULT_TOOL_ID);
     setStage(STAGES.BUSINESS_DETAILS);
     setStatus("idle");
@@ -1353,7 +1353,7 @@ export default function App() {
       setSelectedPlan(null);
       setSelectedTool(DEFAULT_TOOL_ID);
       // Go straight to dashboard after provisioning completes
-      setActiveTab("dashboard");
+      setActiveTab("agents");
       setActiveTool(DEFAULT_TOOL_ID);
       setToolSubscriptions({});
       setIsLoggedIn(true);
@@ -1589,7 +1589,11 @@ export default function App() {
               : typeof dashData?.agent?.temperature === "number"
                 ? dashData.agent.temperature
                 : prev.temperature,
-          greeting: callTemplate?.greeting || dashData?.agent?.greeting || prev.greeting,
+          greeting:
+            callTemplate?.firstSpeakerSettings?.agent?.text ||
+            callTemplate?.greeting ||
+            dashData?.agent?.greeting ||
+            prev.greeting,
           escalation: callTemplate?.fallback || dashData?.agent?.escalation || prev.escalation,
           faq: callTemplate?.faq || dashData?.agent?.faq || prev.faq
         }));
@@ -1653,6 +1657,7 @@ export default function App() {
             email: user.email,
             system_prompt: updates?.systemPrompt ?? agentDetails.systemPrompt,
             voice: updates?.voice ?? agentDetails.voice,
+            greeting: updates?.greeting ?? agentDetails.greeting,
             temperature:
               typeof updates?.temperature === "number"
                 ? updates.temperature
@@ -1899,9 +1904,9 @@ export default function App() {
       setCallTranscript((prev) => ({ ...prev, loading: true, error: "" }));
       try {
         const res = await fetch(
-          `${API_URLS.calls}/${encodeURIComponent(callSid)}/transcript?email=${encodeURIComponent(
+          `${API_URLS.dashboardCallTranscript}?email=${encodeURIComponent(
             user.email
-          )}`
+          )}&callSid=${encodeURIComponent(callSid)}`
         );
         if (!res.ok) {
           const text = await res.text();
@@ -2129,7 +2134,7 @@ export default function App() {
     const hasSession = isLoggedIn || Boolean(user?.email);
     if (hasSession) {
       setStage(STAGES.DASHBOARD);
-      setActiveTab("dashboard");
+      setActiveTab("agents");
       setActiveTool(DEFAULT_TOOL_ID);
       return;
     }
@@ -2161,7 +2166,7 @@ export default function App() {
     if (stage === STAGES.PROJECTS) return;
     if (stage === STAGES.DASHBOARD) return;
     setStage(STAGES.DASHBOARD);
-    setActiveTab("dashboard");
+    setActiveTab("agents");
     setActiveTool(DEFAULT_TOOL_ID);
     if (typeof window !== "undefined") {
       const path = window.location.pathname || "";
