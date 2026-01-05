@@ -268,8 +268,8 @@ export default function TaskManagerScreen({ email, businessName }) {
   };
 
   return (
-    <section className="grid gap-4">
-      <Card className="border-white/10 bg-slate-900/70">
+    <section className="task-manager-shell">
+      <Card className="task-manager-card border-white/10 bg-slate-900/70">
         <CardHeader className="border-b border-white/10">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
@@ -298,7 +298,7 @@ export default function TaskManagerScreen({ email, businessName }) {
             </div>
           </div>
         </CardHeader>
-        <CardContent className="grid gap-4">
+        <CardContent className="task-manager-body">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div className="relative w-full max-w-sm">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -367,7 +367,7 @@ export default function TaskManagerScreen({ email, businessName }) {
             </div>
           ) : null}
 
-          <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-2">
+          <div className="task-manager-calendar-wrap rounded-2xl border border-white/10 bg-slate-950/40 p-2">
             {loading ? (
               <div className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-6 text-sm text-slate-300">
                 Loading schedule...
@@ -384,7 +384,7 @@ export default function TaskManagerScreen({ email, businessName }) {
                 plugins={[timeGridPlugin, dayGridPlugin, interactionPlugin]}
                 initialView="timeGridWeek"
                 headerToolbar={false}
-                height={620}
+                height="100%"
                 editable
                 selectable
                 selectMirror

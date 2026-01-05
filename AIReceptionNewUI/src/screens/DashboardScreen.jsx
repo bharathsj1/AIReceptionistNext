@@ -1302,6 +1302,7 @@ export default function DashboardScreen({
   };
 
   const handleSendEmail = async (attachments = []) => {
+    const safeAttachments = Array.isArray(attachments) ? attachments : [];
     const emailAddress = user?.email || userForm.email;
     if (!emailAddress) {
       setEmailComposerStatus({ status: "error", message: "Missing user email." });
@@ -1313,7 +1314,7 @@ export default function DashboardScreen({
     }
     setEmailComposerStatus({ status: "loading", message: "Sending..." });
     try {
-      const attachmentPayload = (attachments || [])
+      const attachmentPayload = safeAttachments
         .filter((item) => item?.data)
         .map((item) => ({
           filename: item.name,
@@ -3447,7 +3448,7 @@ export default function DashboardScreen({
   const sideNavWidthClass = sideNavHidden
     ? "w-0 min-w-0 max-w-0"
     : sideNavOpen
-      ? "w-[200px]"
+      ? "w-[240px]"
       : "w-14";
   const aiReceptionistDashboardPanel = (
     <>
@@ -3679,13 +3680,13 @@ export default function DashboardScreen({
                 <button
                   type="button"
                   onClick={() => window.location.reload()}
-                  className="flex h-[34px] w-[34px] flex-none shrink-0 items-center justify-center rounded-xl bg-transparent"
+                  className="flex h-[40px] w-[180px] flex-none shrink-0 items-center justify-center rounded-xl bg-transparent pl-[5px]"
                   aria-label="SmartConnect4u"
                 >
                   <img
-                    src="/media/image.png"
+                    src={lightThemeActive ? "/media/SC_logo_light1.png" : "/media/SC_logo_dark1.png"}
                     alt="SmartConnect4u"
-                    className="h-[24px] w-[24px] shrink-0"
+                    className="h-full w-full shrink-0 object-contain"
                   />
                 </button>
               </div>
@@ -6815,7 +6816,7 @@ export default function DashboardScreen({
                       </button>
                       <button
                         type="button"
-                        onClick={handleSendEmail}
+                        onClick={() => handleSendEmail()}
                         disabled={emailComposerStatus.status === "loading"}
                         className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-300/50 bg-emerald-500/20 px-4 py-2 text-xs font-semibold text-emerald-100 disabled:opacity-60 sm:w-auto"
                       >
