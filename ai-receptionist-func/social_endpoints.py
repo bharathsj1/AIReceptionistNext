@@ -359,6 +359,23 @@ def meta_auth_callback(req: func.HttpRequest) -> func.HttpResponse:
             code = code or None
 
     if not code:
+        error_code = req.params.get("error_code")
+        error_reason = req.params.get("error_reason")
+        error_message = req.params.get("error_message") or req.params.get("error_description")
+        if error_code or error_reason or error_message:
+            return func.HttpResponse(
+                json.dumps(
+                    {
+                        "error": "Meta authorization failed",
+                        "error_code": error_code,
+                        "error_reason": error_reason,
+                        "error_message": error_message,
+                    }
+                ),
+                status_code=400,
+                mimetype="application/json",
+                headers=cors,
+            )
         return func.HttpResponse(
             json.dumps({"error": "Missing code"}),
             status_code=400,
@@ -491,6 +508,235 @@ def meta_auth_callback(req: func.HttpRequest) -> func.HttpResponse:
         logger.error("Meta callback failed: %s", exc)
         return func.HttpResponse(
             json.dumps({"error": "Meta callback failed", "details": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+            headers=cors,
+        )
+    finally:
+        db.close()
+
+
+@app.function_name(name="WhatsAppAuthUrl")
+@app.route(route="social/whatsapp/auth-url", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def whatsapp_auth_url(req: func.HttpRequest) -> func.HttpResponse:
+    cors = build_cors_headers(req, ["GET", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
+    email = req.params.get("email")
+    user_id = req.params.get("user_id") or req.params.get("userId")
+    db = SessionLocal()
+    try:
+        _, client, error = _require_business(db, email, user_id)
+        if error:
+            return func.HttpResponse(
+                json.dumps({"error": error}),
+                status_code=404,
+                mimetype="application/json",
+                headers=cors,
+            )
+        meta_app_id = get_required_setting("META_APP_ID")
+        redirect_base = get_setting("PUBLIC_APP_URL") or get_public_api_base()
+        redirect_uri = f"{redirect_base.rstrip('/')}/api/social/whatsapp/callback"
+        scopes = [
+            "whatsapp_business_management",
+            "whatsapp_business_messaging",
+            "business_management",
+        ]
+        state = _encode_state(
+            {
+                "nonce": secrets.token_urlsafe(16),
+                "business_id": client.id,
+                "email": email,
+                "user_id": user_id,
+            }
+        )
+        config_id = get_setting("META_WHATSAPP_CONFIG_ID")
+        url = whatsapp_adapter.build_auth_url(meta_app_id, redirect_uri, scopes, state, config_id)
+        return func.HttpResponse(
+            json.dumps({"auth_url": url}),
+            status_code=200,
+            mimetype="application/json",
+            headers=cors,
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.error("WhatsApp auth url failed: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "Failed to build WhatsApp auth url", "details": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+            headers=cors,
+        )
+    finally:
+        db.close()
+
+
+@app.function_name(name="WhatsAppAuthCallback")
+@app.route(route="social/whatsapp/callback", methods=["GET", "POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def whatsapp_auth_callback(req: func.HttpRequest) -> func.HttpResponse:
+    cors = build_cors_headers(req, ["GET", "POST", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
+    code = req.params.get("code")
+    state = req.params.get("state")
+    if not code:
+        try:
+            body = req.get_json()
+            code = code or (body or {}).get("code")
+            state = state or (body or {}).get("state")
+        except ValueError:
+            code = code or None
+
+    if not code:
+        error_code = req.params.get("error_code")
+        error_reason = req.params.get("error_reason")
+        error_message = req.params.get("error_message") or req.params.get("error_description")
+        if error_code or error_reason or error_message:
+            return func.HttpResponse(
+                json.dumps(
+                    {
+                        "error": "WhatsApp authorization failed",
+                        "error_code": error_code,
+                        "error_reason": error_reason,
+                        "error_message": error_message,
+                    }
+                ),
+                status_code=400,
+                mimetype="application/json",
+                headers=cors,
+            )
+        return func.HttpResponse(
+            json.dumps({"error": "Missing code"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    state_payload = _decode_state(state)
+    business_id = (state_payload or {}).get("business_id")
+    if not business_id:
+        return func.HttpResponse(
+            json.dumps({"error": "Missing business context"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    meta_app_id = get_required_setting("META_APP_ID")
+    meta_app_secret = get_required_setting("META_APP_SECRET")
+    redirect_base = get_setting("PUBLIC_APP_URL") or get_public_api_base()
+    redirect_uri = f"{redirect_base.rstrip('/')}/api/social/whatsapp/callback"
+
+    token_data, token_error = meta_adapter.exchange_code_for_token(
+        meta_app_id, meta_app_secret, redirect_uri, code
+    )
+    if token_error or not token_data:
+        return func.HttpResponse(
+            json.dumps({"error": "Token exchange failed", "details": token_error}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    user_access_token = token_data.get("access_token")
+    if not user_access_token:
+        return func.HttpResponse(
+            json.dumps({"error": "Missing user access token"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    wabas, waba_error = whatsapp_adapter.list_business_accounts(user_access_token)
+    if waba_error:
+        return func.HttpResponse(
+            json.dumps({"error": "Failed to list WhatsApp business accounts", "details": waba_error}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    expires_in = token_data.get("expires_in")
+    token_expires_at = None
+    if expires_in:
+        try:
+            token_expires_at = _utcnow() + timedelta(seconds=int(expires_in))
+        except (TypeError, ValueError):
+            token_expires_at = None
+
+    db = SessionLocal()
+    try:
+        connected = 0
+        for waba in wabas:
+            waba_id = str(waba.get("id") or "")
+            if not waba_id:
+                continue
+            waba_name = waba.get("name") or f"WABA {waba_id}"
+            phone_numbers, phone_error = whatsapp_adapter.list_phone_numbers(waba_id, user_access_token)
+            if phone_error:
+                logger.warning("WhatsApp phone numbers failed for %s: %s", waba_id, phone_error)
+                continue
+            for phone in phone_numbers:
+                phone_id = str(phone.get("id") or "")
+                if not phone_id:
+                    continue
+                display_number = phone.get("display_phone_number")
+                verified_name = phone.get("verified_name")
+                metadata = {
+                    "waba_id": waba_id,
+                    "waba_name": waba_name,
+                    "display_phone_number": display_number,
+                    "verified_name": verified_name,
+                    "quality_rating": phone.get("quality_rating"),
+                }
+                display_name = verified_name or display_number or f"WhatsApp {phone_id}"
+                _upsert_connection(
+                    db,
+                    business_id=int(business_id),
+                    platform=PLATFORM_WHATSAPP_META,
+                    external_account_id=phone_id,
+                    display_name=display_name,
+                    access_token=user_access_token,
+                    scopes=token_data.get("scope"),
+                    token_expires_at=token_expires_at,
+                    metadata=metadata,
+                )
+                connected += 1
+
+        if connected == 0:
+            return func.HttpResponse(
+                json.dumps({"error": "No WhatsApp phone numbers found for this account."}),
+                status_code=400,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        db.commit()
+        payload = {"status": "connected", "connections": connected}
+        if req.method == "GET":
+            html = (
+                "<script>"
+                "window.opener && window.opener.postMessage("
+                + json.dumps(payload)
+                + ', "*");'
+                "window.close();"
+                "</script>"
+                "<p>WhatsApp connection saved. You can close this tab.</p>"
+            )
+            return func.HttpResponse(html, status_code=200, mimetype="text/html", headers=cors)
+
+        return func.HttpResponse(
+            json.dumps(payload),
+            status_code=200,
+            mimetype="application/json",
+            headers=cors,
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        db.rollback()
+        logger.error("WhatsApp callback failed: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "WhatsApp callback failed", "details": str(exc)}),
             status_code=500,
             mimetype="application/json",
             headers=cors,
@@ -667,6 +913,145 @@ def whatsapp_manual_connect(req: func.HttpRequest) -> func.HttpResponse:
         logger.error("WhatsApp manual connect failed: %s", exc)
         return func.HttpResponse(
             json.dumps({"error": "WhatsApp connect failed", "details": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+            headers=cors,
+        )
+    finally:
+        db.close()
+
+
+@app.function_name(name="WhatsAppSendMessage")
+@app.route(route="social/whatsapp/send", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def whatsapp_send_message(req: func.HttpRequest) -> func.HttpResponse:
+    cors = build_cors_headers(req, ["POST", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
+    try:
+        body = req.get_json()
+    except ValueError:
+        body = None
+
+    email = (body or {}).get("email")
+    user_id = (body or {}).get("user_id") or (body or {}).get("userId")
+    text = (body or {}).get("text")
+    to_number = (body or {}).get("to")
+    connection_id = (body or {}).get("connection_id") or (body or {}).get("connectionId")
+    phone_number_id = (body or {}).get("phone_number_id") or (body or {}).get("phoneNumberId")
+
+    if not text or not to_number:
+        return func.HttpResponse(
+            json.dumps({"error": "to and text are required"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    db = SessionLocal()
+    try:
+        _, client, error = _require_business(db, email, user_id)
+        if error:
+            return func.HttpResponse(
+                json.dumps({"error": error}),
+                status_code=404,
+                mimetype="application/json",
+                headers=cors,
+            )
+        connection = None
+        if connection_id:
+            try:
+                connection = (
+                    db.query(SocialConnection)
+                    .filter_by(id=int(connection_id), business_id=client.id, platform=PLATFORM_WHATSAPP_META)
+                    .one_or_none()
+                )
+            except ValueError:
+                connection = None
+        elif phone_number_id:
+            connection = (
+                db.query(SocialConnection)
+                .filter_by(
+                    business_id=client.id,
+                    platform=PLATFORM_WHATSAPP_META,
+                    external_account_id=str(phone_number_id),
+                )
+                .one_or_none()
+            )
+        else:
+            connection = (
+                db.query(SocialConnection)
+                .filter_by(business_id=client.id, platform=PLATFORM_WHATSAPP_META)
+                .order_by(SocialConnection.updated_at.desc())
+                .first()
+            )
+
+        if not connection:
+            return func.HttpResponse(
+                json.dumps({"error": "WhatsApp connection not found"}),
+                status_code=404,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        access_token = _get_connection_token(connection)
+        external_id, error_message = whatsapp_adapter.send_message(
+            connection.external_account_id,
+            access_token,
+            str(to_number),
+            text,
+        )
+        if error_message:
+            return func.HttpResponse(
+                json.dumps({"error": "Send failed", "details": error_message}),
+                status_code=400,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        message_ts = _utcnow()
+        conversation = _upsert_conversation(
+            db,
+            business_id=client.id,
+            platform=PLATFORM_WHATSAPP_META,
+            connection_id=connection.id,
+            external_conversation_id=str(to_number),
+            participant_handle=str(to_number),
+            participant_name=None,
+            last_message_text=text,
+            last_message_at=message_ts,
+        )
+        db.flush()
+        _store_message(
+            db,
+            conversation_id=conversation.id,
+            platform=PLATFORM_WHATSAPP_META,
+            external_message_id=str(external_id),
+            direction="outbound",
+            sender_type="business",
+            text=text,
+            attachments=None,
+            message_ts=message_ts,
+        )
+        db.commit()
+
+        return func.HttpResponse(
+            json.dumps(
+                {
+                    "status": "sent",
+                    "message_id": external_id,
+                    "conversation_id": conversation.id,
+                }
+            ),
+            status_code=200,
+            mimetype="application/json",
+            headers=cors,
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        db.rollback()
+        logger.error("WhatsApp send failed: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "WhatsApp send failed", "details": str(exc)}),
             status_code=500,
             mimetype="application/json",
             headers=cors,

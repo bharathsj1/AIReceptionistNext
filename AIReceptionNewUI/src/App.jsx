@@ -148,6 +148,8 @@ export default function App() {
   const [calendarAccountEmail, setCalendarAccountEmail] = useState("");
   const [calendarDiagnostics, setCalendarDiagnostics] = useState(null);
   const googleStateRef = useRef(null);
+  const outlookStateRef = useRef(null);
+  const [outlookAccountEmail, setOutlookAccountEmail] = useState("");
   const stageRef = useRef(stage);
   const [clientData, setClientData] = useState(null);
   const [signupName, setSignupName] = useState("");
@@ -2002,6 +2004,45 @@ export default function App() {
     [loadCalendarEvents, setLoggedInFromOAuth]
   );
 
+  const completeOutlookAuth = useCallback(async (code, state) => {
+    setStatus("loading");
+    setResponseMessage("");
+    try {
+      const res = await fetch(API_URLS.outlookAuthCallback, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, state })
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Outlook authentication failed");
+      }
+      const data = await res.json();
+      setOutlookAccountEmail(data?.outlook_account_email || data?.account_email || "");
+      setStatus("success");
+      setResponseMessage("Outlook account connected.");
+      if (window.opener && window.opener !== window) {
+        window.opener.postMessage(data, "*");
+        window.close();
+      }
+    } catch (error) {
+      setStatus("error");
+      setResponseMessage(error?.message || "Outlook auth failed");
+    }
+  }, []);
+
+  const decodeOAuthState = (stateValue) => {
+    if (!stateValue) return null;
+    try {
+      const base = stateValue.replace(/-/g, "+").replace(/_/g, "/");
+      const padded = base + "=".repeat((4 - (base.length % 4)) % 4);
+      const decoded = atob(padded);
+      return JSON.parse(decoded);
+    } catch (error) {
+      return null;
+    }
+  };
+
   const beginGoogleLogin = async (options = {}) => {
     const force = Boolean(options?.force);
     setStatus("loading");
@@ -2038,6 +2079,15 @@ export default function App() {
   useEffect(() => {
     const handler = (event) => {
       const payload = event.data || {};
+      if (payload?.outlook_account_email) {
+        if (outlookStateRef.current && payload?.state && payload.state !== outlookStateRef.current) {
+          return;
+        }
+        setOutlookAccountEmail(payload?.outlook_account_email || payload?.account_email || "");
+        setStatus("success");
+        setResponseMessage("Outlook account connected.");
+        return;
+      }
       if (!payload?.user_id || !payload?.email) return;
       if (googleStateRef.current && payload?.state && payload.state !== googleStateRef.current) {
         return;
@@ -2061,7 +2111,12 @@ export default function App() {
     const code = params.get("code");
     const state = params.get("state");
     if (code) {
-      completeGoogleAuth(code, state);
+      const decodedState = decodeOAuthState(state);
+      if (decodedState?.provider === "outlook") {
+        completeOutlookAuth(code, state);
+      } else {
+        completeGoogleAuth(code, state);
+      }
       params.delete("code");
       params.delete("state");
       const newUrl =
@@ -2069,7 +2124,7 @@ export default function App() {
         (params.toString() ? `?${params.toString()}` : "");
       window.history.replaceState({}, document.title, newUrl);
     }
-  }, [completeGoogleAuth]);
+  }, [completeGoogleAuth, completeOutlookAuth]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;

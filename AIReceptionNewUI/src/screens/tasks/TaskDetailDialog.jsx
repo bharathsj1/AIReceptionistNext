@@ -9,7 +9,19 @@ import { ClipboardList, Phone, Mail, X } from "lucide-react";
 const formatTime = (value) => {
   if (!value) return "—";
   try {
-    return new Date(value).toLocaleString();
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    const datePart = date.toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    });
+    const timePart = date.toLocaleTimeString(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true
+    });
+    return `${datePart}, ${timePart}`;
   } catch {
     return value;
   }

@@ -5,9 +5,10 @@ import azure.functions as func
 
 from function_app import app
 from repository.tasks_repo import create_task, task_to_dict
+from repository.contacts_repo import upsert_contact
 from schemas.tasks_schema import validate_task_create
 from services.task_events_store import publish_task_event
-from shared.db import SessionLocal
+from shared.db import SessionLocal, Client, User
 from tasks_list import handle_tasks_list
 from tasks_shared import disabled_response, parse_json_body, tasks_enabled, verify_tasks_secret
 from utils.cors import build_cors_headers
@@ -52,6 +53,44 @@ def tasks(req: func.HttpRequest) -> func.HttpResponse:
         task = create_task(db, normalized)
         db.commit()
         task_dict = task_to_dict(task)
+
+        try:
+            customer_name = normalized.get("customerName")
+            customer_email = normalized.get("customerEmail")
+            customer_phone = normalized.get("customerPhone")
+            if customer_name or customer_email or customer_phone:
+                client_ref = normalized.get("clientId")
+                client = None
+                user = None
+                if client_ref:
+                    client_ref_str = str(client_ref).strip()
+                    if client_ref_str.isdigit():
+                        client = db.query(Client).filter_by(id=int(client_ref_str)).one_or_none()
+                    if not client and "@" in client_ref_str:
+                        client = db.query(Client).filter_by(email=client_ref_str).one_or_none()
+                    if client and client.user_id:
+                        user = db.query(User).filter_by(id=client.user_id).one_or_none()
+                    if not user and "@" in client_ref_str:
+                        user = db.query(User).filter_by(email=client_ref_str).one_or_none()
+                if user:
+                    tags = ["ai_receptionist_task", f"task:{normalized.get('type', '').lower()}"]
+                    upsert_contact(
+                        db,
+                        user_id=user.id,
+                        client_id=client.id if client else None,
+                        name=customer_name,
+                        email=customer_email,
+                        phone=customer_phone,
+                        source="task",
+                        tags=tags,
+                    )
+                    db.commit()
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.warning("Failed to extract task contact: %s", exc)
+            try:
+                db.rollback()
+            except Exception:  # pylint: disable=broad-except
+                pass
     except Exception as exc:  # pylint: disable=broad-except
         db.rollback()
         logger.error("Failed to create task: %s", exc)

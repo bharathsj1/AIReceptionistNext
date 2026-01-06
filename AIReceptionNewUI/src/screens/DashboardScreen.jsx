@@ -49,6 +49,7 @@ import {
 import { API_URLS } from "../config/urls";
 import TaskBoard from "./tasks/TaskBoard";
 import TaskManagerScreen from "./TaskManagerScreen";
+import ContactsScreen from "./ContactsScreen";
 import { createTaskManagerItem } from "../lib/api/taskManager";
 
 const resolveFeatureFlag = (value) => {
@@ -429,7 +430,7 @@ const ToolGate = ({ locked, loading, message, children, className = "" }) => (
       </div>
     )}
     {loading && !locked && (
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-3xl bg-slate-950/30 backdrop-blur-sm">
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-3xl dashboard-modal-backdrop dashboard-modal-backdrop--soft">
         <p className="text-xs font-semibold text-slate-200">Checking access...</p>
       </div>
     )}
@@ -616,6 +617,13 @@ export default function DashboardScreen({
   });
   const [emailComposerStatus, setEmailComposerStatus] = useState({ status: "idle", message: "" });
   const [emailComposerAiStatus, setEmailComposerAiStatus] = useState({ status: "idle", message: "" });
+  const [contactSuggestions, setContactSuggestions] = useState([]);
+  const [contactSuggestOpen, setContactSuggestOpen] = useState(false);
+  const [contactSuggestField, setContactSuggestField] = useState("");
+  const [contactSuggestQuery, setContactSuggestQuery] = useState("");
+  const [contactSuggestLoading, setContactSuggestLoading] = useState(false);
+  const [contactSuggestError, setContactSuggestError] = useState("");
+  const contactSuggestTimer = useRef(null);
   const [selectedEmailMessage, setSelectedEmailMessage] = useState(null);
   const [emailSummaries, setEmailSummaries] = useState({});
   const [emailSummaryStatus, setEmailSummaryStatus] = useState({
@@ -643,6 +651,13 @@ export default function DashboardScreen({
     token: ""
   });
   const [whatsappStatus, setWhatsappStatus] = useState({ status: "idle", message: "" });
+  const [showWhatsappManual, setShowWhatsappManual] = useState(false);
+  const [whatsappSendForm, setWhatsappSendForm] = useState({
+    connectionId: "",
+    to: "",
+    text: ""
+  });
+  const [whatsappSendStatus, setWhatsappSendStatus] = useState({ status: "idle", message: "" });
   const [socialConversations, setSocialConversations] = useState([]);
   const [socialInboxLoading, setSocialInboxLoading] = useState(false);
   const [socialInboxError, setSocialInboxError] = useState("");
@@ -1261,10 +1276,78 @@ export default function DashboardScreen({
     }
   };
 
+  const extractContactQuery = (value = "") => {
+    const parts = String(value).split(",");
+    return parts[parts.length - 1].trim();
+  };
+
+  const fetchContactSuggestions = async (query) => {
+    const emailAddress = user?.email || userForm.email;
+    if (!emailAddress) return;
+    setContactSuggestLoading(true);
+    setContactSuggestError("");
+    try {
+      const params = new URLSearchParams({ email: emailAddress, limit: "8" });
+      if (query) params.set("q", query);
+      const res = await fetch(`${API_URLS.contactsSuggest}?${params.toString()}`);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Unable to load contacts.");
+      }
+      const data = await res.json();
+      const items = Array.isArray(data?.contacts) ? data.contacts : [];
+      setContactSuggestions(items.filter((item) => item.email));
+    } catch (err) {
+      setContactSuggestError(err?.message || "Unable to load contacts.");
+    } finally {
+      setContactSuggestLoading(false);
+    }
+  };
+
+  const scheduleContactSuggestions = (query) => {
+    if (contactSuggestTimer.current) clearTimeout(contactSuggestTimer.current);
+    contactSuggestTimer.current = setTimeout(() => {
+      fetchContactSuggestions(query);
+    }, 200);
+  };
+
+  const handleContactFieldFocus = (field, value) => {
+    setContactSuggestField(field);
+    setContactSuggestOpen(true);
+    const query = extractContactQuery(value);
+    setContactSuggestQuery(query);
+    scheduleContactSuggestions(query);
+  };
+
+  const handleContactFieldChange = (field, value) => {
+    setEmailComposerForm((prev) => ({ ...prev, [field]: value }));
+    setContactSuggestField(field);
+    setContactSuggestOpen(true);
+    const query = extractContactQuery(value);
+    setContactSuggestQuery(query);
+    scheduleContactSuggestions(query);
+  };
+
+  const handleContactSelect = (field, contact) => {
+    const value = emailComposerForm[field] || "";
+    const parts = value.split(",").map((part) => part.trim());
+    const display = contact.name ? `${contact.name} <${contact.email}>` : contact.email;
+    if (!parts.length) {
+      setEmailComposerForm((prev) => ({ ...prev, [field]: display }));
+      setContactSuggestOpen(false);
+      return;
+    }
+    parts[parts.length - 1] = display;
+    const nextValue = parts.filter(Boolean).join(", ") + ", ";
+    setEmailComposerForm((prev) => ({ ...prev, [field]: nextValue }));
+    setContactSuggestOpen(false);
+  };
+
   const openComposer = (mode = "new", message = null) => {
     setEmailComposerMode(mode);
     setEmailComposerStatus({ status: "idle", message: "" });
     setEmailComposerAiStatus({ status: "idle", message: "" });
+    setContactSuggestOpen(false);
     if (!message || mode === "new") {
       setEmailComposerForm({
         to: "",
@@ -2062,6 +2145,52 @@ export default function DashboardScreen({
     }
   };
 
+  const beginWhatsAppConnect = async () => {
+    const { email: emailAddress } = getSocialIdentity();
+    if (!emailAddress) {
+      setWhatsappStatus({ status: "error", message: "Missing user email." });
+      return;
+    }
+    setWhatsappStatus({ status: "loading", message: "" });
+    try {
+      const params = new URLSearchParams({ email: emailAddress });
+      const res = await fetch(`${API_URLS.socialWhatsAppAuthUrl}?${params.toString()}`);
+      if (!res.ok) {
+        throw new Error(await parseSimpleError(res, "Unable to start WhatsApp connection"));
+      }
+      const data = await res.json().catch(() => ({}));
+      const authUrl = data?.auth_url;
+      if (!authUrl) {
+        throw new Error("Missing auth URL");
+      }
+      const popup = window.open(authUrl, "whatsapp-oauth", "width=600,height=720");
+      if (!popup) {
+        throw new Error("Popup blocked. Please allow popups to connect WhatsApp.");
+      }
+
+      const handleMessage = (event) => {
+        if (!event?.data || event.data?.status !== "connected") return;
+        setWhatsappStatus({ status: "success", message: "WhatsApp connected." });
+        loadSocialConnections();
+        window.removeEventListener("message", handleMessage);
+      };
+      window.addEventListener("message", handleMessage);
+
+      const timer = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(timer);
+          window.removeEventListener("message", handleMessage);
+          setWhatsappStatus((prev) =>
+            prev.status === "success" ? prev : { status: "idle", message: "" }
+          );
+          loadSocialConnections();
+        }
+      }, 600);
+    } catch (err) {
+      setWhatsappStatus({ status: "error", message: err?.message || "WhatsApp connect failed." });
+    }
+  };
+
   const disconnectSocialConnection = async (connectionId) => {
     const { email: emailAddress } = getSocialIdentity();
     if (!emailAddress) return;
@@ -2110,6 +2239,44 @@ export default function DashboardScreen({
       loadSocialConnections();
     } catch (err) {
       setWhatsappStatus({ status: "error", message: err?.message || "WhatsApp connect failed." });
+    }
+  };
+
+  const sendWhatsAppMessage = async () => {
+    const { email: emailAddress } = getSocialIdentity();
+    if (!emailAddress) {
+      setWhatsappSendStatus({ status: "error", message: "Missing user email." });
+      return;
+    }
+    const trimmedTo = whatsappSendForm.to.trim();
+    const trimmedText = whatsappSendForm.text.trim();
+    if (!trimmedTo || !trimmedText) {
+      setWhatsappSendStatus({ status: "error", message: "Phone number and message are required." });
+      return;
+    }
+    setWhatsappSendStatus({ status: "loading", message: "" });
+    try {
+      const payload = {
+        email: emailAddress,
+        to: trimmedTo,
+        text: trimmedText
+      };
+      if (whatsappSendForm.connectionId) {
+        payload.connection_id = whatsappSendForm.connectionId;
+      }
+      const res = await fetch(API_URLS.socialWhatsAppSend, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        throw new Error(await parseSimpleError(res, "Unable to send WhatsApp message"));
+      }
+      setWhatsappSendStatus({ status: "success", message: "Message sent." });
+      setWhatsappSendForm((prev) => ({ ...prev, to: "", text: "" }));
+      loadSocialConversations();
+    } catch (err) {
+      setWhatsappSendStatus({ status: "error", message: err?.message || "Send failed." });
     }
   };
 
@@ -2386,6 +2553,13 @@ export default function DashboardScreen({
       eyebrow: "Schedule",
       icon: CalendarClock,
       copy: "Organize tasks on a shared calendar and keep timelines visible."
+    },
+    {
+      id: "contacts",
+      label: "Contacts",
+      eyebrow: "Directory",
+      icon: Users,
+      copy: "Sync Gmail + Outlook contacts, plus AI receptionist leads."
     }
   ];
 
@@ -2420,6 +2594,7 @@ export default function DashboardScreen({
   const isToolLocked = (toolId) => {
     if (toolId === "dashboard_analytics") return false;
     if (toolId === "task_manager") return false;
+    if (toolId === "contacts") return false;
     const entry = toolSubscriptions?.[toolId];
     if (entry && typeof entry.active === "boolean") return !entry.active;
     if (subscriptionsLoading) return false;
@@ -2778,6 +2953,13 @@ export default function DashboardScreen({
     () => socialConnections.filter((conn) => conn.platform === "whatsapp_meta"),
     [socialConnections]
   );
+  const whatsappConnected = whatsappConnections.length > 0;
+  useEffect(() => {
+    if (!whatsappConnections.length) return;
+    setWhatsappSendForm((prev) =>
+      prev.connectionId ? prev : { ...prev, connectionId: String(whatsappConnections[0].id) }
+    );
+  }, [whatsappConnections]);
   const filteredSocialConversations = useMemo(() => {
     const base = [...socialConversations];
     const query = socialSearch.trim().toLowerCase();
@@ -3445,6 +3627,7 @@ export default function DashboardScreen({
   const selectedProviderLabel = selectedCalendarProvider === "google" ? "Google" : "Outlook";
   const selectedProviderConnected =
     selectedCalendarProvider === "google" ? Boolean(integrationStatus) : false;
+  const googleContactsConnected = Boolean(calendarAccountEmail || calendarStatus === "Google");
   const sideNavWidthClass = sideNavHidden
     ? "w-0 min-w-0 max-w-0"
     : sideNavOpen
@@ -3567,6 +3750,15 @@ export default function DashboardScreen({
     const locked = isToolLocked(tool.id);
     const isToolActive =
       currentTool === tool.id && !(settingsActive && tool.id === "email_manager");
+    const toolAccentMap = {
+      dashboard_analytics: "from-indigo-500/80 via-sky-400/70 to-blue-400/70",
+      ai_receptionist: "from-emerald-500/80 via-lime-400/70 to-emerald-300/70",
+      email_manager: "from-sky-500/80 via-cyan-400/70 to-blue-400/70",
+      social_media_manager: "from-fuchsia-500/80 via-pink-400/70 to-rose-400/70",
+      task_manager: "from-amber-500/80 via-orange-400/70 to-rose-400/60",
+      contacts: "from-rose-500/80 via-red-400/70 to-orange-300/70"
+    };
+    const accent = toolAccentMap[tool.id] || "from-slate-500/70 to-slate-400/70";
     const toolActiveClass = lightThemeActive
       ? "bg-slate-200/80 text-slate-900 shadow-[0_10px_22px_rgba(15,23,42,0.08)]"
       : "bg-white/15 text-white";
@@ -3586,18 +3778,10 @@ export default function DashboardScreen({
         data-active={isToolActive}
         aria-disabled={locked ? "true" : undefined}
       >
-        <span className="flex h-7 w-7 items-center justify-center">
-          <Icon
-            className={`h-[18px] w-[18px] ${
-              isToolActive
-                ? lightThemeActive
-                  ? "text-slate-900"
-                  : "text-indigo-100"
-                : lightThemeActive
-                  ? "text-slate-700"
-                  : "text-indigo-200"
-            }`}
-          />
+        <span
+          className={`flex h-7 w-7 items-center justify-center rounded-xl bg-gradient-to-br ${accent} shadow-sm`}
+        >
+          <Icon className="h-[18px] w-[18px] text-white" />
         </span>
         <div
           className={`min-w-0 transition-opacity ${
@@ -3606,14 +3790,9 @@ export default function DashboardScreen({
               : "max-w-0 overflow-hidden opacity-0"
           }`}
         >
-          <p className="text-[11px] font-semibold text-white leading-none whitespace-nowrap">
+          <p className="text-sm font-semibold text-white leading-none whitespace-nowrap">
             {tool.label}
           </p>
-          {tool.eyebrow ? (
-            <span className="text-[9px] uppercase tracking-[0.24em] text-slate-400">
-              {tool.eyebrow}
-            </span>
-          ) : null}
         </div>
       </button>
     );
@@ -3756,18 +3935,8 @@ export default function DashboardScreen({
                 }`}
                 data-active={settingsActive}
               >
-                <span className="flex h-7 w-7 items-center justify-center">
-                  <Settings
-                    className={`h-[18px] w-[18px] ${
-                      settingsActive
-                        ? lightThemeActive
-                          ? "text-slate-900"
-                          : "text-indigo-100"
-                        : lightThemeActive
-                          ? "text-slate-700"
-                          : "text-indigo-200"
-                    }`}
-                  />
+                <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500/80 via-violet-400/70 to-sky-400/70 shadow-sm">
+                  <Settings className="h-[18px] w-[18px] text-white" />
                 </span>
                 <div
                   className={`min-w-0 transition-opacity ${
@@ -3776,7 +3945,7 @@ export default function DashboardScreen({
                       : "max-w-0 overflow-hidden opacity-0"
                   }`}
                 >
-                  <p className="text-[11px] font-semibold text-white leading-none whitespace-nowrap">
+                  <p className="text-sm font-semibold text-white leading-none whitespace-nowrap">
                     Settings
                   </p>
                 </div>
@@ -3793,8 +3962,8 @@ export default function DashboardScreen({
                       : "text-rose-200 hover:bg-rose-500/10 hover:text-rose-100"
                   }`}
                 >
-                  <span className="flex h-7 w-7 items-center justify-center">
-                    <LogOut className="h-[18px] w-[18px]" />
+                  <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-gradient-to-br from-rose-500/80 via-rose-400/70 to-orange-400/70 shadow-sm">
+                    <LogOut className="h-[18px] w-[18px] text-white" />
                   </span>
                   <div
                     className={`min-w-0 transition-opacity ${
@@ -3803,7 +3972,7 @@ export default function DashboardScreen({
                         : "max-w-0 overflow-hidden opacity-0"
                     }`}
                   >
-                    <p className="text-[11px] font-semibold leading-none whitespace-nowrap">
+                    <p className="text-sm font-semibold leading-none whitespace-nowrap">
                       Logout
                     </p>
                   </div>
@@ -3813,8 +3982,10 @@ export default function DashboardScreen({
           </aside>
 
           <div
-            className={`dashboard-main flex h-full min-h-0 flex-1 flex-col gap-5 ${
-              isEmailManager ? "overflow-hidden" : "overflow-y-auto"
+            className={`dashboard-main flex h-full min-h-0 flex-1 flex-col ${
+              isEmailManager
+                ? "dashboard-main--full gap-0 overflow-hidden"
+                : "gap-5 overflow-y-auto"
             }`}
           >
             {currentTool !== "email_manager" && currentTool !== "task_manager" && (
@@ -4146,6 +4317,21 @@ export default function DashboardScreen({
             email={user?.email}
             businessName={clientData?.business_name || clientData?.name}
           />
+        )}
+
+        {currentTool === "contacts" && (
+          <ToolGate
+            locked={activeToolLocked}
+            loading={subscriptionsLoading}
+            message="Subscribe to Contacts to sync and manage your directory."
+          >
+            <ContactsScreen
+              email={user?.email}
+              onConnectGoogle={beginGoogleLogin}
+              googleConnected={googleContactsConnected}
+              googleAccountEmail={calendarAccountEmail}
+            />
+          </ToolGate>
         )}
 
         {currentTool === "ai_receptionist" && (
@@ -4769,7 +4955,7 @@ export default function DashboardScreen({
               {selectedCalendarProvider === "google" && selectedProviderConnected ? (
                 <div className="relative rounded-2xl border border-white/10 bg-slate-950/40 p-2">
                   {calendarLoading ? (
-                    <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-slate-950/60 backdrop-blur">
+                    <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl dashboard-modal-backdrop">
                       <InlineLoader label="Loading events..." />
                     </div>
                   ) : null}
@@ -5563,7 +5749,7 @@ export default function DashboardScreen({
                             </div>
                             {emailSummaryVisible ? (
                               <div className="absolute inset-0 z-20 flex items-center justify-center p-4">
-                                <div className="pointer-events-none absolute inset-0 rounded-2xl bg-slate-950/70 backdrop-blur-xl" />
+                                <div className="pointer-events-none absolute inset-0 rounded-2xl dashboard-modal-backdrop" />
                                 <div
                                   className="relative z-10 w-full max-w-xl max-h-[min(80vh,calc(100%-2rem))] overflow-y-auto overscroll-contain rounded-2xl border border-white/10 bg-slate-950/95 p-3 shadow-xl backdrop-blur pointer-events-auto sm:p-4"
                                   data-lenis-prevent
@@ -6707,7 +6893,7 @@ export default function DashboardScreen({
                 )}
               </section>
               {emailComposerOpen && (
-                <div className="absolute inset-0 z-40 flex items-center justify-center bg-slate-950/70 px-4 py-6 backdrop-blur">
+                <div className="absolute inset-0 z-40 flex items-center justify-center px-4 py-6 dashboard-modal-backdrop">
                   <div className="w-full max-w-2xl rounded-3xl border border-white/10 bg-slate-950/90 p-4 shadow-2xl sm:p-5">
                     <div className="flex items-center justify-between">
                       <div>
@@ -6716,7 +6902,10 @@ export default function DashboardScreen({
                       </div>
                       <button
                         type="button"
-                        onClick={() => setEmailComposerOpen(false)}
+                        onClick={() => {
+                          setEmailComposerOpen(false);
+                          setContactSuggestOpen(false);
+                        }}
                         className={`rounded-lg border p-2 ${emailActionButtonClass}`}
                         aria-label="Close composer"
                       >
@@ -6724,34 +6913,127 @@ export default function DashboardScreen({
                       </button>
                     </div>
                     <div className="mt-4 grid gap-3 text-xs text-slate-200">
-                      <input
-                        type="text"
-                        value={emailComposerForm.to}
-                        onChange={(event) =>
-                          setEmailComposerForm((prev) => ({ ...prev, to: event.target.value }))
-                        }
-                        placeholder="To"
-                        className="w-full rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-xs text-white placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none"
-                      />
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={emailComposerForm.to}
+                          onChange={(event) => handleContactFieldChange("to", event.target.value)}
+                          onFocus={() => handleContactFieldFocus("to", emailComposerForm.to)}
+                          placeholder="To"
+                          className="w-full rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-xs text-white placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none"
+                        />
+                        {contactSuggestOpen && contactSuggestField === "to" ? (
+                          <div
+                            className="absolute left-0 right-0 top-full z-30 mt-2 rounded-2xl border border-white/10 bg-slate-950/95 p-2 text-xs text-slate-100 shadow-xl"
+                            onMouseDown={(event) => event.preventDefault()}
+                          >
+                            {contactSuggestLoading ? (
+                              <p className="px-2 py-2 text-slate-300">Loading contacts...</p>
+                            ) : contactSuggestError ? (
+                              <p className="px-2 py-2 text-rose-300">{contactSuggestError}</p>
+                            ) : contactSuggestions.length ? (
+                              <div className="grid gap-1">
+                                {contactSuggestions.map((contact) => (
+                                  <button
+                                    key={`to-${contact.id}`}
+                                    type="button"
+                                    onClick={() => handleContactSelect("to", contact)}
+                                    className="flex w-full items-center justify-between rounded-xl px-2 py-2 text-left hover:bg-white/10"
+                                  >
+                                    <span className="font-semibold text-white">
+                                      {contact.name || contact.email}
+                                    </span>
+                                    <span className="text-[10px] text-slate-400">{contact.email}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="px-2 py-2 text-slate-400">No matches yet.</p>
+                            )}
+                          </div>
+                        ) : null}
+                      </div>
                       <div className="grid gap-2 md:grid-cols-2">
-                        <input
-                          type="text"
-                          value={emailComposerForm.cc}
-                          onChange={(event) =>
-                            setEmailComposerForm((prev) => ({ ...prev, cc: event.target.value }))
-                          }
-                          placeholder="Cc"
-                          className="w-full rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-xs text-white placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none"
-                        />
-                        <input
-                          type="text"
-                          value={emailComposerForm.bcc}
-                          onChange={(event) =>
-                            setEmailComposerForm((prev) => ({ ...prev, bcc: event.target.value }))
-                          }
-                          placeholder="Bcc"
-                          className="w-full rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-xs text-white placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none"
-                        />
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={emailComposerForm.cc}
+                            onChange={(event) => handleContactFieldChange("cc", event.target.value)}
+                            onFocus={() => handleContactFieldFocus("cc", emailComposerForm.cc)}
+                            placeholder="Cc"
+                            className="w-full rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-xs text-white placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none"
+                          />
+                          {contactSuggestOpen && contactSuggestField === "cc" ? (
+                            <div
+                              className="absolute left-0 right-0 top-full z-30 mt-2 rounded-2xl border border-white/10 bg-slate-950/95 p-2 text-xs text-slate-100 shadow-xl"
+                              onMouseDown={(event) => event.preventDefault()}
+                            >
+                              {contactSuggestLoading ? (
+                                <p className="px-2 py-2 text-slate-300">Loading contacts...</p>
+                              ) : contactSuggestError ? (
+                                <p className="px-2 py-2 text-rose-300">{contactSuggestError}</p>
+                              ) : contactSuggestions.length ? (
+                                <div className="grid gap-1">
+                                  {contactSuggestions.map((contact) => (
+                                    <button
+                                      key={`cc-${contact.id}`}
+                                      type="button"
+                                      onClick={() => handleContactSelect("cc", contact)}
+                                      className="flex w-full items-center justify-between rounded-xl px-2 py-2 text-left hover:bg-white/10"
+                                    >
+                                      <span className="font-semibold text-white">
+                                        {contact.name || contact.email}
+                                      </span>
+                                      <span className="text-[10px] text-slate-400">{contact.email}</span>
+                                    </button>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="px-2 py-2 text-slate-400">No matches yet.</p>
+                              )}
+                            </div>
+                          ) : null}
+                        </div>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={emailComposerForm.bcc}
+                            onChange={(event) => handleContactFieldChange("bcc", event.target.value)}
+                            onFocus={() => handleContactFieldFocus("bcc", emailComposerForm.bcc)}
+                            placeholder="Bcc"
+                            className="w-full rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-xs text-white placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none"
+                          />
+                          {contactSuggestOpen && contactSuggestField === "bcc" ? (
+                            <div
+                              className="absolute left-0 right-0 top-full z-30 mt-2 rounded-2xl border border-white/10 bg-slate-950/95 p-2 text-xs text-slate-100 shadow-xl"
+                              onMouseDown={(event) => event.preventDefault()}
+                            >
+                              {contactSuggestLoading ? (
+                                <p className="px-2 py-2 text-slate-300">Loading contacts...</p>
+                              ) : contactSuggestError ? (
+                                <p className="px-2 py-2 text-rose-300">{contactSuggestError}</p>
+                              ) : contactSuggestions.length ? (
+                                <div className="grid gap-1">
+                                  {contactSuggestions.map((contact) => (
+                                    <button
+                                      key={`bcc-${contact.id}`}
+                                      type="button"
+                                      onClick={() => handleContactSelect("bcc", contact)}
+                                      className="flex w-full items-center justify-between rounded-xl px-2 py-2 text-left hover:bg-white/10"
+                                    >
+                                      <span className="font-semibold text-white">
+                                        {contact.name || contact.email}
+                                      </span>
+                                      <span className="text-[10px] text-slate-400">{contact.email}</span>
+                                    </button>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="px-2 py-2 text-slate-400">No matches yet.</p>
+                              )}
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
                       <input
                         type="text"
@@ -6795,7 +7077,10 @@ export default function DashboardScreen({
                     <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
                       <button
                         type="button"
-                        onClick={() => setEmailComposerOpen(false)}
+                        onClick={() => {
+                          setEmailComposerOpen(false);
+                          setContactSuggestOpen(false);
+                        }}
                         className="w-full rounded-xl border border-white/10 bg-white/10 px-4 py-2 text-xs text-white sm:w-auto"
                       >
                         Cancel
@@ -6907,64 +7192,90 @@ export default function DashboardScreen({
                   <div className="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-xl backdrop-blur">
                     <div className="flex items-start justify-between gap-4">
                       <div>
-                        <p className="text-xs uppercase tracking-[0.2em] text-emerald-200">WhatsApp</p>
-                        <h4 className="text-lg font-semibold text-white">Manual Cloud API connect</h4>
+                        <p className="text-xs uppercase tracking-[0.2em] text-emerald-200">WhatsApp Cloud API</p>
+                        <h4 className="text-lg font-semibold text-white">Connect WhatsApp</h4>
                         <p className="text-sm text-slate-300">
-                          Paste your phone number ID and permanent token to start receiving messages.
+                          Authorize once to connect your WhatsApp Business number and sync messages.
                         </p>
                       </div>
                       <div className="rounded-full border border-white/10 bg-white/5 p-2">
                         <MessageSquare className="h-5 w-5 text-emerald-200" />
                       </div>
                     </div>
-                    <div className="mt-4 grid gap-3 text-xs">
-                      <input
-                        type="text"
-                        value={whatsappForm.phoneNumberId}
-                        onChange={(event) =>
-                          setWhatsappForm((prev) => ({ ...prev, phoneNumberId: event.target.value }))
-                        }
-                        placeholder="Phone number ID"
-                        className="w-full rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-white placeholder:text-slate-400"
-                      />
-                      <input
-                        type="text"
-                        value={whatsappForm.wabaId}
-                        onChange={(event) =>
-                          setWhatsappForm((prev) => ({ ...prev, wabaId: event.target.value }))
-                        }
-                        placeholder="WABA ID (optional)"
-                        className="w-full rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-white placeholder:text-slate-400"
-                      />
-                      <input
-                        type="password"
-                        value={whatsappForm.token}
-                        onChange={(event) =>
-                          setWhatsappForm((prev) => ({ ...prev, token: event.target.value }))
-                        }
-                        placeholder="Permanent access token"
-                        className="w-full rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-white placeholder:text-slate-400"
-                      />
-                      <div className="flex items-center gap-3">
-                        <button
-                          type="button"
-                          onClick={handleWhatsAppConnect}
-                          disabled={whatsappStatus.status === "loading"}
-                          className="inline-flex items-center gap-2 rounded-xl border border-emerald-300/50 bg-emerald-500/20 px-4 py-2 text-xs font-semibold text-emerald-100 disabled:opacity-60"
+                    <div className="mt-4 flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={beginWhatsAppConnect}
+                        disabled={whatsappStatus.status === "loading"}
+                        className="inline-flex items-center gap-2 rounded-xl border border-emerald-300/50 bg-emerald-500/20 px-4 py-2 text-xs font-semibold text-emerald-100 disabled:opacity-60"
+                      >
+                        {whatsappStatus.status === "loading" ? "Connecting..." : "Connect WhatsApp"}
+                      </button>
+                      {whatsappConnected ? (
+                        <span className="rounded-full border border-emerald-300/40 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-100">
+                          Connected
+                        </span>
+                      ) : null}
+                      {whatsappStatus.message ? (
+                        <span
+                          className={`text-xs ${
+                            whatsappStatus.status === "error" ? "text-rose-300" : "text-emerald-200"
+                          }`}
                         >
-                          {whatsappStatus.status === "loading" ? "Connecting..." : "Connect WhatsApp"}
-                        </button>
-                        {whatsappStatus.message ? (
-                          <span
-                            className={`text-xs ${
-                              whatsappStatus.status === "error" ? "text-rose-300" : "text-emerald-200"
-                            }`}
-                          >
-                            {whatsappStatus.message}
-                          </span>
-                        ) : null}
-                      </div>
+                          {whatsappStatus.message}
+                        </span>
+                      ) : null}
                     </div>
+                    <div className="mt-4">
+                      <button
+                        type="button"
+                        onClick={() => setShowWhatsappManual((prev) => !prev)}
+                        className="text-xs text-slate-300 underline-offset-4 hover:underline"
+                      >
+                        {showWhatsappManual ? "Hide manual setup" : "Use manual token setup"}
+                      </button>
+                    </div>
+                    {showWhatsappManual ? (
+                      <div className="mt-4 grid gap-3 text-xs">
+                        <input
+                          type="text"
+                          value={whatsappForm.phoneNumberId}
+                          onChange={(event) =>
+                            setWhatsappForm((prev) => ({ ...prev, phoneNumberId: event.target.value }))
+                          }
+                          placeholder="Phone number ID"
+                          className="w-full rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-white placeholder:text-slate-400"
+                        />
+                        <input
+                          type="text"
+                          value={whatsappForm.wabaId}
+                          onChange={(event) =>
+                            setWhatsappForm((prev) => ({ ...prev, wabaId: event.target.value }))
+                          }
+                          placeholder="WABA ID (optional)"
+                          className="w-full rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-white placeholder:text-slate-400"
+                        />
+                        <input
+                          type="password"
+                          value={whatsappForm.token}
+                          onChange={(event) =>
+                            setWhatsappForm((prev) => ({ ...prev, token: event.target.value }))
+                          }
+                          placeholder="Permanent access token"
+                          className="w-full rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-white placeholder:text-slate-400"
+                        />
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={handleWhatsAppConnect}
+                            disabled={whatsappStatus.status === "loading"}
+                            className="inline-flex items-center gap-2 rounded-xl border border-emerald-300/50 bg-emerald-500/20 px-4 py-2 text-xs font-semibold text-emerald-100 disabled:opacity-60"
+                          >
+                            {whatsappStatus.status === "loading" ? "Connecting..." : "Save manual connect"}
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
 
                   <div className="lg:col-span-2 rounded-3xl border border-white/10 bg-white/5 p-5 shadow-xl backdrop-blur">
@@ -7070,6 +7381,72 @@ export default function DashboardScreen({
                         className="w-full rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-xs text-white placeholder:text-slate-400"
                       />
                     </div>
+                    {whatsappConnections.length ? (
+                      <div className="mt-4 rounded-2xl border border-white/10 bg-slate-900/50 p-3 text-xs text-slate-200">
+                        <p className="text-[11px] uppercase tracking-[0.2em] text-emerald-200">
+                          New WhatsApp Message
+                        </p>
+                        <div className="mt-2 grid gap-2">
+                          <select
+                            value={whatsappSendForm.connectionId}
+                            onChange={(event) =>
+                              setWhatsappSendForm((prev) => ({
+                                ...prev,
+                                connectionId: event.target.value
+                              }))
+                            }
+                            className="w-full rounded-xl border border-white/10 bg-slate-900/70 px-3 py-2 text-xs text-white"
+                          >
+                            {whatsappConnections.map((conn) => (
+                              <option key={`wa-${conn.id}`} value={conn.id}>
+                                {conn.metadata?.display_phone_number || conn.display_name || conn.external_account_id}
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            type="text"
+                            value={whatsappSendForm.to}
+                            onChange={(event) =>
+                              setWhatsappSendForm((prev) => ({ ...prev, to: event.target.value }))
+                            }
+                            placeholder="Recipient phone number (E.164)"
+                            className="w-full rounded-xl border border-white/10 bg-slate-900/70 px-3 py-2 text-xs text-white placeholder:text-slate-400"
+                          />
+                          <textarea
+                            rows={3}
+                            value={whatsappSendForm.text}
+                            onChange={(event) =>
+                              setWhatsappSendForm((prev) => ({ ...prev, text: event.target.value }))
+                            }
+                            placeholder="Write a message..."
+                            className="w-full rounded-xl border border-white/10 bg-slate-900/70 px-3 py-2 text-xs text-white placeholder:text-slate-400"
+                          />
+                          <div className="flex items-center justify-between gap-2">
+                            <button
+                              type="button"
+                              onClick={sendWhatsAppMessage}
+                              disabled={whatsappSendStatus.status === "loading"}
+                              className="inline-flex items-center gap-2 rounded-xl border border-emerald-300/50 bg-emerald-500/20 px-3 py-1.5 text-xs font-semibold text-emerald-100 disabled:opacity-60"
+                            >
+                              {whatsappSendStatus.status === "loading" ? "Sending..." : "Send WhatsApp"}
+                            </button>
+                            {whatsappSendStatus.message ? (
+                              <span
+                                className={`text-[11px] ${
+                                  whatsappSendStatus.status === "error" ? "text-rose-300" : "text-emerald-200"
+                                }`}
+                              >
+                                {whatsappSendStatus.message}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-4 rounded-2xl border border-white/10 bg-slate-900/50 px-3 py-2 text-xs text-slate-300">
+                        Connect WhatsApp to start new messages.
+                      </div>
+                    )}
                     <div className="mt-4 space-y-2">
                       {socialInboxLoading ? (
                         <InlineLoader label="Loading inbox..." />

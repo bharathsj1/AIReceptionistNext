@@ -6,6 +6,7 @@ import time
 from collections import OrderedDict, deque
 from datetime import datetime, timedelta
 from email import encoders
+from email.utils import getaddresses
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -19,6 +20,7 @@ from bs4 import BeautifulSoup
 from function_app import app
 from shared.config import get_google_oauth_settings, get_required_setting, get_setting
 from shared.db import Client, EmailAIEvent, SessionLocal, User, GoogleToken
+from repository.contacts_repo import upsert_contact
 from utils.cors import build_cors_headers
 
 logger = logging.getLogger(__name__)
@@ -1032,6 +1034,19 @@ def _normalize_address(value: Optional[object]) -> str:
     if isinstance(value, list):
         return ", ".join(str(item).strip() for item in value if str(item).strip())
     return str(value).strip()
+
+
+def _extract_addresses(*values: Optional[str]) -> list[tuple[str, str]]:
+    results = []
+    for value in values:
+        if not value:
+            continue
+        for name, email in getaddresses([value]):
+            email = (email or "").strip()
+            name = (name or "").strip()
+            if email:
+                results.append((name, email))
+    return results
 
 
 def _normalize_ids(value: Optional[object]) -> list[str]:
@@ -2659,6 +2674,31 @@ def email_send(req: func.HttpRequest) -> func.HttpResponse:
                 headers=cors,
             )
         data = resp.json() if resp.text else {}
+        try:
+            client_id = _get_client_id(db, user, email)
+            seen = set()
+            for name, addr in _extract_addresses(to_value, cc_value, bcc_value):
+                key = addr.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                upsert_contact(
+                    db,
+                    user_id=user.id,
+                    client_id=client_id,
+                    name=name or None,
+                    email=addr,
+                    phone=None,
+                    source="email_sent",
+                    tags=["email_sent"],
+                )
+            db.commit()
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.warning("Failed to update contacts after send: %s", exc)
+            try:
+                db.rollback()
+            except Exception:  # pylint: disable=broad-except
+                pass
         return func.HttpResponse(
             json.dumps(
                 {

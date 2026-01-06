@@ -40,7 +40,19 @@ const typeStyles = {
 const formatTime = (value) => {
   if (!value) return "—";
   try {
-    return new Date(value).toLocaleString();
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    const datePart = date.toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    });
+    const timePart = date.toLocaleTimeString(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true
+    });
+    return `${datePart}, ${timePart}`;
   } catch {
     return value;
   }
@@ -85,7 +97,7 @@ export default function TaskTile({ task, onOpen, onAccept, onReject, onDelete, o
           <div className="flex flex-col items-end gap-2 text-xs text-slate-300">
             <div className="flex items-center gap-1">
               <Clock className="h-3.5 w-3.5" />
-              <span>{formatTime(task?.createdAt)}</span>
+              <span className="whitespace-nowrap">{formatTime(task?.createdAt)}</span>
             </div>
             <DropdownMenu>
               <DropdownMenuTrigger>More</DropdownMenuTrigger>

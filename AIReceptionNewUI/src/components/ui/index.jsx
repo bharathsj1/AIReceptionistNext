@@ -130,7 +130,7 @@ export const Dialog = ({ open, onOpenChange, children }) => {
   if (!open) return null;
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 dashboard-modal-backdrop"
       onClick={(event) => {
         if (event.target === event.currentTarget) {
           onOpenChange?.(false);
