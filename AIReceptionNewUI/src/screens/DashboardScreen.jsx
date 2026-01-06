@@ -651,6 +651,13 @@ export default function DashboardScreen({
     token: ""
   });
   const [whatsappStatus, setWhatsappStatus] = useState({ status: "idle", message: "" });
+  const [showWhatsappManual, setShowWhatsappManual] = useState(false);
+  const [whatsappSendForm, setWhatsappSendForm] = useState({
+    connectionId: "",
+    to: "",
+    text: ""
+  });
+  const [whatsappSendStatus, setWhatsappSendStatus] = useState({ status: "idle", message: "" });
   const [socialConversations, setSocialConversations] = useState([]);
   const [socialInboxLoading, setSocialInboxLoading] = useState(false);
   const [socialInboxError, setSocialInboxError] = useState("");
@@ -2138,6 +2145,52 @@ export default function DashboardScreen({
     }
   };
 
+  const beginWhatsAppConnect = async () => {
+    const { email: emailAddress } = getSocialIdentity();
+    if (!emailAddress) {
+      setWhatsappStatus({ status: "error", message: "Missing user email." });
+      return;
+    }
+    setWhatsappStatus({ status: "loading", message: "" });
+    try {
+      const params = new URLSearchParams({ email: emailAddress });
+      const res = await fetch(`${API_URLS.socialWhatsAppAuthUrl}?${params.toString()}`);
+      if (!res.ok) {
+        throw new Error(await parseSimpleError(res, "Unable to start WhatsApp connection"));
+      }
+      const data = await res.json().catch(() => ({}));
+      const authUrl = data?.auth_url;
+      if (!authUrl) {
+        throw new Error("Missing auth URL");
+      }
+      const popup = window.open(authUrl, "whatsapp-oauth", "width=600,height=720");
+      if (!popup) {
+        throw new Error("Popup blocked. Please allow popups to connect WhatsApp.");
+      }
+
+      const handleMessage = (event) => {
+        if (!event?.data || event.data?.status !== "connected") return;
+        setWhatsappStatus({ status: "success", message: "WhatsApp connected." });
+        loadSocialConnections();
+        window.removeEventListener("message", handleMessage);
+      };
+      window.addEventListener("message", handleMessage);
+
+      const timer = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(timer);
+          window.removeEventListener("message", handleMessage);
+          setWhatsappStatus((prev) =>
+            prev.status === "success" ? prev : { status: "idle", message: "" }
+          );
+          loadSocialConnections();
+        }
+      }, 600);
+    } catch (err) {
+      setWhatsappStatus({ status: "error", message: err?.message || "WhatsApp connect failed." });
+    }
+  };
+
   const disconnectSocialConnection = async (connectionId) => {
     const { email: emailAddress } = getSocialIdentity();
     if (!emailAddress) return;
@@ -2186,6 +2239,44 @@ export default function DashboardScreen({
       loadSocialConnections();
     } catch (err) {
       setWhatsappStatus({ status: "error", message: err?.message || "WhatsApp connect failed." });
+    }
+  };
+
+  const sendWhatsAppMessage = async () => {
+    const { email: emailAddress } = getSocialIdentity();
+    if (!emailAddress) {
+      setWhatsappSendStatus({ status: "error", message: "Missing user email." });
+      return;
+    }
+    const trimmedTo = whatsappSendForm.to.trim();
+    const trimmedText = whatsappSendForm.text.trim();
+    if (!trimmedTo || !trimmedText) {
+      setWhatsappSendStatus({ status: "error", message: "Phone number and message are required." });
+      return;
+    }
+    setWhatsappSendStatus({ status: "loading", message: "" });
+    try {
+      const payload = {
+        email: emailAddress,
+        to: trimmedTo,
+        text: trimmedText
+      };
+      if (whatsappSendForm.connectionId) {
+        payload.connection_id = whatsappSendForm.connectionId;
+      }
+      const res = await fetch(API_URLS.socialWhatsAppSend, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        throw new Error(await parseSimpleError(res, "Unable to send WhatsApp message"));
+      }
+      setWhatsappSendStatus({ status: "success", message: "Message sent." });
+      setWhatsappSendForm((prev) => ({ ...prev, to: "", text: "" }));
+      loadSocialConversations();
+    } catch (err) {
+      setWhatsappSendStatus({ status: "error", message: err?.message || "Send failed." });
     }
   };
 
@@ -2862,6 +2953,13 @@ export default function DashboardScreen({
     () => socialConnections.filter((conn) => conn.platform === "whatsapp_meta"),
     [socialConnections]
   );
+  const whatsappConnected = whatsappConnections.length > 0;
+  useEffect(() => {
+    if (!whatsappConnections.length) return;
+    setWhatsappSendForm((prev) =>
+      prev.connectionId ? prev : { ...prev, connectionId: String(whatsappConnections[0].id) }
+    );
+  }, [whatsappConnections]);
   const filteredSocialConversations = useMemo(() => {
     const base = [...socialConversations];
     const query = socialSearch.trim().toLowerCase();
@@ -7094,64 +7192,90 @@ export default function DashboardScreen({
                   <div className="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-xl backdrop-blur">
                     <div className="flex items-start justify-between gap-4">
                       <div>
-                        <p className="text-xs uppercase tracking-[0.2em] text-emerald-200">WhatsApp</p>
-                        <h4 className="text-lg font-semibold text-white">Manual Cloud API connect</h4>
+                        <p className="text-xs uppercase tracking-[0.2em] text-emerald-200">WhatsApp Cloud API</p>
+                        <h4 className="text-lg font-semibold text-white">Connect WhatsApp</h4>
                         <p className="text-sm text-slate-300">
-                          Paste your phone number ID and permanent token to start receiving messages.
+                          Authorize once to connect your WhatsApp Business number and sync messages.
                         </p>
                       </div>
                       <div className="rounded-full border border-white/10 bg-white/5 p-2">
                         <MessageSquare className="h-5 w-5 text-emerald-200" />
                       </div>
                     </div>
-                    <div className="mt-4 grid gap-3 text-xs">
-                      <input
-                        type="text"
-                        value={whatsappForm.phoneNumberId}
-                        onChange={(event) =>
-                          setWhatsappForm((prev) => ({ ...prev, phoneNumberId: event.target.value }))
-                        }
-                        placeholder="Phone number ID"
-                        className="w-full rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-white placeholder:text-slate-400"
-                      />
-                      <input
-                        type="text"
-                        value={whatsappForm.wabaId}
-                        onChange={(event) =>
-                          setWhatsappForm((prev) => ({ ...prev, wabaId: event.target.value }))
-                        }
-                        placeholder="WABA ID (optional)"
-                        className="w-full rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-white placeholder:text-slate-400"
-                      />
-                      <input
-                        type="password"
-                        value={whatsappForm.token}
-                        onChange={(event) =>
-                          setWhatsappForm((prev) => ({ ...prev, token: event.target.value }))
-                        }
-                        placeholder="Permanent access token"
-                        className="w-full rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-white placeholder:text-slate-400"
-                      />
-                      <div className="flex items-center gap-3">
-                        <button
-                          type="button"
-                          onClick={handleWhatsAppConnect}
-                          disabled={whatsappStatus.status === "loading"}
-                          className="inline-flex items-center gap-2 rounded-xl border border-emerald-300/50 bg-emerald-500/20 px-4 py-2 text-xs font-semibold text-emerald-100 disabled:opacity-60"
+                    <div className="mt-4 flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={beginWhatsAppConnect}
+                        disabled={whatsappStatus.status === "loading"}
+                        className="inline-flex items-center gap-2 rounded-xl border border-emerald-300/50 bg-emerald-500/20 px-4 py-2 text-xs font-semibold text-emerald-100 disabled:opacity-60"
+                      >
+                        {whatsappStatus.status === "loading" ? "Connecting..." : "Connect WhatsApp"}
+                      </button>
+                      {whatsappConnected ? (
+                        <span className="rounded-full border border-emerald-300/40 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-100">
+                          Connected
+                        </span>
+                      ) : null}
+                      {whatsappStatus.message ? (
+                        <span
+                          className={`text-xs ${
+                            whatsappStatus.status === "error" ? "text-rose-300" : "text-emerald-200"
+                          }`}
                         >
-                          {whatsappStatus.status === "loading" ? "Connecting..." : "Connect WhatsApp"}
-                        </button>
-                        {whatsappStatus.message ? (
-                          <span
-                            className={`text-xs ${
-                              whatsappStatus.status === "error" ? "text-rose-300" : "text-emerald-200"
-                            }`}
-                          >
-                            {whatsappStatus.message}
-                          </span>
-                        ) : null}
-                      </div>
+                          {whatsappStatus.message}
+                        </span>
+                      ) : null}
                     </div>
+                    <div className="mt-4">
+                      <button
+                        type="button"
+                        onClick={() => setShowWhatsappManual((prev) => !prev)}
+                        className="text-xs text-slate-300 underline-offset-4 hover:underline"
+                      >
+                        {showWhatsappManual ? "Hide manual setup" : "Use manual token setup"}
+                      </button>
+                    </div>
+                    {showWhatsappManual ? (
+                      <div className="mt-4 grid gap-3 text-xs">
+                        <input
+                          type="text"
+                          value={whatsappForm.phoneNumberId}
+                          onChange={(event) =>
+                            setWhatsappForm((prev) => ({ ...prev, phoneNumberId: event.target.value }))
+                          }
+                          placeholder="Phone number ID"
+                          className="w-full rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-white placeholder:text-slate-400"
+                        />
+                        <input
+                          type="text"
+                          value={whatsappForm.wabaId}
+                          onChange={(event) =>
+                            setWhatsappForm((prev) => ({ ...prev, wabaId: event.target.value }))
+                          }
+                          placeholder="WABA ID (optional)"
+                          className="w-full rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-white placeholder:text-slate-400"
+                        />
+                        <input
+                          type="password"
+                          value={whatsappForm.token}
+                          onChange={(event) =>
+                            setWhatsappForm((prev) => ({ ...prev, token: event.target.value }))
+                          }
+                          placeholder="Permanent access token"
+                          className="w-full rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-white placeholder:text-slate-400"
+                        />
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={handleWhatsAppConnect}
+                            disabled={whatsappStatus.status === "loading"}
+                            className="inline-flex items-center gap-2 rounded-xl border border-emerald-300/50 bg-emerald-500/20 px-4 py-2 text-xs font-semibold text-emerald-100 disabled:opacity-60"
+                          >
+                            {whatsappStatus.status === "loading" ? "Connecting..." : "Save manual connect"}
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
 
                   <div className="lg:col-span-2 rounded-3xl border border-white/10 bg-white/5 p-5 shadow-xl backdrop-blur">
@@ -7257,6 +7381,72 @@ export default function DashboardScreen({
                         className="w-full rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-xs text-white placeholder:text-slate-400"
                       />
                     </div>
+                    {whatsappConnections.length ? (
+                      <div className="mt-4 rounded-2xl border border-white/10 bg-slate-900/50 p-3 text-xs text-slate-200">
+                        <p className="text-[11px] uppercase tracking-[0.2em] text-emerald-200">
+                          New WhatsApp Message
+                        </p>
+                        <div className="mt-2 grid gap-2">
+                          <select
+                            value={whatsappSendForm.connectionId}
+                            onChange={(event) =>
+                              setWhatsappSendForm((prev) => ({
+                                ...prev,
+                                connectionId: event.target.value
+                              }))
+                            }
+                            className="w-full rounded-xl border border-white/10 bg-slate-900/70 px-3 py-2 text-xs text-white"
+                          >
+                            {whatsappConnections.map((conn) => (
+                              <option key={`wa-${conn.id}`} value={conn.id}>
+                                {conn.metadata?.display_phone_number || conn.display_name || conn.external_account_id}
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            type="text"
+                            value={whatsappSendForm.to}
+                            onChange={(event) =>
+                              setWhatsappSendForm((prev) => ({ ...prev, to: event.target.value }))
+                            }
+                            placeholder="Recipient phone number (E.164)"
+                            className="w-full rounded-xl border border-white/10 bg-slate-900/70 px-3 py-2 text-xs text-white placeholder:text-slate-400"
+                          />
+                          <textarea
+                            rows={3}
+                            value={whatsappSendForm.text}
+                            onChange={(event) =>
+                              setWhatsappSendForm((prev) => ({ ...prev, text: event.target.value }))
+                            }
+                            placeholder="Write a message..."
+                            className="w-full rounded-xl border border-white/10 bg-slate-900/70 px-3 py-2 text-xs text-white placeholder:text-slate-400"
+                          />
+                          <div className="flex items-center justify-between gap-2">
+                            <button
+                              type="button"
+                              onClick={sendWhatsAppMessage}
+                              disabled={whatsappSendStatus.status === "loading"}
+                              className="inline-flex items-center gap-2 rounded-xl border border-emerald-300/50 bg-emerald-500/20 px-3 py-1.5 text-xs font-semibold text-emerald-100 disabled:opacity-60"
+                            >
+                              {whatsappSendStatus.status === "loading" ? "Sending..." : "Send WhatsApp"}
+                            </button>
+                            {whatsappSendStatus.message ? (
+                              <span
+                                className={`text-[11px] ${
+                                  whatsappSendStatus.status === "error" ? "text-rose-300" : "text-emerald-200"
+                                }`}
+                              >
+                                {whatsappSendStatus.message}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-4 rounded-2xl border border-white/10 bg-slate-900/50 px-3 py-2 text-xs text-slate-300">
+                        Connect WhatsApp to start new messages.
+                      </div>
+                    )}
                     <div className="mt-4 space-y-2">
                       {socialInboxLoading ? (
                         <InlineLoader label="Loading inbox..." />
