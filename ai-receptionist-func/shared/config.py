@@ -39,6 +39,7 @@ def get_google_oauth_settings() -> dict:
             "https://www.googleapis.com/auth/gmail.modify",
             "https://www.googleapis.com/auth/gmail.send",
             "https://www.googleapis.com/auth/gmail.readonly",
+            "https://www.googleapis.com/auth/contacts.readonly",
             "https://www.googleapis.com/auth/userinfo.email",
             "https://www.googleapis.com/auth/userinfo.profile",
         }
@@ -48,6 +49,25 @@ def get_google_oauth_settings() -> dict:
         "client_secret": os.getenv("GOOGLE_CLIENT_SECRET", ""),
         "redirect_uri": os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:5173"),
         "scopes": " ".join(sorted(scopes)),
+    }
+
+
+def get_outlook_oauth_settings() -> dict:
+    """
+    Centralized helper for Microsoft OAuth env vars.
+    """
+    raw_scopes = os.getenv(
+        "OUTLOOK_SCOPES",
+        "offline_access https://graph.microsoft.com/Contacts.Read https://graph.microsoft.com/User.Read",
+    )
+    scopes = {scope.strip() for scope in raw_scopes.split() if scope.strip()}
+    scopes.update({"offline_access", "https://graph.microsoft.com/Contacts.Read", "https://graph.microsoft.com/User.Read"})
+    return {
+        "client_id": os.getenv("OUTLOOK_CLIENT_ID", ""),
+        "client_secret": os.getenv("OUTLOOK_CLIENT_SECRET", ""),
+        "redirect_uri": os.getenv("OUTLOOK_REDIRECT_URI", "http://localhost:5173"),
+        "scopes": " ".join(sorted(scopes)),
+        "tenant": os.getenv("OUTLOOK_TENANT", "common"),
     }
 
 

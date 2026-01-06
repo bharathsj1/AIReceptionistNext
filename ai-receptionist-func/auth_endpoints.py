@@ -16,8 +16,8 @@ import azure.functions as func
 import requests
 from sqlalchemy.exc import OperationalError
 from function_app import app
-from shared.config import get_google_oauth_settings, get_public_api_base, get_setting, get_smtp_settings
-from shared.db import SessionLocal, User, Client, GoogleToken
+from shared.config import get_google_oauth_settings, get_outlook_oauth_settings, get_public_api_base, get_setting, get_smtp_settings
+from shared.db import SessionLocal, User, Client, GoogleToken, OutlookToken
 from utils.cors import build_cors_headers
 from services.ultravox_service import (
     create_ultravox_webhook,
@@ -408,6 +408,77 @@ def _get_google_userinfo(access_token: str) -> Tuple[Optional[dict], Optional[st
             headers={"Authorization": f"Bearer {access_token}"},
             timeout=10,
             params={"alt": "json"},
+        )
+        if resp.status_code != 200:
+            return None, resp.text
+        return resp.json(), None
+    except Exception as exc:  # pylint: disable=broad-except
+        return None, str(exc)
+
+
+def _build_outlook_auth_url(state: str) -> str:
+    settings = get_outlook_oauth_settings()
+    scope = quote(settings["scopes"])
+    redirect_uri = quote(settings["redirect_uri"])
+    client_id = settings["client_id"]
+    tenant = settings["tenant"]
+    base = f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize"
+    return (
+        f"{base}?client_id={client_id}"
+        f"&response_type=code"
+        f"&redirect_uri={redirect_uri}"
+        f"&response_mode=query"
+        f"&scope={scope}"
+        f"&prompt=select_account"
+        f"&state={state}"
+    )
+
+
+def _exchange_outlook_code_for_tokens(code: str) -> Tuple[Optional[dict], Optional[str]]:
+    settings = get_outlook_oauth_settings()
+    payload = {
+        "client_id": settings["client_id"],
+        "client_secret": settings["client_secret"],
+        "redirect_uri": settings["redirect_uri"],
+        "grant_type": "authorization_code",
+        "code": code,
+        "scope": settings["scopes"],
+    }
+    token_url = f"https://login.microsoftonline.com/{settings['tenant']}/oauth2/v2.0/token"
+    try:
+        resp = requests.post(token_url, data=payload, timeout=10)
+        if resp.status_code != 200:
+            return None, resp.text
+        return resp.json(), None
+    except Exception as exc:  # pylint: disable=broad-except
+        return None, str(exc)
+
+
+def _refresh_outlook_token(refresh_token: str) -> Tuple[Optional[dict], Optional[str]]:
+    settings = get_outlook_oauth_settings()
+    payload = {
+        "client_id": settings["client_id"],
+        "client_secret": settings["client_secret"],
+        "refresh_token": refresh_token,
+        "grant_type": "refresh_token",
+        "scope": settings["scopes"],
+    }
+    token_url = f"https://login.microsoftonline.com/{settings['tenant']}/oauth2/v2.0/token"
+    try:
+        resp = requests.post(token_url, data=payload, timeout=10)
+        if resp.status_code != 200:
+            return None, resp.text
+        return resp.json(), None
+    except Exception as exc:  # pylint: disable=broad-except
+        return None, str(exc)
+
+
+def _get_outlook_userinfo(access_token: str) -> Tuple[Optional[dict], Optional[str]]:
+    try:
+        resp = requests.get(
+            "https://graph.microsoft.com/v1.0/me",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10,
         )
         if resp.status_code != 200:
             return None, resp.text
@@ -1258,7 +1329,7 @@ def auth_google_url(req: func.HttpRequest) -> func.HttpResponse:  # pylint: disa
                     force_consent = True
         finally:
             db.close()
-    state_payload = {"nonce": secrets.token_urlsafe(16)}
+    state_payload = {"nonce": secrets.token_urlsafe(16), "provider": "outlook"}
     if email:
         state_payload["email"] = email
     state = _encode_oauth_state(state_payload)
@@ -2560,6 +2631,253 @@ def google_disconnect(req: func.HttpRequest) -> func.HttpResponse:
         logger.error("Google disconnect failed: %s", exc)
         return func.HttpResponse(
             json.dumps({"error": "Failed to disconnect Google", "details": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+            headers=cors,
+        )
+    finally:
+        db.close()
+
+
+@app.function_name(name="OutlookAuthUrl")
+@app.route(route="auth/outlook/url", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def auth_outlook_url(req: func.HttpRequest) -> func.HttpResponse:  # pylint: disable=unused-argument
+    cors = build_cors_headers(req, ["GET", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
+    email = req.params.get("email")
+    settings = get_outlook_oauth_settings()
+    if not settings["client_id"] or not settings["client_secret"]:
+        return func.HttpResponse(
+            json.dumps({"error": "Outlook OAuth env vars missing"}),
+            status_code=500,
+            mimetype="application/json",
+            headers=cors,
+        )
+    state_payload = {"nonce": secrets.token_urlsafe(16)}
+    if email:
+        state_payload["email"] = email
+    state = _encode_oauth_state(state_payload)
+    url = _build_outlook_auth_url(state)
+    return func.HttpResponse(
+        json.dumps({"auth_url": url, "state": state}),
+        status_code=200,
+        mimetype="application/json",
+        headers=cors,
+    )
+
+
+@app.function_name(name="OutlookAuthCallback")
+@app.route(
+    route="auth/outlook/callback",
+    methods=["GET", "POST", "OPTIONS"],
+    auth_level=func.AuthLevel.ANONYMOUS,
+)
+def auth_outlook_callback(req: func.HttpRequest) -> func.HttpResponse:
+    cors = build_cors_headers(req, ["GET", "POST", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
+    code = req.params.get("code") or None
+    state = req.params.get("state")
+    if not code:
+        try:
+            body = req.get_json()
+            code = code or (body or {}).get("code")
+            state = state or (body or {}).get("state")
+        except ValueError:
+            code = code or None
+    if not code:
+        return func.HttpResponse(
+            json.dumps({"error": "Missing code"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    token_data, token_error = _exchange_outlook_code_for_tokens(code)
+    if token_error or not token_data:
+        return func.HttpResponse(
+            json.dumps({"error": "Failed to exchange code", "details": token_error}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    access_token = token_data.get("access_token")
+    refresh_token = token_data.get("refresh_token")
+    expires_in = token_data.get("expires_in")
+    token_type = token_data.get("token_type")
+    scope = token_data.get("scope")
+
+    profile, profile_error = _get_outlook_userinfo(access_token)
+    if profile_error or not profile:
+        return func.HttpResponse(
+            json.dumps({"error": "Failed to fetch user profile", "details": profile_error}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    outlook_email = profile.get("mail") or profile.get("userPrincipalName")
+    name = profile.get("displayName") or outlook_email
+    state_payload = _decode_oauth_state(state)
+    requested_email = (state_payload or {}).get("email") if isinstance(state_payload, dict) else None
+    target_email = requested_email or outlook_email
+    if not target_email:
+        return func.HttpResponse(
+            json.dumps({"error": "Missing email"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter_by(email=target_email).one_or_none()
+        is_new_user = False
+        if not user:
+            if requested_email:
+                return func.HttpResponse(
+                    json.dumps({"error": "User not found for Outlook connection"}),
+                    status_code=404,
+                    mimetype="application/json",
+                    headers=cors,
+                )
+            is_new_user = True
+            temp_password = secrets.token_urlsafe(12)
+            user = User(email=target_email, password_hash=_hash_password(temp_password))
+            db.add(user)
+            db.flush()
+
+        outlook_token = (
+            db.query(OutlookToken)
+            .filter_by(user_id=user.id)
+            .order_by(OutlookToken.created_at.desc())
+            .first()
+        )
+        expires_at = (
+            datetime.utcnow() + timedelta(seconds=int(expires_in))
+            if expires_in
+            else None
+        )
+        if outlook_token:
+            outlook_token.access_token = access_token
+            outlook_token.refresh_token = refresh_token or outlook_token.refresh_token
+            outlook_token.scope = scope
+            outlook_token.token_type = token_type
+            outlook_token.expires_at = expires_at
+            outlook_token.outlook_account_email = outlook_email
+        else:
+            outlook_token = OutlookToken(
+                user_id=user.id,
+                access_token=access_token,
+                refresh_token=refresh_token,
+                scope=scope,
+                token_type=token_type,
+                expires_at=expires_at,
+                outlook_account_email=outlook_email,
+            )
+            db.add(outlook_token)
+
+        client = db.query(Client).filter_by(email=user.email).one_or_none()
+        if client:
+            client.user_id = user.id
+            client.name = client.name or name
+        db.commit()
+
+        payload = {
+            "user_id": user.id,
+            "email": user.email,
+            "state": state,
+            "is_new_user": is_new_user,
+            "token": {
+                "expires_at": expires_at.isoformat() if expires_at else None,
+                "has_refresh": bool(refresh_token),
+                "scope": scope,
+            },
+            "profile": {"name": name},
+            "outlook_account_email": outlook_email,
+        }
+        if req.method == "GET":
+            html = (
+                "<script>"
+                "window.opener && window.opener.postMessage("  # type: ignore
+                + json.dumps(payload)
+                + ', "*");'
+                "window.close();"
+                "</script>"
+                "<p>Outlook connected. You can close this tab.</p>"
+            )
+            return func.HttpResponse(html, status_code=200, mimetype="text/html", headers=cors)
+
+        return func.HttpResponse(
+            json.dumps(payload),
+            status_code=200,
+            mimetype="application/json",
+            headers=cors,
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        db.rollback()
+        logger.error("Outlook auth callback failed: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "Outlook auth callback failed", "details": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+            headers=cors,
+        )
+    finally:
+        db.close()
+
+
+@app.function_name(name="OutlookDisconnect")
+@app.route(route="auth/outlook/disconnect", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def outlook_disconnect(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Delete stored Outlook tokens for a user to disconnect contacts access.
+    Body or params: { email }
+    """
+    cors = build_cors_headers(req, ["POST", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
+    try:
+        body = req.get_json()
+    except ValueError:
+        body = {}
+    email = (body or {}).get("email") or req.params.get("email")
+    if not email:
+        return func.HttpResponse(
+            json.dumps({"error": "email is required"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter_by(email=email).one_or_none()
+        if not user:
+            return func.HttpResponse(
+                json.dumps({"error": "User not found"}),
+                status_code=404,
+                mimetype="application/json",
+                headers=cors,
+            )
+        db.query(OutlookToken).filter_by(user_id=user.id).delete()
+        db.commit()
+        return func.HttpResponse(
+            json.dumps({"message": "Outlook disconnected"}),
+            status_code=200,
+            mimetype="application/json",
+            headers=cors,
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        db.rollback()
+        logger.error("Outlook disconnect failed: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "Failed to disconnect Outlook", "details": str(exc)}),
             status_code=500,
             mimetype="application/json",
             headers=cors,

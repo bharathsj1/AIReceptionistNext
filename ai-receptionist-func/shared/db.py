@@ -248,6 +248,51 @@ class GoogleToken(Base):
     user = relationship("User")
 
 
+class OutlookToken(Base):
+    """
+    Stores OAuth tokens for Outlook/Microsoft Graph access.
+    """
+
+    __tablename__ = "outlook_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    access_token = Column(Text, nullable=False)
+    refresh_token = Column(Text, nullable=True)
+    scope = Column(Text, nullable=True)
+    token_type = Column(String, nullable=True)
+    expires_at = Column(DateTime, nullable=True)
+    outlook_account_email = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = relationship("User")
+
+
+class Contact(Base):
+    __tablename__ = "contacts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=True, index=True)
+    source = Column(String, nullable=False, default="manual", index=True)
+    source_ref = Column(String, nullable=True, index=True)
+    name = Column(String, nullable=True)
+    email = Column(String, nullable=True, index=True)
+    phone = Column(String, nullable=True, index=True)
+    tags_json = Column(JSON, nullable=True)
+    metadata_json = Column(JSON, nullable=True)
+    last_seen_at = Column(DateTime, nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "email", name="uq_contacts_user_email"),
+        UniqueConstraint("user_id", "source", "source_ref", name="uq_contacts_source_ref"),
+        Index("ix_contacts_user_source", "user_id", "source"),
+    )
+
+
 class EmailAIEvent(Base):
     __tablename__ = "email_ai_events"
 
@@ -454,6 +499,73 @@ def _ensure_optional_columns() -> None:
                 conn.execute(
                     text("ALTER TABLE google_tokens ADD COLUMN IF NOT EXISTS google_account_email VARCHAR")
                 )
+
+        if "outlook_tokens" not in existing_tables:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS outlook_tokens (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL,
+                        access_token TEXT NOT NULL,
+                        refresh_token TEXT,
+                        scope TEXT,
+                        token_type VARCHAR,
+                        expires_at DATETIME,
+                        outlook_account_email VARCHAR,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY(user_id) REFERENCES users (id)
+                    )
+                    """
+                )
+            )
+
+        if "contacts" not in existing_tables:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS contacts (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL,
+                        client_id INTEGER,
+                        source VARCHAR NOT NULL DEFAULT 'manual',
+                        source_ref VARCHAR,
+                        name VARCHAR,
+                        email VARCHAR,
+                        phone VARCHAR,
+                        tags_json JSONB,
+                        metadata_json JSONB,
+                        last_seen_at DATETIME,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY(user_id) REFERENCES users (id),
+                        FOREIGN KEY(client_id) REFERENCES clients (id)
+                    )
+                    """
+                )
+            )
+        conn.execute(
+            text("CREATE INDEX IF NOT EXISTS idx_contacts_user_source ON contacts (user_id, source)")
+        )
+        conn.execute(
+            text("CREATE INDEX IF NOT EXISTS idx_contacts_email ON contacts (email)")
+        )
+        conn.execute(
+            text("CREATE INDEX IF NOT EXISTS idx_contacts_phone ON contacts (phone)")
+        )
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_contacts_user_email "
+                "ON contacts (user_id, email)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_contacts_source_ref "
+                "ON contacts (user_id, source, source_ref)"
+            )
+        )
 
         if "email_ai_events" not in existing_tables:
             conn.execute(
