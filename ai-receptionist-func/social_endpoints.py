@@ -650,12 +650,36 @@ def whatsapp_auth_callback(req: func.HttpRequest) -> func.HttpResponse:
 
     wabas, waba_error = whatsapp_adapter.list_business_accounts(user_access_token)
     if waba_error:
-        return func.HttpResponse(
-            json.dumps({"error": "Failed to list WhatsApp business accounts", "details": waba_error}),
-            status_code=400,
-            mimetype="application/json",
-            headers=cors,
-        )
+        if "whatsapp_business_accounts" in waba_error and "nonexisting field" in waba_error:
+            businesses, businesses_error = whatsapp_adapter.list_businesses(user_access_token)
+            if businesses_error:
+                return func.HttpResponse(
+                    json.dumps(
+                        {"error": "Failed to list Meta businesses", "details": businesses_error}
+                    ),
+                    status_code=400,
+                    mimetype="application/json",
+                    headers=cors,
+                )
+            wabas = []
+            for biz in businesses:
+                biz_id = str(biz.get("id") or "")
+                if not biz_id:
+                    continue
+                biz_wabas, biz_error = whatsapp_adapter.list_owned_whatsapp_business_accounts(
+                    biz_id, user_access_token
+                )
+                if biz_error:
+                    logger.warning("WhatsApp owned WABA lookup failed for %s: %s", biz_id, biz_error)
+                    continue
+                wabas.extend(biz_wabas)
+        else:
+            return func.HttpResponse(
+                json.dumps({"error": "Failed to list WhatsApp business accounts", "details": waba_error}),
+                status_code=400,
+                mimetype="application/json",
+                headers=cors,
+            )
 
     expires_in = token_data.get("expires_in")
     token_expires_at = None
