@@ -41,7 +41,29 @@ CHANNEL_FACEBOOK = "facebook"
 CHANNEL_INSTAGRAM = "instagram"
 
 _TRUTHY = {"1", "true", "yes", "y", "on"}
-_UPLOAD_DIR = os.getenv("SOCIAL_UPLOAD_DIR") or os.path.join(os.getcwd(), "data", "social_uploads")
+def _resolve_upload_dir() -> str:
+    candidates: list[str] = []
+    env_dir = os.getenv("SOCIAL_UPLOAD_DIR")
+    if env_dir:
+        candidates.append(env_dir)
+    candidates.extend(
+        [
+            "/home/data/social_uploads",
+            "/tmp/social_uploads",
+            os.path.join(os.getcwd(), "data", "social_uploads"),
+        ]
+    )
+    for path in candidates:
+        try:
+            os.makedirs(path, exist_ok=True)
+            if os.access(path, os.W_OK):
+                return path
+        except Exception:  # pylint: disable=broad-except
+            continue
+    return candidates[-1]
+
+
+_UPLOAD_DIR = _resolve_upload_dir()
 _MAX_UPLOAD_BYTES = int(os.getenv("SOCIAL_UPLOAD_MAX_BYTES", "8388608"))
 
 
