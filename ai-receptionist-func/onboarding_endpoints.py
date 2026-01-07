@@ -1,14 +1,17 @@
 import hashlib
+import ipaddress
 import json
 import logging
+import random
 import secrets
 import smtplib
 import ssl
 from datetime import datetime, timedelta
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 from urllib.parse import parse_qs, urlparse
 
 import azure.functions as func
+import httpx
 from twilio.rest import Client as TwilioClient
 from function_app import app
 
@@ -23,7 +26,7 @@ from services.ultravox_service import (
 )
 from services.call_service import upsert_call, attach_ultravox_call, update_call_status
 from shared.config import get_public_api_base, get_required_setting, get_setting, get_smtp_settings
-from shared.db import Client, PhoneNumber, SessionLocal, User, init_db
+from shared.db import Client, PhoneNumber, SessionLocal, Subscription, User, init_db
 from services.prompt_registry_service import resolve_prompt_for_call
 from utils.cors import build_cors_headers
 
@@ -94,20 +97,173 @@ def _dynamic_prompts_enabled() -> bool:
     return flag in {"1", "true", "yes", "on"}
 
 
-def purchase_twilio_number(twilio_client: TwilioClient, webhook_base: str, country: str) -> Dict[str, str]:
+def _normalize_ip(raw: str | None) -> Optional[str]:
+    if not raw:
+        return None
+    candidate = raw.strip()
+    if not candidate:
+        return None
+    if "," in candidate:
+        candidate = candidate.split(",")[0].strip()
+    if candidate.startswith("[") and "]" in candidate:
+        candidate = candidate[1:candidate.index("]")]
+    if candidate.count(":") == 1 and "." in candidate:
+        candidate = candidate.split(":")[0].strip()
+    try:
+        ipaddress.ip_address(candidate)
+        return candidate
+    except ValueError:
+        return None
+
+
+def _extract_client_ip(req: func.HttpRequest) -> Optional[str]:
+    header_keys = [
+        "x-forwarded-for",
+        "x-original-forwarded-for",
+        "x-original-for",
+        "x-arr-clientip",
+        "x-appservice-clientip",
+        "x-azure-clientip",
+        "x-client-ip",
+        "x-real-ip",
+        "cf-connecting-ip",
+        "true-client-ip",
+    ]
+    for key in header_keys:
+        value = req.headers.get(key)
+        ip = _normalize_ip(value)
+        if ip:
+            return ip
+    return None
+
+
+def _country_from_headers(req: func.HttpRequest) -> Optional[str]:
+    header_keys = [
+        "cf-ipcountry",
+        "x-country-code",
+        "x-geo-country",
+        "x-azure-country",
+        "x-appservice-country",
+    ]
+    for key in header_keys:
+        value = req.headers.get(key)
+        if value and isinstance(value, str):
+            code = value.strip().upper()
+            if len(code) == 2:
+                return code
+    return None
+
+
+def _lookup_country_from_ip(ip_address: str) -> Optional[str]:
+    try:
+        ip_obj = ipaddress.ip_address(ip_address)
+        if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_reserved:
+            return None
+    except ValueError:
+        return None
+    url_template = get_setting("IP_GEOLOCATION_URL") or "https://ipapi.co/{ip}/json/"
+    url = url_template.format(ip=ip_address)
+    try:
+        resp = httpx.get(url, timeout=2.5)
+        if resp.status_code >= 300:
+            return None
+        payload = resp.json() if resp.text else {}
+        code = (payload.get("country_code") or payload.get("country") or "").strip().upper()
+        if len(code) == 2:
+            return code
+    except Exception:  # pylint: disable=broad-except
+        return None
+    return None
+
+
+def _resolve_country(req: func.HttpRequest, body: dict | None) -> str:
+    return _resolve_country_info(req, body)[0]
+
+
+def _resolve_country_info(req: func.HttpRequest, body: dict | None) -> tuple[str, str, Optional[str]]:
+    fallback = (get_setting("TWILIO_DEFAULT_COUNTRY") or "US").upper()
+    if isinstance(body, dict):
+        explicit = body.get("country") or body.get("country_code") or body.get("countryCode")
+        if isinstance(explicit, str) and explicit.strip():
+            return explicit.strip().upper(), "explicit", None
+    header_country = _country_from_headers(req)
+    if header_country:
+        return header_country, "header", None
+    ip_addr = _extract_client_ip(req)
+    if ip_addr:
+        resolved = _lookup_country_from_ip(ip_addr)
+        if resolved:
+            return resolved, "ip", ip_addr
+    return fallback, "default", ip_addr
+
+
+def _has_active_receptionist_subscription(db, email: str) -> bool:
+    now = datetime.utcnow()
+    active_statuses = {"active", "trialing"}
+    subscription = (
+        db.query(Subscription)
+        .filter(Subscription.email == email)
+        .filter(Subscription.status.in_(active_statuses))
+        .order_by(Subscription.updated_at.desc())
+        .first()
+    )
+    if not subscription:
+        return False
+    if subscription.current_period_end and subscription.current_period_end < now:
+        return False
+    tool = (subscription.tool or "").lower()
+    return tool in {"", "ai_receptionist"}
+
+
+def _sample_twilio_numbers(items: list, sample_size: int) -> list:
+    if len(items) <= sample_size:
+        return items
+    return random.sample(items, sample_size)
+
+
+def _list_available_twilio_numbers(
+    twilio_client: TwilioClient, country: str, sample_size: int = 5
+) -> list[dict]:
+    available = twilio_client.available_phone_numbers(country).local.list(voice_enabled=True, limit=25)
+    if not available:
+        return []
+    chosen = _sample_twilio_numbers(available, sample_size)
+    payload = []
+    for number in chosen:
+        payload.append(
+            {
+                "phone_number": getattr(number, "phone_number", None),
+                "friendly_name": getattr(number, "friendly_name", None),
+                "locality": getattr(number, "locality", None),
+                "region": getattr(number, "region", None),
+                "iso_country": getattr(number, "iso_country", None),
+                "lata": getattr(number, "lata", None),
+            }
+        )
+    return payload
+
+
+def purchase_twilio_number(
+    twilio_client: TwilioClient,
+    webhook_base: str,
+    country: str,
+    phone_number: Optional[str] = None,
+) -> Dict[str, str]:
     """
     Buy a Twilio number and configure its voice webhook.
     On trial accounts (only one number allowed), reuses the existing number if purchase fails.
     """
     webhook_url = _build_twilio_voice_webhook(webhook_base)
-    available = twilio_client.available_phone_numbers(country).local.list(voice_enabled=True, limit=1)
-    if not available:
-        raise RuntimeError(f"No Twilio numbers available for purchase in {country}")
+    chosen_number = phone_number
+    if not chosen_number:
+        available = twilio_client.available_phone_numbers(country).local.list(voice_enabled=True, limit=1)
+        if not available:
+            raise RuntimeError(f"No Twilio numbers available for purchase in {country}")
+        chosen_number = available[0].phone_number
 
-    chosen = available[0]
     try:
         purchased = twilio_client.incoming_phone_numbers.create(
-            phone_number=chosen.phone_number,
+            phone_number=chosen_number,
             voice_url=webhook_url,
             voice_method="POST",
         )
@@ -141,6 +297,79 @@ def get_twilio_client() -> TwilioClient:
     account_sid = get_required_setting("TWILIO_ACCOUNT_SID")
     auth_token = get_required_setting("TWILIO_AUTH_TOKEN")
     return TwilioClient(account_sid, auth_token)
+
+
+@app.function_name(name="TwilioAvailableNumbers")
+@app.route(route="twilio/available-numbers", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def twilio_available_numbers(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    List available Twilio numbers for the requester's country (IP-based).
+    """
+    cors = build_cors_headers(req, ["GET", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
+    email = req.params.get("email")
+    country_param = req.params.get("country")
+    if not email:
+        return func.HttpResponse(
+            json.dumps({"error": "Missing required field: email"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    db = SessionLocal()
+    try:
+        if not _has_active_receptionist_subscription(db, email):
+            return func.HttpResponse(
+                json.dumps({"error": "Active subscription required to browse Twilio numbers."}),
+                status_code=402,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        client_record: Client | None = db.query(Client).filter_by(email=email).one_or_none()
+        assigned_number = None
+        if client_record:
+            phone_record = (
+                db.query(PhoneNumber)
+                .filter_by(client_id=client_record.id, is_active=True)
+                .one_or_none()
+            )
+            if phone_record:
+                assigned_number = phone_record.twilio_phone_number
+
+        payload = {"email": email}
+        if country_param:
+            payload["country"] = country_param
+        country, source, ip_addr = _resolve_country_info(req, payload)
+        twilio_client = get_twilio_client()
+        numbers = _list_available_twilio_numbers(twilio_client, country, sample_size=5)
+        return func.HttpResponse(
+            json.dumps(
+                {
+                    "country": country,
+                    "assigned_number": assigned_number,
+                    "numbers": numbers,
+                    "country_source": source,
+                    "detected_ip": ip_addr,
+                }
+            ),
+            status_code=200,
+            mimetype="application/json",
+            headers=cors,
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.error("Failed to list Twilio numbers: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "Failed to list Twilio numbers", "details": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+            headers=cors,
+        )
+    finally:
+        db.close()
 
 
 def _hash_password(password: str) -> str:
@@ -291,9 +520,25 @@ def clients_provision(req: func.HttpRequest) -> func.HttpResponse:
         body = None
 
     email = body.get("email") if isinstance(body, dict) else None
+    selected_twilio_number = None
+    if isinstance(body, dict):
+        selected_twilio_number = (
+            body.get("selected_twilio_number")
+            or body.get("selectedTwilioNumber")
+            or body.get("twilio_number")
+            or body.get("twilioNumber")
+        )
     website_url = body.get("website_url") if isinstance(body, dict) else None
     system_prompt = body.get("system_prompt") if isinstance(body, dict) else None
     voice = body.get("voice") if isinstance(body, dict) else None
+    selected_twilio_number = None
+    if isinstance(body, dict):
+        selected_twilio_number = (
+            body.get("selected_twilio_number")
+            or body.get("selectedTwilioNumber")
+            or body.get("twilio_number")
+            or body.get("twilioNumber")
+        )
     greeting = None
     if isinstance(body, dict):
         greeting = (
@@ -389,11 +634,20 @@ def clients_provision(req: func.HttpRequest) -> func.HttpResponse:
             db.query(PhoneNumber).filter_by(client_id=client_record.id, is_active=True).one_or_none()
         )
         if not phone_record:
+            if not _has_active_receptionist_subscription(db, email):
+                return func.HttpResponse(
+                    json.dumps({"error": "Active subscription required to purchase a Twilio number."}),
+                    status_code=402,
+                    mimetype="application/json",
+                    headers=cors,
+                )
             try:
                 twilio_client = get_twilio_client()
-                default_country = get_setting("TWILIO_DEFAULT_COUNTRY") or "US"
+                default_country = _resolve_country(req, body if isinstance(body, dict) else None)
                 webhook_base = get_required_setting("TWILIO_INBOUND_WEBHOOK_PUBLIC_URL")
-                purchased = purchase_twilio_number(twilio_client, webhook_base, default_country)
+                purchased = purchase_twilio_number(
+                    twilio_client, webhook_base, default_country, selected_twilio_number
+                )
             except Exception as exc:  # pylint: disable=broad-except
                 logger.error("Twilio number purchase failed: %s", exc)
                 return func.HttpResponse(
@@ -520,11 +774,20 @@ def clients_assign_number(req: func.HttpRequest) -> func.HttpResponse:
             db.query(PhoneNumber).filter_by(client_id=client_record.id, is_active=True).one_or_none()
         )
         if not phone_record:
+            if not _has_active_receptionist_subscription(db, email):
+                return func.HttpResponse(
+                    json.dumps({"error": "Active subscription required to purchase a Twilio number."}),
+                    status_code=402,
+                    mimetype="application/json",
+                    headers=cors,
+                )
             try:
                 twilio_client = get_twilio_client()
-                default_country = get_setting("TWILIO_DEFAULT_COUNTRY") or "US"
+                default_country = _resolve_country(req, body if isinstance(body, dict) else None)
                 webhook_base = get_required_setting("TWILIO_INBOUND_WEBHOOK_PUBLIC_URL")
-                purchased = purchase_twilio_number(twilio_client, webhook_base, default_country)
+                purchased = purchase_twilio_number(
+                    twilio_client, webhook_base, default_country, selected_twilio_number
+                )
             except Exception as exc:  # pylint: disable=broad-except
                 logger.error("Twilio number purchase failed: %s", exc)
                 return func.HttpResponse(

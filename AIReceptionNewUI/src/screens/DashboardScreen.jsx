@@ -677,6 +677,7 @@ export default function DashboardScreen({
     caption: "",
     mediaUrls: [""]
   });
+  const [socialUploadStatus, setSocialUploadStatus] = useState({ status: "idle", message: "" });
   const [socialTargets, setSocialTargets] = useState({
     facebook_page_id: "",
     instagram_user_id: ""
@@ -705,6 +706,7 @@ export default function DashboardScreen({
   const socialConnectionsLoadedRef = useRef(false);
   const socialDraftsLoadedRef = useRef(false);
   const socialScheduledLoadedRef = useRef(false);
+  const socialUploadInputRef = useRef(null);
   const sideNavCloseTimerRef = useRef(null);
   const sideNavContentTimerRef = useRef(null);
   const emailPanelCloseTimerRef = useRef(null);
@@ -2415,6 +2417,60 @@ export default function DashboardScreen({
       setSocialScheduledError(err?.message || "Unable to load scheduled posts.");
     } finally {
       setSocialScheduledLoading(false);
+    }
+  };
+
+  const handleSocialMediaUpload = async (event) => {
+    const file = event?.target?.files?.[0];
+    if (!file) return;
+    setSocialUploadStatus({ status: "loading", message: "Uploading..." });
+    try {
+      const reader = new FileReader();
+      const dataUrl = await new Promise((resolve, reject) => {
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error("File read failed"));
+        reader.readAsDataURL(file);
+      });
+      const res = await fetch(API_URLS.socialMediaUpload, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          data_url: dataUrl,
+          filename: file.name
+        })
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        let parsed = null;
+        try {
+          parsed = text ? JSON.parse(text) : null;
+        } catch {
+          parsed = null;
+        }
+        throw new Error(parsed?.error || parsed?.details || text || "Upload failed");
+      }
+      const data = await res.json().catch(() => ({}));
+      const mediaUrl = data?.media_url || "";
+      if (!mediaUrl) {
+        throw new Error("Upload succeeded but no media URL returned.");
+      }
+      setSocialDraftForm((prev) => {
+        const next = [...(prev.mediaUrls || [])];
+        const emptyIdx = next.findIndex((item) => !item);
+        if (emptyIdx >= 0) {
+          next[emptyIdx] = mediaUrl;
+        } else {
+          next.push(mediaUrl);
+        }
+        return { ...prev, mediaUrls: next };
+      });
+      setSocialUploadStatus({ status: "success", message: "Image uploaded." });
+    } catch (err) {
+      setSocialUploadStatus({ status: "error", message: err?.message || "Upload failed." });
+    } finally {
+      if (socialUploadInputRef.current) {
+        socialUploadInputRef.current.value = "";
+      }
     }
   };
 
@@ -7687,6 +7743,32 @@ export default function DashboardScreen({
                         >
                           Add media URL
                         </button>
+                        <div className="flex flex-wrap items-center gap-3">
+                          <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-emerald-300/50 bg-emerald-500/15 px-3 py-2 text-xs font-semibold text-emerald-100">
+                            Upload image
+                            <input
+                              ref={socialUploadInputRef}
+                              type="file"
+                              accept="image/*"
+                              onChange={handleSocialMediaUpload}
+                              className="hidden"
+                            />
+                          </label>
+                          <span className="text-[11px] text-slate-400">JPG, PNG, or WebP. Instagram needs an image.</span>
+                          {socialUploadStatus.message ? (
+                            <span
+                              className={`text-[11px] ${
+                                socialUploadStatus.status === "error"
+                                  ? "text-rose-300"
+                                  : socialUploadStatus.status === "success"
+                                    ? "text-emerald-200"
+                                    : "text-slate-300"
+                              }`}
+                            >
+                              {socialUploadStatus.message}
+                            </span>
+                          ) : null}
+                        </div>
                       </div>
 
                       <div className="grid gap-3 md:grid-cols-2">
