@@ -15,6 +15,7 @@ import ResetPasswordScreen from "./screens/ResetPasswordScreen";
 import PaymentScreen from "./screens/PaymentScreen";
 import ManualBusinessInfoScreen from "./screens/ManualBusinessInfoScreen";
 import PaymentSuccessScreen from "./screens/PaymentSuccessScreen";
+import NumberSelectionScreen from "./screens/NumberSelectionScreen";
 import PricingPackages from "./components/PricingPackages";
 import CreateAccountScreen from "./screens/CreateAccountScreen";
 import SignupSurveyScreen from "./screens/SignupSurveyScreen";
@@ -35,6 +36,7 @@ const STAGES = {
   PACKAGES: "packages",
   PAYMENT: "payment",
   PAYMENT_SUCCESS: "paymentSuccess",
+  NUMBER_SELECT: "numberSelect",
   SIGNUP: "signup",
   SIGNUP_SURVEY: "signupSurvey",
   BUSINESS_DETAILS: "businessDetails",
@@ -171,6 +173,13 @@ export default function App() {
   const [businessTypeLoading, setBusinessTypeLoading] = useState(false);
   const [businessTypeError, setBusinessTypeError] = useState("");
   const [paymentInfo, setPaymentInfo] = useState(null);
+  const [twilioAvailableNumbers, setTwilioAvailableNumbers] = useState([]);
+  const [twilioNumbersLoading, setTwilioNumbersLoading] = useState(false);
+  const [twilioNumbersError, setTwilioNumbersError] = useState("");
+  const [twilioNumbersCountry, setTwilioNumbersCountry] = useState("");
+  const [twilioAssignedNumber, setTwilioAssignedNumber] = useState("");
+  const [selectedTwilioNumber, setSelectedTwilioNumber] = useState("");
+  const [detectedCountry, setDetectedCountry] = useState("");
   const [serviceSlug, setServiceSlug] = useState("receptionist");
   const validStages = useMemo(() => new Set(Object.values(STAGES)), []);
   const [bookingSettings, setBookingSettings] = useState({
@@ -1114,6 +1123,10 @@ export default function App() {
     setStage(STAGES.PAYMENT_SUCCESS);
   };
 
+  const handlePaymentSuccessContinue = () => {
+    setStage(STAGES.NUMBER_SELECT);
+  };
+
   const isLandingStage = stage === STAGES.LANDING;
   const isDashboardStage = stage === STAGES.DASHBOARD;
   const showHeader = stage !== STAGES.DASHBOARD;
@@ -1266,7 +1279,8 @@ export default function App() {
         business_location: manualInfo?.location || "",
         business_notes: manualInfo?.notes || "",
         voice: selectedVoiceId || "",
-        welcome_message: welcomeMessage || ""
+        welcome_message: welcomeMessage || "",
+        selected_twilio_number: selectedTwilioNumber || ""
       };
 
       const provisionRes = await fetch(API_URLS.provisionClient, {
@@ -1900,6 +1914,62 @@ export default function App() {
     }
   }, []);
 
+  const loadTwilioAvailableNumbers = useCallback(async () => {
+    const emailAddress = signupEmail || email || loginEmail || paymentInfo?.email || "";
+    if (!emailAddress) return;
+    setTwilioNumbersLoading(true);
+    setTwilioNumbersError("");
+    try {
+      const params = new URLSearchParams({ email: emailAddress });
+      if (detectedCountry) {
+        params.set("country", detectedCountry);
+      }
+      const res = await fetch(`${API_URLS.twilioAvailableNumbers}?${params.toString()}`);
+      if (!res.ok) {
+        const text = await res.text();
+        let parsed = null;
+        try {
+          parsed = text ? JSON.parse(text) : null;
+        } catch {
+          parsed = null;
+        }
+        throw new Error(parsed?.error || parsed?.details || text || "Unable to fetch numbers");
+      }
+      const data = await res.json().catch(() => ({}));
+      const numbers = Array.isArray(data?.numbers) ? data.numbers : [];
+      setTwilioAvailableNumbers(numbers);
+      setTwilioNumbersCountry(data?.country || "");
+      setTwilioAssignedNumber(data?.assigned_number || "");
+      setSelectedTwilioNumber((prev) => {
+        if (prev) return prev;
+        if (data?.assigned_number) return data.assigned_number;
+        return numbers?.[0]?.phone_number || "";
+      });
+    } catch (error) {
+      setTwilioNumbersError(error?.message || "Unable to fetch numbers");
+      setTwilioAvailableNumbers([]);
+    } finally {
+      setTwilioNumbersLoading(false);
+    }
+  }, [detectedCountry, email, loginEmail, paymentInfo?.email, signupEmail]);
+
+  const detectCountryFromClient = useCallback(async () => {
+    if (detectedCountry) return detectedCountry;
+    try {
+      const res = await fetch("https://ipapi.co/json/");
+      if (!res.ok) return "";
+      const data = await res.json().catch(() => ({}));
+      const code = String(data?.country_code || "").trim().toUpperCase();
+      if (code && code.length === 2) {
+        setDetectedCountry(code);
+        return code;
+      }
+    } catch (error) {
+      console.warn("Failed to detect country from client", error);
+    }
+    return "";
+  }, [detectedCountry]);
+
   const loadCallTranscript = useCallback(
     async (callSid) => {
       if (!callSid || !user?.email) return;
@@ -2214,6 +2284,7 @@ export default function App() {
       STAGES.PACKAGES,
       STAGES.PAYMENT,
       STAGES.PAYMENT_SUCCESS,
+      STAGES.NUMBER_SELECT,
       STAGES.BUSINESS_INFO_MANUAL,
       STAGES.BUSINESS_INFO_REVIEW,
     ]);
@@ -2250,6 +2321,11 @@ export default function App() {
     if (ultravoxVoices.length) return;
     loadUltravoxVoices();
   }, [loadUltravoxVoices, stage, ultravoxVoices.length]);
+
+  useEffect(() => {
+    if (stage !== STAGES.NUMBER_SELECT) return;
+    detectCountryFromClient().finally(loadTwilioAvailableNumbers);
+  }, [detectCountryFromClient, loadTwilioAvailableNumbers, stage]);
 
   useEffect(() => {
     if (selectedVoiceId) return;
@@ -2892,6 +2968,22 @@ export default function App() {
               onSelectVoice={setSelectedVoiceId}
               welcomeMessage={welcomeMessage}
               onWelcomeMessageChange={setWelcomeMessage}
+              onContinue={handlePaymentSuccessContinue}
+            />
+          </div>
+        )}
+        {stage === STAGES.NUMBER_SELECT && (
+          <div className="shell-card screen-panel">
+            <NumberSelectionScreen
+              paymentInfo={paymentInfo}
+              availableNumbers={twilioAvailableNumbers}
+              numbersLoading={twilioNumbersLoading}
+              numbersError={twilioNumbersError}
+              numbersCountry={twilioNumbersCountry}
+              assignedNumber={twilioAssignedNumber}
+              selectedNumber={selectedTwilioNumber}
+              onSelectNumber={setSelectedTwilioNumber}
+              onRefreshNumbers={loadTwilioAvailableNumbers}
               onContinue={runProvisionFlow}
             />
           </div>

@@ -202,7 +202,7 @@ export default function PaymentSuccessScreen({
           className="primary"
           onClick={onContinue}
         >
-          Continue setup
+          Continue
         </button>
       </div>
     </section>

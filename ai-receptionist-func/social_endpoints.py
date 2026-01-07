@@ -1,6 +1,9 @@
 import base64
 import json
 import logging
+import mimetypes
+import os
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
@@ -38,6 +41,25 @@ CHANNEL_FACEBOOK = "facebook"
 CHANNEL_INSTAGRAM = "instagram"
 
 _TRUTHY = {"1", "true", "yes", "y", "on"}
+_UPLOAD_DIR = os.getenv("SOCIAL_UPLOAD_DIR") or os.path.join(os.getcwd(), "data", "social_uploads")
+_MAX_UPLOAD_BYTES = int(os.getenv("SOCIAL_UPLOAD_MAX_BYTES", "8388608"))
+
+
+def _sanitize_filename(value: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", value or "")
+    return cleaned.strip("._") or "upload"
+
+
+def _media_path(media_id: str, extension: str) -> str:
+    safe_ext = extension if extension.startswith(".") else f".{extension}"
+    return os.path.join(_UPLOAD_DIR, f"{media_id}{safe_ext}")
+
+
+def _extension_for_content_type(content_type: str) -> str:
+    if not content_type:
+        return ".jpg"
+    ext = mimetypes.guess_extension(content_type.split(";")[0].strip())
+    return ext or ".jpg"
 
 
 def _social_scheduler_disabled() -> bool:
@@ -650,12 +672,36 @@ def whatsapp_auth_callback(req: func.HttpRequest) -> func.HttpResponse:
 
     wabas, waba_error = whatsapp_adapter.list_business_accounts(user_access_token)
     if waba_error:
-        return func.HttpResponse(
-            json.dumps({"error": "Failed to list WhatsApp business accounts", "details": waba_error}),
-            status_code=400,
-            mimetype="application/json",
-            headers=cors,
-        )
+        if "whatsapp_business_accounts" in waba_error and "nonexisting field" in waba_error:
+            businesses, businesses_error = whatsapp_adapter.list_businesses(user_access_token)
+            if businesses_error:
+                return func.HttpResponse(
+                    json.dumps(
+                        {"error": "Failed to list Meta businesses", "details": businesses_error}
+                    ),
+                    status_code=400,
+                    mimetype="application/json",
+                    headers=cors,
+                )
+            wabas = []
+            for biz in businesses:
+                biz_id = str(biz.get("id") or "")
+                if not biz_id:
+                    continue
+                biz_wabas, biz_error = whatsapp_adapter.list_owned_whatsapp_business_accounts(
+                    biz_id, user_access_token
+                )
+                if biz_error:
+                    logger.warning("WhatsApp owned WABA lookup failed for %s: %s", biz_id, biz_error)
+                    continue
+                wabas.extend(biz_wabas)
+        else:
+            return func.HttpResponse(
+                json.dumps({"error": "Failed to list WhatsApp business accounts", "details": waba_error}),
+                status_code=400,
+                mimetype="application/json",
+                headers=cors,
+            )
 
     expires_in = token_data.get("expires_in")
     token_expires_at = None
@@ -1058,6 +1104,144 @@ def whatsapp_send_message(req: func.HttpRequest) -> func.HttpResponse:
         )
     finally:
         db.close()
+
+
+@app.function_name(name="SocialMediaUpload")
+@app.route(route="social/media/upload", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def social_media_upload(req: func.HttpRequest) -> func.HttpResponse:
+    cors = build_cors_headers(req, ["POST", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
+    try:
+        body = req.get_json()
+    except ValueError:
+        body = None
+
+    data_url = (body or {}).get("data_url") or (body or {}).get("dataUrl")
+    content_base64 = (body or {}).get("content_base64") or (body or {}).get("contentBase64")
+    filename = _sanitize_filename((body or {}).get("filename") or "upload")
+    content_type = (body or {}).get("content_type") or (body or {}).get("contentType")
+
+    if data_url and isinstance(data_url, str):
+        if "," not in data_url:
+            return func.HttpResponse(
+                json.dumps({"error": "Invalid data URL"}),
+                status_code=400,
+                mimetype="application/json",
+                headers=cors,
+            )
+        header, encoded = data_url.split(",", 1)
+        if "base64" not in header:
+            return func.HttpResponse(
+                json.dumps({"error": "Data URL must be base64"}),
+                status_code=400,
+                mimetype="application/json",
+                headers=cors,
+            )
+        content_base64 = encoded
+        if not content_type and ";" in header:
+            content_type = header.split(";", 1)[0].replace("data:", "").strip()
+
+    if not content_base64:
+        return func.HttpResponse(
+            json.dumps({"error": "content_base64 or data_url required"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    content_type = (content_type or "").split(";")[0].strip().lower()
+    if not content_type.startswith("image/"):
+        return func.HttpResponse(
+            json.dumps({"error": "Only image uploads are supported"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    try:
+        raw_bytes = base64.b64decode(content_base64, validate=True)
+    except Exception:  # pylint: disable=broad-except
+        return func.HttpResponse(
+            json.dumps({"error": "Invalid base64 payload"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    if len(raw_bytes) > _MAX_UPLOAD_BYTES:
+        return func.HttpResponse(
+            json.dumps({"error": "Upload too large"}),
+            status_code=413,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    os.makedirs(_UPLOAD_DIR, exist_ok=True)
+    extension = _extension_for_content_type(content_type)
+    media_id = secrets.token_hex(12)
+    file_path = _media_path(media_id, extension)
+    try:
+        with open(file_path, "wb") as handle:
+            handle.write(raw_bytes)
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.error("Social media upload failed: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "Failed to save upload"}),
+            status_code=500,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    public_base = get_public_api_base()
+    media_url = f"{public_base}/api/social/media/{media_id}{extension}"
+    return func.HttpResponse(
+        json.dumps({"media_url": media_url, "content_type": content_type, "filename": filename}),
+        status_code=200,
+        mimetype="application/json",
+        headers=cors,
+    )
+
+
+@app.function_name(name="SocialMediaServe")
+@app.route(route="social/media/{media_id}", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def social_media_serve(req: func.HttpRequest) -> func.HttpResponse:
+    cors = build_cors_headers(req, ["GET", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
+    media_id = req.route_params.get("media_id") or ""
+    media_id = re.sub(r"[^A-Za-z0-9._-]+", "", media_id)
+    if not media_id:
+        return func.HttpResponse("Not found", status_code=404, headers=cors)
+
+    if "." in media_id:
+        base, ext = media_id.rsplit(".", 1)
+        media_id = base
+        extension = f".{ext}"
+    else:
+        extension = ".jpg"
+
+    file_path = _media_path(media_id, extension)
+    if not os.path.exists(file_path):
+        return func.HttpResponse("Not found", status_code=404, headers=cors)
+
+    try:
+        with open(file_path, "rb") as handle:
+            content = handle.read()
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.error("Failed to read media %s: %s", file_path, exc)
+        return func.HttpResponse("Not found", status_code=404, headers=cors)
+
+    content_type = mimetypes.guess_type(file_path)[0] or "image/jpeg"
+    headers = {**cors, "Cache-Control": "public, max-age=86400"}
+    return func.HttpResponse(
+        body=content,
+        status_code=200,
+        mimetype=content_type,
+        headers=headers,
+    )
 
 
 @app.function_name(name="MetaWebhook")

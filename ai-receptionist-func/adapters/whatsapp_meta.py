@@ -43,6 +43,38 @@ def list_business_accounts(access_token: str) -> Tuple[List[Dict[str, Any]], Opt
         return [], str(exc)
 
 
+def list_businesses(access_token: str) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+    try:
+        resp = requests.get(
+            f"{GRAPH_BASE}/me/businesses",
+            params={"access_token": access_token, "fields": "id,name"},
+            timeout=10,
+        )
+        if resp.status_code >= 300:
+            return [], resp.text
+        data: Dict[str, Any] = resp.json() or {}
+        return data.get("data") or [], None
+    except Exception as exc:  # pylint: disable=broad-except
+        return [], str(exc)
+
+
+def list_owned_whatsapp_business_accounts(
+    business_id: str, access_token: str
+) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+    try:
+        resp = requests.get(
+            f"{GRAPH_BASE}/{business_id}/owned_whatsapp_business_accounts",
+            params={"access_token": access_token, "fields": "id,name"},
+            timeout=10,
+        )
+        if resp.status_code >= 300:
+            return [], resp.text
+        data: Dict[str, Any] = resp.json() or {}
+        return data.get("data") or [], None
+    except Exception as exc:  # pylint: disable=broad-except
+        return [], str(exc)
+
+
 def list_phone_numbers(waba_id: str, access_token: str) -> Tuple[List[Dict[str, Any]], Optional[str]]:
     try:
         resp = requests.get(
