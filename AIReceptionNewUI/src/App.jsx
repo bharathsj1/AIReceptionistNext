@@ -2707,7 +2707,7 @@ export default function App() {
                   </div>
                 </div>
               <a className="nav-link" href="/contact.html">Contact</a>
-              <button className="nav-link">Blog</button>
+              <a className="nav-link" href="/blog.html">Blog</a>
             </div>
             <div className="nav-actions">
               <button className="login-cta" onClick={() => setStage(STAGES.LOGIN)}>
