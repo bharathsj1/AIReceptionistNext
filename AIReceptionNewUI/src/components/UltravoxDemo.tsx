@@ -128,7 +128,7 @@ export default function UltravoxDemo() {
     }
 
     if (!selectedAgent?.id) {
-      setError("Agent is not configured. Please set an Ultravox agent ID for this demo.");
+      setError("Agent is not configured. Please set an S4U-v3 agent ID for this demo.");
       return;
     }
 
@@ -146,24 +146,23 @@ export default function UltravoxDemo() {
         })
       });
       if (!res.ok) {
-        throw new Error("Failed to start Ultravox call");
+        throw new Error("Failed to start S4U-v3 call");
       }
       const data = await res.json();
       const joinUrl = data?.joinUrl;
 
       if (!joinUrl || typeof joinUrl !== "string") {
-        throw new Error("Join URL missing from Ultravox response");
+        throw new Error("Join URL missing from S4U-v3 response");
       }
 
       await session.joinCall(joinUrl, "demo-homepage");
       setIsInCall(true);
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Could not start Ultravox call.";
+      const message = err instanceof Error ? err.message : "Could not start S4U-v3 call.";
       const friendly =
         message.toLowerCase().includes("permission") || message.toLowerCase().includes("microphone")
           ? "Microphone permission was denied. Please allow mic access in your browser and try again."
-          : "Could not start Ultravox call. Please check your API key and agent configuration.";
+          : "Could not start S4U-v3 call. Please check your API key and agent configuration.";
       setError(friendly);
       setStatus("error");
       setIsInCall(false);

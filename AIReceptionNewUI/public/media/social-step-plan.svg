@@ -9,16 +9,16 @@
   <rect x="28" y="26" width="584" height="368" rx="20" fill="#0c1726" stroke="#254158" stroke-width="1.5"/>
 
   <rect x="52" y="52" width="150" height="18" rx="9" fill="#24445a"/>
-  <text x="66" y="65" font-size="10" fill="#dff7ff" font-family="IBM Plex Sans, Arial, sans-serif" letter-spacing="1">PLAN</text>
+  <text x="66" y="65" font-size="10" fill="#dff7ff" font-family="DM Sans, Arial, sans-serif" letter-spacing="1">PLAN</text>
   <rect x="52" y="84" width="240" height="10" rx="5" fill="#1a3346"/>
 
   <rect x="52" y="120" width="536" height="250" rx="16" fill="#13283a" stroke="#2a4c64"/>
   <rect x="76" y="148" width="480" height="40" rx="12" fill="#1a3346"/>
-  <text x="90" y="173" font-size="10" fill="#bfe9f5" font-family="IBM Plex Sans, Arial, sans-serif">Mon: Product tip + customer story</text>
+  <text x="90" y="173" font-size="10" fill="#bfe9f5" font-family="DM Sans, Arial, sans-serif">Mon: Product tip + customer story</text>
   <rect x="76" y="198" width="480" height="40" rx="12" fill="#1a3346"/>
-  <text x="90" y="223" font-size="10" fill="#bfe9f5" font-family="IBM Plex Sans, Arial, sans-serif">Wed: Behind the scenes</text>
+  <text x="90" y="223" font-size="10" fill="#bfe9f5" font-family="DM Sans, Arial, sans-serif">Wed: Behind the scenes</text>
   <rect x="76" y="248" width="480" height="40" rx="12" fill="#1a3346"/>
-  <text x="90" y="273" font-size="10" fill="#bfe9f5" font-family="IBM Plex Sans, Arial, sans-serif">Fri: Weekly roundup + CTA</text>
+  <text x="90" y="273" font-size="10" fill="#bfe9f5" font-family="DM Sans, Arial, sans-serif">Fri: Weekly roundup + CTA</text>
   <rect x="76" y="298" width="480" height="40" rx="12" fill="#1a3346"/>
-  <text x="90" y="323" font-size="10" fill="#bfe9f5" font-family="IBM Plex Sans, Arial, sans-serif">Sat: Community highlight</text>
+  <text x="90" y="323" font-size="10" fill="#bfe9f5" font-family="DM Sans, Arial, sans-serif">Sat: Community highlight</text>
 </svg>

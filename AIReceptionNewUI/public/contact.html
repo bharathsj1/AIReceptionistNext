@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Contact | SmartConnect4u</title>
+    <style>
+      @import url("https://fonts.cdnfonts.com/css/product-sans");
+      :root {
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: "Product Sans", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+        background: radial-gradient(circle at 20% 20%, rgba(123, 198, 255, 0.16), transparent 32%),
+          radial-gradient(circle at 80% 0%, rgba(124, 58, 237, 0.18), transparent 36%),
+          linear-gradient(140deg, #0a0c2f, #0f1238 45%, #0b0f1f 100%);
+        color: #e6ebff;
+        min-height: 100vh;
+      }
+      a {
+        color: #9fb6ff;
+        text-decoration: none;
+      }
+      a:hover {
+        color: #ffffff;
+      }
+      .screen-panel {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 0 16px;
+        width: 100%;
+      }
+      .nav-card {
+        display: grid;
+        align-items: center;
+        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+        gap: 20px;
+        background: rgba(0, 0, 0, 0.4);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        padding: 14px clamp(16px, 4vw, 48px);
+        box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+        backdrop-filter: blur(10px);
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        transform: translateY(0);
+        width: auto;
+        max-width: none;
+        margin: 0;
+        z-index: 20;
+        transition: transform 200ms ease, opacity 200ms ease;
+        font-family: "Product Sans", "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI",
+          Roboto, "Helvetica Neue", Arial, sans-serif;
+      }
+      .nav-brand {
+        display: flex;
+        align-items: center;
+        justify-self: start;
+      }
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 0;
+        background: transparent;
+        border: none;
+        color: #dbe7ff;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        cursor: pointer;
+        text-decoration: none;
+        font-family: inherit;
+      }
+      .brand-logo {
+        max-width: 170px;
+        max-height: 50px;
+        width: auto;
+        height: auto;
+        object-fit: contain;
+        border-radius: 0;
+      }
+      .nav-links {
+        display: flex;
+        gap: 28px;
+        flex-wrap: nowrap;
+        align-items: center;
+        justify-self: center;
+      }
+      .nav-link {
+        background: transparent;
+        color: #e6ebff;
+        font-weight: 600;
+        font-size: 14px;
+        border: none;
+        padding: 4px 0;
+        cursor: pointer;
+        transition: color 160ms ease, text-shadow 180ms ease;
+        text-decoration: none;
+      }
+      .nav-link:hover {
+        color: #ffffff;
+        text-shadow: 0 0 12px rgba(123, 198, 255, 0.7), 0 0 28px rgba(123, 198, 255, 0.32);
+      }
+      .nav-actions {
+        display: flex;
+        gap: 10px;
+        justify-self: end;
+      }
+      .nav-item-with-sub {
+        position: relative;
+        display: inline-flex;
+        flex-direction: column;
+        padding-bottom: 0;
+        align-items: stretch;
+      }
+      .nav-submenu {
+        position: absolute;
+        top: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        display: none;
+        gap: 6px;
+        background:
+          radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.04), transparent 30%),
+          radial-gradient(circle at 80% 0%, rgba(123, 156, 255, 0.14), transparent 32%),
+          linear-gradient(180deg, #050915, #050814 55%, #040712);
+        border: 1px solid rgba(123, 198, 255, 0.38);
+        border-radius: 8px;
+        padding: 12px;
+        min-width: 240px;
+        margin-top: 10px;
+        box-shadow: 0 18px 36px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.05);
+        backdrop-filter: blur(14px);
+        z-index: 20;
+        color: #e6ecff;
+      }
+      .nav-submenu::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: linear-gradient(90deg, rgba(255, 255, 255, 0.03), transparent 35%, rgba(255, 255, 255, 0.02));
+        border-radius: 8px;
+        mix-blend-mode: screen;
+      }
+      .nav-item-with-sub:hover .nav-submenu,
+      .nav-item-with-sub:focus-within .nav-submenu {
+        display: grid;
+      }
+      .nav-subitem {
+        background: transparent;
+        color: #f8fbff;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 0;
+        padding: 8px 10px;
+        text-align: left;
+        cursor: pointer;
+        transition: background 140ms ease, transform 120ms ease, border-color 160ms ease;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+        text-shadow: 0 1px 6px rgba(0, 0, 0, 0.4);
+        text-decoration: none;
+      }
+      .nav-subitem:hover {
+        background: rgba(123, 198, 255, 0.2);
+        border-color: rgba(123, 198, 255, 0.68);
+        transform: translateY(-1px);
+      }
+      .login-cta {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        background: #4338ff;
+        color: #f7f7ff;
+        padding: 10px 14px;
+        border: 1px solid #4338ff;
+        border-radius: 0;
+        font-weight: 400;
+        letter-spacing: 0.02em;
+        cursor: pointer;
+        box-shadow: 0 10px 22px rgba(67, 56, 255, 0.22);
+        transition: transform 140ms ease, box-shadow 160ms ease, background 160ms ease;
+        width: auto;
+        justify-content: center;
+        text-decoration: none;
+      }
+      .login-cta:hover {
+        transform: translateY(-1px);
+        background: #ffffff;
+        color: #4338ff;
+        border: 1px solid #4338ff;
+        box-shadow: 0 12px 28px rgba(67, 56, 255, 0.25);
+      }
+      .page-shell {
+        padding-top: 140px;
+        padding-bottom: 64px;
+      }
+      .contact-hero {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 22px;
+        background: radial-gradient(circle at 16% 20%, rgba(124, 58, 237, 0.14), transparent 45%),
+          radial-gradient(circle at 80% 10%, rgba(123, 198, 255, 0.14), transparent 40%),
+          rgba(5, 8, 20, 0.76);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 24px;
+        padding: clamp(18px, 4vw, 28px);
+        box-shadow: 0 24px 48px rgba(0, 0, 0, 0.28);
+      }
+      .contact-left {
+        display: grid;
+        gap: 12px;
+        color: #cfd7ff;
+      }
+      .contact-title {
+        margin: 0;
+        font-size: clamp(26px, 4vw, 32px);
+        color: #f6f7ff;
+      }
+      .contact-lead {
+        margin: 0;
+        line-height: 1.6;
+      }
+      .contact-form {
+        display: grid;
+        gap: 12px;
+      }
+      .field {
+        display: grid;
+        gap: 6px;
+      }
+      .field label {
+        font-size: 13px;
+        color: #cdd6f9;
+        letter-spacing: 0.02em;
+      }
+      .input {
+        width: 100%;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.04);
+        border-radius: 12px;
+        padding: 12px 14px;
+        color: #f8fbff;
+        font-size: 14px;
+        outline: none;
+        transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+      }
+      .input:focus {
+        border-color: rgba(123, 198, 255, 0.6);
+        box-shadow: 0 0 0 4px rgba(123, 198, 255, 0.15);
+        background: rgba(255, 255, 255, 0.06);
+      }
+      .input::placeholder {
+        color: rgba(235, 240, 255, 0.6);
+      }
+      .contact-actions {
+        display: flex;
+        justify-content: flex-start;
+      }
+      .primary-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        border: 1px solid #4338ff;
+        background: linear-gradient(135deg, #7c3aed, #6366f1);
+        color: #ffffff;
+        padding: 12px 18px;
+        border-radius: 14px;
+        cursor: pointer;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        box-shadow: 0 14px 30px rgba(67, 56, 255, 0.28);
+        transition: transform 140ms ease, box-shadow 160ms ease, background 160ms ease;
+      }
+      .primary-btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 16px 36px rgba(99, 102, 241, 0.32);
+      }
+      .contact-right {
+        display: grid;
+        align-content: center;
+        gap: 14px;
+        padding: 8px 0 0;
+      }
+      .contact-card {
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 18px;
+        padding: 14px 16px;
+        display: grid;
+        gap: 6px;
+      }
+      .status {
+        font-size: 13px;
+        margin-top: 6px;
+      }
+      .status.success {
+        color: #7ae7c7;
+      }
+      .status.error {
+        color: #f8b4b4;
+      }
+      .contact-row {
+        display: grid;
+        grid-template-columns: 20px 1fr;
+        align-items: center;
+        gap: 8px;
+        color: #dbe3ff;
+        font-size: 14px;
+      }
+      .contact-row strong {
+        color: #f6f7ff;
+      }
+      .contact-social {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .social-pill {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        color: #f7f7ff;
+        font-weight: 700;
+        cursor: pointer;
+        transition: transform 120ms ease, box-shadow 160ms ease, border-color 160ms ease;
+      }
+      .social-pill:hover {
+        transform: translateY(-1px);
+        border-color: rgba(123, 198, 255, 0.6);
+        box-shadow: 0 12px 28px rgba(67, 56, 255, 0.28);
+      }
+      @media (max-width: 780px) {
+        .nav-card {
+          grid-template-columns: 1fr;
+          row-gap: 12px;
+        }
+        .nav-links {
+          justify-self: start;
+          flex-wrap: wrap;
+        }
+        .nav-actions {
+          justify-self: start;
+        }
+        .page-shell {
+          padding-top: 170px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="nav-card">
+      <div class="nav-brand">
+        <a class="brand" href="/">
+          <img class="brand-logo" src="/media/sc_logo_main.png" alt="SmartConnect4u logo" />
+        </a>
+      </div>
+      <div class="nav-links">
+        <a class="nav-link" href="/#capabilities">Our purpose</a>
+        <a class="nav-link" href="/#performance">What we do</a>
+        <div class="nav-item-with-sub">
+          <button class="nav-link" type="button">Services</button>
+          <div class="nav-submenu">
+            <a class="nav-subitem" href="/#capabilities">AI Receptionist</a>
+            <a class="nav-subitem" href="/#capabilities">AI Social Media Manager</a>
+            <a class="nav-subitem" href="/#capabilities">Email Manager</a>
+            <a class="nav-subitem" href="/#capabilities">CRM &amp; Lead Manager</a>
+          </div>
+        </div>
+        <div class="nav-item-with-sub">
+          <button class="nav-link" type="button">Legal</button>
+          <div class="nav-submenu">
+            <a class="nav-subitem" href="/terms.html">Terms &amp; Conditions</a>
+            <a class="nav-subitem" href="/privacy.html">Privacy Policy</a>
+          </div>
+        </div>
+        <a class="nav-link" href="/contact.html">Contact</a>
+      </div>
+      <div class="nav-actions">
+        <a class="login-cta" href="/#login">
+          <span aria-hidden>→</span>
+          <span>Login</span>
+        </a>
+      </div>
+    </header>
+
+    <main class="screen-panel page-shell">
+      <section class="contact-hero">
+        <div class="contact-left">
+          <h1 class="contact-title">Let’s talk</h1>
+          <p class="contact-lead">
+            Tell us about your project or support question. Share a few details and our team will get back within one
+            business day.
+          </p>
+          <form class="contact-form" id="contact-form">
+            <div class="field">
+              <label for="name">Your Name</label>
+              <input class="input" id="name" name="name" type="text" placeholder="Enter your name" required />
+            </div>
+            <div class="field">
+              <label for="email">Your Email</label>
+              <input class="input" id="email" name="email" type="email" placeholder="you@company.com" required />
+            </div>
+            <div class="field">
+              <label for="message">Your Message</label>
+              <textarea
+                class="input"
+                id="message"
+                name="message"
+                rows="4"
+                placeholder="How can we help?"
+                required
+              ></textarea>
+            </div>
+            <div class="contact-actions">
+              <button class="primary-btn" type="submit">
+                <span aria-hidden>✉</span>
+                <span>Send Message</span>
+              </button>
+            </div>
+            <p id="contact-status" style="margin:0;font-size:13px;color:#9fb6ff;"></p>
+          </form>
+        </div>
+        <div class="contact-right">
+          <div class="contact-card">
+            <div class="contact-row">
+              <span aria-hidden>✉</span>
+              <a href="mailto:support@smartconnect4u.com">support@smartconnect4u.com</a>
+            </div>
+            <div class="contact-row">
+              <span aria-hidden>⏱</span>
+              <span>Hours: 9am – 6pm PT, Mon–Fri</span>
+            </div>
+          </div>
+          <div class="contact-social">
+            <a class="social-pill" href="#" aria-label="Facebook">
+              f
+            </a>
+            <a class="social-pill" href="#" aria-label="Twitter">
+              t
+            </a>
+            <a class="social-pill" href="#" aria-label="Instagram">
+              ig
+            </a>
+          </div>
+        </div>
+      </section>
+    </main>
+    <script>
+      const form = document.getElementById("contact-form");
+      const statusEl = document.getElementById("contact-status");
+
+      form?.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        statusEl.textContent = "";
+        statusEl.className = "";
+
+        const name = (document.getElementById("name")?.value || "").trim();
+        const email = (document.getElementById("email")?.value || "").trim();
+        const message = (document.getElementById("message")?.value || "").trim();
+        if (!name || !email || !message) {
+          statusEl.textContent = "Please fill all fields before sending.";
+          statusEl.className = "status error";
+          return;
+        }
+
+        try {
+          const response = await fetch("/api/contact-message", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name, email, message })
+          });
+          if (!response.ok) {
+            const data = await response.json().catch(() => ({}));
+            throw new Error(data.error || "Unable to send message right now.");
+          }
+          statusEl.textContent = "We have received your message and our team will speak with you soon.";
+          statusEl.className = "status success";
+          form.reset();
+        } catch (err) {
+          statusEl.textContent = err?.message || "Unable to send message right now.";
+          statusEl.className = "status error";
+        }
+      });
+    </script>
+  </body>
+</html>

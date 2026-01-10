@@ -243,6 +243,31 @@ def _list_available_twilio_numbers(
     return payload
 
 
+def _reuse_existing_twilio_number() -> bool:
+    flag = str(get_setting("TWILIO_REUSE_EXISTING_NUMBER", "") or "").strip().lower()
+    return flag in {"1", "true", "yes", "on"}
+
+
+def _select_existing_twilio_number(
+    twilio_client: TwilioClient,
+    country: str,
+    phone_number: Optional[str] = None,
+):
+    existing_numbers = twilio_client.incoming_phone_numbers.list(limit=50)
+    if not existing_numbers:
+        return None
+    if phone_number:
+        for number in existing_numbers:
+            if getattr(number, "phone_number", None) == phone_number:
+                return number
+    normalized_country = (country or "").upper()
+    for number in existing_numbers:
+        iso_country = (getattr(number, "iso_country", "") or "").upper()
+        if iso_country and iso_country == normalized_country:
+            return number
+    return existing_numbers[0]
+
+
 def purchase_twilio_number(
     twilio_client: TwilioClient,
     webhook_base: str,
@@ -252,8 +277,18 @@ def purchase_twilio_number(
     """
     Buy a Twilio number and configure its voice webhook.
     On trial accounts (only one number allowed), reuses the existing number if purchase fails.
+    In development, reuse an existing number (matching country when possible) instead of buying.
     """
     webhook_url = _build_twilio_voice_webhook(webhook_base)
+    if _reuse_existing_twilio_number():
+        existing = _select_existing_twilio_number(twilio_client, country, phone_number)
+        if not existing:
+            raise RuntimeError(
+                "TWILIO_REUSE_EXISTING_NUMBER is enabled but no existing Twilio numbers were found"
+            )
+        existing.update(voice_url=webhook_url, voice_method="POST")
+        return {"phone_number": existing.phone_number, "sid": existing.sid}
+
     chosen_number = phone_number
     if not chosen_number:
         available = twilio_client.available_phone_numbers(country).local.list(voice_enabled=True, limit=1)

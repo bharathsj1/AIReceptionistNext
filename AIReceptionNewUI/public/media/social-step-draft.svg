@@ -9,21 +9,21 @@
   <rect x="28" y="26" width="584" height="368" rx="20" fill="#0c182a" stroke="#254158" stroke-width="1.5"/>
 
   <rect x="52" y="52" width="160" height="18" rx="9" fill="#24445a"/>
-  <text x="66" y="65" font-size="10" fill="#dff7ff" font-family="IBM Plex Sans, Arial, sans-serif" letter-spacing="1">DRAFT</text>
+  <text x="66" y="65" font-size="10" fill="#dff7ff" font-family="DM Sans, Arial, sans-serif" letter-spacing="1">DRAFT</text>
   <rect x="52" y="84" width="260" height="10" rx="5" fill="#1a3346"/>
 
   <rect x="52" y="120" width="536" height="210" rx="16" fill="#13283a" stroke="#2a4c64"/>
   <rect x="76" y="148" width="320" height="14" rx="7" fill="#1a3346"/>
-  <text x="86" y="159" font-size="9" fill="#bfe9f5" font-family="IBM Plex Sans, Arial, sans-serif">Caption: New launch + demo link</text>
+  <text x="86" y="159" font-size="9" fill="#bfe9f5" font-family="DM Sans, Arial, sans-serif">Caption: New launch + demo link</text>
   <rect x="76" y="176" width="420" height="12" rx="6" fill="#1a3346"/>
-  <text x="86" y="186" font-size="9" fill="#bfe9f5" font-family="IBM Plex Sans, Arial, sans-serif">Hashtags: #smartconnect #support</text>
+  <text x="86" y="186" font-size="9" fill="#bfe9f5" font-family="DM Sans, Arial, sans-serif">Hashtags: #smartconnect #support</text>
   <rect x="76" y="206" width="260" height="12" rx="6" fill="#1a3346"/>
-  <text x="86" y="216" font-size="9" fill="#bfe9f5" font-family="IBM Plex Sans, Arial, sans-serif">Tone: Confident</text>
+  <text x="86" y="216" font-size="9" fill="#bfe9f5" font-family="DM Sans, Arial, sans-serif">Tone: Confident</text>
 
   <rect x="76" y="238" width="140" height="36" rx="18" fill="#3b82f6"/>
-  <text x="116" y="261" font-size="11" fill="#0b1226" font-family="IBM Plex Sans, Arial, sans-serif" font-weight="700">Approve</text>
+  <text x="116" y="261" font-size="11" fill="#0b1226" font-family="DM Sans, Arial, sans-serif" font-weight="700">Approve</text>
   <rect x="228" y="238" width="140" height="36" rx="18" fill="#22c55e"/>
-  <text x="270" y="261" font-size="11" fill="#052e16" font-family="IBM Plex Sans, Arial, sans-serif" font-weight="700">Schedule</text>
+  <text x="270" y="261" font-size="11" fill="#052e16" font-family="DM Sans, Arial, sans-serif" font-weight="700">Schedule</text>
   <rect x="380" y="238" width="120" height="36" rx="18" fill="#1a3346"/>
-  <text x="412" y="261" font-size="11" fill="#dff7ff" font-family="IBM Plex Sans, Arial, sans-serif">Edit</text>
+  <text x="412" y="261" font-size="11" fill="#dff7ff" font-family="DM Sans, Arial, sans-serif">Edit</text>
 </svg>

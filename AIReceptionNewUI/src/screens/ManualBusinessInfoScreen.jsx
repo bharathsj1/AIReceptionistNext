@@ -79,7 +79,7 @@ export default function ManualBusinessInfoScreen({
                 </span>
               </div>
               <ul className="list-disc space-y-1 pl-5 text-slate-200/90">
-                <li>Tailored Ultravox prompt for your receptionist</li>
+                <li>Tailored S4U-v3 prompt for your receptionist</li>
                 <li>Hours, services, and escalation rules baked in</li>
                 <li>Ready for booking and call routing after checkout</li>
               </ul>
