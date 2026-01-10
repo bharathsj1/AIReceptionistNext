@@ -9,34 +9,34 @@
   <rect x="28" y="26" width="584" height="368" rx="20" fill="#0d1431" stroke="#2c3564" stroke-width="1.5"/>
 
   <rect x="52" y="52" width="160" height="16" rx="8" fill="#2b3a74"/>
-  <text x="64" y="64" font-size="10" fill="#dbe4ff" font-family="IBM Plex Sans, Arial, sans-serif" letter-spacing="1">OUTCOMES</text>
+  <text x="64" y="64" font-size="10" fill="#dbe4ff" font-family="DM Sans, Arial, sans-serif" letter-spacing="1">OUTCOMES</text>
   <rect x="52" y="84" width="260" height="10" rx="5" fill="#1f2a57"/>
 
   <rect x="52" y="126" width="260" height="160" rx="14" fill="#111a3c" stroke="#2c3564"/>
   <rect x="72" y="150" width="200" height="12" rx="6" fill="#2a3770"/>
-  <text x="80" y="159" font-size="9" fill="#c7d2fe" font-family="IBM Plex Sans, Arial, sans-serif">Resolved: 18</text>
+  <text x="80" y="159" font-size="9" fill="#c7d2fe" font-family="DM Sans, Arial, sans-serif">Resolved: 18</text>
   <rect x="72" y="176" width="170" height="12" rx="6" fill="#2a3770"/>
-  <text x="80" y="185" font-size="9" fill="#c7d2fe" font-family="IBM Plex Sans, Arial, sans-serif">Pending: 3</text>
+  <text x="80" y="185" font-size="9" fill="#c7d2fe" font-family="DM Sans, Arial, sans-serif">Pending: 3</text>
   <rect x="72" y="202" width="220" height="12" rx="6" fill="#2a3770"/>
-  <text x="80" y="211" font-size="9" fill="#c7d2fe" font-family="IBM Plex Sans, Arial, sans-serif">SLA breaches: 0</text>
+  <text x="80" y="211" font-size="9" fill="#c7d2fe" font-family="DM Sans, Arial, sans-serif">SLA breaches: 0</text>
   <rect x="72" y="228" width="140" height="12" rx="6" fill="#2a3770"/>
-  <text x="80" y="237" font-size="9" fill="#c7d2fe" font-family="IBM Plex Sans, Arial, sans-serif">CSAT: 4.8</text>
+  <text x="80" y="237" font-size="9" fill="#c7d2fe" font-family="DM Sans, Arial, sans-serif">CSAT: 4.8</text>
 
   <rect x="328" y="126" width="260" height="160" rx="14" fill="#16204a" stroke="#34407b"/>
   <rect x="352" y="150" width="200" height="10" rx="5" fill="#2a3770"/>
-  <text x="360" y="159" font-size="9" fill="#c7d2fe" font-family="IBM Plex Sans, Arial, sans-serif">Next follow-up</text>
+  <text x="360" y="159" font-size="9" fill="#c7d2fe" font-family="DM Sans, Arial, sans-serif">Next follow-up</text>
   <rect x="352" y="176" width="180" height="10" rx="5" fill="#2a3770"/>
-  <text x="360" y="185" font-size="9" fill="#c7d2fe" font-family="IBM Plex Sans, Arial, sans-serif">Tue 3:00 PM</text>
+  <text x="360" y="185" font-size="9" fill="#c7d2fe" font-family="DM Sans, Arial, sans-serif">Tue 3:00 PM</text>
   <rect x="352" y="202" width="160" height="10" rx="5" fill="#2a3770"/>
-  <text x="360" y="211" font-size="9" fill="#c7d2fe" font-family="IBM Plex Sans, Arial, sans-serif">Owner: Support</text>
+  <text x="360" y="211" font-size="9" fill="#c7d2fe" font-family="DM Sans, Arial, sans-serif">Owner: Support</text>
   <rect x="352" y="228" width="140" height="10" rx="5" fill="#2a3770"/>
-  <text x="360" y="237" font-size="9" fill="#c7d2fe" font-family="IBM Plex Sans, Arial, sans-serif">Status: On track</text>
+  <text x="360" y="237" font-size="9" fill="#c7d2fe" font-family="DM Sans, Arial, sans-serif">Status: On track</text>
 
   <rect x="52" y="306" width="536" height="66" rx="14" fill="#111a3c" stroke="#2c3564"/>
   <rect x="72" y="332" width="460" height="12" rx="6" fill="#2a3770"/>
-  <text x="80" y="341" font-size="9" fill="#c7d2fe" font-family="IBM Plex Sans, Arial, sans-serif">Weekly recap sent to team inbox</text>
+  <text x="80" y="341" font-size="9" fill="#c7d2fe" font-family="DM Sans, Arial, sans-serif">Weekly recap sent to team inbox</text>
   <rect x="72" y="354" width="280" height="12" rx="6" fill="#2a3770"/>
-  <text x="80" y="363" font-size="9" fill="#c7d2fe" font-family="IBM Plex Sans, Arial, sans-serif">Escalations auto-created</text>
+  <text x="80" y="363" font-size="9" fill="#c7d2fe" font-family="DM Sans, Arial, sans-serif">Escalations auto-created</text>
 
   <circle cx="540" cy="170" r="26" fill="#0f1c3f" stroke="#22c55e" stroke-width="2"/>
   <path d="M530 170l6 6 12-12" stroke="#22c55e" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>

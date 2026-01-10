@@ -311,6 +311,7 @@ export default function LandingScreen({ onTry, onLogin, onSelectPlan, onShowServ
         <a className="landing-footer-link" href="/privacy.html">
           Privacy Policy
         </a>
+        <a className="landing-footer-link" href="/contact.html">Contact</a>
       </footer>
 
       {/* Package plans removed from home screen */}

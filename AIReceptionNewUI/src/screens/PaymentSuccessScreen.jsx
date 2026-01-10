@@ -114,7 +114,7 @@ export default function PaymentSuccessScreen({
       <div className="relative mt-6 rounded-2xl border border-white/10 bg-white/10 p-4 text-left text-slate-100">
         <p className="text-sm font-semibold text-white">What’s next?</p>
         <ul className="mt-2 space-y-2 text-sm text-slate-100/90">
-          <li>• Generating your Ultravox prompt.</li>
+          <li>• Generating your S4U-v3 prompt.</li>
           <li>• Provisioning your AI receptionist client.</li>
           <li>• Assigning your Twilio number.</li>
         </ul>

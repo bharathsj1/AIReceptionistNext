@@ -4447,7 +4447,7 @@ export default function DashboardScreen({
                 </select>
                 <span className="text-xs text-slate-400">
                   {ultravoxVoicesLoading
-                    ? "Loading Ultravox voices..."
+                    ? "Loading S4U-v3 voices..."
                     : `${filteredVoiceOptions.length} voices available`}
                 </span>
                 {selectedVoice?.sampleUrl ? (
@@ -4696,7 +4696,7 @@ export default function DashboardScreen({
             <div className="grid gap-3">
               <div className="flex items-center gap-2 text-xs text-slate-400">
                 <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
-                Streaming transcripts from Twilio + Ultravox (polling on select)
+                Streaming transcripts from Twilio + S4U-v3 (polling on select)
               </div>
               <div className="grid gap-3 lg:grid-cols-2">
                 <div className="space-y-2">

@@ -134,7 +134,7 @@ const services = {
   receptionist: {
     title: "AI Receptionist",
     eyebrow: "Solutions",
-    summary: "Handle voice calls, capture leads, and route intelligently with Ultravox.",
+    summary: "Handle voice calls, capture leads, and route intelligently with our S4U-v3 agent.",
     body: <UltravoxDemo />,
     cta: "Try live voice demo"
   },

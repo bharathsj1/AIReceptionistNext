@@ -5,41 +5,197 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>SmartConnect4u Terms & Conditions</title>
     <style>
+      @import url("https://fonts.cdnfonts.com/css/product-sans");
       :root {
         color-scheme: dark;
       }
+      .screen-panel {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 0 16px;
+        width: 100%;
+      }
+      .nav-card {
+        display: grid;
+        align-items: center;
+        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+        gap: 20px;
+        background: rgba(0, 0, 0, 0.4);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        border-radius: 0;
+        padding: 14px clamp(16px, 4vw, 48px);
+        box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+        backdrop-filter: blur(10px);
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        transform: translateY(0);
+        width: auto;
+        max-width: none;
+        margin: 0;
+        z-index: 20;
+        transition: transform 200ms ease, opacity 200ms ease;
+        font-family: "Product Sans", "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI",
+          Roboto, "Helvetica Neue", Arial, sans-serif;
+      }
+      .nav-brand {
+        display: flex;
+        align-items: center;
+        justify-self: start;
+      }
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 0;
+        background: transparent;
+        border: none;
+        color: #dbe7ff;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        cursor: pointer;
+        text-decoration: none;
+        font-family: inherit;
+      }
+      .brand-logo {
+        max-width: 170px;
+        max-height: 50px;
+        width: auto;
+        height: auto;
+        object-fit: contain;
+        border-radius: 0;
+      }
+      .nav-links {
+        display: flex;
+        gap: 28px;
+        flex-wrap: nowrap;
+        align-items: center;
+        justify-self: center;
+      }
+      .nav-link {
+        background: transparent;
+        color: #e6ebff;
+        font-weight: 600;
+        font-size: 14px;
+        border: none;
+        padding: 4px 0;
+        cursor: pointer;
+        transition: color 160ms ease, text-shadow 180ms ease;
+        text-decoration: none;
+      }
+      .nav-link:hover {
+        color: #ffffff;
+        text-shadow: 0 0 12px rgba(123, 198, 255, 0.7), 0 0 28px rgba(123, 198, 255, 0.32);
+      }
+      .nav-actions {
+        display: flex;
+        gap: 10px;
+        justify-self: end;
+      }
+      .nav-item-with-sub {
+        position: relative;
+        display: inline-flex;
+        flex-direction: column;
+        padding-bottom: 0;
+        align-items: stretch;
+      }
+      .nav-submenu {
+        position: absolute;
+        top: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        display: none;
+        gap: 6px;
+        background:
+          radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.04), transparent 30%),
+          radial-gradient(circle at 80% 0%, rgba(123, 156, 255, 0.14), transparent 32%),
+          linear-gradient(180deg, #050915, #050814 55%, #040712);
+        border: 1px solid rgba(123, 198, 255, 0.38);
+        border-radius: 8px;
+        padding: 12px;
+        min-width: 240px;
+        margin-top: 10px;
+        box-shadow: 0 18px 36px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.05);
+        backdrop-filter: blur(14px);
+        z-index: 20;
+        color: #e6ecff;
+      }
+      .nav-submenu::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: linear-gradient(90deg, rgba(255, 255, 255, 0.03), transparent 35%, rgba(255, 255, 255, 0.02));
+        border-radius: 8px;
+        mix-blend-mode: screen;
+      }
+      .nav-item-with-sub:hover .nav-submenu,
+      .nav-item-with-sub:focus-within .nav-submenu {
+        display: grid;
+      }
+      .nav-subitem {
+        background: transparent;
+        color: #f8fbff;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 0;
+        padding: 8px 10px;
+        text-align: left;
+        cursor: pointer;
+        transition: background 140ms ease, transform 120ms ease, border-color 160ms ease;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+        text-shadow: 0 1px 6px rgba(0, 0, 0, 0.4);
+        text-decoration: none;
+      }
+      .nav-subitem:hover {
+        background: rgba(123, 198, 255, 0.2);
+        border-color: rgba(123, 198, 255, 0.68);
+        transform: translateY(-1px);
+      }
+      .login-cta {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        background: #4338ff;
+        color: #f7f7ff;
+        padding: 10px 14px;
+        border: 1px solid #4338ff;
+        border-radius: 0;
+        font-weight: 400;
+        letter-spacing: 0.02em;
+        cursor: pointer;
+        box-shadow: 0 10px 22px rgba(67, 56, 255, 0.22);
+        transition: transform 140ms ease, box-shadow 160ms ease, background 160ms ease;
+        width: auto;
+        justify-content: center;
+        text-decoration: none;
+      }
+      .login-cta:hover {
+        transform: translateY(-1px);
+        background: #ffffff;
+        color: #4338ff;
+        border: 1px solid #4338ff;
+        box-shadow: 0 12px 28px rgba(67, 56, 255, 0.25);
+      }
       body {
         margin: 0;
-        font-family: "IBM Plex Sans", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+        font-family: "Product Sans", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+        font-weight: 400;
+        font-synthesis: none;
         background: radial-gradient(circle at 10% 10%, rgba(88, 79, 255, 0.12), transparent 40%),
           radial-gradient(circle at 90% 0%, rgba(239, 68, 68, 0.12), transparent 40%),
           #0b0f1f;
         color: #e4e8f4;
       }
-      .wrapper {
-        margin: 0 auto;
-        padding: 48px 48px 64px;
-      }
-      .terms-topbar {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin-bottom: 18px;
-      }
-      .terms-logo {
-        display: inline-flex;
-        align-items: center;
-        gap: 10px;
-        text-decoration: none;
-        color: #e4e8f4;
+      strong,
+      b {
+        font-family: "Product Sans", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
         font-weight: 700;
       }
-      .terms-logo img {
-        width: 36px;
-        height: 36px;
-        border-radius: 8px;
-        background: rgba(255, 255, 255, 0.08);
-        padding: 4px;
+      .wrapper {
+        margin: 0 auto;
+        padding: 32px 48px 64px;
+        padding-top: 140px;
       }
       .terms-layout {
         display: grid;
@@ -124,13 +280,42 @@
     </style>
   </head>
   <body>
-    <div class="wrapper">
-      <div class="terms-topbar">
-        <a class="terms-logo" href="/">
-          <img src="/media/logo.png" alt="SmartConnect4u logo" />
-          <span>SmartConnect4u</span>
+    <header class="nav-card screen-panel">
+      <div class="nav-brand">
+        <a class="brand" href="/">
+          <img class="brand-logo" src="/media/sc_logo_main.png" alt="SmartConnect4u logo" />
         </a>
       </div>
+      <div class="nav-links">
+        <a class="nav-link" href="/#capabilities">Our purpose</a>
+        <a class="nav-link" href="/#performance">What we do</a>
+        <div class="nav-item-with-sub">
+          <button class="nav-link" type="button">Services</button>
+          <div class="nav-submenu">
+            <a class="nav-subitem" href="/#capabilities">AI Receptionist</a>
+            <a class="nav-subitem" href="/#capabilities">AI Social Media Manager</a>
+            <a class="nav-subitem" href="/#capabilities">Email Manager</a>
+            <a class="nav-subitem" href="/#capabilities">CRM &amp; Lead Manager</a>
+          </div>
+        </div>
+        <div class="nav-item-with-sub">
+          <button class="nav-link" type="button">Legal</button>
+          <div class="nav-submenu">
+            <a class="nav-subitem" href="/terms.html">Terms &amp; Conditions</a>
+            <a class="nav-subitem" href="/privacy.html">Privacy Policy</a>
+          </div>
+        </div>
+        <a class="nav-link" href="/#testimonials">Testimonials</a>
+        <a class="nav-link" href="/contact.html">Contact</a>
+      </div>
+      <div class="nav-actions">
+        <a class="login-cta" href="/#login">
+          <span aria-hidden>→</span>
+          <span>Login</span>
+        </a>
+      </div>
+    </header>
+    <div class="wrapper">
       <div class="terms-layout">
         <aside class="terms-nav">
           <div class="terms-nav-card">
@@ -143,6 +328,7 @@
             <a href="#cancellations">Cancellations</a>
             <a href="#data">Data &amp; privacy</a>
             <a href="#third-party">Third-party services</a>
+            <a href="#trust-compliance">Trust &amp; compliance</a>
             <a href="#ip">IP</a>
             <a href="#ai">AI outputs</a>
             <a href="#termination">Termination</a>
@@ -155,7 +341,7 @@
         </aside>
         <main class="card terms-content">
           <h1 id="intro">SmartConnect4u Terms &amp; Conditions</h1>
-          <p class="muted">Last updated: 2025-01-01</p>
+          <p class="muted">Last updated: 2025-01-31</p>
           <p>
             These Terms &amp; Conditions ("Terms") govern your access to and use of SmartConnect4u products, including
             AI Receptionist, AI Social Media Manager, AI Email Manager, CRM &amp; Lead Manager, and AI Chat Bots
@@ -208,52 +394,79 @@
           <h2 id="third-party">7. Third-Party Services</h2>
           <p>
             The Services integrate with third-party platforms (e.g., Google, Meta, CRM providers). Your use of those
-            services is subject to their terms and policies. We are not responsible for third-party outages or changes.
+            services is subject to their terms and policies. For Google integrations, you authorize access only to
+            deliver features you enable (e.g., scheduling, inbox triage, contacts sync). You can disconnect Google at any
+            time in your Google Account (Security → Third-party access) or within the app. We are not responsible for
+            third-party outages or changes.
           </p>
 
-          <h2 id="ip">8. Intellectual Property</h2>
+          <h2 id="trust-compliance">8. Trust &amp; Compliance (Google data)</h2>
+          <ul>
+            <li>
+              <strong>Why we request access:</strong> Calendar and email scopes let us book appointments, triage inboxes,
+              draft replies, and sync contacts for your AI receptionist and email workflows.
+            </li>
+            <li>
+              <strong>How we use it:</strong> Data is used only to deliver the features you enable—never for ads or sold
+              to third parties—and we follow the Google API Services User Data Policy (Limited Use).
+            </li>
+            <li>
+              <strong>Disconnect anytime:</strong> Disconnect Google inside the app or at Google Account → Security →
+              Third-party access → remove SmartConnect4u.
+            </li>
+            <li>
+              <strong>Data deletion:</strong> Request account/data deletion at
+              <a href="mailto:support@smartconnect4u.com"> support@smartconnect4u.com</a>.
+            </li>
+            <li>
+              <strong>Contact:</strong>
+              <a href="mailto:support@smartconnect4u.com"> support@smartconnect4u.com</a>.
+            </li>
+          </ul>
+
+          <h2 id="ip">9. Intellectual Property</h2>
           <p>
             We retain all rights to the Services, software, and branding. You retain rights to your content. You grant
             us a limited license to use your content solely to operate the Services.
           </p>
 
-          <h2 id="ai">9. AI Outputs and Accuracy</h2>
+          <h2 id="ai">10. AI Outputs and Accuracy</h2>
           <p>
             AI-generated outputs may be incomplete or inaccurate. You are responsible for reviewing outputs before use.
             We are not liable for decisions made based on AI outputs.
           </p>
 
-          <h2 id="termination">10. Suspension and Termination</h2>
+          <h2 id="termination">11. Suspension and Termination</h2>
           <p>
             We may suspend or terminate access if you violate these Terms, create risk, or fail to pay. You may terminate
             your account at any time by stopping use and cancelling subscriptions.
           </p>
 
-          <h2 id="disclaimers">11. Disclaimers</h2>
+          <h2 id="disclaimers">12. Disclaimers</h2>
           <p>
             The Services are provided "as is" without warranties of any kind. We do not guarantee uninterrupted or
             error-free operation.
           </p>
 
-          <h2 id="liability">12. Limitation of Liability</h2>
+          <h2 id="liability">13. Limitation of Liability</h2>
           <p>
             To the maximum extent permitted by law, SmartConnect4u is not liable for indirect, incidental, or
             consequential damages, or loss of profits, data, or goodwill.
           </p>
 
-          <h2 id="indemnity">13. Indemnification</h2>
+          <h2 id="indemnity">14. Indemnification</h2>
           <p>
             You agree to indemnify and hold SmartConnect4u harmless from claims arising from your use of the Services,
             your content, or your violation of these Terms.
           </p>
 
-          <h2 id="changes">14. Changes to Terms</h2>
+          <h2 id="changes">15. Changes to Terms</h2>
           <p>
             We may update these Terms from time to time. Continued use of the Services after changes means you accept the
             updated Terms.
           </p>
 
-          <h2 id="contact">15. Contact</h2>
+          <h2 id="contact">16. Contact</h2>
           <p>
             Questions? Contact us at <a href="mailto:support@smartconnect4u.com">support@smartconnect4u.com</a>.
           </p>

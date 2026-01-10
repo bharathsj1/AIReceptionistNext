@@ -16,7 +16,7 @@ export default function LoadingScreen({ status, loadingPhase, loadingSteps, resp
           {status === "loading" && loadingPhase === "crawl"
             ? "We are dispatching your URL and preparing the crawl."
             : status === "loading" && loadingPhase === "provision"
-            ? "Generating your Ultravox prompt and provisioning the client."
+            ? "Generating your S4U-v3 prompt and provisioning the client."
             : status === "success"
             ? "Your site was ingested successfully. You can send another URL anytime."
             : responseMessage || "Please try again with a valid URL."}

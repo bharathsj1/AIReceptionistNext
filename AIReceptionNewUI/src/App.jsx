@@ -66,6 +66,13 @@ const normalizeToolId = (value) => {
   if (TOOL_ID_ALIASES[base]) return TOOL_ID_ALIASES[base];
   return base.replace(/[\s-]+/g, "_");
 };
+const scrollToId = (id) => {
+  if (typeof window === "undefined") return;
+  const el = document.getElementById(id);
+  if (el) {
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+};
 const isStrongPassword = (value) => {
   if (!value) return false;
   const hasLower = /[a-z]/.test(value);
@@ -93,13 +100,13 @@ export default function App() {
   const [phoneNumbers, setPhoneNumbers] = useState([]);
   const [agentDetails, setAgentDetails] = useState({
     agentId: "",
-    agentName: "Ultravox Concierge",
+    agentName: "S4U-v3 Concierge",
     systemPrompt: "",
     voice: "",
     temperature: 0.4,
     greeting: "Hi, I'm your AI receptionist. How can I help today?",
     escalation: "Forward complex questions to the human team.",
-    faq: "Hours: 9-6pm PT\nSupport: support@example.com"
+    faq: "Hours: 9-6pm PT\nSupport: support@smartconnect4u.com"
   });
   const [ultravoxVoices, setUltravoxVoices] = useState([]);
   const [ultravoxVoicesLoading, setUltravoxVoicesLoading] = useState(false);
@@ -153,6 +160,7 @@ export default function App() {
   const outlookStateRef = useRef(null);
   const [outlookAccountEmail, setOutlookAccountEmail] = useState("");
   const stageRef = useRef(stage);
+  const pendingAnchorRef = useRef(null);
   const [clientData, setClientData] = useState(null);
   const [signupName, setSignupName] = useState("");
   const [signupEmail, setSignupEmail] = useState("");
@@ -225,7 +233,7 @@ export default function App() {
         "Crawling and ingesting content"
       ],
       provision: [
-        "Building Ultravox prompt",
+        "Building S4U-v3 prompt",
         "Provisioning AI reception client",
         "Finalizing setup"
       ]
@@ -399,6 +407,18 @@ export default function App() {
     setStage(STAGES.LANDING);
     if (typeof window !== "undefined") {
       window.history.replaceState({ stage: STAGES.LANDING }, "", "/");
+    }
+  };
+
+  const handleNavToSection = (id) => {
+    pendingAnchorRef.current = id || null;
+    if (stage !== STAGES.LANDING) {
+      handleGoHome();
+      return;
+    }
+    if (pendingAnchorRef.current) {
+      scrollToId(pendingAnchorRef.current);
+      pendingAnchorRef.current = null;
     }
   };
 
@@ -1062,13 +1082,13 @@ export default function App() {
     setDashboardLoading(false);
     setAgentDetails({
       agentId: "",
-      agentName: "Ultravox Concierge",
+      agentName: "S4U-v3 Concierge",
       systemPrompt: "",
       voice: "",
       temperature: 0.4,
       greeting: "Hi, I'm your AI receptionist. How can I help today?",
       escalation: "Forward complex questions to the human team.",
-      faq: "Hours: 9-6pm PT\nSupport: support@example.com"
+      faq: "Hours: 9-6pm PT\nSupport: support@smartconnect4u.com"
     });
     if (typeof window !== "undefined") {
       window.localStorage.removeItem(STORAGE_KEY);
@@ -1084,7 +1104,7 @@ export default function App() {
       if (current) return current;
       return {
         name: provisionData?.name || email || "You",
-        email: email || provisionData?.email || "user@example.com"
+        email: email || provisionData?.email || "you@smartconnect4u.com"
       };
     });
     setStage(STAGES.DASHBOARD);
@@ -1251,7 +1271,7 @@ export default function App() {
 
       if (!promptRes.ok) {
         const promptText = await promptRes.text();
-        throw new Error(promptText || "Failed to generate Ultravox prompt");
+        throw new Error(promptText || "Failed to generate S4U-v3 prompt");
       }
 
       const promptData = await promptRes
@@ -1262,7 +1282,7 @@ export default function App() {
         promptData?.prompt ||
         promptData?.message ||
         promptData?.raw ||
-        "Your custom Ultravox system prompt here...";
+        "Your custom S4U-v3 system prompt here...";
 
       setSystemPrompt(derivedPrompt);
 
@@ -1901,13 +1921,13 @@ export default function App() {
       const res = await fetch(API_URLS.ultravoxVoices);
       if (!res.ok) {
         const text = await res.text();
-        throw new Error(text || "Unable to fetch Ultravox voices");
+        throw new Error(text || "Unable to fetch S4U-v3 voices");
       }
       const data = await res.json();
       const voices = Array.isArray(data?.voices) ? data.voices : data;
       setUltravoxVoices(voices || []);
     } catch (error) {
-      console.error("Failed to load Ultravox voices", error);
+      console.error("Failed to load S4U-v3 voices", error);
       setUltravoxVoices([]);
     } finally {
       setUltravoxVoicesLoading(false);
@@ -2620,6 +2640,13 @@ export default function App() {
       if (nav) {
         nav.classList.remove("nav-hidden");
       }
+      if (pendingAnchorRef.current) {
+        // Ensure the DOM has the landing sections before scrolling.
+        requestAnimationFrame(() => {
+          scrollToId(pendingAnchorRef.current);
+          pendingAnchorRef.current = null;
+        });
+      }
     }
   }, [stage]);
 
@@ -2652,9 +2679,8 @@ export default function App() {
               </button>
             </div>
             <div className="nav-links">
-              <button className="nav-link">Our purpose</button>
-              <button className="nav-link">What we do</button>
-              <button className="nav-link">How we work</button>
+              <button className="nav-link" onClick={() => handleNavToSection("capabilities")}>Our purpose</button>
+              <button className="nav-link" onClick={() => handleNavToSection("performance")}>What we do</button>
               <div className="nav-item-with-sub">
                 <button className="nav-link" type="button">Services</button>
                 <div className="nav-submenu">
@@ -2678,8 +2704,9 @@ export default function App() {
                   <a className="nav-subitem" href="/terms.html">
                     Terms &amp; Conditions
                   </a>
+                  </div>
                 </div>
-              </div>
+              <a className="nav-link" href="/contact.html">Contact</a>
               <button className="nav-link">Blog</button>
             </div>
             <div className="nav-actions">

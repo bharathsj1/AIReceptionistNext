@@ -5,41 +5,197 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>SmartConnect4u Privacy Policy</title>
     <style>
+      @import url("https://fonts.cdnfonts.com/css/product-sans");
       :root {
         color-scheme: dark;
       }
+      .screen-panel {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 0 16px;
+        width: 100%;
+      }
+      .nav-card {
+        display: grid;
+        align-items: center;
+        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+        gap: 20px;
+        background: rgba(0, 0, 0, 0.4);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        border-radius: 0;
+        padding: 14px clamp(16px, 4vw, 48px);
+        box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+        backdrop-filter: blur(10px);
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        transform: translateY(0);
+        width: auto;
+        max-width: none;
+        margin: 0;
+        z-index: 20;
+        transition: transform 200ms ease, opacity 200ms ease;
+        font-family: "Product Sans", "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI",
+          Roboto, "Helvetica Neue", Arial, sans-serif;
+      }
+      .nav-brand {
+        display: flex;
+        align-items: center;
+        justify-self: start;
+      }
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 0;
+        background: transparent;
+        border: none;
+        color: #dbe7ff;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        cursor: pointer;
+        text-decoration: none;
+        font-family: inherit;
+      }
+      .brand-logo {
+        max-width: 170px;
+        max-height: 50px;
+        width: auto;
+        height: auto;
+        object-fit: contain;
+        border-radius: 0;
+      }
+      .nav-links {
+        display: flex;
+        gap: 28px;
+        flex-wrap: nowrap;
+        align-items: center;
+        justify-self: center;
+      }
+      .nav-link {
+        background: transparent;
+        color: #e6ebff;
+        font-weight: 600;
+        font-size: 14px;
+        border: none;
+        padding: 4px 0;
+        cursor: pointer;
+        transition: color 160ms ease, text-shadow 180ms ease;
+        text-decoration: none;
+      }
+      .nav-link:hover {
+        color: #ffffff;
+        text-shadow: 0 0 12px rgba(123, 198, 255, 0.7), 0 0 28px rgba(123, 198, 255, 0.32);
+      }
+      .nav-actions {
+        display: flex;
+        gap: 10px;
+        justify-self: end;
+      }
+      .nav-item-with-sub {
+        position: relative;
+        display: inline-flex;
+        flex-direction: column;
+        padding-bottom: 0;
+        align-items: stretch;
+      }
+      .nav-submenu {
+        position: absolute;
+        top: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        display: none;
+        gap: 6px;
+        background:
+          radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.04), transparent 30%),
+          radial-gradient(circle at 80% 0%, rgba(123, 156, 255, 0.14), transparent 32%),
+          linear-gradient(180deg, #050915, #050814 55%, #040712);
+        border: 1px solid rgba(123, 198, 255, 0.38);
+        border-radius: 8px;
+        padding: 12px;
+        min-width: 240px;
+        margin-top: 10px;
+        box-shadow: 0 18px 36px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.05);
+        backdrop-filter: blur(14px);
+        z-index: 20;
+        color: #e6ecff;
+      }
+      .nav-submenu::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: linear-gradient(90deg, rgba(255, 255, 255, 0.03), transparent 35%, rgba(255, 255, 255, 0.02));
+        border-radius: 8px;
+        mix-blend-mode: screen;
+      }
+      .nav-item-with-sub:hover .nav-submenu,
+      .nav-item-with-sub:focus-within .nav-submenu {
+        display: grid;
+      }
+      .nav-subitem {
+        background: transparent;
+        color: #f8fbff;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 0;
+        padding: 8px 10px;
+        text-align: left;
+        cursor: pointer;
+        transition: background 140ms ease, transform 120ms ease, border-color 160ms ease;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+        text-shadow: 0 1px 6px rgba(0, 0, 0, 0.4);
+        text-decoration: none;
+      }
+      .nav-subitem:hover {
+        background: rgba(123, 198, 255, 0.2);
+        border-color: rgba(123, 198, 255, 0.68);
+        transform: translateY(-1px);
+      }
+      .login-cta {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        background: #4338ff;
+        color: #f7f7ff;
+        padding: 10px 14px;
+        border: 1px solid #4338ff;
+        border-radius: 0;
+        font-weight: 400;
+        letter-spacing: 0.02em;
+        cursor: pointer;
+        box-shadow: 0 10px 22px rgba(67, 56, 255, 0.22);
+        transition: transform 140ms ease, box-shadow 160ms ease, background 160ms ease;
+        width: auto;
+        justify-content: center;
+        text-decoration: none;
+      }
+      .login-cta:hover {
+        transform: translateY(-1px);
+        background: #ffffff;
+        color: #4338ff;
+        border: 1px solid #4338ff;
+        box-shadow: 0 12px 28px rgba(67, 56, 255, 0.25);
+      }
       body {
         margin: 0;
-        font-family: "IBM Plex Sans", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+        font-family: "Product Sans", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+        font-weight: 400;
+        font-synthesis: none;
         background: radial-gradient(circle at 10% 10%, rgba(88, 79, 255, 0.12), transparent 40%),
           radial-gradient(circle at 90% 0%, rgba(239, 68, 68, 0.12), transparent 40%),
           #0b0f1f;
         color: #e4e8f4;
       }
-      .wrapper {
-        margin: 0 auto;
-        padding: 48px 48px 64px;
-      }
-      .privacy-topbar {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin-bottom: 18px;
-      }
-      .privacy-logo {
-        display: inline-flex;
-        align-items: center;
-        gap: 10px;
-        text-decoration: none;
-        color: #e4e8f4;
+      strong,
+      b {
+        font-family: "Product Sans", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
         font-weight: 700;
       }
-      .privacy-logo img {
-        width: 36px;
-        height: 36px;
-        border-radius: 8px;
-        background: rgba(255, 255, 255, 0.08);
-        padding: 4px;
+      .wrapper {
+        margin: 0 auto;
+        padding: 32px 48px 64px;
+        padding-top: 140px;
       }
       .privacy-layout {
         display: grid;
@@ -127,13 +283,42 @@
     </style>
   </head>
   <body>
-    <div class="wrapper">
-      <div class="privacy-topbar">
-        <a class="privacy-logo" href="/">
-          <img src="/media/logo.png" alt="SmartConnect4u logo" />
-          <span>SmartConnect4u</span>
+    <header class="nav-card screen-panel">
+      <div class="nav-brand">
+        <a class="brand" href="/">
+          <img class="brand-logo" src="/media/sc_logo_main.png" alt="SmartConnect4u logo" />
         </a>
       </div>
+      <div class="nav-links">
+        <a class="nav-link" href="/#capabilities">Our purpose</a>
+        <a class="nav-link" href="/#performance">What we do</a>
+        <div class="nav-item-with-sub">
+          <button class="nav-link" type="button">Services</button>
+          <div class="nav-submenu">
+            <a class="nav-subitem" href="/#capabilities">AI Receptionist</a>
+            <a class="nav-subitem" href="/#capabilities">AI Social Media Manager</a>
+            <a class="nav-subitem" href="/#capabilities">Email Manager</a>
+            <a class="nav-subitem" href="/#capabilities">CRM &amp; Lead Manager</a>
+          </div>
+        </div>
+        <div class="nav-item-with-sub">
+          <button class="nav-link" type="button">Legal</button>
+          <div class="nav-submenu">
+            <a class="nav-subitem" href="/terms.html">Terms &amp; Conditions</a>
+            <a class="nav-subitem" href="/privacy.html">Privacy Policy</a>
+          </div>
+        </div>
+        <a class="nav-link" href="/#testimonials">Testimonials</a>
+        <a class="nav-link" href="/contact.html">Contact</a>
+      </div>
+      <div class="nav-actions">
+        <a class="login-cta" href="/#login">
+          <span aria-hidden>→</span>
+          <span>Login</span>
+        </a>
+      </div>
+    </header>
+    <div class="wrapper">
       <div class="privacy-layout">
         <aside class="privacy-nav">
           <div class="privacy-nav-card">
@@ -143,10 +328,12 @@
             <a href="#how-we-use">How we use data</a>
             <a href="#legal-basis">Legal basis</a>
             <a href="#sharing">Sharing</a>
+            <a href="#google-data">Google data use</a>
             <a href="#cookies">Cookies &amp; analytics</a>
             <a href="#retention">Retention</a>
             <a href="#security">Security</a>
             <a href="#transfers">International transfers</a>
+            <a href="#delete-revoke">Delete or revoke</a>
             <a href="#rights">Your rights</a>
             <a href="#children">Children</a>
             <a href="#changes">Changes</a>
@@ -155,7 +342,7 @@
         </aside>
         <main class="card">
           <h1 id="intro">SmartConnect4u Privacy Policy</h1>
-          <p class="muted">Last updated: 2025-01-01</p>
+          <p class="muted">Last updated: 2025-01-31</p>
           <p>
             This Privacy Policy explains how SmartConnect4u collects, uses, and protects information when you use our
             products, including AI Receptionist, AI Social Media Manager, AI Email Manager, CRM &amp; Lead Manager, and
@@ -194,48 +381,72 @@
             protect SmartConnect4u, our users, or the public.
           </p>
 
-          <h2 id="cookies">5. Cookies &amp; Analytics</h2>
+          <h2 id="google-data">5. Google data use</h2>
+          <p>
+            When you connect Google (such as Gmail, Calendar, or Contacts), we access and process that data only to
+            deliver the features you enable:
+          </p>
+          <ul>
+            <li>Calendar events to schedule, reschedule, and remind participants about bookings you request.</li>
+            <li>Email metadata and content to triage inboxes, draft responses you approve, and send messages you choose.</li>
+            <li>Contacts to keep your directory in sync for routing, suggestions, and replies.</li>
+          </ul>
+          <p>
+            We follow the Google API Services User Data Policy (including Limited Use). We do not use Google data for ads
+            or sell it. Human access is limited to resolving support issues you request or where required to comply with
+            law or protect safety. You can disconnect Google access at any time.
+          </p>
+
+          <h2 id="cookies">6. Cookies &amp; Analytics</h2>
           <p>
             We use cookies and similar technologies for authentication, preferences, and analytics. You can adjust
             browser settings to manage cookies, but some features may not function properly.
           </p>
 
-          <h2 id="retention">6. Data Retention</h2>
+          <h2 id="retention">7. Data Retention</h2>
           <p>
             We retain data as long as your account is active or as needed to provide the Services. We may retain certain
             information for legal, security, or operational purposes.
           </p>
 
-          <h2 id="security">7. Security</h2>
+          <h2 id="security">8. Security</h2>
           <p>
             We implement industry-standard security measures to protect data. No system is completely secure, and we
             cannot guarantee absolute protection.
           </p>
 
-          <h2 id="transfers">8. International Transfers</h2>
+          <h2 id="transfers">9. International Transfers</h2>
           <p>
             If you access the Services from outside our primary operating region, your data may be processed in
             jurisdictions with different data protection laws. We take steps to protect data in transit and at rest.
           </p>
 
-          <h2 id="rights">9. Your Rights</h2>
+          <h2 id="delete-revoke">10. Delete or revoke</h2>
+          <p>
+            You can disconnect Google access inside the app or by visiting Google Account &rarr; Security &rarr;
+            Third-party access and removing SmartConnect4u. To delete your account and associated data, contact
+            <a href="mailto:support@smartconnect4u.com"> support@smartconnect4u.com</a>; we will confirm and remove
+            application data (subject to legal retention requirements).
+          </p>
+
+          <h2 id="rights">11. Your Rights</h2>
           <p>
             Depending on your location, you may have rights to access, correct, delete, or export your data, and to
             object to certain processing. Contact us to exercise these rights.
           </p>
 
-          <h2 id="children">10. Children</h2>
+          <h2 id="children">12. Children</h2>
           <p>
             The Services are not directed to children under 16, and we do not knowingly collect data from children.
           </p>
 
-          <h2 id="changes">11. Changes to This Policy</h2>
+          <h2 id="changes">13. Changes to This Policy</h2>
           <p>
             We may update this policy from time to time. Continued use of the Services after changes means you accept
             the updated policy.
           </p>
 
-          <h2 id="contact">12. Contact</h2>
+          <h2 id="contact">14. Contact</h2>
           <p>
             Questions? Contact us at <a href="mailto:support@smartconnect4u.com">support@smartconnect4u.com</a>.
           </p>

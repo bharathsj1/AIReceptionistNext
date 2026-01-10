@@ -9,32 +9,32 @@
   <rect x="28" y="26" width="584" height="368" rx="20" fill="#0c1430" stroke="#2c3564" stroke-width="1.5"/>
 
   <rect x="52" y="52" width="120" height="16" rx="8" fill="#2b3a74"/>
-  <text x="64" y="64" font-size="10" fill="#dbe4ff" font-family="IBM Plex Sans, Arial, sans-serif" letter-spacing="1">TRIAGE</text>
+  <text x="64" y="64" font-size="10" fill="#dbe4ff" font-family="DM Sans, Arial, sans-serif" letter-spacing="1">TRIAGE</text>
   <rect x="52" y="84" width="260" height="10" rx="5" fill="#1f2a57"/>
 
   <rect x="52" y="124" width="536" height="50" rx="14" fill="#18224a" stroke="#34407b"/>
   <rect x="72" y="142" width="180" height="12" rx="6" fill="#2a3770"/>
-  <text x="82" y="151" font-size="9" fill="#c7d2fe" font-family="IBM Plex Sans, Arial, sans-serif">Invoice request</text>
+  <text x="82" y="151" font-size="9" fill="#c7d2fe" font-family="DM Sans, Arial, sans-serif">Invoice request</text>
   <rect x="420" y="140" width="70" height="16" rx="8" fill="#3b82f6"/>
-  <text x="432" y="151" font-size="9" fill="#0b1226" font-family="IBM Plex Sans, Arial, sans-serif" font-weight="700">Billing</text>
+  <text x="432" y="151" font-size="9" fill="#0b1226" font-family="DM Sans, Arial, sans-serif" font-weight="700">Billing</text>
   <rect x="498" y="140" width="70" height="16" rx="8" fill="#10b981"/>
-  <text x="512" y="151" font-size="9" fill="#052e1b" font-family="IBM Plex Sans, Arial, sans-serif" font-weight="700">SLA 2h</text>
+  <text x="512" y="151" font-size="9" fill="#052e1b" font-family="DM Sans, Arial, sans-serif" font-weight="700">SLA 2h</text>
 
   <rect x="52" y="188" width="536" height="50" rx="14" fill="#121a3d" stroke="#2c3564"/>
   <rect x="72" y="206" width="220" height="12" rx="6" fill="#2a3770"/>
-  <text x="82" y="215" font-size="9" fill="#c7d2fe" font-family="IBM Plex Sans, Arial, sans-serif">New lead inquiry</text>
+  <text x="82" y="215" font-size="9" fill="#c7d2fe" font-family="DM Sans, Arial, sans-serif">New lead inquiry</text>
   <rect x="420" y="204" width="70" height="16" rx="8" fill="#f59e0b"/>
-  <text x="434" y="215" font-size="9" fill="#2d1f05" font-family="IBM Plex Sans, Arial, sans-serif" font-weight="700">Sales</text>
+  <text x="434" y="215" font-size="9" fill="#2d1f05" font-family="DM Sans, Arial, sans-serif" font-weight="700">Sales</text>
 
   <rect x="52" y="252" width="536" height="50" rx="14" fill="#121a3d" stroke="#2c3564"/>
   <rect x="72" y="270" width="200" height="12" rx="6" fill="#2a3770"/>
-  <text x="82" y="279" font-size="9" fill="#c7d2fe" font-family="IBM Plex Sans, Arial, sans-serif">Password reset</text>
+  <text x="82" y="279" font-size="9" fill="#c7d2fe" font-family="DM Sans, Arial, sans-serif">Password reset</text>
   <rect x="420" y="268" width="70" height="16" rx="8" fill="#ef4444"/>
-  <text x="434" y="279" font-size="9" fill="#2b0d0d" font-family="IBM Plex Sans, Arial, sans-serif" font-weight="700">Urgent</text>
+  <text x="434" y="279" font-size="9" fill="#2b0d0d" font-family="DM Sans, Arial, sans-serif" font-weight="700">Urgent</text>
 
   <rect x="52" y="316" width="536" height="50" rx="14" fill="#121a3d" stroke="#2c3564"/>
   <rect x="72" y="334" width="240" height="12" rx="6" fill="#2a3770"/>
-  <text x="82" y="343" font-size="9" fill="#c7d2fe" font-family="IBM Plex Sans, Arial, sans-serif">Feature request</text>
+  <text x="82" y="343" font-size="9" fill="#c7d2fe" font-family="DM Sans, Arial, sans-serif">Feature request</text>
   <rect x="420" y="332" width="70" height="16" rx="8" fill="#6366f1"/>
-  <text x="432" y="343" font-size="9" fill="#eef2ff" font-family="IBM Plex Sans, Arial, sans-serif" font-weight="700">Product</text>
+  <text x="432" y="343" font-size="9" fill="#eef2ff" font-family="DM Sans, Arial, sans-serif" font-weight="700">Product</text>
 </svg>

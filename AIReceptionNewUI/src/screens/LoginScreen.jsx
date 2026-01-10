@@ -23,7 +23,7 @@ export default function LoginScreen({
             <div className="login-left">
               <div>
                 <p className="eyebrow">Welcome back</p>
-                <h2>Login to AI Receptionist</h2>
+                <h2>Login to AI Dashboard</h2>
                 <p className="lead narrow">
                   Access your concierge dashboard and manage your reception flows.
                 </p>
@@ -82,12 +82,12 @@ export default function LoginScreen({
               )}
             </div>
             <aside className="login-aside">
-              <p className="eyebrow">How it works</p>
-              <h3>AI Reception, on autopilot</h3>
+              <p className="eyebrow">SmartConnect4u, on autopilot</p>
+              <h3>Your voice concierge, ready in minutes.</h3>
               <ul>
-                <li>Drop your website URL, we ingest your content in seconds.</li>
-                <li>Generate conversational prompts tailored to your brand.</li>
-                <li>Route real leads via voice, chat, or hand-offs to your team.</li>
+                <li>Answer calls 24/7 with natural voice.</li>
+                <li>Capture leads, book meetings, and route VIPs.</li>
+                <li>Syncs with your calendar and CRM out of the box.</li>
               </ul>
               <p className="hint">New here? Hit Create an account to start with your URL.</p>
             </aside>
