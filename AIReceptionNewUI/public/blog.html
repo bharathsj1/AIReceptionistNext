@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Blog | SmartConnect4u</title>
+    <style>
+      @import url("https://fonts.cdnfonts.com/css/product-sans");
+      :root {
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: "Product Sans", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+        background: radial-gradient(circle at 18% 18%, rgba(123, 198, 255, 0.16), transparent 40%),
+          radial-gradient(circle at 82% 0%, rgba(124, 58, 237, 0.18), transparent 40%),
+          linear-gradient(140deg, #0a0c2f, #0f1238 45%, #0b0f1f 100%);
+        color: #e6ebff;
+      }
+      a {
+        color: #9fb6ff;
+        text-decoration: none;
+      }
+      a:hover {
+        color: #ffffff;
+      }
+      .screen-panel {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 0 16px;
+        width: 100%;
+      }
+      .nav-card {
+        display: grid;
+        align-items: center;
+        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+        gap: 20px;
+        background: rgba(0, 0, 0, 0.4);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        border-radius: 0;
+        padding: 14px clamp(16px, 4vw, 48px);
+        box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+        backdrop-filter: blur(10px);
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        transform: translateY(0);
+        width: auto;
+        max-width: none;
+        margin: 0;
+        z-index: 20;
+        transition: transform 200ms ease, opacity 200ms ease;
+        font-family: "Product Sans", "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI",
+          Roboto, "Helvetica Neue", Arial, sans-serif;
+      }
+      .nav-brand {
+        display: flex;
+        align-items: center;
+        justify-self: start;
+      }
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 0;
+        background: transparent;
+        border: none;
+        color: #dbe7ff;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        cursor: pointer;
+        text-decoration: none;
+        font-family: inherit;
+      }
+      .brand-logo {
+        max-width: 170px;
+        max-height: 50px;
+        width: auto;
+        height: auto;
+        object-fit: contain;
+        border-radius: 0;
+      }
+      .nav-links {
+        display: flex;
+        gap: 28px;
+        flex-wrap: nowrap;
+        align-items: center;
+        justify-self: center;
+      }
+      .nav-link {
+        background: transparent;
+        color: #e6ebff;
+        font-weight: 600;
+        font-size: 14px;
+        border: none;
+        padding: 4px 0;
+        cursor: pointer;
+        transition: color 160ms ease, text-shadow 180ms ease;
+        text-decoration: none;
+      }
+      .nav-link:hover {
+        color: #ffffff;
+        text-shadow: 0 0 12px rgba(123, 198, 255, 0.7), 0 0 28px rgba(123, 198, 255, 0.32);
+      }
+      .nav-actions {
+        display: flex;
+        gap: 10px;
+        justify-self: end;
+      }
+      .nav-item-with-sub {
+        position: relative;
+        display: inline-flex;
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .nav-submenu {
+        position: absolute;
+        top: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        display: none;
+        gap: 6px;
+        background:
+          radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.04), transparent 30%),
+          radial-gradient(circle at 80% 0%, rgba(123, 156, 255, 0.14), transparent 32%),
+          linear-gradient(180deg, #050915, #050814 55%, #040712);
+        border: 1px solid rgba(123, 198, 255, 0.38);
+        border-radius: 8px;
+        padding: 12px;
+        min-width: 240px;
+        margin-top: 10px;
+        box-shadow: 0 18px 36px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.05);
+        backdrop-filter: blur(14px);
+        z-index: 20;
+        color: #e6ecff;
+      }
+      .nav-item-with-sub:hover .nav-submenu,
+      .nav-item-with-sub:focus-within .nav-submenu {
+        display: grid;
+      }
+      .nav-subitem {
+        background: transparent;
+        color: #f8fbff;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 0;
+        padding: 8px 10px;
+        text-align: left;
+        cursor: pointer;
+        transition: background 140ms ease, transform 120ms ease, border-color 160ms ease;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+        text-shadow: 0 1px 6px rgba(0, 0, 0, 0.4);
+        text-decoration: none;
+      }
+      .nav-subitem:hover {
+        background: rgba(123, 198, 255, 0.2);
+        border-color: rgba(123, 198, 255, 0.68);
+        transform: translateY(-1px);
+      }
+      .login-cta {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        background: #4338ff;
+        color: #f7f7ff;
+        padding: 10px 14px;
+        border: 1px solid #4338ff;
+        border-radius: 0;
+        font-weight: 400;
+        letter-spacing: 0.02em;
+        cursor: pointer;
+        box-shadow: 0 10px 22px rgba(67, 56, 255, 0.22);
+        transition: transform 140ms ease, box-shadow 160ms ease, background 160ms ease;
+        width: auto;
+        justify-content: center;
+        text-decoration: none;
+      }
+      .login-cta:hover {
+        transform: translateY(-1px);
+        background: #ffffff;
+        color: #4338ff;
+        border: 1px solid #4338ff;
+        box-shadow: 0 12px 28px rgba(67, 56, 255, 0.25);
+      }
+      .page-shell {
+        padding-top: 140px;
+        padding-bottom: 64px;
+      }
+      .blog-layout {
+        display: grid;
+        grid-template-columns: minmax(200px, 240px) minmax(0, 1fr);
+        gap: 18px;
+        margin-top: 18px;
+      }
+      .blog-sidebar {
+        position: sticky;
+        top: 120px;
+        align-self: start;
+        background: rgba(9, 12, 30, 0.85);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 20px;
+        padding: 16px;
+        box-shadow: 0 16px 32px rgba(0, 0, 0, 0.25);
+      }
+      .sidebar-title {
+        margin: 0 0 10px;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.2em;
+        color: #9fb6ff;
+      }
+      .sidebar-links {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 8px;
+      }
+      .sidebar-links a {
+        display: block;
+        padding: 8px 10px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.04);
+        color: #dbe3ff;
+        font-size: 14px;
+      }
+      .sidebar-links a:hover {
+        border-color: rgba(123, 198, 255, 0.5);
+        background: rgba(123, 198, 255, 0.12);
+        color: #ffffff;
+      }
+      .sidebar-links a.active {
+        border-color: rgba(123, 198, 255, 0.8);
+        background: rgba(123, 198, 255, 0.2);
+        color: #ffffff;
+        box-shadow: 0 10px 22px rgba(67, 56, 255, 0.22);
+      }
+      .hero {
+        display: grid;
+        gap: 12px;
+        padding: clamp(18px, 4vw, 28px);
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 24px;
+        box-shadow: 0 24px 48px rgba(0, 0, 0, 0.3);
+      }
+      .hero h1 {
+        margin: 0;
+        font-size: clamp(28px, 4vw, 34px);
+        color: #f6f7ff;
+      }
+      .hero p {
+        margin: 0;
+        color: #cfd7ff;
+        line-height: 1.6;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 16px;
+        margin-top: 18px;
+      }
+      .card {
+        background: rgba(9, 12, 30, 0.8);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 20px;
+        padding: 16px;
+        display: grid;
+        gap: 10px;
+        box-shadow: 0 16px 32px rgba(0, 0, 0, 0.25);
+      }
+      .card h2 {
+        margin: 0;
+        font-size: 20px;
+        color: #f7f8ff;
+      }
+      .card p {
+        margin: 0;
+        color: #cfd7ff;
+        line-height: 1.6;
+      }
+      .steps {
+        margin: 0;
+        padding-left: 18px;
+        color: #dbe3ff;
+        display: grid;
+        gap: 6px;
+      }
+      .detail {
+        margin: 0;
+        color: #c3cdf2;
+        line-height: 1.7;
+      }
+      .subhead {
+        margin: 10px 0 4px;
+        font-size: 14px;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        color: #9fb6ff;
+      }
+      .tag {
+        display: inline-block;
+        padding: 6px 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(148, 163, 255, 0.3);
+        background: rgba(36, 46, 92, 0.6);
+        font-size: 12px;
+        color: #c7d2fe;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .screenshot {
+        border-radius: 16px;
+        border: 1px dashed rgba(255, 255, 255, 0.18);
+        background: linear-gradient(135deg, rgba(124, 58, 237, 0.16), rgba(59, 130, 246, 0.12));
+        min-height: 140px;
+        display: grid;
+        place-items: center;
+        color: #e9edff;
+        font-size: 13px;
+        text-align: center;
+        padding: 12px;
+      }
+      @media (max-width: 780px) {
+        .nav-card {
+          grid-template-columns: 1fr;
+          row-gap: 12px;
+        }
+        .nav-links {
+          justify-self: start;
+          flex-wrap: wrap;
+        }
+        .nav-actions {
+          justify-self: start;
+        }
+        .page-shell {
+          padding-top: 170px;
+        }
+        .blog-layout {
+          grid-template-columns: 1fr;
+        }
+        .blog-sidebar {
+          position: static;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="nav-card">
+      <div class="nav-brand">
+        <a class="brand" href="/">
+          <img class="brand-logo" src="/media/sc_logo_main.png" alt="SmartConnect4u logo" />
+        </a>
+      </div>
+      <div class="nav-links">
+        <a class="nav-link" href="/#capabilities">Our purpose</a>
+        <a class="nav-link" href="/#performance">What we do</a>
+        <div class="nav-item-with-sub">
+          <button class="nav-link" type="button">Services</button>
+          <div class="nav-submenu">
+            <a class="nav-subitem" href="/#capabilities">AI Receptionist</a>
+            <a class="nav-subitem" href="/#capabilities">AI Social Media Manager</a>
+            <a class="nav-subitem" href="/#capabilities">Email Manager</a>
+            <a class="nav-subitem" href="/#capabilities">CRM &amp; Lead Manager</a>
+          </div>
+        </div>
+        <div class="nav-item-with-sub">
+          <button class="nav-link" type="button">Legal</button>
+          <div class="nav-submenu">
+            <a class="nav-subitem" href="/terms.html">Terms &amp; Conditions</a>
+            <a class="nav-subitem" href="/privacy.html">Privacy Policy</a>
+          </div>
+        </div>
+        <a class="nav-link" href="/#testimonials">Testimonials</a>
+        <a class="nav-link" href="/contact.html">Contact</a>
+        <a class="nav-link" href="/blog.html">Blog</a>
+      </div>
+      <div class="nav-actions">
+        <a class="login-cta" href="/#login">
+          <span aria-hidden>→</span>
+          <span>Login</span>
+        </a>
+      </div>
+    </header>
+
+    <main class="screen-panel page-shell">
+      <section class="hero">
+        <span class="tag">Guides</span>
+        <h1>How to get the most from SmartConnect4u</h1>
+        <p>
+          Quick-start recipes for our AI tools—set up in minutes, stay in control, and keep humans in the loop.
+          Screenshots show where to click so you can move fast.
+        </p>
+      </section>
+
+      <section class="blog-layout">
+        <aside class="blog-sidebar">
+          <p class="sidebar-title">Quick menu</p>
+          <ul class="sidebar-links">
+            <li><a href="#receptionist" class="sidebar-link">AI Receptionist</a></li>
+            <li><a href="#email-manager" class="sidebar-link">Email Manager</a></li>
+            <li><a href="#social-manager" class="sidebar-link">Social Manager</a></li>
+            <li><a href="#crm-lead" class="sidebar-link">CRM &amp; Lead Manager</a></li>
+            <li><a href="#task-manager" class="sidebar-link">Task Manager</a></li>
+            <li><a href="#best-practices" class="sidebar-link">Best practices</a></li>
+          </ul>
+        </aside>
+
+        <div class="grid">
+          <article class="card" id="receptionist">
+          <h2>AI Receptionist (S4U-v3 voice concierge)</h2>
+          <p>
+            Launch a 24/7 voice concierge that books meetings, captures leads, and routes VIP callers while keeping
+            humans in the loop. S4U-v3 follows your policies, speaks in your brand voice, and logs every call.
+          </p>
+          <p class="subhead">Setup steps</p>
+          <ol class="steps">
+            <li>Connect Google or Outlook Calendar from Dashboard → Settings → Calendar.</li>
+            <li>Pick a voice and greeting in Dashboard → Agents → Voice &amp; Greeting.</li>
+            <li>Set escalation rules (when to hand off to humans) in Dashboard → Agents → Escalation.</li>
+            <li>Assign or buy a number in Dashboard → Numbers and test a live call.</li>
+            <li>Monitor transcripts in Dashboard → Calls; edit FAQs anytime.</li>
+          </ol>
+          <p class="subhead">Pro tips</p>
+          <p class="detail">
+            Start with a short greeting, then add 5–10 FAQs (hours, pricing, cancellation policy). Add VIP keywords
+            (e.g., “urgent”, “executive”, “legal”) to your escalation rules so sensitive calls route to a human.
+          </p>
+          <div class="screenshot">Screenshot: Dashboard → Agents → Voice &amp; Greeting</div>
+        </article>
+
+          <article class="card" id="email-manager">
+          <h2>Email Manager</h2>
+          <p>
+            Automate triage and draft replies while keeping final approval in your hands. Use labels, SLAs, and
+            escalation rules to keep urgent threads prioritized.
+          </p>
+          <p class="subhead">Setup steps</p>
+          <ol class="steps">
+            <li>Connect Gmail/Outlook in Dashboard → Email → Connect.</li>
+            <li>Set labels or folders to watch; choose auto-draft vs manual review.</li>
+            <li>Define reply tone and escalation rules for sensitive threads.</li>
+            <li>Use “Suggest reply” in the inbox to approve and send.</li>
+            <li>Review analytics in Dashboard → Email → Insights.</li>
+          </ol>
+          <p class="subhead">Pro tips</p>
+          <p class="detail">
+            Turn on “manual review” for billing, legal, or refund keywords. Use canned templates for the top 5 requests,
+            then let S4U-v3 adapt them per customer.
+          </p>
+          <div class="screenshot">Screenshot: Email → Connect &amp; Rules</div>
+        </article>
+
+          <article class="card" id="social-manager">
+          <h2>AI Social Media Manager</h2>
+          <p>
+            Keep your calendar full with on-brand posts, scheduled and ready to publish. Drafts align with your tone,
+            highlight your services, and include calls-to-action that drive inquiries.
+          </p>
+          <p class="subhead">Setup steps</p>
+          <ol class="steps">
+            <li>Connect channels (Meta, LinkedIn) in Dashboard → Social → Connections.</li>
+            <li>Set your voice, topics, and posting cadence in Social → Strategy.</li>
+            <li>Generate a week of drafts and edit headlines/captions.</li>
+            <li>Schedule or publish; enable auto-respond for common DMs.</li>
+            <li>Track performance in Social → Insights.</li>
+          </ol>
+          <p class="subhead">Pro tips</p>
+          <p class="detail">
+            Start with a 3-post cadence. Mix “how-to”, “customer story”, and “offer” content. Use auto-respond for
+            FAQs and route sales inquiries to a human with a warm handoff.
+          </p>
+          <div class="screenshot">Screenshot: Social → Drafts &amp; Schedule</div>
+        </article>
+
+          <article class="card" id="crm-lead">
+          <h2>CRM &amp; Lead Manager</h2>
+          <p>
+            Capture, score, and route leads automatically so sales sees the best first. Define scoring rules by intent,
+            budget, or channel and route VIPs to your top reps.
+          </p>
+          <p class="subhead">Setup steps</p>
+          <ol class="steps">
+            <li>Connect your CRM (or export CSV) in Dashboard → CRM.</li>
+            <li>Set lead sources and scoring rules (budget, intent, channel).</li>
+            <li>Auto-assign owners by territory/vertical; configure SLAs.</li>
+            <li>Enable notifications for high-intent leads via email/SMS.</li>
+            <li>Review pipeline health in CRM → Overview.</li>
+          </ol>
+          <p class="subhead">Pro tips</p>
+          <p class="detail">
+            Use a “hot lead” threshold (e.g., score ≥ 80). Send immediate alerts to the owner and log the call/email
+            activity so response times are visible.
+          </p>
+          <div class="screenshot">Screenshot: CRM → Scoring &amp; Routing</div>
+        </article>
+
+          <article class="card" id="task-manager">
+          <h2>Task Manager</h2>
+          <p>
+            Give your team one place to see AI-created tasks and human follow-ups. Tasks are created automatically from
+            calls, emails, and chats, with all context attached.
+          </p>
+          <p class="subhead">Setup steps</p>
+          <ol class="steps">
+            <li>Open Dashboard → Tasks to see AI-created items.</li>
+            <li>Assign owners and due dates; set priority.</li>
+            <li>Use filters to track open, in-progress, and done items.</li>
+            <li>Link tasks to calls/emails for context.</li>
+            <li>Export or sync to your PM tool if needed.</li>
+          </ol>
+          <p class="subhead">Pro tips</p>
+          <p class="detail">
+            Add SLAs (e.g., “follow up within 2 hours”) and filter by priority daily. Close the loop by tagging
+            outcomes (won, lost, needs follow-up) to improve reporting.
+          </p>
+          <div class="screenshot">Screenshot: Tasks → Board view</div>
+        </article>
+
+          <article class="card" id="best-practices">
+          <h2>Best practices</h2>
+          <p>Keep control while letting automation work for you. These habits keep quality high and response times low.</p>
+          <p class="subhead">Recommended workflow</p>
+          <ol class="steps">
+            <li>Start in “review” mode for email/DM replies; graduate to auto-send later.</li>
+            <li>Keep your knowledge base current (FAQs, pricing, policies) so answers stay accurate.</li>
+            <li>Use escalation rules: VIPs → human, compliance keywords → manual review.</li>
+            <li>Schedule weekly checks in Calls/Email to fine-tune prompts and voice.</li>
+            <li>Test end-to-end with a teammate before going live to customers.</li>
+          </ol>
+          <p class="subhead">Quality checklist</p>
+          <p class="detail">
+            Review the top 10 conversations weekly. Update FAQs, add new objections, and make sure the handoff process
+            routes to the correct owner with all details captured.
+          </p>
+          <div class="screenshot">Screenshot: Settings → Escalation &amp; Review</div>
+        </article>
+        </div>
+      </section>
+    </main>
+    <script>
+      const links = Array.from(document.querySelectorAll(".sidebar-link"));
+      const sections = links
+        .map((link) => document.querySelector(link.getAttribute("href")))
+        .filter(Boolean);
+
+      const setActive = (targetId) => {
+        links.forEach((link) => {
+          const isActive = link.getAttribute("href") === `#${targetId}`;
+          link.classList.toggle("active", isActive);
+        });
+      };
+
+      links.forEach((link) => {
+        link.addEventListener("click", () => {
+          const target = link.getAttribute("href")?.replace("#", "");
+          if (target) {
+            setActive(target);
+          }
+        });
+      });
+
+      const observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              setActive(entry.target.id);
+            }
+          });
+        },
+        { rootMargin: "-30% 0px -60% 0px", threshold: [0.1, 0.3, 0.6] }
+      );
+
+      sections.forEach((section) => observer.observe(section));
+      if (sections[0]) {
+        setActive(sections[0].id);
+      }
+    </script>
+  </body>
+</html>
