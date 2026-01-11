@@ -67,6 +67,7 @@ def _build_manual_summary(body: dict) -> Tuple[str, str]:
         body.get("business_summary"),
         body.get("business_services"),
         body.get("business_hours"),
+        body.get("business_openings"),
         body.get("business_location"),
         body.get("business_notes"),
         body.get("business_phone"),

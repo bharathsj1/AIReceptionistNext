@@ -84,6 +84,49 @@ const toInputValue = (value) => {
   )}:${pad(date.getMinutes())}`;
 };
 
+const startOfDay = (value) => {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+};
+
+const addDays = (value, delta) => {
+  const base = startOfDay(value);
+  if (!base) return null;
+  const next = new Date(base);
+  next.setDate(next.getDate() + delta);
+  return next;
+};
+
+const formatDayLabel = (date, today) => {
+  if (!date) return "";
+  const normalizedToday = startOfDay(today);
+  const normalizedDate = startOfDay(date);
+  if (!normalizedToday || !normalizedDate) {
+    return "";
+  }
+  if (normalizedToday.getTime() === normalizedDate.getTime()) {
+    return "Today";
+  }
+  const yesterday = addDays(normalizedToday, -1);
+  if (yesterday && yesterday.getTime() === normalizedDate.getTime()) {
+    return "Yesterday";
+  }
+  return normalizedDate.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric"
+  });
+};
+
+const taskCreatedOn = (task) => {
+  if (!task) return null;
+  const raw = task.createdAt || task.created_at || task.updatedAt || task.updated_at;
+  const parsed = raw ? new Date(raw) : null;
+  if (!parsed || Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+};
+
 const buildDefaultSchedule = () => {
   const start = new Date();
   start.setSeconds(0, 0);
@@ -114,6 +157,7 @@ export default function TaskBoard({ email, businessName, liveEnabled }) {
     end: ""
   });
   const [scheduleStatus, setScheduleStatus] = useState({ status: "idle", message: "" });
+  const [selectedDate, setSelectedDate] = useState(() => startOfDay(new Date()));
 
   const loadTasks = useCallback(async () => {
     if (!email) return;
@@ -170,6 +214,21 @@ export default function TaskBoard({ email, businessName, liveEnabled }) {
   const statusCounts = useMemo(() => {
     return tasks.reduce(
       (acc, task) => {
+        const createdAt = taskCreatedOn(task);
+        if (!createdAt) {
+          return acc;
+        }
+        const dayStart = startOfDay(selectedDate);
+        if (!dayStart) {
+          return acc;
+        }
+        const dayEnd = addDays(dayStart, 1);
+        if (!dayEnd) {
+          return acc;
+        }
+        if (createdAt < dayStart || createdAt >= dayEnd) {
+          return acc;
+        }
         acc.ALL += 1;
         if (task.status === "NEW") acc.NEW += 1;
         if (task.status === "ACCEPTED") acc.ACCEPTED += 1;
@@ -178,12 +237,43 @@ export default function TaskBoard({ email, businessName, liveEnabled }) {
       },
       { ALL: 0, NEW: 0, ACCEPTED: 0, REJECTED: 0 }
     );
-  }, [tasks]);
+  }, [selectedDate, tasks]);
+
+  const dayTasks = useMemo(() => {
+    const dayStart = startOfDay(selectedDate);
+    if (!dayStart) return [];
+    const dayEnd = addDays(dayStart, 1);
+    if (!dayEnd) return [];
+    return tasks.filter((task) => {
+      const createdAt = taskCreatedOn(task);
+      if (!createdAt) return false;
+      return createdAt >= dayStart && createdAt < dayEnd;
+    });
+  }, [selectedDate, tasks]);
 
   const filteredTasks = useMemo(
-    () => filterTasks(tasks, status, search),
-    [tasks, status, search]
+    () => filterTasks(dayTasks, status, search),
+    [dayTasks, status, search]
   );
+
+  const today = startOfDay(new Date());
+  const dayLabel = formatDayLabel(selectedDate, today);
+  const canGoForward = Boolean(
+    today && selectedDate && startOfDay(selectedDate)?.getTime() < today.getTime()
+  );
+  const handlePrevDay = () => {
+    const next = addDays(selectedDate, -1);
+    if (next) setSelectedDate(next);
+  };
+  const handleNextDay = () => {
+    if (!canGoForward) return;
+    const next = addDays(selectedDate, 1);
+    if (!next || (today && next.getTime() > today.getTime())) return;
+    setSelectedDate(next);
+  };
+  const handleToday = () => {
+    if (today) setSelectedDate(today);
+  };
 
   const liveStatusLabel = useMemo(() => {
     if (!liveEnabled) return "Live updates disabled";
@@ -323,6 +413,22 @@ export default function TaskBoard({ email, businessName, liveEnabled }) {
           </CardHeader>
         </div>
         <CardContent className="relative grid gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm" onClick={handlePrevDay}>
+                Previous
+              </Button>
+              <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs uppercase tracking-[0.2em] text-slate-200">
+                {dayLabel || "Selected day"}
+              </div>
+              <Button variant="ghost" size="sm" onClick={handleNextDay} disabled={!canGoForward}>
+                Next
+              </Button>
+            </div>
+            <Button variant="ghost" size="sm" onClick={handleToday} disabled={!canGoForward}>
+              Today
+            </Button>
+          </div>
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <Tabs value={status} onValueChange={setStatus}>
               <TabsList>
@@ -396,7 +502,9 @@ export default function TaskBoard({ email, businessName, liveEnabled }) {
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/5">
               <Sparkles className="h-6 w-6 text-slate-300" />
             </div>
-            <h3 className="mt-4 text-lg font-semibold text-white">No tasks yet</h3>
+            <h3 className="mt-4 text-lg font-semibold text-white">
+              No tasks for {dayLabel || "this day"}
+            </h3>
             <p className="mt-2 max-w-md text-sm text-slate-300">
               When callers place orders or requests, they will appear here as actionable tasks.
             </p>
