@@ -2,6 +2,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import CapabilitiesSection from "../components/CapabilitiesSection";
 // PricingPackages removed from home screen
 
+const HERO_ROTATING_WORDS = [
+  { word: "Reception", gradient: "linear-gradient(120deg, #f97316, #facc15)" },
+  { word: "Emailing", gradient: "linear-gradient(120deg, #22c55e, #86efac)" },
+  { word: "Chatting", gradient: "linear-gradient(120deg, #38bdf8, #60a5fa)" },
+  { word: "Smart Calling", gradient: "linear-gradient(120deg, #a78bfa, #f472b6)" },
+  { word: "Campaign", gradient: "linear-gradient(120deg, #fb7185, #f59e0b)" }
+];
+const HERO_ROTATE_INTERVAL_MS = 2000;
+const HERO_FADE_MS = 300;
+
 export default function LandingScreen({ onTry, onLogin, onSelectPlan, onShowService }) {
   const navItems = useMemo(
     () => [
@@ -19,6 +29,8 @@ export default function LandingScreen({ onTry, onLogin, onSelectPlan, onShowServ
   const activeNavIdRef = useRef(activeNavId);
   const [capNavOpen, setCapNavOpen] = useState(false);
   const [testimonialIndex, setTestimonialIndex] = useState(0);
+  const [heroWordIndex, setHeroWordIndex] = useState(0);
+  const [heroWordFading, setHeroWordFading] = useState(false);
   const testimonials = useMemo(
     () => [
       {
@@ -103,6 +115,25 @@ export default function LandingScreen({ onTry, onLogin, onSelectPlan, onShowServ
   };
 
   useEffect(() => {
+    if (HERO_ROTATING_WORDS.length < 2) return;
+    let fadeTimeoutId;
+    const intervalId = setInterval(() => {
+      setHeroWordFading(true);
+      fadeTimeoutId = setTimeout(() => {
+        setHeroWordIndex((prev) => (prev + 1) % HERO_ROTATING_WORDS.length);
+        setHeroWordFading(false);
+      }, HERO_FADE_MS);
+    }, HERO_ROTATE_INTERVAL_MS);
+
+    return () => {
+      clearInterval(intervalId);
+      if (fadeTimeoutId) {
+        clearTimeout(fadeTimeoutId);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     activeNavIdRef.current = activeNavId;
   }, [activeNavId]);
 
@@ -170,8 +201,17 @@ export default function LandingScreen({ onTry, onLogin, onSelectPlan, onShowServ
             <span className="hero-highlight">AI</span> that feels human.
           </h1>
         </div>
-        <p className="hero-subtitle shine-text">
-          The AI agent platform for all your customer service
+        <p className="hero-subtitle">
+          The AI{" "}
+          <span className="hero-rotating-slot">
+            <span
+              className={`hero-rotating-word ${heroWordFading ? "is-fading" : ""}`.trim()}
+              style={{ backgroundImage: HERO_ROTATING_WORDS[heroWordIndex].gradient }}
+            >
+              {HERO_ROTATING_WORDS[heroWordIndex].word}
+            </span>
+          </span>{" "}
+          platform for all your customer service
         </p>
         <p className="lead narrow hero-lead-single" style={{ margin: "8px 0 0" }}>
           Smart AI systems built to grow your business while you focus on what matters.

@@ -191,9 +191,9 @@ def task_manager(req: func.HttpRequest) -> func.HttpResponse:
 
 
 @app.function_name(name="TaskManagerUpdate")
-@app.route(route="task-manager/{item_id}", methods=["PUT", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+@app.route(route="task-manager/{item_id}", methods=["PUT", "DELETE", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def task_manager_update(req: func.HttpRequest) -> func.HttpResponse:
-    cors = build_cors_headers(req, ["PUT", "OPTIONS"])
+    cors = build_cors_headers(req, ["PUT", "DELETE", "OPTIONS"])
     if req.method == "OPTIONS":
         return func.HttpResponse("", status_code=204, headers=cors)
 
@@ -210,27 +210,76 @@ def task_manager_update(req: func.HttpRequest) -> func.HttpResponse:
             headers=cors,
         )
 
-    try:
-        body = req.get_json()
-    except ValueError:
-        body = None
-    if not isinstance(body, dict):
-        body = {}
-
-    email = body.get("email")
-    if not email:
-        return func.HttpResponse(
-            json.dumps({"error": "email is required"}),
-            status_code=400,
-            mimetype="application/json",
-            headers=cors,
-        )
-
-    start_dt = _parse_iso(body.get("start") or body.get("start_time"))
-    end_dt = _parse_iso(body.get("end") or body.get("end_time"))
-
     db = SessionLocal()
     try:
+        if req.method == "DELETE":
+            email = req.params.get("email")
+            if not email:
+                return func.HttpResponse(
+                    json.dumps({"error": "email is required"}),
+                    status_code=400,
+                    mimetype="application/json",
+                    headers=cors,
+                )
+
+            client, _ = _find_client_and_user(db, email)
+            if not client:
+                return func.HttpResponse(
+                    json.dumps({"error": "Client not found"}),
+                    status_code=404,
+                    mimetype="application/json",
+                    headers=cors,
+                )
+
+            item = (
+                db.query(TaskManagerItem)
+                .filter(TaskManagerItem.id == item_id_int, TaskManagerItem.client_id == client.id)
+                .one_or_none()
+            )
+            if not item:
+                return func.HttpResponse(
+                    json.dumps({"error": "Task manager item not found"}),
+                    status_code=404,
+                    mimetype="application/json",
+                    headers=cors,
+                )
+
+            db.delete(item)
+            db.commit()
+            return func.HttpResponse(
+                json.dumps({"ok": True}),
+                status_code=200,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        if req.method != "PUT":
+            return func.HttpResponse(
+                json.dumps({"error": "Unsupported method"}),
+                status_code=405,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        try:
+            body = req.get_json()
+        except ValueError:
+            body = None
+        if not isinstance(body, dict):
+            body = {}
+
+        email = body.get("email")
+        if not email:
+            return func.HttpResponse(
+                json.dumps({"error": "email is required"}),
+                status_code=400,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        start_dt = _parse_iso(body.get("start") or body.get("start_time"))
+        end_dt = _parse_iso(body.get("end") or body.get("end_time"))
+
         client, _ = _find_client_and_user(db, email)
         if not client:
             return func.HttpResponse(
@@ -284,79 +333,6 @@ def task_manager_update(req: func.HttpRequest) -> func.HttpResponse:
         logger.error("Failed to update task manager item: %s", exc)
         return func.HttpResponse(
             json.dumps({"error": "Failed to update task manager item", "details": str(exc)}),
-            status_code=500,
-            mimetype="application/json",
-            headers=cors,
-        )
-    finally:
-        db.close()
-
-
-@app.function_name(name="TaskManagerDelete")
-@app.route(route="task-manager/{item_id}", methods=["DELETE", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
-def task_manager_delete(req: func.HttpRequest) -> func.HttpResponse:
-    cors = build_cors_headers(req, ["DELETE", "OPTIONS"])
-    if req.method == "OPTIONS":
-        return func.HttpResponse("", status_code=204, headers=cors)
-
-    item_id = req.route_params.get("item_id")
-    try:
-        item_id_int = int(item_id)
-    except (TypeError, ValueError):
-        item_id_int = None
-    if not item_id_int:
-        return func.HttpResponse(
-            json.dumps({"error": "Invalid item id"}),
-            status_code=400,
-            mimetype="application/json",
-            headers=cors,
-        )
-
-    email = req.params.get("email")
-    if not email:
-        return func.HttpResponse(
-            json.dumps({"error": "email is required"}),
-            status_code=400,
-            mimetype="application/json",
-            headers=cors,
-        )
-
-    db = SessionLocal()
-    try:
-        client, _ = _find_client_and_user(db, email)
-        if not client:
-            return func.HttpResponse(
-                json.dumps({"error": "Client not found"}),
-                status_code=404,
-                mimetype="application/json",
-                headers=cors,
-            )
-
-        item = (
-            db.query(TaskManagerItem)
-            .filter(TaskManagerItem.id == item_id_int, TaskManagerItem.client_id == client.id)
-            .one_or_none()
-        )
-        if not item:
-            return func.HttpResponse(
-                json.dumps({"error": "Task manager item not found"}),
-                status_code=404,
-                mimetype="application/json",
-                headers=cors,
-            )
-        db.delete(item)
-        db.commit()
-        return func.HttpResponse(
-            json.dumps({"ok": True}),
-            status_code=200,
-            mimetype="application/json",
-            headers=cors,
-        )
-    except Exception as exc:  # pylint: disable=broad-except
-        db.rollback()
-        logger.error("Failed to delete task manager item: %s", exc)
-        return func.HttpResponse(
-            json.dumps({"error": "Failed to delete task manager item", "details": str(exc)}),
             status_code=500,
             mimetype="application/json",
             headers=cors,
