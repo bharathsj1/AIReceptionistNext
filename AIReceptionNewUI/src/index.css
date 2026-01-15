@@ -1349,6 +1349,42 @@ html {
   text-align: center;
 }
 
+.hero-rotating-word {
+  display: inline-block;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  transform: translateY(0);
+  opacity: 1;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  line-height: 1.1;
+  padding-bottom: 0.06em;
+}
+
+.hero-rotating-slot {
+  display: inline-flex;
+  justify-content: center;
+  align-items: baseline;
+  text-align: center;
+  vertical-align: baseline;
+}
+
+.hero-rotating-word.is-fading {
+  opacity: 0;
+  transform: translateY(-0.2em);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-rotating-word {
+    transition: none;
+    transform: none;
+  }
+
+  .hero-rotating-word.is-fading {
+    opacity: 1;
+  }
+}
+
 [class*="rounded"] {
   border-radius: 0 !important;
 }
