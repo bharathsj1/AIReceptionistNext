@@ -3,6 +3,8 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional, Tuple
 
+from sqlalchemy.orm import Session
+
 import azure.functions as func
 import requests
 
@@ -19,7 +21,7 @@ DEFAULT_CONTACT_LIMIT = 200
 DEFAULT_IMPORT_LIMIT = 500
 
 
-def _get_user(db: SessionLocal, email: Optional[str], user_id: Optional[str]) -> Optional[User]:
+def _get_user(db: Session, email: Optional[str], user_id: Optional[str]) -> Optional[User]:
     if email:
         return db.query(User).filter_by(email=email).one_or_none()
     if user_id:
@@ -30,7 +32,7 @@ def _get_user(db: SessionLocal, email: Optional[str], user_id: Optional[str]) ->
     return None
 
 
-def _get_client_id(db: SessionLocal, user: Optional[User], email: Optional[str]) -> Optional[int]:
+def _get_client_id(db: Session, user: Optional[User], email: Optional[str]) -> Optional[int]:
     if user and user.id:
         client = db.query(Client).filter_by(user_id=user.id).one_or_none()
         if client:
@@ -59,7 +61,7 @@ def _refresh_google_token(refresh_token: str) -> Tuple[Optional[dict], Optional[
         return None, str(exc)
 
 
-def _ensure_google_access_token(db: SessionLocal, token: GoogleToken) -> Tuple[Optional[str], Optional[str]]:
+def _ensure_google_access_token(db: Session, token: GoogleToken) -> Tuple[Optional[str], Optional[str]]:
     if not token:
         return None, "Missing Google token"
     now = datetime.utcnow()
@@ -98,7 +100,7 @@ def _refresh_outlook_token(refresh_token: str) -> Tuple[Optional[dict], Optional
         return None, str(exc)
 
 
-def _ensure_outlook_access_token(db: SessionLocal, token: OutlookToken) -> Tuple[Optional[str], Optional[str]]:
+def _ensure_outlook_access_token(db: Session, token: OutlookToken) -> Tuple[Optional[str], Optional[str]]:
     if not token:
         return None, "Missing Outlook token"
     now = datetime.utcnow()
@@ -122,7 +124,7 @@ def _ensure_outlook_access_token(db: SessionLocal, token: OutlookToken) -> Tuple
 
 
 def _import_google_contacts(
-    db: SessionLocal,
+    db: Session,
     *,
     user: User,
     client_id: Optional[int],
@@ -193,7 +195,7 @@ def _import_google_contacts(
 
 
 def _import_outlook_contacts(
-    db: SessionLocal,
+    db: Session,
     *,
     user: User,
     client_id: Optional[int],
