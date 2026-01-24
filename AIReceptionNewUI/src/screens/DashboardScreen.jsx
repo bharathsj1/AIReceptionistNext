@@ -163,6 +163,50 @@ const parseSender = (raw) => {
   return { name: raw.trim(), email: "" };
 };
 
+const decodeHtmlEntities = (value) => {
+  if (!value || typeof value !== "string") return value || "";
+  if (!value.includes("&")) return value;
+  if (typeof document !== "undefined") {
+    const textarea = document.createElement("textarea");
+    textarea.innerHTML = value;
+    return textarea.value;
+  }
+  return value
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, "\"")
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/g, "'")
+    .replace(/&#x2F;/g, "/")
+    .replace(/&#x60;/g, "`")
+    .replace(/&#x3D;/g, "=");
+};
+
+const formatBytes = (value) => {
+  const size = Number(value);
+  if (!Number.isFinite(size) || size <= 0) return "";
+  if (size < 1024) return `${size} B`;
+  const units = ["KB", "MB", "GB"];
+  let total = size / 1024;
+  let unitIndex = 0;
+  while (total >= 1024 && unitIndex < units.length - 1) {
+    total /= 1024;
+    unitIndex += 1;
+  }
+  return `${total.toFixed(total < 10 ? 1 : 0)} ${units[unitIndex]}`;
+};
+
+const base64ToBlob = (base64, mimeType) => {
+  const binary = typeof atob === "function" ? atob(base64) : "";
+  const length = binary.length;
+  const bytes = new Uint8Array(length);
+  for (let i = 0; i < length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new Blob([bytes], { type: mimeType || "application/octet-stream" });
+};
+
 const initialsFromName = (name) => {
   const safe = (name || "").trim();
   if (!safe) return "U";
@@ -195,16 +239,19 @@ const formatSummaryBullets = (summary) => {
 };
 
 const EMAIL_TAG_OPTIONS = [
-  "Sales Lead",
+  "Security",
   "Support",
-  "Invoice",
-  "Internal",
-  "Updates",
-  "Marketing",
-  "Spam/Low Priority"
+  "Billing",
+  "Jobs",
+  "Newsletter",
+  "Personal",
+  "Other"
 ];
 
 const REPLY_TONE_PRESETS = ["Professional", "Friendly", "Short", "Empathetic"];
+const EMAIL_REFRESH_INTERVAL_MS = 30000;
+const EMAIL_AUTO_CLASSIFY_BATCH_SIZE = 4;
+const EMAIL_AUTO_CLASSIFY_STAGGER_MS = 350;
 
 const BASE_DASHBOARD_TABS = [
   { id: "agents", label: "Agents", icon: Users },
@@ -223,16 +270,14 @@ const DASHBOARD_TAB_IDS = new Set(DASHBOARD_TABS.map((tab) => tab.id));
 
 const priorityBadgeStyles = {
   Urgent: "border-rose-400/60 bg-rose-500/20 text-rose-100",
-  Important: "border-amber-400/60 bg-amber-400/20 text-amber-200",
   Normal: "border-indigo-400/60 bg-indigo-500/15 text-indigo-200",
   Low: "border-sky-400/50 bg-sky-500/10 text-sky-100"
 };
 
 const sentimentStyles = {
-  Angry: "text-rose-200",
   Concerned: "text-amber-200",
-  Happy: "text-emerald-200",
-  Neutral: "text-slate-200"
+  Neutral: "text-slate-200",
+  Positive: "text-emerald-200"
 };
 
 const socialPlatformStyles = {
@@ -564,6 +609,9 @@ export default function DashboardScreen({
   const [emailMailbox, setEmailMailbox] = useState("INBOX");
   const [emailUnreadOnly, setEmailUnreadOnly] = useState(false);
   const [emailAutoSummarize, setEmailAutoSummarize] = useState(true);
+  const [emailAutoTagEnabled, setEmailAutoTagEnabled] = useState(false);
+  const [emailUrgentThreshold, setEmailUrgentThreshold] = useState(0.75);
+  const [emailSettingsStatus, setEmailSettingsStatus] = useState({ status: "idle", message: "" });
   const [emailPanelOpen, setEmailPanelOpen] = useState(false);
   const [emailPanelContentVisible, setEmailPanelContentVisible] = useState(false);
   const [emailMessages, setEmailMessages] = useState([]);
@@ -583,6 +631,7 @@ export default function DashboardScreen({
   const [emailMessageAttachments, setEmailMessageAttachments] = useState({});
   const [emailMessageLoading, setEmailMessageLoading] = useState(false);
   const [emailMessageError, setEmailMessageError] = useState("");
+  const [emailAttachmentStatus, setEmailAttachmentStatus] = useState({ status: "idle", message: "" });
   const [emailSummaryVisible, setEmailSummaryVisible] = useState(true);
   const [emailInlineReplyOpen, setEmailInlineReplyOpen] = useState(false);
   const [emailInlineReplyMessageId, setEmailInlineReplyMessageId] = useState(null);
@@ -640,6 +689,14 @@ export default function DashboardScreen({
   const [emailReplyVariantsById, setEmailReplyVariantsById] = useState({});
   const [emailReplyVariantsStatus, setEmailReplyVariantsStatus] = useState({});
   const [emailReplyTone, setEmailReplyTone] = useState("Professional");
+  const [emailFeedbackOpen, setEmailFeedbackOpen] = useState(false);
+  const [emailFeedbackForm, setEmailFeedbackForm] = useState({
+    tags: [],
+    priorityLabel: "Normal",
+    sentiment: "Neutral",
+    notes: ""
+  });
+  const [emailFeedbackStatus, setEmailFeedbackStatus] = useState({ status: "idle", message: "" });
   const [socialTab, setSocialTab] = useState("connect");
   const [socialConnections, setSocialConnections] = useState([]);
   const [socialConnectionsLoading, setSocialConnectionsLoading] = useState(false);
@@ -703,6 +760,9 @@ export default function DashboardScreen({
   const emailLabelsLoadedRef = useRef(false);
   const emailClassifyTimerRef = useRef(null);
   const emailActionsTimerRef = useRef(null);
+  const emailAutoTagTimerRef = useRef(null);
+  const emailRefreshTimerRef = useRef(null);
+  const emailAutoClassifySeenRef = useRef(new Set());
   const socialConnectionsLoadedRef = useRef(false);
   const socialDraftsLoadedRef = useRef(false);
   const socialScheduledLoadedRef = useRef(false);
@@ -1009,7 +1069,7 @@ export default function DashboardScreen({
         params.set("label_ids", targetMailbox);
       }
       if (tokenForPage) params.set("page_token", tokenForPage);
-      const res = await fetch(`${API_URLS.emailMessages}?${params.toString()}`);
+      const res = await fetch(`${API_URLS.inbox}?${params.toString()}`);
       if (!res.ok) {
         const text = await res.text();
         let parsed = null;
@@ -1049,7 +1109,22 @@ export default function DashboardScreen({
       }
       const data = await res.json();
       const incoming = Array.isArray(data?.messages) ? data.messages : [];
-      setEmailMessages((prev) => (append ? [...prev, ...incoming] : incoming));
+      const normalizedIncoming = incoming.map((message) => ({
+        ...message,
+        subject: decodeHtmlEntities(message?.subject),
+        snippet: decodeHtmlEntities(message?.snippet),
+        from: decodeHtmlEntities(message?.from),
+        to: decodeHtmlEntities(message?.to),
+        cc: decodeHtmlEntities(message?.cc),
+        bcc: decodeHtmlEntities(message?.bcc)
+      }));
+      const incomingClassifications = data?.classifications || {};
+      setEmailMessages((prev) => (append ? [...prev, ...normalizedIncoming] : normalizedIncoming));
+      setEmailClassifications((prev) => (append ? { ...prev, ...incomingClassifications } : incomingClassifications));
+      if (data?.settings) {
+        setEmailAutoTagEnabled(Boolean(data.settings.auto_tag_enabled));
+        setEmailUrgentThreshold(Number(data.settings.urgent_conf_threshold) || 0.75);
+      }
       setEmailAccountEmail(data?.account_email || data?.accountEmail || "");
       const nextToken = data?.nextPageToken || null;
       setEmailPageTokens((prev) => {
@@ -1345,7 +1420,7 @@ export default function DashboardScreen({
     setContactSuggestOpen(false);
   };
 
-  const openComposer = (mode = "new", message = null) => {
+  const openComposer = async (mode = "new", message = null) => {
     setEmailComposerMode(mode);
     setEmailComposerStatus({ status: "idle", message: "" });
     setEmailComposerAiStatus({ status: "idle", message: "" });
@@ -1361,28 +1436,57 @@ export default function DashboardScreen({
         inReplyTo: "",
         references: ""
       });
-    } else {
-      const sender = parseSender(message.from);
-      const subject =
-        mode === "reply"
-          ? message.subject?.startsWith("Re:")
-            ? message.subject
-            : `Re: ${message.subject || ""}`.trim()
-          : message.subject?.startsWith("Fwd:")
-            ? message.subject
-            : `Fwd: ${message.subject || ""}`.trim();
-      const replyBody = `\n\n---\n${message.snippet || ""}`.trim();
+      setEmailComposerOpen(true);
+      return;
+    }
+
+    const subject =
+      mode === "reply"
+        ? message.subject?.startsWith("Re:")
+          ? message.subject
+          : `Re: ${message.subject || ""}`.trim()
+        : message.subject?.startsWith("Fwd:")
+          ? message.subject
+          : `Fwd: ${message.subject || ""}`.trim();
+
+    if (mode === "forward") {
       setEmailComposerForm({
-        to: mode === "reply" ? sender.email : "",
+        to: "",
         cc: "",
         bcc: "",
         subject,
-        body: replyBody,
-        threadId: message.threadId || "",
-        inReplyTo: message.messageIdHeader || message.inReplyTo || "",
-        references: message.references || message.messageIdHeader || ""
+        body: "",
+        threadId: "",
+        inReplyTo: "",
+        references: ""
       });
+      setEmailComposerOpen(true);
+      const fallbackBody = `\n\n---\n${message.snippet || ""}`.trim();
+      if (!message.threadId) {
+        setEmailComposerForm((prev) => ({ ...prev, body: fallbackBody }));
+        return;
+      }
+      setEmailComposerStatus({ status: "loading", message: "Loading thread..." });
+      try {
+        const data = await fetchEmailThread(message.threadId);
+        const forwardBody = formatForwardThreadBody(data?.messages || []);
+        setEmailComposerForm((prev) => ({
+          ...prev,
+          body: forwardBody || fallbackBody
+        }));
+        setEmailComposerStatus({ status: "idle", message: "" });
+      } catch (err) {
+        setEmailComposerForm((prev) => ({ ...prev, body: fallbackBody }));
+        setEmailComposerStatus({
+          status: "error",
+          message: err?.message || "Unable to load email thread."
+        });
+      }
+      return;
     }
+
+    const replyBody = `\n\n---\n${message.snippet || ""}`.trim();
+    setEmailComposerForm(buildReplyForm(message, replyBody, "reply"));
     setEmailComposerOpen(true);
   };
 
@@ -1506,6 +1610,35 @@ export default function DashboardScreen({
     return data?.data || null;
   };
 
+  const handleDownloadAttachment = async (messageId, attachment) => {
+    if (!messageId || !attachment?.id) return;
+    setEmailAttachmentStatus({ status: "loading", message: "Downloading attachment..." });
+    try {
+      let data = attachment.data;
+      if (!data) {
+        data = await fetchEmailAttachment(messageId, attachment.id);
+      }
+      if (!data) {
+        throw new Error("Attachment data missing.");
+      }
+      const mimeType = attachment.mimeType || "application/octet-stream";
+      const filename = decodeHtmlEntities(attachment.filename || "attachment");
+      const blob = base64ToBlob(data, mimeType);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      setEmailAttachmentStatus({ status: "idle", message: "" });
+    } catch (err) {
+      setEmailAttachmentStatus({
+        status: "error",
+        message: err?.message || "Unable to download attachment."
+      });
+    }
+  };
+
   const resolveInlineImages = async (messageId, html, attachments) => {
     if (!html) return "";
     let resolved = html;
@@ -1536,6 +1669,7 @@ export default function DashboardScreen({
     }
     setEmailMessageLoading(true);
     setEmailMessageError("");
+    setEmailAttachmentStatus({ status: "idle", message: "" });
     try {
       const params = new URLSearchParams({
         email: emailAddress,
@@ -1562,7 +1696,7 @@ export default function DashboardScreen({
         throw new Error(detail);
       }
       const data = await res.json().catch(() => ({}));
-      const bodyText = data?.body || data?.snippet || "";
+      const bodyText = decodeHtmlEntities(data?.body || data?.snippet || "");
       const rawHtml = data?.html || "";
       const attachments = Array.isArray(data?.attachments) ? data.attachments : [];
       const resolvedHtml = await resolveInlineImages(message.id, rawHtml, attachments);
@@ -1579,6 +1713,32 @@ export default function DashboardScreen({
     }
   };
 
+  const fetchEmailThread = async (threadId) => {
+    const emailAddress = user?.email || userForm.email;
+    if (!emailAddress || !threadId) return null;
+    const params = new URLSearchParams({
+      email: emailAddress,
+      thread_id: threadId,
+      ts: String(Date.now())
+    });
+    const res = await fetch(`${API_URLS.emailThread}?${params.toString()}`);
+    if (!res.ok) {
+      throw new Error(await parseApiError(res, "Unable to fetch email thread"));
+    }
+    return res.json().catch(() => ({}));
+  };
+
+  const buildReplyReferences = (message) => {
+    if (!message) return "";
+    const inReplyTo = message.messageIdHeader || message.inReplyTo || "";
+    const base = String(message.references || "").trim();
+    if (!inReplyTo) return base;
+    if (!base) return inReplyTo;
+    const parts = base.split(/\s+/).filter(Boolean);
+    if (!parts.includes(inReplyTo)) parts.push(inReplyTo);
+    return parts.join(" ").trim();
+  };
+
   const buildReplyForm = (message, draftText, mode = "reply") => {
     if (!message) return null;
     const sender = parseSender(message.from);
@@ -1590,16 +1750,44 @@ export default function DashboardScreen({
         : message.subject?.startsWith("Fwd:")
           ? message.subject
           : `Fwd: ${message.subject || ""}`.trim();
+    const inReplyTo = message.messageIdHeader || message.inReplyTo || "";
+    const references = mode === "reply" ? buildReplyReferences(message) : "";
     return {
       to: mode === "reply" ? sender.email : "",
       cc: "",
       bcc: "",
       subject,
       body: draftText || "",
-      threadId: message.threadId || "",
-      inReplyTo: message.messageIdHeader || message.inReplyTo || "",
-      references: message.references || message.messageIdHeader || ""
+      threadId: mode === "reply" ? message.threadId || "" : "",
+      inReplyTo: mode === "reply" ? inReplyTo : "",
+      references
     };
+  };
+
+  const formatForwardThreadBody = (messages) => {
+    if (!Array.isArray(messages) || !messages.length) return "";
+    return messages
+      .map((message, index) => {
+        const header = index === 0 ? "---------- Forwarded message ----------" : "----------";
+        const from = decodeHtmlEntities(message?.from || "unknown");
+        const to = decodeHtmlEntities(message?.to || "unknown");
+        const subject = decodeHtmlEntities(message?.subject || "No subject");
+        const date = decodeHtmlEntities(message?.date || "unknown");
+        const ccValue = decodeHtmlEntities(message?.cc || "");
+        const cc = ccValue ? `Cc: ${ccValue}` : "";
+        const body = decodeHtmlEntities(String(message?.body || message?.snippet || "").trim());
+        const lines = [
+          header,
+          `From: ${from}`,
+          `Date: ${date}`,
+          `Subject: ${subject}`,
+          `To: ${to}`
+        ];
+        if (cc) lines.push(cc);
+        lines.push("", body || "");
+        return lines.join("\n");
+      })
+      .join("\n\n");
   };
 
   const readFileAsBase64 = (file) =>
@@ -1781,6 +1969,7 @@ export default function DashboardScreen({
       },
       snippet: message.snippet || "",
       optionalBodyIfAlreadyAvailable: bodyText,
+      urgent_conf_threshold: emailUrgentThreshold,
       ...overrides
     };
   };
@@ -1821,13 +2010,32 @@ export default function DashboardScreen({
       [message.id]: { status: "loading", message: "Classifying..." }
     }));
     try {
-      const payload = buildEmailAiPayload(message);
+      const payload = buildEmailAiPayload(message, force ? { force: true } : {});
       const res = await fetch(API_URLS.emailClassify, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
       if (!res.ok) {
+        if (res.status === 429) {
+          let retryAfter = 0;
+          try {
+            const payload = await res.json();
+            retryAfter = Number(payload?.retry_after) || 0;
+          } catch {
+            retryAfter = Number(res.headers.get("retry-after")) || 0;
+          }
+          setEmailClassifyStatus((prev) => ({
+            ...prev,
+            [message.id]: {
+              status: "rate_limited",
+              message: retryAfter
+                ? `Rate limited. Try again in ${retryAfter}s.`
+                : "Rate limited. Try again in a moment."
+            }
+          }));
+          return;
+        }
         throw new Error(await parseApiError(res, "Unable to classify email"));
       }
       const data = await res.json().catch(() => ({}));
@@ -1835,7 +2043,9 @@ export default function DashboardScreen({
         tags: Array.isArray(data?.tags) ? data.tags : [],
         priorityScore: Number(data?.priorityScore) || 0,
         priorityLabel: data?.priorityLabel || "Normal",
-        sentiment: data?.sentiment || "Neutral"
+        sentiment: data?.sentiment || "Neutral",
+        confidence: Number(data?.confidence) || 0,
+        reasoningShort: data?.reasoningShort || ""
       };
       if (data?.account_email || data?.accountEmail) {
         setEmailAccountEmail(data.account_email || data.accountEmail);
@@ -1850,6 +2060,73 @@ export default function DashboardScreen({
         ...prev,
         [message.id]: { status: "error", message: err?.message || "Unable to classify email." }
       }));
+    }
+  };
+
+  const openEmailFeedback = (message, classification = {}) => {
+    if (!message?.id) return;
+    setEmailFeedbackForm({
+      tags: Array.isArray(classification?.tags) ? classification.tags : [],
+      priorityLabel: classification?.priorityLabel || "Normal",
+      sentiment: classification?.sentiment || "Neutral",
+      notes: ""
+    });
+    setEmailFeedbackStatus({ status: "idle", message: "" });
+    setEmailFeedbackOpen(true);
+  };
+
+  const toggleEmailFeedbackTag = (tag) => {
+    setEmailFeedbackForm((prev) => {
+      const nextTags = new Set(prev.tags || []);
+      if (nextTags.has(tag)) {
+        nextTags.delete(tag);
+      } else {
+        nextTags.add(tag);
+      }
+      return { ...prev, tags: Array.from(nextTags) };
+    });
+  };
+
+  const submitEmailFeedback = async (message) => {
+    if (!message?.id) return;
+    const emailAddress = user?.email || userForm.email;
+    if (!emailAddress) {
+      setEmailFeedbackStatus({ status: "error", message: "Missing user email." });
+      return;
+    }
+    setEmailFeedbackStatus({ status: "loading", message: "Sending feedback..." });
+    try {
+      const res = await fetch(API_URLS.emailFeedback, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: emailAddress,
+          message_id: message.id,
+          threadId: message.threadId || "",
+          corrected_tags: emailFeedbackForm.tags,
+          corrected_priority_label: emailFeedbackForm.priorityLabel,
+          corrected_sentiment: emailFeedbackForm.sentiment,
+          notes: emailFeedbackForm.notes
+        })
+      });
+      if (!res.ok) {
+        throw new Error(await parseSimpleError(res, "Unable to send feedback"));
+      }
+      setEmailClassifications((prev) => ({
+        ...prev,
+        [message.id]: {
+          ...(prev?.[message.id] || {}),
+          tags: emailFeedbackForm.tags,
+          priorityLabel: emailFeedbackForm.priorityLabel,
+          sentiment: emailFeedbackForm.sentiment
+        }
+      }));
+      setEmailFeedbackStatus({ status: "success", message: "Thanks for the feedback." });
+      setTimeout(() => {
+        setEmailFeedbackOpen(false);
+      }, 700);
+    } catch (err) {
+      setEmailFeedbackStatus({ status: "error", message: err?.message || "Unable to send feedback." });
     }
   };
 
@@ -2012,6 +2289,17 @@ export default function DashboardScreen({
     setEmailInlineReplyOpen(false);
     setEmailInlineReplyMessageId(null);
     setEmailInlineAttachments([]);
+    setEmailAutoTagEnabled(false);
+    setEmailUrgentThreshold(0.75);
+    setEmailSettingsStatus({ status: "idle", message: "" });
+    setEmailFeedbackOpen(false);
+    setEmailFeedbackForm({
+      tags: [],
+      priorityLabel: "Normal",
+      sentiment: "Neutral",
+      notes: ""
+    });
+    setEmailFeedbackStatus({ status: "idle", message: "" });
   };
 
   const handleMailboxSelect = (mailboxId) => {
@@ -2074,6 +2362,40 @@ export default function DashboardScreen({
       parsed = null;
     }
     return parsed?.details || parsed?.error || text || fallback;
+  };
+
+  const saveEmailSettings = async (overrides = {}) => {
+    const emailAddress = user?.email || userForm.email;
+    if (!emailAddress) {
+      setEmailSettingsStatus({ status: "error", message: "Missing user email." });
+      return;
+    }
+    setEmailSettingsStatus({ status: "loading", message: "Saving..." });
+    try {
+      const res = await fetch(API_URLS.emailSettings, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: emailAddress,
+          auto_tag_enabled: emailAutoTagEnabled,
+          urgent_conf_threshold: emailUrgentThreshold,
+          ...overrides
+        })
+      });
+      if (!res.ok) {
+        throw new Error(await parseSimpleError(res, "Unable to save email settings"));
+      }
+      const data = await res.json().catch(() => ({}));
+      if (data?.auto_tag_enabled !== undefined) {
+        setEmailAutoTagEnabled(Boolean(data.auto_tag_enabled));
+      }
+      if (data?.urgent_conf_threshold !== undefined) {
+        setEmailUrgentThreshold(Number(data.urgent_conf_threshold) || 0.75);
+      }
+      setEmailSettingsStatus({ status: "success", message: "Settings saved." });
+    } catch (err) {
+      setEmailSettingsStatus({ status: "error", message: err?.message || "Unable to save email settings." });
+    }
   };
 
   const getSocialIdentity = () => ({
@@ -3351,6 +3673,8 @@ export default function DashboardScreen({
     setEmailInlineReplyOpen(false);
     setEmailInlineReplyMessageId(null);
     setEmailInlineAttachments([]);
+    setEmailFeedbackOpen(false);
+    setEmailFeedbackStatus({ status: "idle", message: "" });
     loadEmailMessageDetail(selectedEmailMessage);
   }, [emailAutoSummarize, selectedEmailMessage?.id]);
 
@@ -3388,11 +3712,104 @@ export default function DashboardScreen({
   }, [emailAutoSummarize]);
 
   useEffect(() => {
+    if (emailAutoTagTimerRef.current) {
+      clearInterval(emailAutoTagTimerRef.current);
+      emailAutoTagTimerRef.current = null;
+    }
+    if (!emailAutoTagEnabled || emailSubTab !== "email") return;
+    emailAutoTagTimerRef.current = setInterval(() => {
+      if (emailLoading) return;
+      loadEmailMessages({
+        page: emailCurrentPage,
+        mailbox: emailMailbox,
+        unreadOnly: emailUnreadOnly,
+        query: emailQuery
+      });
+    }, EMAIL_REFRESH_INTERVAL_MS);
+    return () => {
+      if (emailAutoTagTimerRef.current) {
+        clearInterval(emailAutoTagTimerRef.current);
+        emailAutoTagTimerRef.current = null;
+      }
+    };
+  }, [emailAutoTagEnabled, emailCurrentPage, emailMailbox, emailUnreadOnly, emailQuery, emailSubTab, emailLoading]);
+
+  useEffect(() => {
+    if (emailRefreshTimerRef.current) {
+      clearInterval(emailRefreshTimerRef.current);
+      emailRefreshTimerRef.current = null;
+    }
+    if (currentTool !== "email_manager" || emailSubTab !== "email") return;
+    if (emailAutoTagEnabled) return;
+    if (!emailAccountEmail && !emailMessages.length) return;
+    emailRefreshTimerRef.current = setInterval(() => {
+      if (emailLoading) return;
+      if (emailCurrentPage !== 1) return;
+      if (emailSelectionCount) return;
+      loadEmailMessages({
+        page: 1,
+        resetTokens: true,
+        mailbox: emailMailbox,
+        unreadOnly: emailUnreadOnly,
+        query: emailQuery
+      });
+    }, EMAIL_REFRESH_INTERVAL_MS);
+    return () => {
+      if (emailRefreshTimerRef.current) {
+        clearInterval(emailRefreshTimerRef.current);
+        emailRefreshTimerRef.current = null;
+      }
+    };
+  }, [
+    currentTool,
+    emailSubTab,
+    emailAutoTagEnabled,
+    emailAccountEmail,
+    emailMessages.length,
+    emailLoading,
+    emailCurrentPage,
+    emailSelectionCount,
+    emailMailbox,
+    emailUnreadOnly,
+    emailQuery
+  ]);
+
+  useEffect(() => {
+    if (currentTool !== "email_manager" || emailSubTab !== "email") return;
+    if (!emailAutoTagEnabled) return;
+    if (emailLoading) return;
+    if (!emailMessages.length) return;
+    const candidates = emailMessages.filter((message) => {
+      if (!message?.id) return false;
+      if (emailClassifications?.[message.id]) return false;
+      if (emailAutoClassifySeenRef.current.has(message.id)) return false;
+      const status = emailClassifyStatus?.[message.id]?.status;
+      if (status && status !== "idle") return false;
+      return true;
+    });
+    if (!candidates.length) return;
+    candidates.slice(0, EMAIL_AUTO_CLASSIFY_BATCH_SIZE).forEach((message, index) => {
+      emailAutoClassifySeenRef.current.add(message.id);
+      setTimeout(() => {
+        requestEmailClassification(message);
+      }, index * EMAIL_AUTO_CLASSIFY_STAGGER_MS);
+    });
+  }, [
+    currentTool,
+    emailSubTab,
+    emailAutoTagEnabled,
+    emailLoading,
+    emailMessages,
+    emailClassifications,
+    emailClassifyStatus
+  ]);
+
+  useEffect(() => {
     if (currentTool !== "email_manager" || emailSubTab !== "email") return;
     if (!selectedEmailMessage?.id) return;
     const status = emailClassifyStatus?.[selectedEmailMessage.id]?.status;
     if (emailClassifications?.[selectedEmailMessage.id]) return;
-    if (status === "loading") return;
+    if (status && status !== "idle") return;
     if (emailClassifyTimerRef.current) {
       clearTimeout(emailClassifyTimerRef.current);
     }
@@ -3453,9 +3870,13 @@ export default function DashboardScreen({
     setEmailActionChecks({});
     setEmailReplyVariantsById({});
     setEmailReplyVariantsStatus({});
+    emailAutoClassifySeenRef.current = new Set();
     setSelectedEmailMessage(null);
     setEmailError("");
     setEmailSummaryStatus({ status: "idle", message: "" });
+    setEmailAutoTagEnabled(false);
+    setEmailUrgentThreshold(0.75);
+    setEmailSettingsStatus({ status: "idle", message: "" });
   }, [calendarAccountEmail, calendarStatus, emailAccountEmail, emailMessages.length]);
 
   useEffect(() => {
@@ -3493,7 +3914,6 @@ export default function DashboardScreen({
     }, {});
     const localPriorityCounts = {
       Urgent: 0,
-      Important: 0,
       Normal: 0,
       Low: 0
     };
@@ -5130,7 +5550,16 @@ export default function DashboardScreen({
                 <aside
                   className="rounded-3xl border border-white/10 bg-white/5 shadow-xl backdrop-blur overflow-hidden flex flex-col p-3 sm:p-4 sm:min-h-0 sm:h-full"
                 >
-                  <div className="flex min-h-[32px] items-center justify-end gap-2">
+                  <div className="flex min-h-[32px] items-center justify-between gap-2">
+                    <span
+                      className={`text-[11px] font-semibold uppercase tracking-[0.24em] text-indigo-300 transition-[max-width,opacity] duration-300 ease-out ${
+                        emailPanelContentVisible && gmailConnected
+                          ? "max-w-[140px] opacity-100"
+                          : "max-w-0 overflow-hidden opacity-0"
+                      }`}
+                    >
+                      {inboxProviderLabel}
+                    </span>
                     <button
                       type="button"
                       onClick={() => {
@@ -5269,9 +5698,6 @@ export default function DashboardScreen({
                           aria-label="Select all messages"
                         />
                       </label>
-                      <span className="shrink-0 text-[11px] text-slate-400">
-                        {emailSelectionCount ? `${emailSelectionCount} selected` : ""}
-                      </span>
                       <div className="hidden h-5 w-px shrink-0 bg-white/10 sm:block" />
                       <button
                         type="button"
@@ -5635,7 +6061,20 @@ export default function DashboardScreen({
                             }
                             className="rounded-lg border border-white/10 bg-white/10 px-2 py-1 text-[10px] text-white disabled:opacity-50"
                           >
-                            Classify
+                            Reclassify
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openEmailFeedback(
+                                selectedEmailMessage,
+                                emailClassifications?.[selectedEmailMessage?.id] || {}
+                              )
+                            }
+                            disabled={!selectedEmailMessage}
+                            className="rounded-lg border border-white/10 bg-white/10 px-2 py-1 text-[10px] text-white disabled:opacity-50"
+                          >
+                            Wrong tag?
                           </button>
                           <button
                             type="button"
@@ -5697,6 +6136,10 @@ export default function DashboardScreen({
                         const bodyText =
                           emailMessageBodies[messageId] || selectedEmailMessage.snippet || "";
                         const htmlBody = emailMessageHtml[messageId] || "";
+                        const attachments = emailMessageAttachments?.[messageId] || [];
+                        const displayAttachments = attachments.filter(
+                          (item) => !item?.isInline && (item?.filename || item?.id)
+                        );
                         const classification = emailClassifications?.[messageId] || {};
                         const tags = Array.isArray(classification?.tags) ? classification.tags : [];
                         const classifyStatus = emailClassifyStatus?.[messageId] || { status: "idle", message: "" };
@@ -5710,15 +6153,19 @@ export default function DashboardScreen({
                         const priorityLabel = classification?.priorityLabel || "";
                         const priorityScore = Number(classification?.priorityScore) || 0;
                         const sentiment = classification?.sentiment || "Neutral";
+                        const confidence = Number(classification?.confidence) || 0;
+                        const reasoningShort = classification?.reasoningShort || "";
                         const isEscalation =
-                          ["Angry", "Concerned"].includes(sentiment) &&
+                          ["Concerned"].includes(sentiment) &&
                           (priorityLabel === "Urgent" || priorityScore >= 80);
                         const hasReplyDraft = replyVariants.length > 0;
                         const hasInsights =
                           tags.length > 0 ||
                           Boolean(classification?.priorityLabel) ||
                           Boolean(classification?.priorityScore) ||
-                          Boolean(classification?.sentiment);
+                          Boolean(classification?.sentiment) ||
+                          Boolean(classification?.confidence) ||
+                          Boolean(classification?.reasoningShort);
                         const userEmail = user?.email || userForm.email || "";
                         const fromUser = userEmail && sender.email && sender.email.includes(userEmail);
                         const hasSentLabel = (selectedEmailMessage.labelIds || []).includes("SENT");
@@ -5801,6 +6248,53 @@ export default function DashboardScreen({
                                           </div>
                                         )}
                                 </div>
+                                {displayAttachments.length ? (
+                                  <div className="rounded-2xl border border-white/10 bg-slate-900/40 p-3 text-xs text-slate-200">
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className="text-[11px] uppercase tracking-[0.2em] text-indigo-200">
+                                        Attachments
+                                      </span>
+                                      <span className="text-[11px] text-slate-400">
+                                        {displayAttachments.length} file
+                                        {displayAttachments.length === 1 ? "" : "s"}
+                                      </span>
+                                    </div>
+                                    <div className="mt-2 grid gap-2">
+                                      {displayAttachments.map((attachment) => {
+                                        const filename = decodeHtmlEntities(attachment.filename || "attachment");
+                                        const sizeLabel = formatBytes(attachment.size);
+                                        return (
+                                          <div
+                                            key={`${messageId}-attachment-${attachment.id || filename}`}
+                                            className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-slate-950/40 px-3 py-2"
+                                          >
+                                            <div className="min-w-0">
+                                              <p className="truncate text-xs font-semibold text-white">
+                                                {filename}
+                                              </p>
+                                              <p className="text-[11px] text-slate-400">
+                                                {attachment.mimeType || "Attachment"}
+                                                {sizeLabel ? ` · ${sizeLabel}` : ""}
+                                              </p>
+                                            </div>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleDownloadAttachment(messageId, attachment)}
+                                              className="shrink-0 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-slate-200 hover:border-white/30 hover:text-white"
+                                            >
+                                              Download
+                                            </button>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                    {emailAttachmentStatus.status === "error" ? (
+                                      <div className="mt-2 text-[11px] text-rose-300">
+                                        {emailAttachmentStatus.message}
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                ) : null}
                               </div>
                             </div>
                             {emailSummaryVisible ? (
@@ -5858,7 +6352,7 @@ export default function DashboardScreen({
                                             Escalation recommended
                                           </p>
                                           <p className="text-[11px] text-rose-100/80">
-                                            Angry or concerned sentiment with high priority.
+                                            Concerned sentiment with high priority.
                                           </p>
                                         </div>
                                         <div className="flex flex-wrap items-center gap-2">
@@ -5918,9 +6412,17 @@ export default function DashboardScreen({
                                           <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Insights</p>
                                           <p className="text-[11px] text-slate-400">Tags, priority, sentiment.</p>
                                         </div>
-                                        <span className="text-[11px] text-slate-400">
-                                          {classifyStatus.status === "loading" ? "Classifying..." : ""}
-                                        </span>
+                                        <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                                          <span>{classifyStatus.status === "loading" ? "Classifying..." : ""}</span>
+                                          <button
+                                            type="button"
+                                            onClick={() => openEmailFeedback(selectedEmailMessage, classification)}
+                                            disabled={!hasInsights}
+                                            className="rounded-lg border border-white/10 bg-white/10 px-2 py-1 text-[11px] text-white disabled:opacity-50"
+                                          >
+                                            Wrong tag?
+                                          </button>
+                                        </div>
                                       </div>
                                       {classifyStatus.status === "loading" ? (
                                         <div className="mt-3">
@@ -5929,7 +6431,7 @@ export default function DashboardScreen({
                                             <AiSkeleton lines={["w-1/2", "w-1/3", "w-2/3"]} />
                                           </div>
                                         </div>
-                                      ) : classifyStatus.status === "error" ? (
+                                      ) : classifyStatus.status === "error" || classifyStatus.status === "rate_limited" ? (
                                         <div className="mt-2 text-xs text-rose-300">{classifyStatus.message}</div>
                                       ) : hasInsights ? (
                                         <div className="mt-3 space-y-2 text-xs text-slate-200">
@@ -5958,6 +6460,19 @@ export default function DashboardScreen({
                                               {sentiment}
                                             </span>
                                           </div>
+                                          <div className="flex flex-wrap items-center gap-2">
+                                            <span className="text-[11px] uppercase tracking-[0.18em] text-slate-400">
+                                              Confidence
+                                            </span>
+                                            <span className="text-[11px] text-slate-300">
+                                              {confidence ? `${Math.round(confidence * 100)}%` : "—"}
+                                            </span>
+                                          </div>
+                                          {reasoningShort ? (
+                                            <div className="text-[11px] text-slate-400">
+                                              {reasoningShort}
+                                            </div>
+                                          ) : null}
                                           <div className="flex flex-wrap items-center gap-1">
                                             {tags.length ? (
                                               tags.map((tag) => (
@@ -5979,6 +6494,119 @@ export default function DashboardScreen({
                                         </div>
                                       )}
                                     </div>
+                                    {emailFeedbackOpen ? (
+                                      <div className="rounded-xl border border-white/10 bg-slate-900/40 p-3">
+                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                          <div>
+                                            <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Wrong tag?</p>
+                                            <p className="text-[11px] text-slate-400">Tell us the correct labels.</p>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() => setEmailFeedbackOpen(false)}
+                                            className="rounded-lg border border-white/10 bg-white/10 px-2 py-1 text-[11px] text-white"
+                                          >
+                                            Close
+                                          </button>
+                                        </div>
+                                        <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+                                          {EMAIL_TAG_OPTIONS.map((tag) => {
+                                            const active = emailFeedbackForm.tags.includes(tag);
+                                            return (
+                                              <button
+                                                key={`feedback-tag-${tag}`}
+                                                type="button"
+                                                onClick={() => toggleEmailFeedbackTag(tag)}
+                                                className={`rounded-full border px-2 py-1 ${
+                                                  active
+                                                    ? "border-indigo-300/60 bg-indigo-500/20 text-indigo-100"
+                                                    : "border-white/10 bg-slate-900/60 text-slate-300"
+                                                }`}
+                                              >
+                                                {tag}
+                                              </button>
+                                            );
+                                          })}
+                                        </div>
+                                        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                                          <label className="text-[11px] text-slate-400">
+                                            Priority
+                                            <select
+                                              value={emailFeedbackForm.priorityLabel}
+                                              onChange={(event) =>
+                                                setEmailFeedbackForm((prev) => ({
+                                                  ...prev,
+                                                  priorityLabel: event.target.value
+                                                }))
+                                              }
+                                              className="mt-1 w-full rounded-lg border border-white/10 bg-slate-900/60 px-2 py-2 text-xs text-slate-100"
+                                            >
+                                              {["Urgent", "Normal", "Low"].map((label) => (
+                                                <option key={`priority-${label}`} value={label}>
+                                                  {label}
+                                                </option>
+                                              ))}
+                                            </select>
+                                          </label>
+                                          <label className="text-[11px] text-slate-400">
+                                            Sentiment
+                                            <select
+                                              value={emailFeedbackForm.sentiment}
+                                              onChange={(event) =>
+                                                setEmailFeedbackForm((prev) => ({
+                                                  ...prev,
+                                                  sentiment: event.target.value
+                                                }))
+                                              }
+                                              className="mt-1 w-full rounded-lg border border-white/10 bg-slate-900/60 px-2 py-2 text-xs text-slate-100"
+                                            >
+                                              {["Concerned", "Neutral", "Positive"].map((label) => (
+                                                <option key={`sentiment-${label}`} value={label}>
+                                                  {label}
+                                                </option>
+                                              ))}
+                                            </select>
+                                          </label>
+                                        </div>
+                                        <label className="mt-3 block text-[11px] text-slate-400">
+                                          Notes
+                                          <textarea
+                                            rows={2}
+                                            value={emailFeedbackForm.notes}
+                                            onChange={(event) =>
+                                              setEmailFeedbackForm((prev) => ({
+                                                ...prev,
+                                                notes: event.target.value
+                                              }))
+                                            }
+                                            className="mt-1 w-full rounded-lg border border-white/10 bg-slate-900/60 px-2 py-2 text-xs text-slate-100"
+                                            placeholder="Optional: tell us what we missed."
+                                          />
+                                        </label>
+                                        {emailFeedbackStatus.status === "error" ? (
+                                          <div className="mt-2 text-xs text-rose-300">{emailFeedbackStatus.message}</div>
+                                        ) : emailFeedbackStatus.status === "success" ? (
+                                          <div className="mt-2 text-xs text-emerald-300">{emailFeedbackStatus.message}</div>
+                                        ) : null}
+                                        <div className="mt-3 flex flex-wrap gap-2">
+                                          <button
+                                            type="button"
+                                            onClick={() => submitEmailFeedback(selectedEmailMessage)}
+                                            disabled={emailFeedbackStatus.status === "loading"}
+                                            className="rounded-lg border border-emerald-300/40 bg-emerald-500/20 px-3 py-1 text-[11px] text-emerald-100 disabled:opacity-60"
+                                          >
+                                            {emailFeedbackStatus.status === "loading" ? "Sending..." : "Send feedback"}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setEmailFeedbackOpen(false)}
+                                            className="rounded-lg border border-white/10 bg-white/10 px-3 py-1 text-[11px] text-white"
+                                          >
+                                            Cancel
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ) : null}
                                     <div className="rounded-xl border border-white/10 bg-slate-900/40 p-3">
                                       <div className="flex flex-wrap items-center justify-between gap-2">
                                         <div>
@@ -6354,6 +6982,59 @@ export default function DashboardScreen({
                                     }`}
                                   />
                                 </button>
+                              </div>
+                              <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-slate-900/40 p-3">
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                  <div>
+                                    <p className="text-sm font-semibold text-white">Auto-tag new emails</p>
+                                    <p className="text-xs text-slate-400">
+                                      Classify new arrivals in the background and show tags in the inbox.
+                                    </p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const next = !emailAutoTagEnabled;
+                                      setEmailAutoTagEnabled(next);
+                                      saveEmailSettings({ auto_tag_enabled: next });
+                                    }}
+                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
+                                      emailAutoTagEnabled ? "bg-emerald-400" : "bg-white/10"
+                                    }`}
+                                  >
+                                    <span
+                                      className={`inline-block h-5 w-5 transform rounded-full bg-white transition ${
+                                        emailAutoTagEnabled ? "translate-x-5" : "translate-x-1"
+                                      }`}
+                                    />
+                                  </button>
+                                </div>
+                                <div className="flex flex-col gap-2">
+                                  <div className="flex items-center justify-between text-xs text-slate-300">
+                                    <span>Urgent confidence threshold</span>
+                                    <span>{Math.round(emailUrgentThreshold * 100)}%</span>
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min="0.5"
+                                    max="0.95"
+                                    step="0.05"
+                                    value={emailUrgentThreshold}
+                                    onChange={(event) => setEmailUrgentThreshold(Number(event.target.value))}
+                                    onMouseUp={(event) =>
+                                      saveEmailSettings({ urgent_conf_threshold: Number(event.target.value) })
+                                    }
+                                    onTouchEnd={(event) =>
+                                      saveEmailSettings({ urgent_conf_threshold: Number(event.target.value) })
+                                    }
+                                    className="w-full accent-emerald-400"
+                                  />
+                                  {emailSettingsStatus.status === "error" ? (
+                                    <div className="text-xs text-rose-300">{emailSettingsStatus.message}</div>
+                                  ) : emailSettingsStatus.status === "success" ? (
+                                    <div className="text-xs text-emerald-300">{emailSettingsStatus.message}</div>
+                                  ) : null}
+                                </div>
                               </div>
                               <div className="rounded-2xl border border-white/10 bg-slate-900/40 p-3 text-xs text-slate-300">
                                 Summaries are generated using OpenAI. We only send the selected email content.

@@ -3,6 +3,7 @@ import json
 import logging
 import re
 import time
+import uuid
 from collections import OrderedDict, deque
 from datetime import datetime, timedelta
 from email import encoders
@@ -16,10 +17,21 @@ import azure.functions as func
 import httpx
 import requests
 from bs4 import BeautifulSoup
+from sqlalchemy import or_
 
 from function_app import app
 from shared.config import get_google_oauth_settings, get_required_setting, get_setting
-from shared.db import Client, EmailAIEvent, SessionLocal, User, GoogleToken
+from shared.db import (
+    Client,
+    EmailAIEvent,
+    EmailAIClassification,
+    EmailAIFeedback,
+    EmailAIJob,
+    SessionLocal,
+    User,
+    UserSettings,
+    GoogleToken,
+)
 from repository.contacts_repo import upsert_contact
 from utils.cors import build_cors_headers
 
@@ -40,24 +52,43 @@ def _int_setting(name: str, default: int) -> int:
         return default
 
 
+def _bool_setting(name: str, default: bool = False) -> bool:
+    raw = get_setting(name)
+    if raw is None or raw == "":
+        return default
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
 EMAIL_BODY_MAX_CHARS = _int_setting("EMAIL_BODY_MAX_CHARS", 8000)
 AI_CACHE_TTL_SECONDS = _int_setting("EMAIL_AI_CACHE_TTL_SECONDS", 900)
 AI_CACHE_MAX_ITEMS = _int_setting("EMAIL_AI_CACHE_MAX_ITEMS", 500)
 AI_RATE_LIMIT_WINDOW_SECONDS = _int_setting("EMAIL_AI_RATE_LIMIT_WINDOW_SECONDS", 60)
 AI_RATE_LIMIT_MAX = _int_setting("EMAIL_AI_RATE_LIMIT_MAX", 25)
 EMAIL_THREAD_CONTEXT_MAX = _int_setting("EMAIL_THREAD_CONTEXT_MAX", 3)
+EMAIL_AUTOTAG_BATCH_SIZE = _int_setting("EMAIL_AUTOTAG_BATCH_SIZE", 10)
+EMAIL_AUTOTAG_POLL_SECONDS = _int_setting("EMAIL_AUTOTAG_POLL_SECONDS", 90)
+EMAIL_AUTOTAG_MAX_ATTEMPTS = _int_setting("EMAIL_AUTOTAG_MAX_ATTEMPTS", 5)
+EMAIL_AUTOTAG_BACKOFF_SECONDS = _int_setting("EMAIL_AUTOTAG_BACKOFF_SECONDS", 60)
 
-EMAIL_TAGS = [
-    "Sales Lead",
-    "Support",
-    "Invoice",
-    "Internal",
-    "Updates",
-    "Marketing",
-    "Spam/Low Priority",
-]
-EMAIL_SENTIMENTS = ["Angry", "Neutral", "Happy", "Concerned"]
-EMAIL_PRIORITY_LABELS = ["Urgent", "Important", "Normal", "Low"]
+
+def _email_autotag_disabled() -> bool:
+    return _bool_setting("EMAIL_AUTOTAG_DISABLED", False)
+
+EMAIL_TAGS = ["Security", "Support", "Billing", "Jobs", "Newsletter", "Personal", "Other"]
+EMAIL_SENTIMENTS = ["Concerned", "Neutral", "Positive"]
+EMAIL_PRIORITY_LABELS = ["Urgent", "Normal", "Low"]
+EMAIL_PRIORITY_KEYWORDS = {
+    "password reset": "Urgent",
+    "security alert": "Urgent",
+    "payment failed": "Urgent",
+    "invoice overdue": "Urgent",
+    "contract deadline": "Urgent",
+    "legal deadline": "Urgent",
+    "production outage": "Urgent",
+    "service down": "Urgent",
+    "escalation": "Urgent",
+    "breach": "Urgent",
+}
 EMAIL_VIP_SENDERS = [
     sender.strip().lower()
     for sender in (get_setting("EMAIL_VIP_SENDERS", "") or "").split(",")
@@ -142,6 +173,21 @@ def _get_user(db: SessionLocal, email: Optional[str], user_id: Optional[str]) ->
         except ValueError:
             return None
     return None
+
+
+def _get_user_by_google_account(db: SessionLocal, account_email: Optional[str]) -> tuple[Optional[User], Optional[GoogleToken]]:
+    if not account_email:
+        return None, None
+    token = (
+        db.query(GoogleToken)
+        .filter(GoogleToken.google_account_email == account_email)
+        .order_by(GoogleToken.created_at.desc())
+        .first()
+    )
+    if not token:
+        return None, None
+    user = db.query(User).filter_by(id=token.user_id).one_or_none()
+    return user, token
 
 
 def _get_client_id(db: SessionLocal, user: Optional[User], email: Optional[str]) -> Optional[int]:
@@ -321,11 +367,9 @@ def _vip_sender_boost(sender: str) -> int:
 
 
 def _priority_label(score: int) -> str:
-    if score >= 85:
+    if score >= 75:
         return "Urgent"
-    if score >= 70:
-        return "Important"
-    if score >= 40:
+    if score >= 35:
         return "Normal"
     return "Low"
 
@@ -384,10 +428,14 @@ def _gmail_get_message(access_token: str, message_id: str, format_value: str) ->
         return None, str(exc)
 
 
-def _gmail_get_thread(access_token: str, thread_id: str) -> Tuple[Optional[dict], Optional[str]]:
-    params: dict = {
-        "format": "metadata",
-        "metadataHeaders": [
+def _gmail_get_thread(
+    access_token: str,
+    thread_id: str,
+    format_value: str = "metadata",
+) -> Tuple[Optional[dict], Optional[str]]:
+    params: dict = {"format": format_value}
+    if format_value == "metadata":
+        params["metadataHeaders"] = [
             "From",
             "To",
             "Cc",
@@ -397,14 +445,47 @@ def _gmail_get_thread(access_token: str, thread_id: str) -> Tuple[Optional[dict]
             "Message-ID",
             "In-Reply-To",
             "References",
-        ],
-    }
+        ]
     try:
         resp = requests.get(
             f"https://gmail.googleapis.com/gmail/v1/users/me/threads/{thread_id}",
             headers={"Authorization": f"Bearer {access_token}"},
             timeout=10,
             params=params,
+        )
+        if resp.status_code != 200:
+            return None, resp.text
+        return resp.json(), None
+    except Exception as exc:  # pylint: disable=broad-except
+        return None, str(exc)
+
+
+def _gmail_list_history(access_token: str, start_history_id: str) -> Tuple[Optional[dict], Optional[str]]:
+    params: dict = {"startHistoryId": start_history_id, "historyTypes": "messageAdded"}
+    try:
+        resp = requests.get(
+            "https://gmail.googleapis.com/gmail/v1/users/me/history",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10,
+            params=params,
+        )
+        if resp.status_code != 200:
+            return None, resp.text
+        return resp.json(), None
+    except Exception as exc:  # pylint: disable=broad-except
+        return None, str(exc)
+
+
+def _gmail_watch(access_token: str, topic_name: str, label_ids: Optional[list[str]] = None) -> Tuple[Optional[dict], Optional[str]]:
+    payload: dict = {"topicName": topic_name}
+    if label_ids:
+        payload["labelIds"] = label_ids
+    try:
+        resp = requests.post(
+            "https://gmail.googleapis.com/gmail/v1/users/me/watch",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10,
+            json=payload,
         )
         if resp.status_code != 200:
             return None, resp.text
@@ -567,20 +648,18 @@ def _normalize_tags(tags: Optional[list]) -> list[str]:
     if not isinstance(tags, list):
         return []
     normalized: list[str] = []
+    allowed_map = {tag.lower(): tag for tag in EMAIL_TAGS}
     for tag in tags:
         if not tag:
             continue
         raw = str(tag).strip()
         if not raw:
             continue
-        lowered = raw.lower()
-        if lowered in {"spam", "low priority", "low"}:
-            raw = "Spam/Low Priority"
-        for allowed in EMAIL_TAGS:
-            if lowered == allowed.lower():
-                raw = allowed
-        if raw in EMAIL_TAGS and raw not in normalized:
-            normalized.append(raw)
+        mapped = allowed_map.get(raw.lower())
+        if mapped and mapped not in normalized:
+            normalized.append(mapped)
+    if not normalized:
+        return ["Other"]
     return normalized
 
 
@@ -615,6 +694,287 @@ def _apply_priority_boost(score: int, subject: str, sender: str, snippet: str, b
     base_text = " ".join(filter(None, [subject, sender, snippet, body]))
     boost = _priority_keyword_boost(base_text) + _vip_sender_boost(sender)
     return max(0, min(100, score + boost))
+
+
+def _priority_rule_label(subject: str, sender: str, snippet: str) -> Optional[str]:
+    combined = " ".join(filter(None, [subject, sender, snippet])).lower()
+    for keyword, label in EMAIL_PRIORITY_KEYWORDS.items():
+        if keyword in combined:
+            return label
+    low_keywords = [
+        "newsletter",
+        "unsubscribe",
+        "marketing",
+        "promo",
+        "promotion",
+        "daily brief",
+        "daily digest",
+        "advertisement",
+        "sponsored",
+        "notification",
+        "announcement",
+    ]
+    if any(keyword in combined for keyword in low_keywords):
+        return "Low"
+    return None
+
+
+def _normalize_confidence(value: Optional[float]) -> float:
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        score = 0.0
+    return max(0.0, min(1.0, score))
+
+
+def _normalize_reasoning(value: Optional[str]) -> str:
+    text_value = (value or "").strip()
+    if not text_value:
+        return ""
+    return text_value[:240].rstrip()
+
+
+def _get_or_create_user_settings(db: SessionLocal, user_id: int) -> UserSettings:
+    settings = db.query(UserSettings).filter_by(user_id=user_id).one_or_none()
+    if settings:
+        return settings
+    settings = UserSettings(user_id=user_id)
+    db.add(settings)
+    db.commit()
+    return settings
+
+
+def _queue_email_job(
+    db: SessionLocal,
+    user_id: int,
+    message_id: str,
+    thread_id: Optional[str],
+    metadata: Optional[dict] = None,
+) -> bool:
+    if not user_id or not message_id:
+        return False
+    existing_class = db.query(EmailAIClassification).filter_by(user_id=user_id, message_id=message_id).one_or_none()
+    if existing_class:
+        return False
+    job = db.query(EmailAIJob).filter_by(user_id=user_id, message_id=message_id).one_or_none()
+    if job:
+        if metadata and not job.metadata_json:
+            job.metadata_json = metadata
+            job.updated_at = datetime.utcnow()
+            db.commit()
+        return False
+    job = EmailAIJob(
+        user_id=user_id,
+        message_id=message_id,
+        thread_id=thread_id,
+        metadata_json=metadata,
+        status="pending",
+        attempts=0,
+        next_attempt_at=datetime.utcnow(),
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    db.add(job)
+    db.commit()
+    return True
+
+
+def _upsert_email_classification(
+    db: SessionLocal,
+    *,
+    user_id: int,
+    message_id: str,
+    thread_id: Optional[str],
+    tags: list[str],
+    priority_label: str,
+    priority_score: int,
+    sentiment: str,
+    confidence: float,
+    reasoning_short: str,
+) -> EmailAIClassification:
+    record = db.query(EmailAIClassification).filter_by(user_id=user_id, message_id=message_id).one_or_none()
+    now = datetime.utcnow()
+    if record:
+        record.thread_id = thread_id
+        record.tags_json = tags
+        record.priority_label = priority_label
+        record.priority_score = priority_score
+        record.sentiment = sentiment
+        record.confidence = confidence
+        record.reasoning_short = reasoning_short
+        record.updated_at = now
+        db.commit()
+        return record
+    record = EmailAIClassification(
+        id=str(uuid.uuid4()),
+        user_id=user_id,
+        message_id=message_id,
+        thread_id=thread_id,
+        tags_json=tags,
+        priority_label=priority_label,
+        priority_score=priority_score,
+        sentiment=sentiment,
+        confidence=confidence,
+        reasoning_short=reasoning_short,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(record)
+    db.commit()
+    return record
+
+
+def _classification_payload(record: EmailAIClassification) -> dict:
+    return {
+        "tags": record.tags_json or [],
+        "priorityScore": int(record.priority_score or 0),
+        "priorityLabel": record.priority_label or "Normal",
+        "sentiment": record.sentiment or "Neutral",
+        "confidence": float(record.confidence or 0),
+        "reasoningShort": record.reasoning_short or "",
+    }
+
+
+def _extract_metadata_fields(metadata: dict) -> tuple[str, str, str, str, dict]:
+    headers = metadata.get("headers") if isinstance(metadata.get("headers"), dict) else {}
+    subject = metadata.get("subject") or headers.get("subject") or ""
+    sender = metadata.get("from") or headers.get("from") or ""
+    date = metadata.get("date") or headers.get("date") or ""
+    snippet = metadata.get("snippet") or ""
+    return subject, sender, date, snippet, headers
+
+
+def _fetch_message_metadata(access_token: str, message_id: str) -> tuple[Optional[dict], Optional[str]]:
+    details, detail_error = _gmail_get_message(access_token, message_id, "metadata")
+    if detail_error or not details:
+        return None, detail_error
+    payload = details.get("payload") or {}
+    headers = _header_map(payload)
+    metadata = {
+        "subject": headers.get("subject") or "",
+        "from": headers.get("from") or "",
+        "date": headers.get("date") or "",
+        "to": headers.get("to") or "",
+        "cc": headers.get("cc") or "",
+        "snippet": details.get("snippet") or "",
+        "headers": {
+            "subject": headers.get("subject") or "",
+            "from": headers.get("from") or "",
+            "date": headers.get("date") or "",
+            "to": headers.get("to") or "",
+            "cc": headers.get("cc") or "",
+        },
+        "threadId": details.get("threadId"),
+    }
+    return metadata, None
+
+
+def _schedule_job_retry(job: EmailAIJob, error: str) -> None:
+    attempts = job.attempts or 1
+    backoff = EMAIL_AUTOTAG_BACKOFF_SECONDS * (2 ** min(attempts - 1, 4))
+    job.status = "retry"
+    job.last_error = error[:500]
+    job.next_attempt_at = datetime.utcnow() + timedelta(seconds=backoff)
+    job.updated_at = datetime.utcnow()
+
+
+def _process_email_job(db: SessionLocal, job: EmailAIJob) -> None:
+    now = datetime.utcnow()
+    if job.attempts > EMAIL_AUTOTAG_MAX_ATTEMPTS:
+        job.status = "failed"
+        job.updated_at = now
+        db.commit()
+        return
+
+    existing = (
+        db.query(EmailAIClassification)
+        .filter_by(user_id=job.user_id, message_id=job.message_id)
+        .one_or_none()
+    )
+    if existing:
+        job.status = "done"
+        job.updated_at = now
+        db.commit()
+        return
+
+    user = db.query(User).filter_by(id=job.user_id).one_or_none()
+    if not user:
+        _schedule_job_retry(job, "User not found")
+        db.commit()
+        return
+
+    token = _get_google_token(db, user)
+    if not token:
+        _schedule_job_retry(job, "No Google account connected")
+        db.commit()
+        return
+
+    access_token, token_error = _ensure_access_token(db, token)
+    if token_error or not access_token:
+        _schedule_job_retry(job, f"Token refresh failed: {token_error or 'missing access token'}")
+        db.commit()
+        return
+
+    metadata = job.metadata_json or {}
+    subject, sender, date, snippet, _ = _extract_metadata_fields(metadata)
+    thread_id = job.thread_id or metadata.get("threadId")
+    if not subject and not sender and not snippet:
+        fetched, fetch_error = _fetch_message_metadata(access_token, job.message_id)
+        if fetch_error or not fetched:
+            _schedule_job_retry(job, f"Metadata fetch failed: {fetch_error or 'missing data'}")
+            db.commit()
+            return
+        metadata = fetched
+        subject, sender, date, snippet, _ = _extract_metadata_fields(metadata)
+        thread_id = thread_id or metadata.get("threadId")
+        job.metadata_json = metadata
+
+    settings = _get_or_create_user_settings(db, user.id)
+    urgent_threshold = settings.urgent_conf_threshold or 0.75
+    result = _classify_email_metadata(
+        subject,
+        sender,
+        date,
+        snippet,
+        "",
+        None,
+        urgent_threshold,
+    )
+
+    record = _upsert_email_classification(
+        db,
+        user_id=user.id,
+        message_id=job.message_id,
+        thread_id=thread_id,
+        tags=result.get("tags") or [],
+        priority_label=result.get("priorityLabel") or "Normal",
+        priority_score=int(result.get("priorityScore") or 0),
+        sentiment=result.get("sentiment") or "Neutral",
+        confidence=float(result.get("confidence") or 0),
+        reasoning_short=result.get("reasoningShort") or "",
+    )
+    _record_email_event(
+        db,
+        user=user,
+        email=user.email,
+        message_id=job.message_id,
+        thread_id=thread_id,
+        event_type="classify",
+        cached=False,
+        tags=result.get("tags"),
+        priority_label=result.get("priorityLabel"),
+        sentiment=result.get("sentiment"),
+    )
+
+    job.status = "done"
+    job.updated_at = datetime.utcnow()
+    db.commit()
+    logger.info(
+        "Auto-tagged email %s for user %s with %s",
+        job.message_id,
+        user.email,
+        record.priority_label,
+    )
 
 
 def _parse_json_response(content: str) -> dict:
@@ -678,6 +1038,17 @@ def _call_openai_json(messages: list[dict], max_tokens: int = 450, temperature: 
 def _collect_attachments(payload: dict) -> list[dict]:
     attachments: list[dict] = []
 
+    def extract_filename(value: Optional[str]) -> str:
+        if not value or not isinstance(value, str):
+            return ""
+        match = re.search(r'filename="?(?P<name>[^";]+)"?', value, flags=re.IGNORECASE)
+        if match:
+            return match.group("name").strip()
+        match = re.search(r"name=\"?(?P<name>[^\";]+)\"?", value, flags=re.IGNORECASE)
+        if match:
+            return match.group("name").strip()
+        return ""
+
     def walk(part: dict) -> None:
         body = part.get("body") or {}
         attachment_id = body.get("attachmentId")
@@ -685,8 +1056,18 @@ def _collect_attachments(payload: dict) -> list[dict]:
         filename = part.get("filename") or ""
         headers = _header_map(part)
         content_id = headers.get("content-id")
+        content_disposition = headers.get("content-disposition") or ""
+        content_type_header = headers.get("content-type") or ""
+        if not filename:
+            filename = extract_filename(content_disposition) or extract_filename(content_type_header)
         inline_data = body.get("data")
-        if attachment_id or inline_data:
+        has_attachment_marker = "attachment" in content_disposition.lower()
+        has_inline_marker = "inline" in content_disposition.lower()
+        is_inline = bool(content_id) or (has_inline_marker and not has_attachment_marker)
+        is_attachment = bool(attachment_id or filename or has_attachment_marker or content_id)
+        if not is_attachment and inline_data and not mime_type.lower().startswith("text/"):
+            is_attachment = True
+        if is_attachment:
             attachments.append(
                 {
                     "id": attachment_id,
@@ -694,8 +1075,8 @@ def _collect_attachments(payload: dict) -> list[dict]:
                     "mimeType": mime_type,
                     "size": body.get("size"),
                     "contentId": content_id.strip("<>") if isinstance(content_id, str) else None,
-                    "isInline": bool(content_id),
-                    "data": _b64url_to_b64(inline_data) if inline_data and content_id else None,
+                    "isInline": is_inline,
+                    "data": _b64url_to_b64(inline_data) if inline_data else None,
                 }
             )
         for child in part.get("parts") or []:
@@ -750,13 +1131,66 @@ def _build_summary_prompt(
 
 def _build_classify_prompt(context: str) -> str:
     return (
-        "Classify this email. Use only the allowed labels and return JSON only.\n"
+        "Classify this email using only the allowed labels and return JSON only.\n"
         f"Tags: {', '.join(EMAIL_TAGS)}\n"
         f"Sentiment: {', '.join(EMAIL_SENTIMENTS)}\n"
         f"Priority labels: {', '.join(EMAIL_PRIORITY_LABELS)}\n"
-        "Return JSON with keys: tags (array), priorityScore (0-100), priorityLabel, sentiment.\n\n"
+        "Priority rules: Urgent for security/password alerts, payment failures, legal/contract deadlines, "
+        "production outages, or customer escalations. Low for newsletters, marketing, daily briefs, ads, "
+        "generic notifications. Use subject + sender + snippet primarily.\n"
+        "Return JSON with keys: tags (array), priority_score (0-100), priority_label, sentiment, confidence (0-1), reasoning_short (max 240 chars).\n\n"
         f"{context}"
     )
+
+
+def _classify_email_metadata(
+    subject: str,
+    sender: str,
+    date: str,
+    snippet: str,
+    body_text: str,
+    thread_context: Optional[str],
+    urgent_threshold: float,
+) -> dict:
+    context = _build_email_context(subject, sender, date, snippet, body_text, thread_context)
+    messages = [
+        {"role": "system", "content": "You are an email triage assistant. Return JSON only."},
+        {"role": "user", "content": _build_classify_prompt(context)},
+    ]
+    result = _call_openai_json(messages, max_tokens=220, temperature=0.2)
+
+    tags = _normalize_tags(result.get("tags"))
+    base_score = _normalize_priority_score(result.get("priority_score") or result.get("priorityScore"))
+    boosted_score = _apply_priority_boost(base_score, subject, sender, snippet, body_text)
+    priority_label = _normalize_priority_label(
+        result.get("priority_label") or result.get("priorityLabel"),
+        boosted_score,
+    )
+    sentiment = _normalize_sentiment(result.get("sentiment"))
+    confidence = _normalize_confidence(result.get("confidence"))
+    reasoning_short = _normalize_reasoning(result.get("reasoning_short") or result.get("reasoningShort"))
+
+    rule_label = _priority_rule_label(subject, sender, snippet)
+    if rule_label == "Urgent":
+        priority_label = "Urgent"
+        boosted_score = max(boosted_score, 85)
+        confidence = max(confidence, urgent_threshold)
+    elif rule_label == "Low":
+        priority_label = "Low"
+        boosted_score = min(boosted_score, 25)
+
+    if priority_label == "Urgent" and confidence < urgent_threshold:
+        priority_label = "Normal"
+        boosted_score = min(boosted_score, 70)
+
+    return {
+        "tags": tags,
+        "priorityScore": boosted_score,
+        "priorityLabel": priority_label,
+        "sentiment": sentiment,
+        "confidence": confidence,
+        "reasoningShort": reasoning_short,
+    }
 
 
 def _build_actions_prompt(context: str) -> str:
@@ -1036,6 +1470,17 @@ def _normalize_address(value: Optional[object]) -> str:
     return str(value).strip()
 
 
+def _merge_references(references: Optional[str], in_reply_to: Optional[str]) -> Optional[str]:
+    if not in_reply_to:
+        return references
+    if not references:
+        return in_reply_to
+    parts = [part for part in references.split() if part]
+    if in_reply_to in parts:
+        return references
+    return f"{references} {in_reply_to}"
+
+
 def _extract_addresses(*values: Optional[str]) -> list[tuple[str, str]]:
     results = []
     for value in values:
@@ -1271,6 +1716,626 @@ def email_messages(req: func.HttpRequest) -> func.HttpResponse:
         db.close()
 
 
+@app.timer_trigger(schedule="0 */1 * * * *", arg_name="timer", run_on_startup=False, use_monitor=True)
+def email_autotag_poll(timer: func.TimerRequest) -> None:
+    if _email_autotag_disabled():
+        return
+    db = SessionLocal()
+    try:
+        now = datetime.utcnow()
+        settings_list = db.query(UserSettings).filter(UserSettings.auto_tag_enabled.is_(True)).all()
+        for settings in settings_list:
+            last_polled = settings.email_last_polled_at
+            if last_polled and (now - last_polled).total_seconds() < EMAIL_AUTOTAG_POLL_SECONDS:
+                continue
+            user = db.query(User).filter_by(id=settings.user_id).one_or_none()
+            if not user:
+                continue
+            token = _get_google_token(db, user)
+            if not token:
+                continue
+            access_token, token_error = _ensure_access_token(db, token)
+            if token_error or not access_token:
+                logger.warning("Auto-tag poll token refresh failed for %s: %s", user.email, token_error)
+                continue
+            since = last_polled or (now - timedelta(minutes=5))
+            query = f"after:{int(since.timestamp())}"
+            batch_size = min(EMAIL_AUTOTAG_BATCH_SIZE, MAX_LIST_RESULTS)
+            message_list, list_error = _gmail_list_messages(access_token, batch_size, DEFAULT_LABELS, query, None)
+            if list_error or message_list is None:
+                logger.warning("Auto-tag poll list failed for %s: %s", user.email, list_error)
+                continue
+            queued = 0
+            for entry in message_list.get("messages", []) or []:
+                message_id = entry.get("id")
+                if message_id and _queue_email_job(db, user.id, message_id, entry.get("threadId")):
+                    queued += 1
+            settings.email_last_polled_at = now
+            settings.updated_at = now
+            db.commit()
+            if queued:
+                logger.info("Auto-tag poll queued %s emails for %s", queued, user.email)
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.error("Auto-tag poll failed: %s", exc)
+    finally:
+        db.close()
+
+
+@app.timer_trigger(schedule="30 */1 * * * *", arg_name="timer", run_on_startup=False, use_monitor=True)
+def email_autotag_worker(timer: func.TimerRequest) -> None:
+    if _email_autotag_disabled():
+        return
+    db = SessionLocal()
+    try:
+        now = datetime.utcnow()
+        jobs = (
+            db.query(EmailAIJob)
+            .filter(EmailAIJob.status.in_(["pending", "retry"]))
+            .filter(or_(EmailAIJob.next_attempt_at.is_(None), EmailAIJob.next_attempt_at <= now))
+            .order_by(EmailAIJob.created_at.asc())
+            .limit(EMAIL_AUTOTAG_BATCH_SIZE)
+            .all()
+        )
+        for job in jobs:
+            if job.attempts > EMAIL_AUTOTAG_MAX_ATTEMPTS:
+                job.status = "failed"
+                job.updated_at = now
+                db.commit()
+                continue
+            job.status = "processing"
+            job.attempts = (job.attempts or 0) + 1
+            job.last_error = None
+            job.next_attempt_at = None
+            job.updated_at = now
+            db.commit()
+            try:
+                _process_email_job(db, job)
+            except Exception as exc:  # pylint: disable=broad-except
+                _schedule_job_retry(job, str(exc))
+                db.commit()
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.error("Auto-tag worker failed: %s", exc)
+    finally:
+        db.close()
+
+
+@app.function_name(name="Inbox")
+@app.route(route="inbox", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def inbox(req: func.HttpRequest) -> func.HttpResponse:
+    cors = build_cors_headers(req, ["GET", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
+    email = req.params.get("email")
+    user_id = req.params.get("user_id") or req.params.get("userId")
+    max_results_param = req.params.get("max_results") or req.params.get("maxResults")
+    query = req.params.get("q")
+    page_token = req.params.get("page_token") or req.params.get("pageToken")
+    labels_raw = req.params.get("label_ids") or req.params.get("labelIds")
+    label_ids = (
+        [label.strip() for label in labels_raw.split(",") if label.strip()]
+        if labels_raw
+        else DEFAULT_LABELS
+    )
+    if not label_ids:
+        label_ids = DEFAULT_LABELS
+
+    max_results = DEFAULT_LIST_RESULTS
+    if max_results_param:
+        try:
+            max_results = min(int(max_results_param), MAX_LIST_RESULTS)
+        except ValueError:
+            max_results = DEFAULT_LIST_RESULTS
+
+    db = SessionLocal()
+    try:
+        user = _get_user(db, email, user_id)
+        if not user:
+            return func.HttpResponse(
+                json.dumps({"error": "User not found"}),
+                status_code=404,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        token = _get_google_token(db, user)
+        if not token:
+            return func.HttpResponse(
+                json.dumps({"error": "No Google account connected"}),
+                status_code=404,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        access_token, token_error = _ensure_access_token(db, token)
+        if token_error or not access_token:
+            return func.HttpResponse(
+                json.dumps({"error": "Unable to refresh token", "details": token_error}),
+                status_code=401,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        message_list, list_error = _gmail_list_messages(access_token, max_results, label_ids, query, page_token)
+        if list_error or message_list is None:
+            return func.HttpResponse(
+                json.dumps({"error": "Failed to fetch messages", "details": list_error}),
+                status_code=400,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        messages = []
+        message_ids: list[str] = []
+        for entry in message_list.get("messages", []) or []:
+            message_id = entry.get("id")
+            if not message_id:
+                continue
+            details, detail_error = _gmail_get_message(access_token, message_id, "metadata")
+            if detail_error or not details:
+                logger.warning("Failed to fetch message metadata for %s: %s", message_id, detail_error)
+                continue
+            payload = details.get("payload") or {}
+            headers = _header_map(payload)
+            message_ids.append(message_id)
+            messages.append(
+                {
+                    "id": details.get("id"),
+                    "threadId": details.get("threadId"),
+                    "labelIds": details.get("labelIds"),
+                    "snippet": details.get("snippet"),
+                    "from": headers.get("from"),
+                    "to": headers.get("to"),
+                    "subject": headers.get("subject"),
+                    "date": headers.get("date"),
+                    "cc": headers.get("cc"),
+                    "bcc": headers.get("bcc"),
+                    "messageIdHeader": headers.get("message-id"),
+                    "inReplyTo": headers.get("in-reply-to"),
+                    "references": headers.get("references"),
+                    "internalDate": details.get("internalDate"),
+                    "sizeEstimate": details.get("sizeEstimate"),
+                }
+            )
+
+        classifications: dict[str, dict] = {}
+        if message_ids:
+            records = (
+                db.query(EmailAIClassification)
+                .filter(EmailAIClassification.user_id == user.id)
+                .filter(EmailAIClassification.message_id.in_(message_ids))
+                .all()
+            )
+            classifications = {record.message_id: _classification_payload(record) for record in records}
+
+        settings = _get_or_create_user_settings(db, user.id)
+        if settings.auto_tag_enabled:
+            for message in messages:
+                message_id = message.get("id")
+                if not message_id or message_id in classifications:
+                    continue
+                metadata = {
+                    "subject": message.get("subject") or "",
+                    "from": message.get("from") or "",
+                    "to": message.get("to") or "",
+                    "date": message.get("date") or "",
+                    "snippet": message.get("snippet") or "",
+                    "headers": {
+                        "subject": message.get("subject") or "",
+                        "from": message.get("from") or "",
+                        "date": message.get("date") or "",
+                        "to": message.get("to") or "",
+                        "cc": message.get("cc") or "",
+                    },
+                }
+                _queue_email_job(db, user.id, message_id, message.get("threadId"), metadata)
+
+        return func.HttpResponse(
+            json.dumps(
+                {
+                    "messages": messages,
+                    "classifications": classifications,
+                    "resultSizeEstimate": message_list.get("resultSizeEstimate"),
+                    "nextPageToken": message_list.get("nextPageToken"),
+                    "user": user.email,
+                    "account_email": token.google_account_email,
+                    "settings": {
+                        "auto_tag_enabled": bool(settings.auto_tag_enabled),
+                        "urgent_conf_threshold": float(settings.urgent_conf_threshold or 0.75),
+                    },
+                }
+            ),
+            status_code=200,
+            mimetype="application/json",
+            headers=cors,
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.error("Inbox fetch failed: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "Inbox fetch failed", "details": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+            headers=cors,
+        )
+    finally:
+        db.close()
+
+
+@app.function_name(name="EmailSettings")
+@app.route(route="email/settings", methods=["GET", "POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def email_settings(req: func.HttpRequest) -> func.HttpResponse:
+    cors = build_cors_headers(req, ["GET", "POST", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
+    body = {}
+    if req.method == "POST":
+        try:
+            body = req.get_json()
+        except ValueError:
+            body = {}
+    email = body.get("email") if body else req.params.get("email")
+    if body:
+        user_id = body.get("user_id") or body.get("userId")
+    else:
+        user_id = req.params.get("user_id") or req.params.get("userId")
+
+    db = SessionLocal()
+    try:
+        user = _get_user(db, email, user_id)
+        if not user:
+            return func.HttpResponse(
+                json.dumps({"error": "User not found"}),
+                status_code=404,
+                mimetype="application/json",
+                headers=cors,
+            )
+        settings = _get_or_create_user_settings(db, user.id)
+        if req.method == "POST":
+            if "auto_tag_enabled" in body:
+                settings.auto_tag_enabled = bool(body.get("auto_tag_enabled"))
+            if "urgent_conf_threshold" in body or "urgentConfThreshold" in body:
+                raw_value = body.get("urgent_conf_threshold") if "urgent_conf_threshold" in body else body.get("urgentConfThreshold")
+                try:
+                    threshold = float(raw_value)
+                except (TypeError, ValueError):
+                    threshold = settings.urgent_conf_threshold or 0.75
+                settings.urgent_conf_threshold = max(0.0, min(1.0, threshold))
+            settings.updated_at = datetime.utcnow()
+            db.commit()
+
+        return func.HttpResponse(
+            json.dumps(
+                {
+                    "user": user.email,
+                    "auto_tag_enabled": bool(settings.auto_tag_enabled),
+                    "urgent_conf_threshold": float(settings.urgent_conf_threshold or 0.75),
+                }
+            ),
+            status_code=200,
+            mimetype="application/json",
+            headers=cors,
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.error("Email settings failed: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "Email settings failed", "details": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+            headers=cors,
+        )
+    finally:
+        db.close()
+
+
+@app.function_name(name="EmailWatch")
+@app.route(route="email/watch", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def email_watch(req: func.HttpRequest) -> func.HttpResponse:
+    cors = build_cors_headers(req, ["POST", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
+    try:
+        body = req.get_json()
+    except ValueError:
+        body = {}
+    body = body or {}
+
+    email = body.get("email")
+    user_id = body.get("user_id") or body.get("userId")
+    mode = (body.get("mode") or "polling").lower()
+
+    if not (email or user_id):
+        return func.HttpResponse(
+            json.dumps({"error": "user identifier is required"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    db = SessionLocal()
+    try:
+        user = _get_user(db, email, user_id)
+        if not user:
+            return func.HttpResponse(
+                json.dumps({"error": "User not found"}),
+                status_code=404,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        settings = _get_or_create_user_settings(db, user.id)
+        auto_tag_enabled = body.get("auto_tag_enabled")
+        if auto_tag_enabled is not None:
+            settings.auto_tag_enabled = bool(auto_tag_enabled)
+
+        token = _get_google_token(db, user)
+        if not token:
+            return func.HttpResponse(
+                json.dumps({"error": "No Google account connected"}),
+                status_code=404,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        access_token, token_error = _ensure_access_token(db, token)
+        if token_error or not access_token:
+            return func.HttpResponse(
+                json.dumps({"error": "Unable to refresh token", "details": token_error}),
+                status_code=401,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        response_payload = {"mode": mode, "auto_tag_enabled": bool(settings.auto_tag_enabled)}
+        if mode == "push":
+            topic = get_setting("GMAIL_PUBSUB_TOPIC")
+            if not topic:
+                return func.HttpResponse(
+                    json.dumps({"error": "GMAIL_PUBSUB_TOPIC is not configured"}),
+                    status_code=400,
+                    mimetype="application/json",
+                    headers=cors,
+                )
+            watch_result, watch_error = _gmail_watch(access_token, topic, DEFAULT_LABELS)
+            if watch_error or not watch_result:
+                return func.HttpResponse(
+                    json.dumps({"error": "Failed to start watch", "details": watch_error}),
+                    status_code=400,
+                    mimetype="application/json",
+                    headers=cors,
+                )
+            settings.gmail_history_id = str(watch_result.get("historyId") or "")
+            settings.updated_at = datetime.utcnow()
+            db.commit()
+            response_payload["watch"] = watch_result
+
+        return func.HttpResponse(
+            json.dumps(response_payload),
+            status_code=200,
+            mimetype="application/json",
+            headers=cors,
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.error("Email watch failed: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "Email watch failed", "details": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+            headers=cors,
+        )
+    finally:
+        db.close()
+
+
+@app.function_name(name="EmailNotifications")
+@app.route(route="email/notifications", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def email_notifications(req: func.HttpRequest) -> func.HttpResponse:
+    cors = build_cors_headers(req, ["POST", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
+    try:
+        body = req.get_json()
+    except ValueError:
+        body = {}
+    body = body or {}
+
+    message = body.get("message") or {}
+    data = message.get("data") if isinstance(message, dict) else None
+    payload = {}
+    if data:
+        try:
+            decoded = base64.b64decode(data).decode("utf-8")
+            payload = json.loads(decoded)
+        except Exception:  # pylint: disable=broad-except
+            payload = {}
+    else:
+        payload = body
+
+    account_email = payload.get("emailAddress") or payload.get("email")
+    history_id = payload.get("historyId")
+    if not account_email or not history_id:
+        return func.HttpResponse(
+            json.dumps({"error": "Missing Gmail notification payload"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    db = SessionLocal()
+    try:
+        user, token = _get_user_by_google_account(db, account_email)
+        if not user or not token:
+            return func.HttpResponse(
+                json.dumps({"error": "User not found for Gmail account"}),
+                status_code=404,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        settings = _get_or_create_user_settings(db, user.id)
+        previous_history_id = settings.gmail_history_id or str(history_id)
+        settings.updated_at = datetime.utcnow()
+        if not settings.auto_tag_enabled:
+            settings.gmail_history_id = str(history_id)
+            db.commit()
+            return func.HttpResponse(
+                json.dumps({"status": "ignored", "reason": "auto_tag_disabled"}),
+                status_code=200,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        access_token, token_error = _ensure_access_token(db, token)
+        if token_error or not access_token:
+            return func.HttpResponse(
+                json.dumps({"error": "Unable to refresh token", "details": token_error}),
+                status_code=401,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        history, history_error = _gmail_list_history(access_token, str(previous_history_id))
+        if history_error or not history:
+            logger.warning("Gmail history fetch failed: %s", history_error)
+            settings.gmail_history_id = str(history_id)
+            db.commit()
+            return func.HttpResponse(
+                json.dumps({"status": "ok", "warning": history_error}),
+                status_code=200,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        added_count = 0
+        for entry in history.get("history", []) or []:
+            for message_entry in entry.get("messagesAdded", []) or []:
+                message = message_entry.get("message") or {}
+                message_id = message.get("id")
+                thread_id = message.get("threadId")
+                if message_id and _queue_email_job(db, user.id, message_id, thread_id):
+                    added_count += 1
+
+        settings.gmail_history_id = str(history.get("historyId") or history_id)
+        settings.updated_at = datetime.utcnow()
+        db.commit()
+        return func.HttpResponse(
+            json.dumps({"status": "ok", "queued": added_count}),
+            status_code=200,
+            mimetype="application/json",
+            headers=cors,
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.error("Email notification failed: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "Email notification failed", "details": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+            headers=cors,
+        )
+    finally:
+        db.close()
+
+
+@app.function_name(name="EmailFeedback")
+@app.route(route="email/feedback", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def email_feedback(req: func.HttpRequest) -> func.HttpResponse:
+    cors = build_cors_headers(req, ["POST", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
+    try:
+        body = req.get_json()
+    except ValueError:
+        body = {}
+    body = body or {}
+
+    email = body.get("email")
+    user_id = body.get("user_id") or body.get("userId")
+    message_id = body.get("message_id") or body.get("messageId")
+    force = bool(body.get("force"))
+    urgent_threshold_override = body.get("urgent_conf_threshold") or body.get("urgentConfThreshold")
+    force = bool(body.get("force"))
+    urgent_threshold_override = body.get("urgent_conf_threshold") or body.get("urgentConfThreshold")
+    thread_id = body.get("thread_id") or body.get("threadId")
+    corrected_tags = body.get("corrected_tags") or body.get("correctedTags") or []
+    corrected_priority = body.get("corrected_priority_label") or body.get("correctedPriorityLabel")
+    corrected_sentiment = body.get("corrected_sentiment") or body.get("correctedSentiment")
+    notes = body.get("notes") or ""
+
+    if not message_id or not (email or user_id):
+        return func.HttpResponse(
+            json.dumps({"error": "message_id and user identifier are required"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    db = SessionLocal()
+    try:
+        user = _get_user(db, email, user_id)
+        if not user:
+            return func.HttpResponse(
+                json.dumps({"error": "User not found"}),
+                status_code=404,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        normalized_tags = _normalize_tags(corrected_tags) if corrected_tags else []
+        normalized_priority = _normalize_priority_label(corrected_priority, 50) if corrected_priority else None
+        normalized_sentiment = _normalize_sentiment(corrected_sentiment) if corrected_sentiment else None
+
+        feedback = EmailAIFeedback(
+            user_id=user.id,
+            message_id=message_id,
+            thread_id=thread_id,
+            corrected_tags_json=normalized_tags or None,
+            corrected_priority_label=normalized_priority,
+            corrected_sentiment=normalized_sentiment,
+            notes=notes[:500] if notes else None,
+            created_at=datetime.utcnow(),
+        )
+        db.add(feedback)
+
+        existing = (
+            db.query(EmailAIClassification)
+            .filter_by(user_id=user.id, message_id=message_id)
+            .one_or_none()
+        )
+        if existing and (normalized_tags or normalized_priority or normalized_sentiment):
+            if normalized_tags:
+                existing.tags_json = normalized_tags
+            if normalized_priority:
+                existing.priority_label = normalized_priority
+                existing.priority_score = existing.priority_score or (90 if normalized_priority == "Urgent" else 50 if normalized_priority == "Normal" else 10)
+            if normalized_sentiment:
+                existing.sentiment = normalized_sentiment
+            existing.confidence = max(existing.confidence or 0, 0.9)
+            existing.reasoning_short = existing.reasoning_short or "Updated via user feedback."
+            existing.updated_at = datetime.utcnow()
+
+        db.commit()
+
+        return func.HttpResponse(
+            json.dumps({"status": "ok"}),
+            status_code=200,
+            mimetype="application/json",
+            headers=cors,
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.error("Email feedback failed: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "Email feedback failed", "details": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+            headers=cors,
+        )
+    finally:
+        db.close()
+
+
 @app.function_name(name="EmailSummary")
 @app.route(route="email/summary", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def email_summary(req: func.HttpRequest) -> func.HttpResponse:
@@ -1287,6 +2352,8 @@ def email_summary(req: func.HttpRequest) -> func.HttpResponse:
     email = body.get("email")
     user_id = body.get("user_id") or body.get("userId")
     message_id = body.get("message_id") or body.get("messageId")
+    force = bool(body.get("force"))
+    urgent_threshold_override = body.get("urgent_conf_threshold") or body.get("urgentConfThreshold")
 
     if not message_id or not (email or user_id):
         return func.HttpResponse(
@@ -1470,8 +2537,48 @@ def email_classify(req: func.HttpRequest) -> func.HttpResponse:
                 headers=cors,
             )
 
-        cached = AI_RESPONSE_CACHE.get(cache_key)
+        settings = _get_or_create_user_settings(db, user.id)
+        urgent_threshold = settings.urgent_conf_threshold or 0.75
+        if urgent_threshold_override is not None:
+            try:
+                urgent_threshold = float(urgent_threshold_override)
+            except (TypeError, ValueError):
+                urgent_threshold = settings.urgent_conf_threshold or 0.75
+
+        if not force:
+            existing = (
+                db.query(EmailAIClassification)
+                .filter_by(user_id=user.id, message_id=message_id)
+                .one_or_none()
+            )
+            if existing:
+                payload = {
+                    "message_id": message_id,
+                    **_classification_payload(existing),
+                    "user": user.email,
+                    "cached": True,
+                }
+                return func.HttpResponse(
+                    json.dumps(payload),
+                    status_code=200,
+                    mimetype="application/json",
+                    headers=cors,
+                )
+
+        cached = None if force else AI_RESPONSE_CACHE.get(cache_key)
         if cached:
+            _upsert_email_classification(
+                db,
+                user_id=user.id,
+                message_id=message_id,
+                thread_id=cached.get("threadId"),
+                tags=cached.get("tags") or [],
+                priority_label=cached.get("priorityLabel") or "Normal",
+                priority_score=int(cached.get("priorityScore") or 0),
+                sentiment=cached.get("sentiment") or "Neutral",
+                confidence=float(cached.get("confidence") or 0),
+                reasoning_short=cached.get("reasoningShort") or "",
+            )
             _record_email_event(
                 db,
                 user=user,
@@ -1502,34 +2609,31 @@ def email_classify(req: func.HttpRequest) -> func.HttpResponse:
         if token:
             access_token, _ = _ensure_access_token(db, token)
         thread_context = _get_thread_context(access_token, thread_id)
-        context = _build_email_context(subject, sender, date, snippet, body_text, thread_context)
+        result = _classify_email_metadata(
+            subject,
+            sender,
+            date,
+            snippet,
+            body_text,
+            thread_context,
+            urgent_threshold,
+        )
 
-        messages = [
-            {
-                "role": "system",
-                "content": "You are an email triage assistant. Return JSON only.",
-            },
-            {"role": "user", "content": _build_classify_prompt(context)},
-        ]
-        result = _call_openai_json(messages, max_tokens=220, temperature=0.2)
-
-        tags = _normalize_tags(result.get("tags"))
-        if not tags:
-            tags = ["Updates"]
-        base_score = _normalize_priority_score(result.get("priorityScore"))
-        boosted_score = _apply_priority_boost(base_score, subject, sender, snippet, body_text)
-        priority_label = _normalize_priority_label(result.get("priorityLabel"), boosted_score)
-        sentiment = _normalize_sentiment(result.get("sentiment"))
-
-        cache_payload = {
-            "threadId": thread_id or None,
-            "tags": tags,
-            "priorityScore": boosted_score,
-            "priorityLabel": priority_label,
-            "sentiment": sentiment,
-        }
+        cache_payload = {"threadId": thread_id or None, **result}
         AI_RESPONSE_CACHE.set(cache_key, cache_payload)
 
+        _upsert_email_classification(
+            db,
+            user_id=user.id,
+            message_id=message_id,
+            thread_id=thread_id,
+            tags=result.get("tags") or [],
+            priority_label=result.get("priorityLabel") or "Normal",
+            priority_score=int(result.get("priorityScore") or 0),
+            sentiment=result.get("sentiment") or "Neutral",
+            confidence=float(result.get("confidence") or 0),
+            reasoning_short=result.get("reasoningShort") or "",
+        )
         _record_email_event(
             db,
             user=user,
@@ -1538,9 +2642,9 @@ def email_classify(req: func.HttpRequest) -> func.HttpResponse:
             thread_id=thread_id,
             event_type="classify",
             cached=False,
-            tags=tags,
-            priority_label=priority_label,
-            sentiment=sentiment,
+            tags=result.get("tags"),
+            priority_label=result.get("priorityLabel"),
+            sentiment=result.get("sentiment"),
         )
 
         return func.HttpResponse(
@@ -1971,6 +3075,117 @@ def email_message(req: func.HttpRequest) -> func.HttpResponse:
         logger.error("Email message fetch failed: %s", exc)
         return func.HttpResponse(
             json.dumps({"error": "Email message fetch failed", "details": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+            headers=cors,
+        )
+    finally:
+        db.close()
+
+
+@app.function_name(name="EmailThread")
+@app.route(route="email/thread", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def email_thread(req: func.HttpRequest) -> func.HttpResponse:
+    cors = build_cors_headers(req, ["GET", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
+    email = req.params.get("email")
+    user_id = req.params.get("user_id") or req.params.get("userId")
+    thread_id = req.params.get("thread_id") or req.params.get("threadId")
+
+    if not thread_id or not (email or user_id):
+        return func.HttpResponse(
+            json.dumps({"error": "thread_id and user identifier are required"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    db = SessionLocal()
+    try:
+        user = _get_user(db, email, user_id)
+        if not user:
+            return func.HttpResponse(
+                json.dumps({"error": "User not found"}),
+                status_code=404,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        token = _get_google_token(db, user)
+        if not token:
+            return func.HttpResponse(
+                json.dumps({"error": "No Google account connected"}),
+                status_code=404,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        access_token, token_error = _ensure_access_token(db, token)
+        if token_error or not access_token:
+            return func.HttpResponse(
+                json.dumps({"error": "Unable to refresh token", "details": token_error}),
+                status_code=401,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        thread, thread_error = _gmail_get_thread(access_token, thread_id, "full")
+        if thread_error or not thread:
+            return func.HttpResponse(
+                json.dumps({"error": "Failed to fetch thread", "details": thread_error}),
+                status_code=400,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        messages = []
+        for message in thread.get("messages") or []:
+            payload = message.get("payload") or {}
+            headers = _header_map(payload)
+            body_text = _extract_text_from_payload(payload)
+            if not body_text:
+                body_text = message.get("snippet") or ""
+            messages.append(
+                {
+                    "id": message.get("id"),
+                    "threadId": message.get("threadId"),
+                    "labelIds": message.get("labelIds"),
+                    "snippet": message.get("snippet"),
+                    "from": headers.get("from"),
+                    "to": headers.get("to"),
+                    "cc": headers.get("cc"),
+                    "bcc": headers.get("bcc"),
+                    "subject": headers.get("subject"),
+                    "date": headers.get("date"),
+                    "messageIdHeader": headers.get("message-id"),
+                    "inReplyTo": headers.get("in-reply-to"),
+                    "references": headers.get("references"),
+                    "internalDate": message.get("internalDate"),
+                    "body": body_text,
+                }
+            )
+
+        messages.sort(key=lambda entry: int(entry.get("internalDate") or 0))
+
+        return func.HttpResponse(
+            json.dumps(
+                {
+                    "threadId": thread_id,
+                    "messages": messages,
+                    "account_email": token.google_account_email,
+                    "user": user.email,
+                }
+            ),
+            status_code=200,
+            mimetype="application/json",
+            headers=cors,
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.error("Email thread fetch failed: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "Email thread fetch failed", "details": str(exc)}),
             status_code=500,
             mimetype="application/json",
             headers=cors,
@@ -2645,6 +3860,7 @@ def email_send(req: func.HttpRequest) -> func.HttpResponse:
             )
 
         sender = _normalize_address(body.get("from")) or token.google_account_email or user.email
+        references = _merge_references(references, in_reply_to)
         raw_message = _build_raw_message(
             sender,
             to_value,

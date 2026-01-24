@@ -1,4 +1,5 @@
 from datetime import datetime
+import logging
 import os
 from typing import Generator
 
@@ -9,6 +10,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     JSON,
+    Float,
     String,
     Text,
     LargeBinary,
@@ -20,8 +22,11 @@ from sqlalchemy import (
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, scoped_session, sessionmaker
+from sqlalchemy.exc import OperationalError
 
 from shared.config import get_database_url
+
+logger = logging.getLogger(__name__)
 
 DATABASE_URL = get_database_url()
 
@@ -317,6 +322,77 @@ class EmailAIEvent(Base):
     )
 
 
+class EmailAIClassification(Base):
+    __tablename__ = "email_ai_classifications"
+
+    id = Column(String, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    message_id = Column(String, nullable=False, index=True)
+    thread_id = Column(String, nullable=True, index=True)
+    tags_json = Column(JSON, nullable=True)
+    priority_label = Column(String, nullable=True)
+    priority_score = Column(Integer, nullable=True)
+    sentiment = Column(String, nullable=True)
+    confidence = Column(Float, nullable=True)
+    reasoning_short = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "message_id", name="uq_email_ai_class_user_message"),
+        Index("ix_email_ai_class_user_message", "user_id", "message_id"),
+        Index("ix_email_ai_class_user_updated", "user_id", "updated_at"),
+    )
+
+
+class EmailAIFeedback(Base):
+    __tablename__ = "email_ai_feedback"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    message_id = Column(String, nullable=False, index=True)
+    thread_id = Column(String, nullable=True, index=True)
+    corrected_tags_json = Column(JSON, nullable=True)
+    corrected_priority_label = Column(String, nullable=True)
+    corrected_sentiment = Column(String, nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (Index("ix_email_ai_feedback_user_message", "user_id", "message_id"),)
+
+
+class EmailAIJob(Base):
+    __tablename__ = "email_ai_jobs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    message_id = Column(String, nullable=False, index=True)
+    thread_id = Column(String, nullable=True, index=True)
+    metadata_json = Column(JSON, nullable=True)
+    status = Column(String, nullable=False, default="pending", index=True)
+    attempts = Column(Integer, nullable=False, default=0)
+    next_attempt_at = Column(DateTime, nullable=True, index=True)
+    last_error = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "message_id", name="uq_email_ai_job_user_message"),
+        Index("ix_email_ai_job_status_next", "status", "next_attempt_at"),
+    )
+
+
+class UserSettings(Base):
+    __tablename__ = "user_settings"
+
+    user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    auto_tag_enabled = Column(Boolean, default=False)
+    urgent_conf_threshold = Column(Float, default=0.75)
+    email_last_polled_at = Column(DateTime, nullable=True)
+    gmail_history_id = Column(String, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class SocialConnection(Base):
     __tablename__ = "social_connections"
 
@@ -415,8 +491,14 @@ class SocialScheduledPost(Base):
 
 def init_db() -> None:
     """Create tables if they do not exist."""
-    Base.metadata.create_all(bind=engine)
-    _ensure_optional_columns()
+    strict = os.getenv("DB_INIT_STRICT", "true").strip().lower() in {"1", "true", "yes", "on"}
+    try:
+        Base.metadata.create_all(bind=engine)
+        _ensure_optional_columns()
+    except OperationalError as exc:
+        logger.error("Database init failed: %s", exc)
+        if strict:
+            raise
 
 
 def _ensure_optional_columns() -> None:
@@ -615,6 +697,124 @@ def _ensure_optional_columns() -> None:
                 "ON email_ai_events (created_at DESC)"
             )
         )
+
+        if "email_ai_classifications" not in existing_tables:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS email_ai_classifications (
+                        id VARCHAR PRIMARY KEY,
+                        user_id INTEGER NOT NULL,
+                        message_id VARCHAR NOT NULL,
+                        thread_id VARCHAR,
+                        tags_json JSONB,
+                        priority_label VARCHAR,
+                        priority_score INTEGER,
+                        sentiment VARCHAR,
+                        confidence FLOAT,
+                        reasoning_short TEXT,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY(user_id) REFERENCES users (id)
+                    )
+                    """
+                )
+            )
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_email_ai_class_user_message "
+                "ON email_ai_classifications (user_id, message_id)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_email_ai_class_user_message "
+                "ON email_ai_classifications (user_id, message_id)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_email_ai_class_user_updated "
+                "ON email_ai_classifications (user_id, updated_at DESC)"
+            )
+        )
+
+        if "email_ai_feedback" not in existing_tables:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS email_ai_feedback (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL,
+                        message_id VARCHAR NOT NULL,
+                        thread_id VARCHAR,
+                        corrected_tags_json JSONB,
+                        corrected_priority_label VARCHAR,
+                        corrected_sentiment VARCHAR,
+                        notes TEXT,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY(user_id) REFERENCES users (id)
+                    )
+                    """
+                )
+            )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_email_ai_feedback_user_message "
+                "ON email_ai_feedback (user_id, message_id)"
+            )
+        )
+
+        if "email_ai_jobs" not in existing_tables:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS email_ai_jobs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL,
+                        message_id VARCHAR NOT NULL,
+                        thread_id VARCHAR,
+                        metadata_json JSONB,
+                        status VARCHAR NOT NULL DEFAULT 'pending',
+                        attempts INTEGER NOT NULL DEFAULT 0,
+                        next_attempt_at DATETIME,
+                        last_error TEXT,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY(user_id) REFERENCES users (id)
+                    )
+                    """
+                )
+            )
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_email_ai_job_user_message "
+                "ON email_ai_jobs (user_id, message_id)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_email_ai_job_status_next "
+                "ON email_ai_jobs (status, next_attempt_at)"
+            )
+        )
+
+        if "user_settings" not in existing_tables:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS user_settings (
+                        user_id INTEGER PRIMARY KEY,
+                        auto_tag_enabled BOOLEAN DEFAULT FALSE,
+                        urgent_conf_threshold FLOAT DEFAULT 0.75,
+                        email_last_polled_at DATETIME,
+                        gmail_history_id VARCHAR,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY(user_id) REFERENCES users (id)
+                    )
+                    """
+                )
+            )
 
         if "subscriptions" not in existing_tables:
             conn.execute(
