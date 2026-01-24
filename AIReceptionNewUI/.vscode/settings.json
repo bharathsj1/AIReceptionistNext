@@ -1,0 +1,8 @@
+{
+    "appService.zipIgnorePattern": [
+        "node_modules{,/**}",
+        ".vscode{,/**}"
+    ],
+    "appService.defaultWebAppToDeploy": "/subscriptions/8659038d-ff45-4976-af60-c8bf4e976f59/resourceGroups/rg-ai-receptionist/providers/Microsoft.Web/sites/smartconnect4u",
+    "appService.deploySubpath": "dist"
+}

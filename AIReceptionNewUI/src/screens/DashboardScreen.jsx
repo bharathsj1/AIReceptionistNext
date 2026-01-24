@@ -609,7 +609,7 @@ export default function DashboardScreen({
   const [emailMailbox, setEmailMailbox] = useState("INBOX");
   const [emailUnreadOnly, setEmailUnreadOnly] = useState(false);
   const [emailAutoSummarize, setEmailAutoSummarize] = useState(true);
-  const [emailAutoTagEnabled, setEmailAutoTagEnabled] = useState(false);
+  const [emailAutoTagEnabled, setEmailAutoTagEnabled] = useState(true);
   const [emailUrgentThreshold, setEmailUrgentThreshold] = useState(0.75);
   const [emailSettingsStatus, setEmailSettingsStatus] = useState({ status: "idle", message: "" });
   const [emailPanelOpen, setEmailPanelOpen] = useState(false);
@@ -636,6 +636,7 @@ export default function DashboardScreen({
   const [emailInlineReplyOpen, setEmailInlineReplyOpen] = useState(false);
   const [emailInlineReplyMessageId, setEmailInlineReplyMessageId] = useState(null);
   const [emailInlineAttachments, setEmailInlineAttachments] = useState([]);
+  const [emailComposerAttachments, setEmailComposerAttachments] = useState([]);
   const [taskManagerEmailTarget, setTaskManagerEmailTarget] = useState(null);
   const [taskManagerEmailForm, setTaskManagerEmailForm] = useState({
     title: "",
@@ -1425,6 +1426,7 @@ export default function DashboardScreen({
     setEmailComposerStatus({ status: "idle", message: "" });
     setEmailComposerAiStatus({ status: "idle", message: "" });
     setContactSuggestOpen(false);
+    setEmailComposerAttachments([]);
     if (!message || mode === "new") {
       setEmailComposerForm({
         to: "",
@@ -1490,6 +1492,14 @@ export default function DashboardScreen({
     setEmailComposerOpen(true);
   };
 
+  const closeComposer = () => {
+    setEmailComposerOpen(false);
+    setContactSuggestOpen(false);
+    setEmailComposerAttachments([]);
+    setEmailComposerStatus({ status: "idle", message: "" });
+    setEmailComposerAiStatus({ status: "idle", message: "" });
+  };
+
   const handleSendEmail = async (attachments = []) => {
     const safeAttachments = Array.isArray(attachments) ? attachments : [];
     const emailAddress = user?.email || userForm.email;
@@ -1539,6 +1549,7 @@ export default function DashboardScreen({
       }
       setEmailComposerStatus({ status: "success", message: "Email sent." });
       setEmailComposerOpen(false);
+      setEmailComposerAttachments([]);
       if (emailMailbox === "SENT" || emailMailbox === "ALL_MAIL") {
         handleEmailRefresh();
       }
@@ -1611,11 +1622,12 @@ export default function DashboardScreen({
   };
 
   const handleDownloadAttachment = async (messageId, attachment) => {
-    if (!messageId || !attachment?.id) return;
+    if (!messageId || !attachment) return;
+    if (!attachment.id && !attachment.data) return;
     setEmailAttachmentStatus({ status: "loading", message: "Downloading attachment..." });
     try {
       let data = attachment.data;
-      if (!data) {
+      if (!data && attachment.id) {
         data = await fetchEmailAttachment(messageId, attachment.id);
       }
       if (!data) {
@@ -1802,10 +1814,8 @@ export default function DashboardScreen({
       reader.readAsDataURL(file);
     });
 
-  const handleInlineAttachmentChange = async (event) => {
-    const files = Array.from(event.target.files || []);
-    if (!files.length) return;
-    const items = await Promise.all(
+  const buildAttachmentItems = async (files) =>
+    Promise.all(
       files.map(async (file) => ({
         name: file.name,
         type: file.type || "application/octet-stream",
@@ -1813,12 +1823,29 @@ export default function DashboardScreen({
         data: await readFileAsBase64(file)
       }))
     );
+
+  const handleInlineAttachmentChange = async (event) => {
+    const files = Array.from(event.target.files || []);
+    if (!files.length) return;
+    const items = await buildAttachmentItems(files);
     setEmailInlineAttachments((prev) => [...prev, ...items]);
     event.target.value = "";
   };
 
   const removeInlineAttachment = (index) => {
     setEmailInlineAttachments((prev) => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handleComposerAttachmentChange = async (event) => {
+    const files = Array.from(event.target.files || []);
+    if (!files.length) return;
+    const items = await buildAttachmentItems(files);
+    setEmailComposerAttachments((prev) => [...prev, ...items]);
+    event.target.value = "";
+  };
+
+  const removeComposerAttachment = (index) => {
+    setEmailComposerAttachments((prev) => prev.filter((_, idx) => idx !== index));
   };
 
   const handleInlineReplySend = async () => {
@@ -2388,6 +2415,8 @@ export default function DashboardScreen({
       const data = await res.json().catch(() => ({}));
       if (data?.auto_tag_enabled !== undefined) {
         setEmailAutoTagEnabled(Boolean(data.auto_tag_enabled));
+      } else {
+        setEmailAutoTagEnabled(true);
       }
       if (data?.urgent_conf_threshold !== undefined) {
         setEmailUrgentThreshold(Number(data.urgent_conf_threshold) || 0.75);
@@ -3745,7 +3774,6 @@ export default function DashboardScreen({
     emailRefreshTimerRef.current = setInterval(() => {
       if (emailLoading) return;
       if (emailCurrentPage !== 1) return;
-      if (emailSelectionCount) return;
       loadEmailMessages({
         page: 1,
         resetTokens: true,
@@ -3768,7 +3796,6 @@ export default function DashboardScreen({
     emailMessages.length,
     emailLoading,
     emailCurrentPage,
-    emailSelectionCount,
     emailMailbox,
     emailUnreadOnly,
     emailQuery
@@ -3874,7 +3901,7 @@ export default function DashboardScreen({
     setSelectedEmailMessage(null);
     setEmailError("");
     setEmailSummaryStatus({ status: "idle", message: "" });
-    setEmailAutoTagEnabled(false);
+    setEmailAutoTagEnabled(true);
     setEmailUrgentThreshold(0.75);
     setEmailSettingsStatus({ status: "idle", message: "" });
   }, [calendarAccountEmail, calendarStatus, emailAccountEmail, emailMessages.length]);
@@ -6137,9 +6164,13 @@ export default function DashboardScreen({
                           emailMessageBodies[messageId] || selectedEmailMessage.snippet || "";
                         const htmlBody = emailMessageHtml[messageId] || "";
                         const attachments = emailMessageAttachments?.[messageId] || [];
-                        const displayAttachments = attachments.filter(
-                          (item) => !item?.isInline && (item?.filename || item?.id)
-                        );
+                        const displayAttachments = attachments.filter((item) => {
+                          const hasRef = item?.filename || item?.id;
+                          if (!hasRef) return false;
+                          const mime = String(item?.mimeType || "").toLowerCase();
+                          if (item?.isInline && mime.startsWith("image/")) return false;
+                          return true;
+                        });
                         const classification = emailClassifications?.[messageId] || {};
                         const tags = Array.isArray(classification?.tags) ? classification.tags : [];
                         const classifyStatus = emailClassifyStatus?.[messageId] || { status: "idle", message: "" };
@@ -7639,10 +7670,7 @@ export default function DashboardScreen({
                       </div>
                       <button
                         type="button"
-                        onClick={() => {
-                          setEmailComposerOpen(false);
-                          setContactSuggestOpen(false);
-                        }}
+                        onClick={closeComposer}
                         className={`rounded-lg border p-2 ${emailActionButtonClass}`}
                         aria-label="Close composer"
                       >
@@ -7790,6 +7818,44 @@ export default function DashboardScreen({
                         rows={8}
                         className="w-full rounded-2xl border border-white/10 bg-slate-900/60 px-3 py-2 text-xs text-white placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none"
                       />
+                      <div className="flex flex-wrap items-center gap-2">
+                        <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs text-slate-200">
+                          <Paperclip className="h-3.5 w-3.5" />
+                          Attach files
+                          <input
+                            type="file"
+                            multiple
+                            className="hidden"
+                            onChange={handleComposerAttachmentChange}
+                          />
+                        </label>
+                        {emailComposerAttachments.length ? (
+                          <span className="text-[11px] text-slate-400">
+                            {emailComposerAttachments.length} attachment
+                            {emailComposerAttachments.length === 1 ? "" : "s"}
+                          </span>
+                        ) : null}
+                      </div>
+                      {emailComposerAttachments.length ? (
+                        <div className="grid gap-1">
+                          {emailComposerAttachments.map((file, idx) => (
+                            <div
+                              key={`${file.name}-${idx}`}
+                              className="flex items-center justify-between rounded-lg border border-white/10 bg-slate-900/50 px-2 py-1 text-[11px] text-slate-200"
+                            >
+                              <span className="truncate">{file.name}</span>
+                              <button
+                                type="button"
+                                onClick={() => removeComposerAttachment(idx)}
+                                className="text-slate-300 hover:text-white"
+                                aria-label={`Remove ${file.name}`}
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
                       {emailComposerAiStatus.status === "error" ? (
                         <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
                           {emailComposerAiStatus.message}
@@ -7814,10 +7880,7 @@ export default function DashboardScreen({
                     <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
                       <button
                         type="button"
-                        onClick={() => {
-                          setEmailComposerOpen(false);
-                          setContactSuggestOpen(false);
-                        }}
+                        onClick={closeComposer}
                         className="w-full rounded-xl border border-white/10 bg-white/10 px-4 py-2 text-xs text-white sm:w-auto"
                       >
                         Cancel
@@ -7838,7 +7901,7 @@ export default function DashboardScreen({
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleSendEmail()}
+                        onClick={() => handleSendEmail(emailComposerAttachments)}
                         disabled={emailComposerStatus.status === "loading"}
                         className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-300/50 bg-emerald-500/20 px-4 py-2 text-xs font-semibold text-emerald-100 disabled:opacity-60 sm:w-auto"
                       >

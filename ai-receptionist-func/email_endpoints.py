@@ -12,6 +12,7 @@ from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Optional, Tuple
+from sqlalchemy.orm import Session
 
 import azure.functions as func
 import httpx
@@ -164,7 +165,7 @@ def _refresh_google_token(refresh_token: str) -> Tuple[Optional[dict], Optional[
         return None, str(exc)
 
 
-def _get_user(db: SessionLocal, email: Optional[str], user_id: Optional[str]) -> Optional[User]:
+def _get_user(db: Session, email: Optional[str], user_id: Optional[str]) -> Optional[User]:
     if email:
         return db.query(User).filter_by(email=email).one_or_none()
     if user_id:
@@ -175,7 +176,7 @@ def _get_user(db: SessionLocal, email: Optional[str], user_id: Optional[str]) ->
     return None
 
 
-def _get_user_by_google_account(db: SessionLocal, account_email: Optional[str]) -> tuple[Optional[User], Optional[GoogleToken]]:
+def _get_user_by_google_account(db: Session, account_email: Optional[str]) -> tuple[Optional[User], Optional[GoogleToken]]:
     if not account_email:
         return None, None
     token = (
@@ -190,7 +191,7 @@ def _get_user_by_google_account(db: SessionLocal, account_email: Optional[str]) 
     return user, token
 
 
-def _get_client_id(db: SessionLocal, user: Optional[User], email: Optional[str]) -> Optional[int]:
+def _get_client_id(db: Session, user: Optional[User], email: Optional[str]) -> Optional[int]:
     if user and user.id:
         client = db.query(Client).filter_by(user_id=user.id).one_or_none()
         if client:
@@ -226,7 +227,7 @@ def _is_lead_tag(tags: list[str]) -> bool:
 
 
 def _record_email_event(
-    db: SessionLocal,
+    db: Session,
     *,
     user: Optional[User],
     email: Optional[str],
@@ -268,7 +269,7 @@ def _record_email_event(
         except Exception:  # pylint: disable=broad-except
             pass
 
-def _get_google_token(db: SessionLocal, user: User) -> Optional[GoogleToken]:
+def _get_google_token(db: Session, user: User) -> Optional[GoogleToken]:
     return (
         db.query(GoogleToken)
         .filter_by(user_id=user.id)
@@ -277,7 +278,7 @@ def _get_google_token(db: SessionLocal, user: User) -> Optional[GoogleToken]:
     )
 
 
-def _ensure_access_token(db: SessionLocal, token: GoogleToken) -> Tuple[Optional[str], Optional[str]]:
+def _ensure_access_token(db: Session, token: GoogleToken) -> Tuple[Optional[str], Optional[str]]:
     access_token = token.access_token
     now = datetime.utcnow()
     if token.expires_at and token.expires_at <= now and token.refresh_token:
@@ -734,7 +735,7 @@ def _normalize_reasoning(value: Optional[str]) -> str:
     return text_value[:240].rstrip()
 
 
-def _get_or_create_user_settings(db: SessionLocal, user_id: int) -> UserSettings:
+def _get_or_create_user_settings(db: Session, user_id: int) -> UserSettings:
     settings = db.query(UserSettings).filter_by(user_id=user_id).one_or_none()
     if settings:
         return settings
@@ -745,7 +746,7 @@ def _get_or_create_user_settings(db: SessionLocal, user_id: int) -> UserSettings
 
 
 def _queue_email_job(
-    db: SessionLocal,
+    db: Session,
     user_id: int,
     message_id: str,
     thread_id: Optional[str],
@@ -780,7 +781,7 @@ def _queue_email_job(
 
 
 def _upsert_email_classification(
-    db: SessionLocal,
+    db: Session,
     *,
     user_id: int,
     message_id: str,
@@ -878,7 +879,7 @@ def _schedule_job_retry(job: EmailAIJob, error: str) -> None:
     job.updated_at = datetime.utcnow()
 
 
-def _process_email_job(db: SessionLocal, job: EmailAIJob) -> None:
+def _process_email_job(db: Session, job: EmailAIJob) -> None:
     now = datetime.utcnow()
     if job.attempts > EMAIL_AUTOTAG_MAX_ATTEMPTS:
         job.status = "failed"
@@ -2505,6 +2506,8 @@ def email_classify(req: func.HttpRequest) -> func.HttpResponse:
     email = body.get("email")
     user_id = body.get("user_id") or body.get("userId")
     message_id = body.get("message_id") or body.get("messageId")
+    force = bool(body.get("force"))
+    urgent_threshold_override = body.get("urgent_conf_threshold") or body.get("urgentConfThreshold")
 
     if not message_id or not (email or user_id):
         return func.HttpResponse(

@@ -15,5 +15,5 @@ __pycache__/
 
 # Env / OS / editor
 .env*
-.vscode/
+
 .DS_Store
