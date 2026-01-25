@@ -39,6 +39,7 @@ import {
   Shield,
   Sparkles,
   Star,
+  UserPlus,
   Tag,
   Trash2,
   X,
@@ -213,6 +214,9 @@ const initialsFromName = (name) => {
   const parts = safe.split(/\s+/).slice(0, 2);
   return parts.map((part) => part[0]?.toUpperCase()).join("") || "U";
 };
+
+const getAvatarStyle = (url) =>
+  url ? { backgroundImage: `url(${url})`, backgroundSize: "cover", backgroundPosition: "center" } : {};
 
 const formatHourLabel = (hour) => {
   const normalized = Number(hour) || 0;
@@ -651,9 +655,9 @@ export default function DashboardScreen({
   const [emailComposerOpen, setEmailComposerOpen] = useState(false);
   const [emailComposerMode, setEmailComposerMode] = useState("new");
   const [emailTheme, setEmailTheme] = useState(() => {
-    if (typeof window === "undefined") return "dark";
+    if (typeof window === "undefined") return "light";
     const storedTheme = window.localStorage.getItem("email-theme");
-    return storedTheme === "light" || storedTheme === "dark" ? storedTheme : "dark";
+    return storedTheme === "light" || storedTheme === "dark" ? storedTheme : "light";
   });
   const [emailComposerForm, setEmailComposerForm] = useState({
     to: "",
@@ -680,6 +684,8 @@ export default function DashboardScreen({
     status: "idle",
     message: ""
   });
+  const [contactAddStatus, setContactAddStatus] = useState({ status: "idle", message: "" });
+  const [toast, setToast] = useState({ message: "", tone: "info" });
   const [emailTagFilter, setEmailTagFilter] = useState("all");
   const [emailSort, setEmailSort] = useState("date");
   const [emailClassifications, setEmailClassifications] = useState({});
@@ -773,6 +779,7 @@ export default function DashboardScreen({
   const emailPanelCloseTimerRef = useRef(null);
   const emailPanelContentTimerRef = useRef(null);
   const voiceSampleRef = useRef(null);
+  const toastTimerRef = useRef(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -799,6 +806,9 @@ export default function DashboardScreen({
       }
       if (emailPanelContentTimerRef.current) {
         clearTimeout(emailPanelContentTimerRef.current);
+      }
+      if (toastTimerRef.current) {
+        clearTimeout(toastTimerRef.current);
       }
     };
   }, []);
@@ -1029,6 +1039,83 @@ export default function DashboardScreen({
     }
   };
 
+  const extractPrimaryEmail = (value) => {
+    const raw = String(value || "");
+    if (!raw.includes(",")) {
+      const parsed = parseSender(raw);
+      return parsed.email || parsed.name || "";
+    }
+    const [first] = raw.split(",");
+    const parsed = parseSender(first);
+    return parsed.email || parsed.name || "";
+  };
+
+  const getSenderAvatarUrl = (message) =>
+    message?.senderAvatarUrl ||
+    message?.avatarUrl ||
+    message?.fromAvatarUrl ||
+    message?.from_avatar_url ||
+    "";
+
+  const getRecipientAvatarUrl = (message) =>
+    message?.recipientAvatarUrl ||
+    message?.toAvatarUrl ||
+    message?.to_avatar_url ||
+    message?.recipient_avatar_url ||
+    "";
+
+  const showToast = (message, tone = "info", duration = 3000) => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+    setToast({ message, tone });
+    toastTimerRef.current = setTimeout(() => {
+      setToast({ message: "", tone: "info" });
+      toastTimerRef.current = null;
+    }, duration);
+  };
+
+  const handleAddContactFromEmail = async (message) => {
+    const target = message || selectedEmailMessage;
+    if (!target) return;
+    const sender = parseSender(target.from);
+    const senderEmail = sender.email || "";
+    const senderName = sender.name || senderEmail || "Email contact";
+    const userEmail = user?.email || userForm.email;
+    if (!userEmail) {
+      setContactAddStatus({ status: "error", message: "Missing user email." });
+      return;
+    }
+    if (!senderEmail) {
+      setContactAddStatus({ status: "error", message: "Sender email not available." });
+      return;
+    }
+    setContactAddStatus({ status: "loading", message: "Adding contact..." });
+    try {
+      const res = await fetch(API_URLS.contacts, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: userEmail,
+          name: senderName,
+          contactEmail: senderEmail,
+          source: "email_manager",
+          metadata: { message_id: target.id, thread_id: target.threadId }
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const detail = data?.details || data?.error || "Unable to add contact.";
+        throw new Error(detail);
+      }
+      setContactAddStatus({ status: "idle", message: "" });
+      showToast("Contact added.", "success");
+    } catch (err) {
+      setContactAddStatus({ status: "idle", message: "" });
+      showToast(err?.message || "Unable to add contact.", "error", 4000);
+    }
+  };
+
   const loadEmailMessages = async ({
     page = 1,
     query = null,
@@ -1117,7 +1204,19 @@ export default function DashboardScreen({
         from: decodeHtmlEntities(message?.from),
         to: decodeHtmlEntities(message?.to),
         cc: decodeHtmlEntities(message?.cc),
-        bcc: decodeHtmlEntities(message?.bcc)
+        bcc: decodeHtmlEntities(message?.bcc),
+        avatarUrl:
+          message?.avatar_url ||
+          message?.avatarUrl ||
+          message?.from_avatar_url ||
+          message?.fromAvatarUrl ||
+          "",
+        recipientAvatarUrl:
+          message?.recipient_avatar_url ||
+          message?.recipientAvatarUrl ||
+          message?.to_avatar_url ||
+          message?.toAvatarUrl ||
+          ""
       }));
       const incomingClassifications = data?.classifications || {};
       setEmailMessages((prev) => (append ? [...prev, ...normalizedIncoming] : normalizedIncoming));
@@ -1718,6 +1817,45 @@ export default function DashboardScreen({
       }
       setEmailMessageAttachments((prev) => ({ ...prev, [message.id]: attachments }));
       setEmailAccountEmail(data?.account_email || data?.accountEmail || "");
+      // Update avatars if provided by backend
+      const senderAvatarUrl =
+        data?.sender_avatar_url ||
+        data?.senderAvatarUrl ||
+        data?.avatar_url ||
+        data?.avatarUrl ||
+        data?.from_avatar_url ||
+        data?.fromAvatarUrl ||
+        "";
+      const recipientAvatarUrl =
+        data?.recipient_avatar_url ||
+        data?.recipientAvatarUrl ||
+        data?.to_avatar_url ||
+        data?.toAvatarUrl ||
+        "";
+      if (senderAvatarUrl || recipientAvatarUrl) {
+        setEmailMessages((prev) =>
+          prev.map((item) =>
+            item.id === message.id
+              ? {
+                  ...item,
+                  avatarUrl: senderAvatarUrl || item.avatarUrl,
+                  senderAvatarUrl: senderAvatarUrl || item.senderAvatarUrl,
+                  recipientAvatarUrl: recipientAvatarUrl || item.recipientAvatarUrl
+                }
+              : item
+          )
+        );
+        setSelectedEmailMessage((prev) =>
+          prev && prev.id === message.id
+            ? {
+                ...prev,
+                avatarUrl: senderAvatarUrl || prev.avatarUrl,
+                senderAvatarUrl: senderAvatarUrl || prev.senderAvatarUrl,
+                recipientAvatarUrl: recipientAvatarUrl || prev.recipientAvatarUrl
+              }
+            : prev
+        );
+      }
     } catch (err) {
       setEmailMessageError(err?.message || "Unable to fetch email details.");
     } finally {
@@ -1932,9 +2070,13 @@ export default function DashboardScreen({
     if (!message?.id) return;
     const defaults = buildDefaultSchedule();
     const summaryText = emailSummaries?.[message.id] || "";
+    const summaryBullets = summaryText ? formatSummaryBullets(summaryText) : [];
+    const descriptionText = summaryBullets.length
+      ? summaryBullets.map((item) => `• ${item}`).join("\n")
+      : summaryText || message.snippet || "";
     setTaskManagerEmailForm({
       title: message.subject || "Email follow-up",
-      description: summaryText || message.snippet || "",
+      description: descriptionText,
       start: defaults.start,
       end: defaults.end
     });
@@ -3316,6 +3458,9 @@ export default function DashboardScreen({
         ? "Forward"
         : "New mail";
   const headerSender = selectedEmailMessage ? parseSender(selectedEmailMessage.from) : null;
+  const headerSenderAvatarUrl = getSenderAvatarUrl(selectedEmailMessage);
+  const headerSenderAvatarStyle = getAvatarStyle(headerSenderAvatarUrl);
+  const headerSenderHasAvatar = Boolean(headerSenderAvatarStyle.backgroundImage);
   const headerSenderLabel = headerSender
     ? `From: ${headerSender.name}${headerSender.email ? ` <${headerSender.email}>` : ""}`
     : "Select an email to view details.";
@@ -5702,12 +5847,15 @@ export default function DashboardScreen({
                           <button
                             type="button"
                             onClick={handleUnreadToggle}
-                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition ${
-                              emailUnreadOnly ? "bg-emerald-400" : "bg-white/10"
+                            className={`relative inline-flex h-5 w-9 items-center rounded-full border transition ${
+                              emailUnreadOnly
+                                ? "bg-emerald-400/80 border-emerald-300/80"
+                                : "bg-white/10 border-white/30"
                             }`}
+                            aria-label="Toggle unread filter"
                           >
                             <span
-                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
+                              className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition ${
                                 emailUnreadOnly ? "translate-x-4" : "translate-x-1"
                               }`}
                             />
@@ -6061,12 +6209,21 @@ export default function DashboardScreen({
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Summary preview</p>
-                        <h4 className="text-lg font-semibold text-white">Message detail</h4>
-                        <div className="flex items-center gap-2 text-xs text-slate-400">
-                          <span className="flex h-6 w-6 items-center justify-center rounded-full border border-white/10 bg-white/10 text-[10px] font-semibold text-slate-200">
-                            {headerSender ? initialsFromName(headerSender.name) : "—"}
+                        <div className="flex items-center gap-3 text-sm text-slate-200 min-w-[260px]">
+                          <span
+                            className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/10 text-xs font-semibold text-slate-200"
+                            style={headerSenderAvatarStyle}
+                          >
+                            {headerSenderHasAvatar ? "" : headerSender ? initialsFromName(headerSender.name) : "—"}
                           </span>
-                          <span>{headerSenderLabel}</span>
+                          <div className="leading-tight min-w-0">
+                            <p className="text-sm font-semibold text-white truncate">
+                              {headerSender?.name || "Unknown sender"}
+                            </p>
+                            <p className="text-xs text-slate-400 whitespace-nowrap">
+                              {headerSender?.email || ""}
+                            </p>
+                          </div>
                         </div>
                       </div>
                       <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
@@ -6136,6 +6293,15 @@ export default function DashboardScreen({
                         </button>
                         <button
                           type="button"
+                          onClick={() => handleAddContactFromEmail(selectedEmailMessage)}
+                          disabled={!selectedEmailMessage || contactAddStatus.status === "loading"}
+                          className="rounded-lg border border-white/10 bg-white/10 px-2 py-1 text-xs text-white disabled:opacity-50"
+                          title="Add sender to contacts"
+                        >
+                          <UserPlus className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => openComposer("forward", selectedEmailMessage)}
                           disabled={!selectedEmailMessage}
                           className="rounded-lg border border-white/10 bg-white/10 px-2 py-1 text-xs text-white disabled:opacity-50"
@@ -6151,6 +6317,11 @@ export default function DashboardScreen({
                           >
                             Show summary
                           </button>
+                        ) : null}
+                        {selectedEmailMessage ? (
+                          <span className="text-[11px] text-slate-400 whitespace-nowrap">
+                            {formatMessageTimestamp(selectedEmailMessage)}
+                          </span>
                         ) : null}
                       </div>
                     </div>
@@ -6201,6 +6372,12 @@ export default function DashboardScreen({
                         const fromUser = userEmail && sender.email && sender.email.includes(userEmail);
                         const hasSentLabel = (selectedEmailMessage.labelIds || []).includes("SENT");
                         const showFollowUp = !fromUser && !hasSentLabel;
+                        const senderAvatarUrl = getSenderAvatarUrl(selectedEmailMessage);
+                        const senderAvatarStyle = getAvatarStyle(senderAvatarUrl);
+                        const senderHasAvatar = Boolean(senderAvatarStyle.backgroundImage);
+                        const recipientAvatarUrl = getRecipientAvatarUrl(selectedEmailMessage);
+                        const recipientAvatarStyle = getAvatarStyle(recipientAvatarUrl);
+                        const recipientHasAvatar = Boolean(recipientAvatarStyle.backgroundImage);
                         return (
                           <>
                             <div
@@ -6212,54 +6389,48 @@ export default function DashboardScreen({
                               onTouchMove={(event) => event.stopPropagation()}
                             >
                               <div className="grid gap-3">
-                                <div className="flex flex-wrap items-start gap-3 sm:flex-nowrap sm:items-center">
-                                  <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/10 text-xs font-semibold text-slate-100">
-                                    {initialsFromName(sender.name)}
-                                  </div>
-                                  <div>
-                                    <p className="text-sm font-semibold text-white">{sender.name}</p>
-                                    <p className="text-xs text-slate-400">
-                                      {sender.email || "Unknown sender"}
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <p className="text-lg font-semibold text-white">
+                                      {selectedEmailMessage.subject || "No subject"}
                                     </p>
-                                  </div>
-                                  <span className="w-full text-right text-xs text-slate-400 sm:ml-auto sm:w-auto sm:text-left">
-                                    {formatMessageTimestamp(selectedEmailMessage)}
-                                  </span>
-                                </div>
-                                <div>
-                                  <p className="text-lg font-semibold text-white">
-                                    {selectedEmailMessage.subject || "No subject"}
-                                  </p>
-                                  <p className="text-xs text-slate-400">
-                                    To: {selectedEmailMessage.to || "You"}
-                                  </p>
-                                  {selectedEmailMessage.cc ? (
-                                    <p className="text-xs text-slate-400">Cc: {selectedEmailMessage.cc}</p>
-                                  ) : null}
-                                  {priorityLabel || tags.length ? (
-                                    <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-slate-200">
-                                      {priorityLabel ? (
+                                    <p className="text-xs text-slate-400 flex items-center gap-2">
+                                      {recipientHasAvatar ? (
                                         <span
-                                          className={`rounded-full border px-2 py-0.5 ${
-                                            priorityBadgeStyles[priorityLabel] || priorityBadgeStyles.Normal
-                                          }`}
-                                        >
-                                          {priorityLabel} {priorityScore}/100
-                                        </span>
+                                          className="flex h-6 w-6 items-center justify-center rounded-full border border-white/10 bg-white/10 text-[10px] font-semibold text-slate-200"
+                                          style={recipientAvatarStyle}
+                                        />
                                       ) : null}
-                                      {tags.map((tag) => (
-                                        <span
-                                          key={`${messageId}-tag-${tag}`}
-                                          className="rounded-full border border-white/10 bg-slate-900/60 px-2 py-0.5 text-[10px] text-slate-300"
-                                        >
-                                          {tag}
+                                      <span>To: {selectedEmailMessage.to || "You"}</span>
+                                    </p>
+                                    {selectedEmailMessage.cc ? (
+                                      <p className="text-xs text-slate-400">Cc: {selectedEmailMessage.cc}</p>
+                                    ) : null}
+                                    {priorityLabel || tags.length ? (
+                                      <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-slate-200">
+                                        {priorityLabel ? (
+                                          <span
+                                            className={`rounded-full border px-2 py-0.5 ${
+                                              priorityBadgeStyles[priorityLabel] || priorityBadgeStyles.Normal
+                                            }`}
+                                          >
+                                            {priorityLabel} {priorityScore}/100
+                                          </span>
+                                        ) : null}
+                                        {tags.map((tag) => (
+                                          <span
+                                            key={`${messageId}-tag-${tag}`}
+                                            className="rounded-full border border-white/10 bg-slate-900/60 px-2 py-0.5 text-[10px] text-slate-300"
+                                          >
+                                            {tag}
+                                          </span>
+                                        ))}
+                                        <span className={`text-[10px] ${sentimentStyles[sentiment] || sentimentStyles.Neutral}`}>
+                                          {sentiment}
                                         </span>
-                                      ))}
-                                      <span className={`text-[10px] ${sentimentStyles[sentiment] || sentimentStyles.Neutral}`}>
-                                        {sentiment}
-                                      </span>
-                                    </div>
-                                  ) : null}
+                                      </div>
+                                    ) : null}
+                                  </div>
                                 </div>
                                 <div className="rounded-2xl border border-white/10 bg-slate-900/40 p-3 text-sm text-slate-100">
                                   {emailMessageLoading && !emailMessageBodies[messageId] && !emailMessageHtml[messageId]
@@ -8999,6 +9170,17 @@ export default function DashboardScreen({
           </div>
         </div>
       )}
+      {toast.message ? (
+        <div
+          className={`fixed bottom-4 left-4 z-50 rounded-xl border px-3 py-2 text-xs font-semibold shadow-lg ${
+            toast.tone === "error"
+              ? "border-rose-400/60 bg-rose-500/20 text-rose-50"
+              : "border-emerald-400/60 bg-emerald-500/20 text-emerald-50"
+          }`}
+        >
+          {toast.message}
+        </div>
+      ) : null}
     </section>
   );
 }

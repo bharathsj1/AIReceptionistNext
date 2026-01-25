@@ -70,6 +70,8 @@ EMAIL_AUTOTAG_BATCH_SIZE = _int_setting("EMAIL_AUTOTAG_BATCH_SIZE", 10)
 EMAIL_AUTOTAG_POLL_SECONDS = _int_setting("EMAIL_AUTOTAG_POLL_SECONDS", 90)
 EMAIL_AUTOTAG_MAX_ATTEMPTS = _int_setting("EMAIL_AUTOTAG_MAX_ATTEMPTS", 5)
 EMAIL_AUTOTAG_BACKOFF_SECONDS = _int_setting("EMAIL_AUTOTAG_BACKOFF_SECONDS", 60)
+PROFILE_PHOTO_CACHE: dict[str, str] = {}
+BRAND_LOGO_CACHE: dict[str, str] = {}
 
 
 def _email_autotag_disabled() -> bool:
@@ -525,6 +527,86 @@ def _b64url_to_b64(data: Optional[str]) -> str:
         return base64.b64encode(decoded).decode("utf-8")
     except Exception:  # pylint: disable=broad-except
         return ""
+
+
+def _extract_first_email(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    addresses = getaddresses([value])
+    for _, addr in addresses:
+        cleaned = (addr or "").strip()
+        if cleaned:
+            return cleaned
+    return None
+
+def _domain_from_email(email: Optional[str]) -> Optional[str]:
+    if not email or "@" not in email:
+        return None
+    try:
+        return email.split("@", 1)[1].lower().strip()
+    except Exception:  # pylint: disable=broad-except
+        return None
+
+
+def _gmail_fetch_contact_photo(access_token: str, email: Optional[str]) -> Optional[str]:
+    if not email or not access_token:
+        return None
+    lowered = email.strip().lower()
+    if lowered in PROFILE_PHOTO_CACHE:
+        return PROFILE_PHOTO_CACHE[lowered]
+    try:
+        resp = requests.get(
+            "https://people.googleapis.com/v1/people:searchContacts",
+            headers={"Authorization": f"Bearer {access_token}"},
+            params={
+                "query": lowered,
+                "readMask": "photos",
+                "pageSize": 3,
+                "sources": ",".join(
+                    [
+                        "READ_SOURCE_TYPE_CONTACT",
+                        "READ_SOURCE_TYPE_OTHER_CONTACT",
+                        "READ_SOURCE_TYPE_PROFILE",
+                    ]
+                ),
+            },
+            timeout=6,
+        )
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        for result in data.get("results") or []:
+            person = result.get("person") or {}
+            for photo in person.get("photos") or []:
+                url = photo.get("url")
+                if url:
+                    PROFILE_PHOTO_CACHE[lowered] = url
+                    return url
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.debug("Contact photo lookup failed for %s: %s", email, exc)
+    return None
+
+
+def _fetch_brand_logo(domain: Optional[str]) -> Optional[str]:
+    if not domain:
+        return None
+    normalized = domain.strip().lower()
+    if not normalized:
+        return None
+    if normalized in BRAND_LOGO_CACHE:
+        return BRAND_LOGO_CACHE[normalized]
+    try:
+        resp = requests.get(
+            f"https://logo.clearbit.com/{normalized}",
+            timeout=5,
+        )
+        if resp.status_code == 200:
+            url = f"https://logo.clearbit.com/{normalized}"
+            BRAND_LOGO_CACHE[normalized] = url
+            return url
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.debug("Brand logo fetch failed for %s: %s", domain, exc)
+    return None
 
 
 def _extract_text_from_payload(payload: dict) -> str:
@@ -1879,6 +1961,12 @@ def inbox(req: func.HttpRequest) -> func.HttpResponse:
             payload = details.get("payload") or {}
             headers = _header_map(payload)
             message_ids.append(message_id)
+            sender_email = _extract_first_email(headers.get("from"))
+            recipient_email = _extract_first_email(headers.get("to"))
+            sender_avatar_url = _gmail_fetch_contact_photo(access_token, sender_email)
+            recipient_avatar_url = _gmail_fetch_contact_photo(access_token, recipient_email)
+            if not sender_avatar_url:
+                sender_avatar_url = _fetch_brand_logo(_domain_from_email(sender_email))
             messages.append(
                 {
                     "id": details.get("id"),
@@ -1896,6 +1984,8 @@ def inbox(req: func.HttpRequest) -> func.HttpResponse:
                     "references": headers.get("references"),
                     "internalDate": details.get("internalDate"),
                     "sizeEstimate": details.get("sizeEstimate"),
+                    "sender_avatar_url": sender_avatar_url,
+                    "recipient_avatar_url": recipient_avatar_url,
                 }
             )
 
@@ -3048,6 +3138,12 @@ def email_message(req: func.HttpRequest) -> func.HttpResponse:
         raw_html = _extract_html_from_payload(payload)
         sanitized_html = _sanitize_html(raw_html) if raw_html else ""
         attachments = _collect_attachments(payload)
+        sender_email = _extract_first_email(headers.get("from"))
+        recipient_email = _extract_first_email(headers.get("to"))
+        sender_avatar_url = _gmail_fetch_contact_photo(access_token, sender_email)
+        recipient_avatar_url = _gmail_fetch_contact_photo(access_token, recipient_email)
+        if not sender_avatar_url:
+            sender_avatar_url = _fetch_brand_logo(_domain_from_email(sender_email))
 
         return func.HttpResponse(
             json.dumps(
@@ -3066,6 +3162,8 @@ def email_message(req: func.HttpRequest) -> func.HttpResponse:
                     "body": body_text,
                     "html": sanitized_html,
                     "attachments": attachments,
+                    "sender_avatar_url": sender_avatar_url,
+                    "recipient_avatar_url": recipient_avatar_url,
                     "account_email": token.google_account_email,
                     "user": user.email,
                 }
