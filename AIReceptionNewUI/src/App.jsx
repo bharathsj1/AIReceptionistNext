@@ -4,6 +4,7 @@ import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import API_URLS from "./config/urls.js";
 import Aurora from "./components/Aurora";
+import Orb from "./components/Orb";
 import LandingScreen from "./screens/LandingScreen";
 import LoginScreen from "./screens/LoginScreen";
 import DashboardScreen from "./screens/DashboardScreen";
@@ -2658,19 +2659,27 @@ export default function App() {
 
   return (
     <div className={pageClassName} data-lenis-wrapper>
-      <div className={pageContentClassName} data-lenis-content>
-        <div className="page-video-bg" aria-hidden="true">
-          <div className="page-video-bg__glow" />
-          <div className="page-video-bg__aurora">
-            <Aurora
-              colorStops={["#3A29FF", "#FF94B4", "#FF3232"]}
-              blend={0.8}
-              amplitude={1.0}
-              speed={0.5}
-            />
+      {stage !== STAGES.DASHBOARD && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 0,
+            pointerEvents: "none",
+            overflow: "hidden",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "#000000"
+          }}
+          aria-hidden="true"
+        >
+          <div style={{ width: "100%", height: "600px", maxWidth: "100%", position: "relative" }}>
+            <Orb hoverIntensity={2} rotateOnHover hue={248} forceHoverState={false} backgroundColor="#000000" />
           </div>
-          <div className="page-video-bg__overlay" />
         </div>
+      )}
+      <div className={pageContentClassName} data-lenis-content style={{ position: "relative", zIndex: 1 }}>
         {showHeader && (
           <header className="nav-card screen-panel">
             <div className="nav-brand">
