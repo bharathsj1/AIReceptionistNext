@@ -248,6 +248,42 @@ export default function LandingScreen({ onTry, onLogin, onSelectPlan, onShowServ
           <div id="capabilities" className="cap-capabilities">
             <CapabilitiesSection />
           </div>
+          <section className="cap-card promo-card">
+            <div className="promo-media">
+              <div className="promo-bubble promo-bubble--primary">
+                <div className="promo-bubble__title">Call with WhatsApp</div>
+                <div className="promo-bubble__field">
+                  <span>Contact number</span>
+                  <strong>+1385738473</strong>
+                </div>
+                <div className="promo-bubble__status">Request accepted! You can call the contact within the next 72 hours.</div>
+                <button type="button" className="promo-bubble__cta">Call</button>
+              </div>
+              <div className="promo-bubble promo-bubble--stack">
+                <div className="promo-chip whatsapp">WhatsApp Call - +1385738473</div>
+                <div className="promo-chip voip">VoIP Call - +1385738473</div>
+                <div className="promo-chip messenger">Messenger Call - +13857384…</div>
+                <div className="promo-chip whatsapp">WhatsApp Message - +13857384…</div>
+                <div className="promo-chip email">Email - danielth@gmail.com</div>
+              </div>
+            </div>
+            <div className="promo-copy">
+              <div className="promo-pill">
+                <span className="promo-pill__dot" />
+                Omnichannel Inbox
+              </div>
+              <h2>Chats, calls and emails in one thread</h2>
+              <p>
+                SmartConnect4u unifies WhatsApp Business Calls, Messenger Calls and VoIP in the same thread as your
+                messages and emails.
+              </p>
+              <p>
+                No more silos or juggling multiple platforms; just one reliable record for every customer, no matter
+                the channel.
+              </p>
+              <button type="button" className="promo-cta">See offer</button>
+            </div>
+          </section>
           {[
             {
               id: "performance",
