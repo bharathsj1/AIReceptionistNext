@@ -10,6 +10,8 @@ from typing import Any, Optional
 
 import azure.functions as func
 import httpx
+from azure.storage.blob import BlobServiceClient, ContentSettings, PublicAccess
+from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 from adapters import meta as meta_adapter
@@ -65,6 +67,8 @@ def _resolve_upload_dir() -> str:
 
 _UPLOAD_DIR = _resolve_upload_dir()
 _MAX_UPLOAD_BYTES = int(os.getenv("SOCIAL_UPLOAD_MAX_BYTES", "8388608"))
+_AZ_CONN = get_setting("AZURE_STORAGE_CONNECTION_STRING")
+_AZ_CONTAINER = (get_setting("SOCIAL_MEDIA_CONTAINER", "social-media") or "social-media").lower()
 
 
 def _sanitize_filename(value: str) -> str:
@@ -1174,9 +1178,9 @@ def social_media_upload(req: func.HttpRequest) -> func.HttpResponse:
         )
 
     content_type = (content_type or "").split(";")[0].strip().lower()
-    if not content_type.startswith("image/"):
+    if not (content_type.startswith("image/") or content_type.startswith("video/")):
         return func.HttpResponse(
-            json.dumps({"error": "Only image uploads are supported"}),
+            json.dumps({"error": "Only image or video uploads are supported"}),
             status_code=400,
             mimetype="application/json",
             headers=cors,
@@ -1200,9 +1204,37 @@ def social_media_upload(req: func.HttpRequest) -> func.HttpResponse:
             headers=cors,
         )
 
-    os.makedirs(_UPLOAD_DIR, exist_ok=True)
     extension = _extension_for_content_type(content_type)
     media_id = secrets.token_hex(12)
+    if _AZ_CONN:
+        try:
+            blob_service = BlobServiceClient.from_connection_string(_AZ_CONN)
+            container = blob_service.get_container_client(_AZ_CONTAINER)
+            try:
+                container.create_container(public_access=PublicAccess.Container)
+            except ResourceExistsError:
+                pass
+            except Exception as exc:
+                logger.warning("Failed to ensure container %s exists: %s", _AZ_CONTAINER, exc)
+                raise
+            blob_name = f"uploads/{media_id}{extension}"
+            blob = container.get_blob_client(blob_name)
+            blob.upload_blob(
+                raw_bytes,
+                overwrite=True,
+                content_settings=ContentSettings(content_type=content_type),
+            )
+            media_url = blob.url
+            return func.HttpResponse(
+                json.dumps({"media_url": media_url, "content_type": content_type, "filename": filename}),
+                status_code=200,
+                mimetype="application/json",
+                headers=cors,
+            )
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.error("Azure blob upload failed, falling back to local: %s", exc)
+
+    os.makedirs(_UPLOAD_DIR, exist_ok=True)
     file_path = _media_path(media_id, extension)
     try:
         with open(file_path, "wb") as handle:
