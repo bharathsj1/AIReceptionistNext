@@ -1294,9 +1294,9 @@ def social_media_upload(req: func.HttpRequest) -> func.HttpResponse:
 
 
 @app.function_name(name="SocialMediaServe")
-@app.route(route="social/media/{media_id}", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+@app.route(route="social/media/{media_id}", methods=["GET", "HEAD", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def social_media_serve(req: func.HttpRequest) -> func.HttpResponse:
-    cors = build_cors_headers(req, ["GET", "OPTIONS"])
+    cors = build_cors_headers(req, ["GET", "HEAD", "OPTIONS"])
     if req.method == "OPTIONS":
         return func.HttpResponse("", status_code=204, headers=cors)
 
@@ -1315,6 +1315,11 @@ def social_media_serve(req: func.HttpRequest) -> func.HttpResponse:
     file_path = _media_path(media_id, extension)
     if not os.path.exists(file_path):
         return func.HttpResponse("Not found", status_code=404, headers=cors)
+
+    if req.method == "HEAD":
+        # Lightweight reachability check for clients (no body).
+        headers = {**cors, "Cache-Control": "public, max-age=86400"}
+        return func.HttpResponse("", status_code=200, headers=headers)
 
     try:
         with open(file_path, "rb") as handle:
