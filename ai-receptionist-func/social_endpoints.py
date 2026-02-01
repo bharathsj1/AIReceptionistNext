@@ -5,6 +5,7 @@ import mimetypes
 import os
 import re
 import secrets
+from urllib.parse import urlparse
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
@@ -86,6 +87,40 @@ def _extension_for_content_type(content_type: str) -> str:
         return ".jpg"
     ext = mimetypes.guess_extension(content_type.split(";")[0].strip())
     return ext or ".jpg"
+
+
+def _delete_uploaded_media(media_urls: list[str] | None) -> None:
+    """
+    Best-effort cleanup of Azure-uploaded media after publishing.
+    Only deletes blobs that live in the configured container.
+    """
+    if not (_AZ_CONN and media_urls):
+        return
+    try:
+        blob_service = BlobServiceClient.from_connection_string(_AZ_CONN)
+        container = blob_service.get_container_client(_AZ_CONTAINER)
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.warning("Unable to init blob client for cleanup: %s", exc)
+        return
+
+    for url in media_urls or []:
+        try:
+            parsed = urlparse(url)
+            path = parsed.path.lstrip("/")
+            if not path:
+                continue
+            parts = path.split("/", 1)
+            if len(parts) != 2:
+                continue
+            container_name, blob_name = parts
+            if container_name != _AZ_CONTAINER:
+                continue
+            blob_client = container.get_blob_client(blob_name)
+            blob_client.delete_blob(delete_snapshots="include")
+        except ResourceNotFoundError:
+            continue
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.warning("Failed to delete blob %s: %s", url, exc)
 
 
 def _social_scheduler_disabled() -> bool:
@@ -2214,6 +2249,7 @@ def social_publish_now(req: func.HttpRequest) -> func.HttpResponse:
                 mimetype="application/json",
                 headers=cors,
             )
+        _delete_uploaded_media(draft.media_urls_json)
         return func.HttpResponse(
             json.dumps({"status": "published", "results": results}),
             status_code=200,
@@ -2425,6 +2461,8 @@ def social_scheduler(timer: func.TimerRequest) -> None:
                 scheduled.external_post_ids_json = results
             scheduled.updated_at = _utcnow()
             db.commit()
+            if scheduled.status == "published":
+                _delete_uploaded_media(draft.media_urls_json)
         except Exception as exc:  # pylint: disable=broad-except
             db.rollback()
             logger.error("Scheduler publish failed: %s", exc)
