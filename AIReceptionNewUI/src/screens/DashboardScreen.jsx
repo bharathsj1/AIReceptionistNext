@@ -741,6 +741,7 @@ export default function DashboardScreen({
     caption: "",
     mediaUrls: [""]
   });
+  const [socialCaptionStatus, setSocialCaptionStatus] = useState({ status: "idle", message: "" });
   const [socialUploadStatus, setSocialUploadStatus] = useState({ status: "idle", message: "" });
   const [socialTargets, setSocialTargets] = useState({
     facebook_page_id: "",
@@ -778,6 +779,39 @@ export default function DashboardScreen({
   const sideNavContentTimerRef = useRef(null);
   const emailPanelCloseTimerRef = useRef(null);
   const emailPanelContentTimerRef = useRef(null);
+
+  const generateSmartCaption = async () => {
+    const seed = (socialDraftForm.caption || "").trim();
+    if (!seed) {
+      setSocialCaptionStatus({ status: "error", message: "Add a few words first so we can tailor a caption." });
+      return;
+    }
+
+    setSocialCaptionStatus({ status: "loading", message: "Generating caption..." });
+    try {
+      const resp = await fetch(API_URLS.socialAICaption, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: seed,
+          email: user?.email
+        })
+      });
+      const data = await resp.json().catch(() => ({}));
+      const caption = data?.caption || data?.promptText;
+      if (!resp.ok || !caption) {
+        throw new Error(data?.error || data?.details || "Unable to generate caption.");
+      }
+      setSocialDraftForm((prev) => ({ ...prev, caption }));
+      setSocialCaptionStatus({ status: "success", message: "AI caption ready. Edit if needed." });
+      setTimeout(() => setSocialCaptionStatus({ status: "idle", message: "" }), 2500);
+    } catch (err) {
+      setSocialCaptionStatus({
+        status: "error",
+        message: err?.message || "Failed to generate caption."
+      });
+    }
+  };
   const voiceSampleRef = useRef(null);
   const toastTimerRef = useRef(null);
 
@@ -2913,11 +2947,17 @@ export default function DashboardScreen({
     }
   };
 
-  const handleSocialMediaUpload = async (event) => {
-    const file = event?.target?.files?.[0];
+  const handleSocialMediaUpload = async (event, droppedFile) => {
+    const file = droppedFile || event?.target?.files?.[0] || event?.dataTransfer?.files?.[0];
     if (!file) return;
     setSocialUploadStatus({ status: "loading", message: "Uploading..." });
     try {
+      const isImage = file.type.startsWith("image/");
+      const isVideo = file.type.startsWith("video/");
+      if (!isImage && !isVideo) {
+        throw new Error("Please upload an image or video file.");
+      }
+
       const reader = new FileReader();
       const dataUrl = await new Promise((resolve, reject) => {
         reader.onload = () => resolve(reader.result);
@@ -2947,6 +2987,15 @@ export default function DashboardScreen({
       if (!mediaUrl) {
         throw new Error("Upload succeeded but no media URL returned.");
       }
+      // Validate the returned URL is publicly reachable (required by Meta/IG).
+      try {
+        const head = await fetch(mediaUrl, { method: "HEAD" });
+        if (!head.ok) {
+          throw new Error(`Media URL not reachable (HTTP ${head.status}). Use a public HTTPS link.`);
+        }
+      } catch (checkErr) {
+        throw new Error(checkErr?.message || "Media URL not reachable. Ensure it is public HTTPS.");
+      }
       setSocialDraftForm((prev) => {
         const next = [...(prev.mediaUrls || [])];
         const emptyIdx = next.findIndex((item) => !item);
@@ -2957,7 +3006,7 @@ export default function DashboardScreen({
         }
         return { ...prev, mediaUrls: next };
       });
-      setSocialUploadStatus({ status: "success", message: "Image uploaded." });
+      setSocialUploadStatus({ status: "success", message: isVideo ? "Video uploaded." : "Media uploaded." });
     } catch (err) {
       setSocialUploadStatus({ status: "error", message: err?.message || "Upload failed." });
     } finally {
@@ -8606,15 +8655,38 @@ export default function DashboardScreen({
                       </button>
                     </div>
                     <div className="mt-4 space-y-3">
-                      <textarea
-                        rows={5}
-                        value={socialDraftForm.caption}
-                        onChange={(event) =>
-                          setSocialDraftForm((prev) => ({ ...prev, caption: event.target.value }))
-                        }
-                        placeholder="Write your caption..."
-                        className="w-full rounded-2xl border border-white/10 bg-slate-900/60 px-3 py-2 text-xs text-white placeholder:text-slate-400"
-                      />
+                      <div className="flex flex-col gap-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-[11px] uppercase tracking-[0.18em] text-indigo-200">Caption</span>
+                          <div className="flex items-center gap-2">
+                            {socialCaptionStatus.message ? (
+                              <span
+                                className={`text-[11px] ${
+                                  socialCaptionStatus.status === "success" ? "text-emerald-200" : "text-slate-300"
+                                }`}
+                              >
+                                {socialCaptionStatus.message}
+                              </span>
+                            ) : null}
+                            <button
+                              type="button"
+                              onClick={generateSmartCaption}
+                              className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-semibold text-indigo-100 hover:border-indigo-300/60"
+                            >
+                              Generate caption
+                            </button>
+                          </div>
+                        </div>
+                        <textarea
+                          rows={5}
+                          value={socialDraftForm.caption}
+                          onChange={(event) =>
+                            setSocialDraftForm((prev) => ({ ...prev, caption: event.target.value }))
+                          }
+                          placeholder="Write your caption..."
+                          className="w-full rounded-2xl border border-white/10 bg-slate-900/60 px-3 py-2 text-xs text-white placeholder:text-slate-400"
+                        />
+                      </div>
                       <div className="space-y-2">
                         {socialDraftForm.mediaUrls.map((url, idx) => (
                           <div key={`media-url-${idx}`} className="flex items-center gap-2">
@@ -8660,16 +8732,35 @@ export default function DashboardScreen({
                         </button>
                         <div className="flex flex-wrap items-center gap-3">
                           <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-emerald-300/50 bg-emerald-500/15 px-3 py-2 text-xs font-semibold text-emerald-100">
-                            Upload image
+                            Upload media
                             <input
                               ref={socialUploadInputRef}
                               type="file"
-                              accept="image/*"
+                              accept="image/*,video/*"
                               onChange={handleSocialMediaUpload}
                               className="hidden"
                             />
                           </label>
-                          <span className="text-[11px] text-slate-400">JPG, PNG, or WebP. Instagram needs an image.</span>
+                          <div
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              const file = e.dataTransfer?.files?.[0];
+                              if (file) {
+                                handleSocialMediaUpload(null, file);
+                              }
+                            }}
+                            className="flex items-center gap-2 rounded-xl border border-dashed border-white/15 bg-white/5 px-3 py-2 text-[11px] text-slate-200"
+                          >
+                            Drag & drop image or video
+                          </div>
+                          <span className="text-[11px] text-slate-400">
+                            JPG, PNG, WebP, or video (MP4/ MOV). Instagram needs an image.
+                          </span>
                           {socialUploadStatus.message ? (
                             <span
                               className={`text-[11px] ${

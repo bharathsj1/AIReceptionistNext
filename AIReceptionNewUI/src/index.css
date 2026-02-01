@@ -240,6 +240,7 @@ html {
 
 .dashboard-theme .dashboard-main {
   padding: 18px 2px 26px;
+  overflow-y: auto;
 }
 
 @media (min-width: 1024px) {
@@ -4358,10 +4359,18 @@ html {
     top: 12px;
     padding: 12px 14px;
     gap: 14px;
+    grid-template-columns: auto 1fr auto;
   }
 
   .nav-actions {
     margin-left: auto;
+    justify-self: end;
+  }
+
+  .login-cta {
+    padding: 8px 10px;
+    font-size: 13px;
+    gap: 6px;
   }
 
   .page-content.page-content-landing {
@@ -4370,6 +4379,19 @@ html {
 
   .page-content.page-content-with-header {
     padding-top: 72px;
+  }
+
+  .hero-lead-single {
+    font-size: 14px;
+    line-height: 1.6;
+    max-width: 92vw;
+    width: 100%;
+    display: block;
+    margin: 0 auto;
+    text-align: center;
+    word-break: normal;
+    overflow-wrap: anywhere;
+    display: none;
   }
 
   .global-logo-bar {
@@ -4391,6 +4413,9 @@ html {
 @media (max-width: 640px) {
   .page {
     padding: 24px 18px 48px;
+    height: auto;
+    min-height: 100vh;
+    overflow: auto;
   }
 
   .top-bar {

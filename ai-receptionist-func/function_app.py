@@ -23,6 +23,7 @@ import call_endpoints  # noqa
 import email_endpoints  # noqa
 import contacts_endpoints  # noqa
 import social_endpoints  # noqa
+import social_ai_caption  # noqa
 import task_manager_endpoints  # noqa
 import tasks_create  # noqa
 import tasks_list  # noqa

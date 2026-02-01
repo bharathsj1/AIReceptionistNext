@@ -106,7 +106,8 @@ export const API_URLS = {
   socialPublish: apiUrl("social/posts/publish"),
   socialSchedule: apiUrl("social/posts/schedule"),
   socialScheduledPosts: apiUrl("social/posts/scheduled"),
-  socialXConnect: apiUrl("social/x/connect")
+  socialXConnect: apiUrl("social/x/connect"),
+  socialAICaption: apiUrl("social/ai/caption")
 };
 
 
