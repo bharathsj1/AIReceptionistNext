@@ -1267,8 +1267,15 @@ def social_media_upload(req: func.HttpRequest) -> func.HttpResponse:
                 headers=cors,
             )
         except Exception as exc:  # pylint: disable=broad-except
-            logger.error("Azure blob upload failed, falling back to local: %s", exc)
+            logger.error("Azure blob upload failed: %s", exc)
+            return func.HttpResponse(
+                json.dumps({"error": "Blob upload failed. Check storage connection and container access."}),
+                status_code=500,
+                mimetype="application/json",
+                headers=cors,
+            )
 
+    # Fallback to local only when no Azure storage is configured.
     os.makedirs(_UPLOAD_DIR, exist_ok=True)
     file_path = _media_path(media_id, extension)
     try:
