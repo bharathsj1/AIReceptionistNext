@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 export default function PaymentSuccessScreen({
   paymentInfo,
@@ -44,6 +44,32 @@ export default function PaymentSuccessScreen({
         ""
     );
   const [selectedLanguage, setSelectedLanguage] = useState("all");
+  const languageDisplay = useMemo(() => {
+    try {
+      if (typeof Intl !== "undefined" && Intl.DisplayNames) {
+        return new Intl.DisplayNames(["en"], { type: "language" });
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  }, []);
+
+  const formatLanguageLabel = useCallback(
+    (code) => {
+      if (!code) return "";
+      try {
+        const lower = String(code).toLowerCase();
+        const full = languageDisplay?.of(lower);
+        if (full) return full;
+        const base = lower.split("-")[0];
+        return languageDisplay?.of(base) || code;
+      } catch {
+        return code;
+      }
+    },
+    [languageDisplay]
+  );
   const languageOptions = useMemo(() => {
     const set = new Set();
     safeVoices.forEach((voice) => {
@@ -148,7 +174,7 @@ export default function PaymentSuccessScreen({
               <option value="all">All languages</option>
               {languageOptions.map((option) => (
                 <option key={option} value={option}>
-                  {option} {languageCounts[option] ? `(${languageCounts[option]})` : ""}
+                  {formatLanguageLabel(option)} {languageCounts[option] ? `(${languageCounts[option]})` : ""}
                 </option>
               ))}
             </select>

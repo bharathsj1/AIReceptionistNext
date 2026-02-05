@@ -2418,6 +2418,29 @@ html {
   justify-self: end;
 }
 
+.nav-geo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.06);
+  color: #e6ebff;
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.01em;
+}
+
+.nav-geo-flag {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.nav-geo-label {
+  white-space: nowrap;
+}
+
 .nav-item-with-sub {
   position: relative;
   display: inline-flex;
@@ -4365,6 +4388,15 @@ html {
   .nav-actions {
     margin-left: auto;
     justify-self: end;
+  }
+
+  .nav-geo {
+    padding: 6px 8px;
+    font-size: 11px;
+  }
+
+  .nav-geo-flag {
+    font-size: 16px;
   }
 
   .login-cta {

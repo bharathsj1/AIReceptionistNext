@@ -83,6 +83,12 @@ const isStrongPassword = (value) => {
   return value.length >= 8 && hasLower && hasUpper && hasNumber && hasSymbol;
 };
 
+const countryCodeToFlag = (code) => {
+  if (!code || typeof code !== "string" || code.length !== 2) return "🌐";
+  const base = 127397; // Unicode regional indicator symbol offset
+  return String.fromCodePoint(...code.toUpperCase().split("").map((char) => char.charCodeAt(0) + base));
+};
+
 export default function App() {
   const [stage, setStage] = useState(STAGES.LANDING);
   const [url, setUrl] = useState("");
@@ -118,6 +124,9 @@ export default function App() {
   const [businessSaveStatus, setBusinessSaveStatus] = useState({ status: "idle", message: "" });
   const [userProfile, setUserProfile] = useState(null);
   const [user, setUser] = useState(null);
+  const [countryCode, setCountryCode] = useState(null);
+  const [countryName, setCountryName] = useState(null);
+  const [fxRates, setFxRates] = useState({ USD: 1, CAD: null, GBP: null });
   const [callTranscript, setCallTranscript] = useState({
     call: null,
     transcripts: [],
@@ -250,6 +259,52 @@ export default function App() {
     ],
     []
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchGeo = async () => {
+      if (typeof window === "undefined") return;
+      try {
+        const res = await fetch("https://ipapi.co/json/");
+        if (!res.ok) throw new Error("Geo lookup failed");
+        const data = await res.json();
+        if (cancelled) return;
+        setCountryCode(data?.country_code || null);
+        setCountryName(data?.country_name || null);
+      } catch (err) {
+        console.warn("Unable to fetch geo location", err);
+      }
+    };
+    fetchGeo();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchFx = async () => {
+      if (typeof window === "undefined") return;
+      try {
+        const res = await fetch("https://open.er-api.com/v6/latest/USD");
+        if (!res.ok) throw new Error("FX lookup failed");
+        const data = await res.json();
+        if (cancelled) return;
+        const rates = data?.rates || {};
+        setFxRates({
+          USD: 1,
+          CAD: rates.CAD || null,
+          GBP: rates.GBP || null
+        });
+      } catch (err) {
+        console.warn("Unable to fetch FX rates", err);
+      }
+    };
+    fetchFx();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Detect reset token from query string so reset links land on the styled screen.
   useEffect(() => {
@@ -1142,6 +1197,10 @@ export default function App() {
     setStatus("success");
     setResponseMessage("Payment successful.");
     setStage(STAGES.PAYMENT_SUCCESS);
+  };
+
+  const handlePaymentBack = () => {
+    setStage(STAGES.PACKAGES);
   };
 
   const handlePaymentSuccessContinue = () => {
@@ -2689,7 +2748,6 @@ export default function App() {
             </div>
             <div className="nav-links">
               <button className="nav-link" onClick={() => handleNavToSection("capabilities")}>Our purpose</button>
-              <button className="nav-link" onClick={() => handleNavToSection("performance")}>What we do</button>
               <div className="nav-item-with-sub">
                 <button className="nav-link" type="button">Services</button>
                 <div className="nav-submenu">
@@ -2719,6 +2777,14 @@ export default function App() {
               <a className="nav-link" href="/blog.html">Blog</a>
             </div>
             <div className="nav-actions">
+              <div
+                className="nav-geo"
+                aria-label={`Detected location: ${countryName || "Detecting location"}`}
+                title={countryName || "Detecting location"}
+              >
+                <span className="nav-geo-flag" aria-hidden>{countryCodeToFlag(countryCode)}</span>
+                <span className="nav-geo-label">{countryName || "Detecting..."}</span>
+              </div>
               <button className="login-cta" onClick={() => setStage(STAGES.LOGIN)}>
                 <span aria-hidden>→</span>
                 <span>Login</span>
@@ -2740,7 +2806,12 @@ export default function App() {
         )}
         {stage === STAGES.PACKAGES && !hasActiveSubscription && (
           <div className="shell-card screen-panel">
-            <PricingPackages onSelectPackage={handleSelectPlan} showCrawlSuccess />
+            <PricingPackages
+              onSelectPackage={handleSelectPlan}
+              showCrawlSuccess
+              geoCountryCode={countryCode}
+              fxRates={fxRates}
+            />
           </div>
         )}
 
@@ -2822,6 +2893,7 @@ export default function App() {
               userName={signupName}
               name={businessName}
               phone={businessPhone}
+              geoCountryCode={countryCode}
               onNameChange={setBusinessName}
               onPhoneChange={setBusinessPhone}
               onContinue={() =>
@@ -2982,9 +3054,11 @@ export default function App() {
               <PaymentScreen
                 planId={selectedPlan}
                 toolId={selectedTool || activeTool || DEFAULT_TOOL_ID}
-                onBack={handleGoHome}
+                onBack={handlePaymentBack}
                 onSubmit={handlePaymentSubmit}
                 initialEmail={signupEmail || email}
+                geoCountryCode={countryCode}
+                fxRates={fxRates}
               />
             </div>
           ) : (

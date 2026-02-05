@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Elements,
-  PaymentElement,
+  CardElement,
   useElements,
   useStripe
 } from "@stripe/react-stripe-js";
@@ -11,10 +11,11 @@ import API_URLS from "../config/urls.js";
 const plans = {
   bronze: {
     name: "Bronze",
-    price: "$500/mo",
+    baseAmount: 500,
+    baseCurrency: "CAD",
     description: "Launch your AI receptionist with core voice + transcript access.",
     features: [
-      "Unlimited calls",
+      "500 minutes per month",
       "Real-time voice + live transcripts",
       "Basic analytics & summaries",
       "Email support during business hours"
@@ -22,10 +23,12 @@ const plans = {
   },
   silver: {
     name: "Silver",
-    price: "$600/mo",
+    baseAmount: 600,
+    baseCurrency: "CAD",
     description: "Add richer controls, smarter hand-offs, and priority support.",
     features: [
-      "Unlimited calls",
+      "700 minutes per month",
+      "Smart Email Manager",
       "Smart hand-off workflows & routing",
       "Priority email + chat support",
       "Custom greetings and warm transfers"
@@ -33,13 +36,16 @@ const plans = {
   },
   gold: {
     name: "Gold",
-    price: "$700/mo",
+    baseAmount: 700,
+    baseCurrency: "CAD",
     description: "Full concierge experience with advanced automation and QA.",
     features: [
-      "Unlimited calls",
+      "1000 minutes per month",
       "Advanced analytics & QA reviews",
       "Dedicated success manager",
-      "Integration hooks for CRM & calendar"
+      "Integration hooks for CRM & calendar",
+      "Social media manager",
+      "Includes everything from Silver package"
     ]
   },
   custom: {
@@ -60,7 +66,15 @@ const TOOL_LABELS = {
   social_media_manager: "Social Media Manager"
 };
 
-export default function PaymentScreen({ planId, toolId = "ai_receptionist", onBack, onSubmit, initialEmail = "" }) {
+export default function PaymentScreen({
+  planId,
+  toolId = "ai_receptionist",
+  onBack,
+  onSubmit,
+  initialEmail = "",
+  geoCountryCode,
+  fxRates = {}
+}) {
   const [clientSecret, setClientSecret] = useState("");
   const [subscriptionId, setSubscriptionId] = useState("");
   const [customerId, setCustomerId] = useState("");
@@ -70,11 +84,54 @@ export default function PaymentScreen({ planId, toolId = "ai_receptionist", onBa
   const [cardName, setCardName] = useState("");
   const [email, setEmail] = useState(initialEmail);
   const [processing, setProcessing] = useState(false);
+  const [billingMonths, setBillingMonths] = useState(3);
+  const [postalCode, setPostalCode] = useState("");
+
+  const currencyForCountry = (code) => {
+    if (!code) return "USD";
+    const upper = code.toUpperCase();
+    if (upper === "CA") return "CAD";
+    if (upper === "GB" || upper === "UK") return "GBP";
+    return "USD";
+  };
+
+  const convertAmount = (amount, fromCurrency, toCurrency) => {
+    if (!amount) return amount;
+    if (fromCurrency === toCurrency) return amount;
+    const toPerUsd = fxRates?.[toCurrency] || null;
+    const fromPerUsd = fxRates?.[fromCurrency] || null;
+    if (!toPerUsd || !fromPerUsd) return amount;
+    const usd = amount / fromPerUsd;
+    return usd * toPerUsd;
+  };
+
+  const formatPrice = (amount, currency) => {
+    if (!amount) return "Let’s talk";
+    return `${new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(amount)}/mo`;
+  };
 
   const plan = useMemo(() => {
-    if (planId && plans[planId]) return plans[planId];
-    return plans.gold;
-  }, [planId]);
+    const selected = planId && plans[planId] ? plans[planId] : plans.gold;
+    if (selected.price) return selected; // custom plan
+    const currency = currencyForCountry(geoCountryCode || "US");
+    const converted = convertAmount(selected.baseAmount, selected.baseCurrency || "CAD", currency);
+    return {
+      ...selected,
+      price: formatPrice(converted, currency),
+      unitAmount: converted,
+      currency
+    };
+  }, [planId, geoCountryCode, fxRates]);
+
+  const totalDue = useMemo(() => {
+    if (!plan.unitAmount) return plan.price;
+    return formatPrice(plan.unitAmount * billingMonths, plan.currency || "USD");
+  }, [plan.unitAmount, plan.currency, billingMonths, plan.price]);
   const toolLabel = TOOL_LABELS[toolId] || "AI workspace";
 
   const stripePromise = loadStripe(
@@ -101,7 +158,7 @@ export default function PaymentScreen({ planId, toolId = "ai_receptionist", onBa
         const res = await fetch(API_URLS.paymentsCreateSubscription, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ planId: planId || "gold", toolId, email }),
+          body: JSON.stringify({ planId: planId || "gold", toolId, email, billingMonths }),
           signal: controller.signal
         });
         const data = await res.json();
@@ -195,7 +252,7 @@ export default function PaymentScreen({ planId, toolId = "ai_receptionist", onBa
               paymentMethodOrder: ["card"]
             }}
           >
-            <PaymentForm
+      <PaymentForm
               email={email}
               setEmail={setEmail}
               cardName={cardName}
@@ -209,6 +266,14 @@ export default function PaymentScreen({ planId, toolId = "ai_receptionist", onBa
         subscriptionId={subscriptionId}
         customerId={customerId}
         intentType={intentType}
+        billingMonths={billingMonths}
+        setBillingMonths={setBillingMonths}
+        planCurrency={plan.currency}
+        planUnitAmount={plan.unitAmount}
+        totalDue={totalDue}
+        clientSecret={clientSecret}
+        postalCode={postalCode}
+        setPostalCode={setPostalCode}
       />
           </Elements>
         ) : (
@@ -263,46 +328,61 @@ function PaymentForm({
   intentError,
   subscriptionId,
   customerId,
-  intentType
+  intentType,
+  billingMonths,
+  setBillingMonths,
+  planCurrency,
+  planUnitAmount,
+  totalDue,
+  clientSecret,
+  postalCode,
+  setPostalCode
 }) {
   const stripe = useStripe();
   const elements = useElements();
   const [error, setError] = useState(null);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    if (!stripe || !elements) return;
+    if (!stripe || !elements || !acceptedTerms) return;
+    if (!postalCode.trim()) {
+      setError("Please enter your ZIP / Postal code.");
+      return;
+    }
 
     setProcessing(true);
     setError(null);
+    const cardElement = elements.getElement(CardElement);
+    if (!cardElement) {
+      setError("Unable to load card input. Please refresh and try again.");
+      setProcessing(false);
+      return;
+    }
     let submitError;
     if (intentType === "setup") {
-      const result = await stripe.confirmSetup({
-        elements,
-        confirmParams: {
-          payment_method_data: {
-            billing_details: {
-              name: cardName || undefined,
-              email: email || undefined
-            }
+      const result = await stripe.confirmCardSetup(clientSecret, {
+        payment_method: {
+          card: cardElement,
+          billing_details: {
+            name: cardName || undefined,
+            email: email || undefined,
+            address: { postal_code: postalCode || undefined }
           }
-        },
-        redirect: "if_required"
+        }
       });
       submitError = result.error;
     } else {
-      const result = await stripe.confirmPayment({
-        elements,
-        confirmParams: {
-          receipt_email: email || undefined,
-          payment_method_data: {
-            billing_details: {
-              name: cardName || undefined,
-              email: email || undefined
-            }
+      const result = await stripe.confirmCardPayment(clientSecret, {
+        payment_method: {
+          card: cardElement,
+          billing_details: {
+            name: cardName || undefined,
+            email: email || undefined,
+            address: { postal_code: postalCode || undefined }
           }
         },
-        redirect: "if_required"
+        receipt_email: email || undefined
       });
       submitError = result.error;
     }
@@ -321,7 +401,15 @@ function PaymentForm({
         const res = await fetch(API_URLS.paymentsConfirmSubscription, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ subscriptionId, email, planId, toolId, customerId })
+          body: JSON.stringify({
+            subscriptionId,
+            email,
+            planId,
+            toolId,
+            customerId,
+            billingMonths,
+            postalCode
+          })
         });
         const confirmData = await res.json().catch(() => ({}));
         receiptUrl = confirmData?.receipt_url || confirmData?.invoice_pdf || null;
@@ -364,12 +452,27 @@ function PaymentForm({
 
       <div className="grid grid-cols-1 gap-4">
         <label className="text-sm font-semibold text-slate-800">
+          Billing period (pay upfront)
+          <select
+            value={billingMonths}
+            onChange={(e) => setBillingMonths(Number(e.target.value))}
+            className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200"
+          >
+            <option value={2}>2 months upfront</option>
+            <option value={3}>3 months upfront</option>
+            <option value={6}>6 months upfront</option>
+            <option value={12}>1 year upfront</option>
+          </select>
+        </label>
+
+        <label className="text-sm font-semibold text-slate-800">
           Email for receipt
           <input
             type="email"
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            disabled={!acceptedTerms}
             className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200"
             placeholder="you@example.com"
           />
@@ -382,25 +485,83 @@ function PaymentForm({
             required
             value={cardName}
             onChange={(e) => setCardName(e.target.value)}
+            disabled={!acceptedTerms}
             className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200"
             placeholder="Full name"
           />
         </label>
 
-        <div className="rounded-lg border border-slate-200 p-3">
-          <PaymentElement />
+        <label className="text-sm font-semibold text-slate-800">
+          ZIP / Postal code
+          <input
+            type="text"
+            required
+            value={postalCode}
+            onChange={(e) => setPostalCode(e.target.value)}
+            disabled={!acceptedTerms}
+            className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200"
+            placeholder="e.g., 94107 or W1A 1AA"
+            autoComplete="postal-code"
+          />
+        </label>
+
+        <div className="relative rounded-lg border border-slate-200 p-3">
+          {!acceptedTerms && (
+            <div
+              className="absolute inset-0 z-10 rounded-lg bg-white/70 backdrop-blur-sm cursor-not-allowed"
+              aria-hidden="true"
+            />
+          )}
+          <CardElement
+            options={{
+              hidePostalCode: true,
+              style: {
+                base: {
+                  fontSize: "16px",
+                  color: "#0f172a",
+                  "::placeholder": { color: "#94a3b8" }
+                }
+              }
+            }}
+          />
         </div>
+
+        <label className="flex items-start gap-3 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            checked={acceptedTerms}
+            onChange={(e) => setAcceptedTerms(e.target.checked)}
+            className="mt-1 h-4 w-4 cursor-pointer"
+          />
+          <span>
+            I agree to the{" "}
+            <a
+              href="/terms.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-indigo-600 underline"
+            >
+              SmartConnect4u Terms &amp; Conditions
+            </a>
+            .
+          </span>
+        </label>
       </div>
 
       {intentError && <p className="mt-3 text-sm text-red-600">{intentError}</p>}
       {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+      {planUnitAmount ? (
+        <p className="mt-2 text-sm font-semibold text-slate-800">
+          Due today: <span className="text-indigo-700">{totalDue}</span>
+        </p>
+      ) : null}
 
       <button
         type="submit"
-        disabled={!stripe || processing}
+        disabled={!stripe || processing || !acceptedTerms}
         className="mt-5 w-full rounded-lg bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:cursor-not-allowed disabled:opacity-70"
       >
-        {processing ? "Processing..." : "Confirm and pay"}
+        {processing ? "Processing..." : acceptedTerms ? "Confirm and pay" : "Accept terms to continue"}
       </button>
 
       <p className="mt-3 text-xs text-slate-500">
