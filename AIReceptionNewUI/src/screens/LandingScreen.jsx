@@ -16,8 +16,6 @@ export default function LandingScreen({ onTry, onLogin, onSelectPlan, onShowServ
   const navItems = useMemo(
     () => [
       { id: "capabilities", label: "Capabilities" },
-      { id: "performance", label: "Performance" },
-      { id: "integrations", label: "Integrations" },
       { id: "technology", label: "Technology" },
       { id: "ai-team", label: "AI Team" },
       { id: "pricing", label: "Pricing" },
@@ -284,28 +282,53 @@ export default function LandingScreen({ onTry, onLogin, onSelectPlan, onShowServ
               <button type="button" className="promo-cta">See offer</button>
             </div>
           </section>
+
+          <section id="technology" className="cap-card tech-shell">
+            <div className="cap-card-head">
+              <span className="cap-dot" aria-hidden />
+              <span className="cap-card-label">TECHNOLOGY</span>
+            </div>
+            <h2 style={{ marginBottom: 8 }}>Built to be fast, safe, and human-friendly</h2>
+            <p className="lead narrow" style={{ marginTop: 4, color: "#cfd9f6" }}>
+              Reliability, security, and expert support so you can scale confidently.
+            </p>
+            <div className="tech-grid">
+              {[
+                {
+                  title: "Designed for growth",
+                  body:
+                    "Quickest ROI with a roadmap shaped by you to scale revenue across the customer lifecycle—you'll grow with us, not outgrow us.",
+                  iconClass: "tech-icon tech-icon--bars"
+                },
+                {
+                  title: "Reliability at scale",
+                  body:
+                    "Best-in-class tech and enterprise-grade security for speed and stability, with 99.999% uptime under high chat volumes.",
+                  iconClass: "tech-icon tech-icon--gem"
+                },
+                {
+                  title: "Leading with experience",
+                  body:
+                    "Battle-tested customer conversations platform with years of market leadership and trusted by top platforms.",
+                  iconClass: "tech-icon tech-icon--globe"
+                },
+                {
+                  title: "Support you can trust",
+                  body:
+                    "Top-rated human support and expert guidance at every stage to help you scale confidently and achieve ambitious goals.",
+                  iconClass: "tech-icon tech-icon--stack"
+                }
+              ].map((item) => (
+                <div key={item.title} className="tech-card">
+                  <div className={item.iconClass} aria-hidden />
+                  <h3>{item.title}</h3>
+                  <p>{item.body}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+
           {[
-            {
-              id: "performance",
-              title: "Measured outcomes you can trust",
-              body:
-                "Track response quality, speed, and satisfaction with transparent analytics that surface what to improve next.",
-              cta: "View performance metrics"
-            },
-            {
-              id: "integrations",
-              title: "Connects to your stack in minutes",
-              body:
-                "Plug into your CRM, ticketing, phone, and chat systems with secure, low-lift integrations that keep teams in sync.",
-              cta: "See integrations"
-            },
-            {
-              id: "technology",
-              title: "Enterprise-grade AI guardrails",
-              body:
-                "Stay compliant with configurable policies, safe outputs, and auditing so you can ship AI confidently.",
-              cta: "Review safeguards"
-            },
             {
               id: "ai-team",
               title: "Your AI team on speed dial",
@@ -321,135 +344,18 @@ export default function LandingScreen({ onTry, onLogin, onSelectPlan, onShowServ
               cta: "Check pricing"
             }
           ].map((section, idx) =>
-            section.id === "performance" ? (
-              <article
-                key={section.id}
-                id={section.id}
-                className="cap-card"
-                style={{
-                  padding: 0,
-                  overflow: "hidden",
-                  borderRadius: 18,
-                  border: "1px solid rgba(255,255,255,0.08)",
-                  background: "linear-gradient(135deg, #0a0f1f, #0c1735)",
-                  boxShadow: "0 20px 60px rgba(0,0,0,0.35)"
-                }}
-              >
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1.1fr 1fr",
-                    gap: 0,
-                    alignItems: "stretch"
-                  }}
-                >
-                  <div
-                    style={{
-                      backgroundImage:
-                        "linear-gradient(180deg, rgba(0,0,0,0.35), rgba(0,0,0,0.2)), url('/media/omnichannel.jpg')",
-                      backgroundSize: "cover",
-                      backgroundPosition: "center",
-                      minHeight: 320,
-                      position: "relative"
-                    }}
-                  >
-                    <div
-                      style={{
-                        position: "absolute",
-                        left: "8%",
-                        bottom: "8%",
-                        width: "84%",
-                        background: "rgba(14, 18, 32, 0.78)",
-                        border: "1px solid rgba(255,255,255,0.08)",
-                        borderRadius: 14,
-                        padding: "14px 12px",
-                        boxShadow: "0 10px 30px rgba(0,0,0,0.4)",
-                        backdropFilter: "blur(6px)",
-                        color: "#e8eefc"
-                      }}
-                    >
-                      <div style={{ fontWeight: 700, marginBottom: 8, display: "flex", alignItems: "center", gap: 8 }}>
-                        <span style={{ display: "inline-block", width: 18, height: 18, background: "#22c55e", borderRadius: "50%" }} />
-                        Call with WhatsApp
-                      </div>
-                      <div style={{ fontSize: 13, opacity: 0.85, display: "flex", justifyContent: "space-between" }}>
-                        <span>Contact number</span>
-                        <span style={{ fontWeight: 600 }}>+1385738473</span>
-                      </div>
-                      <div style={{ fontSize: 12, marginTop: 8, color: "#7ce4a3" }}>
-                        Request accepted! You can call the contact within the next 72 hours.
-                      </div>
-                      <button
-                        type="button"
-                        style={{
-                          marginTop: 12,
-                          width: "100%",
-                          background: "#2563eb",
-                          color: "#fff",
-                          border: "none",
-                          borderRadius: 10,
-                          padding: "10px 12px",
-                          fontWeight: 700,
-                          cursor: "pointer"
-                        }}
-                      >
-                        Call
-                      </button>
-                    </div>
-                  </div>
-                  <div style={{ padding: "32px 32px 36px", display: "grid", gap: 12 }}>
-                    <div
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 10,
-                        padding: "10px 14px",
-                        background: "rgba(37, 99, 235, 0.14)",
-                        border: "1px solid rgba(59,130,246,0.35)",
-                        borderRadius: 12,
-                        color: "#cde3ff",
-                        width: "fit-content",
-                        fontWeight: 600
-                      }}
-                    >
-                      <span
-                        style={{
-                          width: 24,
-                          height: 24,
-                          borderRadius: 8,
-                          background: "linear-gradient(135deg, #2563eb, #60a5fa)"
-                        }}
-                      />
-                      Omnichannel Inbox
-                    </div>
-                    <h2 style={{ margin: 0, fontSize: "clamp(26px, 3vw, 34px)", color: "#f7fbff", lineHeight: 1.2 }}>
-                      Chats, calls and emails in one thread
-                    </h2>
-                    <p className="lead narrow" style={{ marginTop: 8, color: "#d9e3ff", lineHeight: 1.6 }}>
-                      SmartConnect4u unifies WhatsApp Business Calls, Messenger Calls and VoIP in the same thread as your
-                      messages and emails.
-                    </p>
-                    <p className="lead narrow" style={{ margin: 0, color: "#c9d6f5", lineHeight: 1.6 }}>
-                      No more silos or juggling multiple platforms; just one reliable record for every customer, no matter
-                      the channel.
-                    </p>
-                  </div>
-                </div>
-              </article>
-            ) : (
-              <article key={section.id} id={section.id} className="cap-card">
-                <div className="cap-card-head">
-                  <span className="cap-dot" aria-hidden />
-                  <span className="cap-card-label">{section.id.replace("-", " ").toUpperCase()}</span>
-                </div>
+            <article key={section.id} id={section.id} className="cap-card">
+              <div className="cap-card-head">
+                <span className="cap-dot" aria-hidden />
+                <span className="cap-card-label">{section.id.replace("-", " ").toUpperCase()}</span>
+              </div>
                 <h2>{section.title}</h2>
                 <p className="lead narrow" style={{ marginTop: 10 }}>{section.body}</p>
-                <div className="cap-foot">
-                  <span className="cap-step">{String(idx + 2).padStart(2, "0")}</span>
-                  <button className="ghost small" type="button">{section.cta}</button>
-                </div>
-              </article>
-            )
+              <div className="cap-foot">
+                <span className="cap-step">{String(idx + 2).padStart(2, "0")}</span>
+                <button className="ghost small" type="button">{section.cta}</button>
+              </div>
+            </article>
           )}
 
           <section id="testimonials" className="cap-card testimonials-shell">

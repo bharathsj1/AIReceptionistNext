@@ -39,7 +39,7 @@ const cards = [
   }
 ];
 
-const CapabilityCard = ({ title, description, icon, variant }) => (
+const CapabilityCard = ({ title, description, icon, variant, image, alt }) => (
   <article className={`cap-card ${variant || ""}`.trim()}>
     <div className="cap-icon">
       <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -48,6 +48,28 @@ const CapabilityCard = ({ title, description, icon, variant }) => (
     </div>
     <h3>{title}</h3>
     <p>{description}</p>
+    {image && (
+      <div
+        style={{
+          marginTop: 14,
+          background: "linear-gradient(135deg, #0b101b, #0f172a)",
+          border: "1px solid rgba(255,255,255,0.08)",
+          boxShadow: "0 16px 48px rgba(0,0,0,0.38)",
+          borderRadius: 18,
+          padding: 10
+        }}
+      >
+        <img
+          src={image}
+          alt={alt || title}
+          style={{
+            width: "100%",
+            borderRadius: 14,
+            display: "block"
+          }}
+        />
+      </div>
+    )}
   </article>
 );
 
@@ -85,6 +107,8 @@ export default function CapabilitiesSection() {
             title={cards[3].title}
             description={cards[3].description}
             icon={cards[3].icon}
+            image={cards[3].image}
+            alt={cards[3].alt}
           />
           <CapabilityCard
             title={cards[4].title}

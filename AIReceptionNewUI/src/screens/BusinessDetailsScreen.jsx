@@ -6,6 +6,7 @@ export default function BusinessDetailsScreen({
   userName,
   name,
   phone,
+  geoCountryCode,
   onNameChange,
   onPhoneChange,
   onContinue,
@@ -14,11 +15,12 @@ export default function BusinessDetailsScreen({
   error = ""
 }) {
   const welcomeName = userName || "there";
-  const [country, setCountry] = useState("UK");
+  const [country, setCountry] = useState("US");
   const [localPhone, setLocalPhone] = useState("");
   const countryOptions = [
-    { value: "UK", label: "🇬🇧", dialCode: "+44" },
-    { value: "CA", label: "🇨🇦", dialCode: "+1" }
+    { value: "GB", label: "🇬🇧", dialCode: "+44" },
+    { value: "CA", label: "🇨🇦", dialCode: "+1" },
+    { value: "US", label: "🇺🇸", dialCode: "+1" }
   ];
   const selectedCountry = countryOptions.find((option) => option.value === country) || countryOptions[0];
 
@@ -29,17 +31,29 @@ export default function BusinessDetailsScreen({
       return;
     }
     if (normalized.startsWith("+44")) {
-      setCountry("UK");
+      setCountry("GB");
       setLocalPhone(normalized.replace(/^\+44\s*/, ""));
       return;
     }
     if (normalized.startsWith("+1")) {
-      setCountry("CA");
+      // +1 is shared by US and CA; prefer geo hint if available.
+      const fallback = geoCountryCode && ["US", "CA"].includes(geoCountryCode) ? geoCountryCode : "CA";
+      setCountry(fallback);
       setLocalPhone(normalized.replace(/^\+1\s*/, ""));
       return;
     }
     setLocalPhone(normalized);
-  }, [phone]);
+  }, [phone, geoCountryCode]);
+
+  useEffect(() => {
+    if (phone) return; // respect existing input
+    const geo = (geoCountryCode || "").toUpperCase();
+    const match = countryOptions.find((opt) => opt.value === geo);
+    if (match) {
+      setCountry(match.value);
+      onPhoneChange(`${match.dialCode}${localPhone}`);
+    }
+  }, [geoCountryCode]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <section className="business-layout screen-panel">
       <div className="business-left">
