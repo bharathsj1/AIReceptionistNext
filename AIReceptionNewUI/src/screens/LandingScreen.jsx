@@ -248,22 +248,14 @@ export default function LandingScreen({ onTry, onLogin, onSelectPlan, onShowServ
           </div>
           <section className="cap-card promo-card">
             <div className="promo-media">
-              <div className="promo-bubble promo-bubble--primary">
-                <div className="promo-bubble__title">Call with WhatsApp</div>
-                <div className="promo-bubble__field">
-                  <span>Contact number</span>
-                  <strong>+1385738473</strong>
-                </div>
-                <div className="promo-bubble__status">Request accepted! You can call the contact within the next 72 hours.</div>
-                <button type="button" className="promo-bubble__cta">Call</button>
-              </div>
-              <div className="promo-bubble promo-bubble--stack">
-                <div className="promo-chip whatsapp">WhatsApp Call - +1385738473</div>
-                <div className="promo-chip voip">VoIP Call - +1385738473</div>
-                <div className="promo-chip messenger">Messenger Call - +13857384…</div>
-                <div className="promo-chip whatsapp">WhatsApp Message - +13857384…</div>
-                <div className="promo-chip email">Email - danielth@gmail.com</div>
-              </div>
+              <video
+                className="promo-media__video"
+                src="/social_media_1.mp4"
+                autoPlay
+                loop
+                muted
+                playsInline
+              />
             </div>
             <div className="promo-copy">
               <div className="promo-pill">

@@ -82,8 +82,18 @@
 
 .promo-media {
   position: relative;
-  background: url("/media/omnichannel.jpg") center/cover no-repeat;
+  background: radial-gradient(120% 140% at 30% 30%, rgba(255, 105, 180, 0.18), rgba(6, 1, 16, 0.94));
   min-height: 360px;
+  overflow: hidden;
+}
+
+.promo-media__video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: brightness(0.9) saturate(1.05);
 }
 
 .promo-bubble {
