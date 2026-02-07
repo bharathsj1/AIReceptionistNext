@@ -1182,14 +1182,19 @@ export default function App() {
     setResponseMessage("");
   }, [email, loginEmail, signupEmail, signupName, user?.email, user?.name]);
 
-  const handleSelectPlan = (planId) => {
+  const handleSelectPlan = (planId, options = {}) => {
+    const { source } = options;
     if (hasActiveSubscription) {
       setStage(STAGES.DASHBOARD);
       return;
     }
     setSelectedPlan(planId);
     setSelectedTool(activeTool || DEFAULT_TOOL_ID);
-    setStage(STAGES.PAYMENT);
+    if (source === "landing") {
+      setStage(STAGES.SIGNUP);
+    } else {
+      setStage(STAGES.PAYMENT);
+    }
   };
 
   const handlePaymentSubmit = async (info) => {
@@ -2799,6 +2804,8 @@ export default function App() {
             onLogin={() => setStage(STAGES.LOGIN)}
             onSelectPlan={handleSelectPlan}
             onShowService={handleGoProjects}
+            geoCountryCode={countryCode}
+            fxRates={fxRates}
           />
         )}
         {stage === STAGES.PROJECTS && (

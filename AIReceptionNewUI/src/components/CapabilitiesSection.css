@@ -69,7 +69,7 @@
 
 .promo-card {
   display: grid;
-  grid-template-columns: 1.1fr 0.9fr;
+  grid-template-columns: 1.3fr 0.9fr;
   gap: 0;
   background: radial-gradient(120% 140% at 30% 30%, rgba(255, 105, 180, 0.18), rgba(6, 1, 16, 0.94)),
     linear-gradient(135deg, rgba(16, 3, 24, 0.95), rgba(8, 6, 20, 0.92));
@@ -83,7 +83,7 @@
 .promo-media {
   position: relative;
   background: radial-gradient(120% 140% at 30% 30%, rgba(255, 105, 180, 0.18), rgba(6, 1, 16, 0.94));
-  min-height: 360px;
+  min-height: 440px;
   overflow: hidden;
 }
 
@@ -94,6 +94,62 @@
   height: 100%;
   object-fit: cover;
   filter: brightness(0.9) saturate(1.05);
+}
+
+@media (max-width: 640px) {
+  .promo-media__video {
+    object-fit: contain;
+    background: #000;
+  }
+}
+
+.ai-reception-preview {
+  display: grid;
+  grid-template-columns: 0.85fr 1.15fr;
+  gap: 0;
+  align-items: center;
+  min-height: 420px;
+  width: 100%;
+}
+
+.ai-reception-text {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  text-align: center;
+}
+
+.ai-reception-media {
+  position: relative;
+  width: 100%;
+  min-height: 100%;
+  background: #000;
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.ai-reception-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  background: #000;
+}
+
+@media (max-width: 768px) {
+  .ai-reception-preview {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .ai-reception-media {
+    min-height: 200px;
+  }
+  .ai-reception-video {
+    object-fit: contain;
+    background: #000;
+  }
 }
 
 .promo-bubble {
@@ -206,6 +262,10 @@
   font-size: clamp(26px, 3vw, 36px);
   color: #f7fbff;
   line-height: 1.2;
+}
+
+.pricing-home-block {
+  margin-top: 22px;
 }
 
 .promo-copy p {
