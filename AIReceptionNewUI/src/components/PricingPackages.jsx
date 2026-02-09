@@ -67,7 +67,10 @@ export default function PricingPackages({
   paymentBasePath = "/payment",
   showCrawlSuccess = false,
   geoCountryCode,
-  fxRates = {}
+  fxRates = {},
+  centered = false,
+  showCommonCtaWhenCentered = true,
+  commonCtaPlanId = "gold"
 }) {
   const currencyForCountry = (code) => {
     if (!code) return "USD";
@@ -120,13 +123,20 @@ export default function PricingPackages({
   };
 
   const displayPackages = getDisplayPackages(geoCountryCode, fxRates);
+  const nameClass = "text-sm font-semibold uppercase tracking-[0.16em] text-slate-200/80";
+  const priceClass = ""; // prices hidden on home screen
+  const descClass = centered
+    ? "relative mt-3 text-[16px] md:text-lg text-slate-100/90 leading-snug font-bold"
+    : "relative mt-3 text-sm text-slate-100/85 md:text-base leading-snug";
 
   return (
     <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-5 shadow-[0_16px_70px_rgba(15,23,42,0.35)] backdrop-blur md:p-8 screen-panel">
       <div className="pointer-events-none absolute -left-20 top-0 h-48 w-48 rounded-full bg-indigo-500/10 blur-3xl" />
       <div className="pointer-events-none absolute -right-24 bottom-0 h-56 w-56 rounded-full bg-amber-400/10 blur-3xl" />
 
-      <div className="relative flex flex-col gap-1.5 text-center">
+      <div
+        className={`relative flex flex-col gap-1.5 ${centered ? "text-center items-center" : "text-left"}`}
+      >
         {showCrawlSuccess && (
           <div className="mx-auto mb-4 inline-flex items-center gap-2 rounded-full border border-emerald-200/60 bg-emerald-400/15 px-4 py-2 text-sm font-semibold text-emerald-100 shadow">
             <span className="h-2 w-2 rounded-full bg-emerald-300 shadow-[0_0_0_4px_rgba(74,222,128,0.25)]" />
@@ -144,27 +154,26 @@ export default function PricingPackages({
         </p>
       </div>
 
-      <div className="relative mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="relative mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4 justify-items-center">
         {displayPackages.map((pkg) => {
           const isGold = pkg.id === "gold";
           const card = (
             <div
               key={pkg.id}
-              className={`group relative flex flex-col overflow-hidden rounded-2xl border ${
+              className={`group relative flex w-full flex-col overflow-hidden rounded-2xl border ${
                 isGold ? "border-transparent bg-white/5 shadow-2xl" : "border-white/10 bg-white/5 shadow-lg"
               } p-5 transition duration-200 hover:-translate-y-1 hover:shadow-2xl`}
+              style={centered ? { textAlign: "left", alignItems: "flex-start" } : undefined}
             >
               <div
                 className={`absolute inset-0 bg-gradient-to-br ${pkg.accent} ${
                   isGold ? "opacity-20" : "opacity-0"
                 } transition group-hover:opacity-20`}
               />
-              <div className="relative flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-200/80">
-                    {pkg.name}
-                  </p>
-                  <p className="mt-2 text-3xl font-semibold text-white">{pkg.price}</p>
+              <div className={`relative flex w-full ${centered ? "flex-col items-start gap-2" : "items-center justify-between"}`}>
+                <div className={centered ? "flex flex-col items-start" : ""}>
+                  <p className={nameClass}>{pkg.name}</p>
+                  {priceClass && pkg.price ? <p className={priceClass}>{pkg.price}</p> : null}
                 </div>
                 {isGold && (
                   <span className="popular-badge">
@@ -173,31 +182,38 @@ export default function PricingPackages({
                 )}
               </div>
 
-              <p className="relative mt-3 text-sm text-slate-100/85">{pkg.description}</p>
+              <p className={descClass}>{pkg.description}</p>
 
-              <ul className="relative mt-4 space-y-2 text-sm text-slate-50/90">
+              <ul
+                className={`relative mt-4 space-y-2 text-sm text-slate-50/90 ${centered ? "w-full text-left" : ""}`}
+              >
                 {pkg.features.map((feature) => (
-                  <li key={feature} className="flex items-start gap-2">
+                  <li
+                    key={feature}
+                    className={`flex gap-2 ${centered ? "items-start justify-start" : "items-start"}`}
+                  >
                     <span className="mt-[6px] h-2 w-2 rounded-full bg-white/70" aria-hidden />
                     <span>{feature}</span>
                   </li>
                 ))}
               </ul>
 
-              <a
-                href={`${paymentBasePath}?plan=${pkg.id}`}
-                onClick={(e) => {
-                  e.preventDefault();
-                  handleSelect(pkg.id);
-                }}
-                className={`relative mt-6 inline-flex items-center justify-center rounded-full px-4 py-2 text-sm font-semibold transition hover:scale-[1.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${
-                  isGold
-                    ? "bg-amber-300 text-amber-950 focus-visible:ring-amber-400"
-                    : "bg-white text-slate-900 focus-visible:ring-indigo-500"
-                }`}
-              >
-                Get started
-              </a>
+              {!centered && (
+                <a
+                  href={`${paymentBasePath}?plan=${pkg.id}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleSelect(pkg.id);
+                  }}
+                  className={`relative mt-6 inline-flex items-center justify-center rounded-full px-4 py-2 text-sm font-semibold transition hover:scale-[1.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${
+                    isGold
+                      ? "bg-amber-300 text-amber-950 focus-visible:ring-amber-400"
+                      : "bg-white text-slate-900 focus-visible:ring-indigo-500"
+                  }`}
+                >
+                  Get started
+                </a>
+              )}
             </div>
           );
 
@@ -219,6 +235,17 @@ export default function PricingPackages({
           );
         })}
       </div>
+      {centered && showCommonCtaWhenCentered && (
+        <div className="mt-6 flex justify-center">
+          <button
+            type="button"
+            className="inline-flex items-center justify-center rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-slate-900 shadow transition hover:scale-[1.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-indigo-500"
+            onClick={() => handleSelect(commonCtaPlanId || displayPackages?.[0]?.id || "gold")}
+          >
+            Get started
+          </button>
+        </div>
+      )}
     </section>
   );
 }

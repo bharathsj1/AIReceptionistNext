@@ -51,3 +51,44 @@ Connect Meta (Facebook + Instagram):
 Connect WhatsApp (MVP manual):
 1. Gather `phone_number_id`, `waba_id`, and a permanent token from Meta Cloud API.
 2. Submit the manual form in Social -> Connect.
+
+---
+
+## SmartConnect4u Chat Widget + /api/chat endpoint
+
+### What ships
+- Floating chat widget in the web app (Vite/React) with streaming responses, localStorage session, glassy UI, and “New conversation” reset.
+- Azure Function `POST /api/chat` that streams OpenAI responses, persists messages to Azure Table Storage, applies basic prompt-injection guard, and rate limits by IP.
+
+### Environment variables
+- `OPENAI_API_KEY` (required)
+- `OPENAI_MODEL` (default `gpt-4.1-mini`)
+- `CHAT_SYSTEM_PROMPT` (system instructions for the assistant)
+- `CHAT_FAQ_TEXT` (optional FAQ/KB blob appended as system context)
+- `CHAT_TABLE` (optional, defaults to `ChatConversations`)
+- `CHAT_MAX_MESSAGE_LENGTH` (default `1500`)
+- `CHAT_MAX_CONTEXT_MESSAGES` (default `12`)
+- `CHAT_RATE_LIMIT_TOKENS` (default `6` requests)
+- `CHAT_RATE_LIMIT_WINDOW_SEC` (default `60`)
+- `ALLOWED_ORIGINS` (comma-separated origins for CORS; falls back to `CORS_ALLOWED_ORIGINS`)
+- Frontend: `VITE_API_PROXY_BASE` (prod API base, e.g., `https://<func-app>.azurewebsites.net/api`), `VITE_FUNCTION_HOST` (local Azure Functions host, default `http://localhost:7071`)
+
+### Local development
+1) Backend  
+   - `cd ai-receptionist-func`  
+   - Ensure `python -m venv .venv && source .venv/bin/activate` (or Windows equivalent)  
+   - `pip install -r requirements.txt`  
+   - Set envs in `local.settings.json` (`OPENAI_API_KEY`, `CHAT_SYSTEM_PROMPT`, `ALLOWED_ORIGINS=http://localhost:5173`, optional `CHAT_FAQ_TEXT`)  
+   - Run: `func host start`
+2) Frontend  
+   - `cd AIReceptionNewUI`  
+   - `npm install` (if not already)  
+   - `npm run dev` (Vite dev server on 5173; proxy target from `VITE_FUNCTION_HOST`)  
+   - Open http://localhost:5173 and click the launcher bottom-right to chat.
+
+### Production checklist
+- Deploy the Functions app with the env vars above and Azure Table Storage connection string (`AZURE_STORAGE_CONNECTION_STRING`) set.  
+- Confirm the table `ChatConversations` is created automatically on first write.  
+- Configure CORS origins (`ALLOWED_ORIGINS`) to your domains.  
+- Build and deploy the Vite frontend (`npm run build`) and ensure it calls the deployed `/api/chat`.  
+- Verify streaming works via browser DevTools (Network -> chat -> Preview should stream).

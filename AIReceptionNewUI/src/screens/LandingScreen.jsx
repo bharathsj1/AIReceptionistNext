@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import CapabilitiesSection from "../components/CapabilitiesSection";
-// PricingPackages removed from home screen
+import PricingPackages from "../components/PricingPackages";
+import FloatingReviews from "../components/feedback/FloatingReviews";
+import Footer from "../components/Footer";
+import MagicBento from "../components/MagicBento";
 
 const HERO_ROTATING_WORDS = [
   { word: "Reception", gradient: "linear-gradient(120deg, #f97316, #facc15)" },
@@ -12,7 +15,7 @@ const HERO_ROTATING_WORDS = [
 const HERO_ROTATE_INTERVAL_MS = 2000;
 const HERO_FADE_MS = 300;
 
-export default function LandingScreen({ onTry, onLogin, onSelectPlan, onShowService }) {
+export default function LandingScreen({ onTry, onLogin, onSelectPlan, onShowService, geoCountryCode, fxRates }) {
   const navItems = useMemo(
     () => [
       { id: "capabilities", label: "Capabilities" },
@@ -213,44 +216,48 @@ export default function LandingScreen({ onTry, onLogin, onSelectPlan, onShowServ
       </section>
 
       <section className="content content-landing capability-shell">
-        <div className="cap-nav-shell">
-          <button
-            className="cap-nav-toggle"
-            type="button"
-            aria-expanded={capNavOpen}
-            aria-controls="cap-nav-menu"
-            onClick={() => setCapNavOpen((prev) => !prev)}
-          >
-            <span>Sections</span>
-            <span className="cap-nav-toggle-icon" aria-hidden>☰</span>
-          </button>
-          <div className={`cap-nav ${capNavOpen ? "is-open" : ""}`.trim()} id="cap-nav-menu">
-            {navItems.map((item, idx) => (
-              <a
-                key={item.id}
-                className={`cap-link ${activeNavId === item.id ? "is-active" : ""}`.trim()}
-                href={`#${item.id}`}
-                onClick={() => {
-                  setActiveNavId(item.id);
-                  setCapNavOpen(false);
-                }}
-                aria-current={activeNavId === item.id ? "true" : undefined}
-              >
-                <span className="cap-index">{String(idx + 1).padStart(2, "0")}</span> {item.label}
-              </a>
-            ))}
-          </div>
-        </div>
+        {/* Side navigation removed */}
 
         <div className="cap-content">
           <div id="capabilities" className="cap-capabilities">
             <CapabilitiesSection />
           </div>
+
+          <section className="cap-card ai-reception-preview">
+            <div className="ai-reception-text">
+              <div className="promo-pill">
+                <span className="promo-pill__dot" />
+                AI Receptionist
+              </div>
+              <h2>Always-on receptionist for every channel</h2>
+              <p className="lead narrow">
+                Capture calls, chats, and DMs instantly with a branded AI receptionist that books, routes, and responds 24/7.
+              </p>
+              <button
+                type="button"
+                className="promo-cta"
+                onClick={() => onShowService?.("receptionist")}
+              >
+                Try AI Receptionist
+              </button>
+            </div>
+            <div className="ai-reception-media">
+              <video
+                className="ai-reception-video"
+                src="/AIReceptionist.mp4"
+                autoPlay
+                loop
+                muted
+                playsInline
+              />
+            </div>
+          </section>
+
           <section className="cap-card promo-card">
             <div className="promo-media">
               <video
                 className="promo-media__video"
-                src="/social_media_1.mp4"
+                src="/socialMedia.mp4"
                 autoPlay
                 loop
                 muted
@@ -260,93 +267,48 @@ export default function LandingScreen({ onTry, onLogin, onSelectPlan, onShowServ
             <div className="promo-copy">
               <div className="promo-pill">
                 <span className="promo-pill__dot" />
-                Omnichannel Inbox
+                Social Media Manager
               </div>
               <h2>Chats, calls and emails in one thread</h2>
               <p>
                 SmartConnect4u unifies WhatsApp Business Calls, Messenger Calls and VoIP in the same thread as your
-                messages and emails.
+                messages and emails while the Social Media Manager keeps posts, replies, and DMs flowing without extra effort.
               </p>
               <p>
-                No more silos or juggling multiple platforms; just one reliable record for every customer, no matter
+                No more silos or juggling multiple platforms; Social Media Manager + Omnichannel Inbox give you one reliable record for every customer, no matter
                 the channel.
               </p>
-              <button type="button" className="promo-cta">See offer</button>
             </div>
           </section>
 
-          <section id="technology" className="cap-card tech-shell">
-            <div className="cap-card-head">
-              <span className="cap-dot" aria-hidden />
-              <span className="cap-card-label">TECHNOLOGY</span>
-            </div>
-            <h2 style={{ marginBottom: 8 }}>Built to be fast, safe, and human-friendly</h2>
-            <p className="lead narrow" style={{ marginTop: 4, color: "#cfd9f6" }}>
-              Reliability, security, and expert support so you can scale confidently.
-            </p>
-            <div className="tech-grid">
-              {[
-                {
-                  title: "Designed for growth",
-                  body:
-                    "Quickest ROI with a roadmap shaped by you to scale revenue across the customer lifecycle—you'll grow with us, not outgrow us.",
-                  iconClass: "tech-icon tech-icon--bars"
-                },
-                {
-                  title: "Reliability at scale",
-                  body:
-                    "Best-in-class tech and enterprise-grade security for speed and stability, with 99.999% uptime under high chat volumes.",
-                  iconClass: "tech-icon tech-icon--gem"
-                },
-                {
-                  title: "Leading with experience",
-                  body:
-                    "Battle-tested customer conversations platform with years of market leadership and trusted by top platforms.",
-                  iconClass: "tech-icon tech-icon--globe"
-                },
-                {
-                  title: "Support you can trust",
-                  body:
-                    "Top-rated human support and expert guidance at every stage to help you scale confidently and achieve ambitious goals.",
-                  iconClass: "tech-icon tech-icon--stack"
-                }
-              ].map((item) => (
-                <div key={item.title} className="tech-card">
-                  <div className={item.iconClass} aria-hidden />
-                  <h3>{item.title}</h3>
-                  <p>{item.body}</p>
+          {/* Technology section removed */}
+
+          <section className="cap-card magic-bento-shell">
+            <MagicBento />
+          </section>
+
+          {[{
+            id: "pricing",
+            title: "Pricing that scales with you",
+            body:
+              "Start fast and scale usage as you grow with clear plans and ROI tracking so you always see the value.",
+            cta: "Check pricing"
+          }].map((section, idx) =>
+            <article
+              key={section.id}
+              id={section.id}
+              className={`cap-card ${section.id === "pricing" ? "cap-card--centered" : ""}`.trim()}
+            >
+              {section.id === "pricing" && (
+                <div className="pricing-home-block">
+                  <PricingPackages
+                    onSelectPackage={(id) => onSelectPlan?.(id, { source: "landing" })}
+                    centered
+                    geoCountryCode={geoCountryCode}
+                    fxRates={fxRates}
+                  />
                 </div>
-              ))}
-            </div>
-          </section>
-
-          {[
-            {
-              id: "ai-team",
-              title: "Your AI team on speed dial",
-              body:
-                "Work with specialists who tune prompts, evaluate outputs, and continuously improve performance for your business.",
-              cta: "Meet the team"
-            },
-            {
-              id: "pricing",
-              title: "Pricing that scales with you",
-              body:
-                "Start fast and scale usage as you grow with clear plans and ROI tracking so you always see the value.",
-              cta: "Check pricing"
-            }
-          ].map((section, idx) =>
-            <article key={section.id} id={section.id} className="cap-card">
-              <div className="cap-card-head">
-                <span className="cap-dot" aria-hidden />
-                <span className="cap-card-label">{section.id.replace("-", " ").toUpperCase()}</span>
-              </div>
-                <h2>{section.title}</h2>
-                <p className="lead narrow" style={{ marginTop: 10 }}>{section.body}</p>
-              <div className="cap-foot">
-                <span className="cap-step">{String(idx + 2).padStart(2, "0")}</span>
-                <button className="ghost small" type="button">{section.cta}</button>
-              </div>
+              )}
             </article>
           )}
 
@@ -360,42 +322,12 @@ export default function LandingScreen({ onTry, onLogin, onSelectPlan, onShowServ
               Owners and teams share how SmartConnect4u AI products reduced overhead, lifted response rates, and
               kept pipelines moving with always-on support.
             </p>
-            <div className="testimonial-showcase">
-              <div className="testimonial-panel">
-                <div className="testimonial-panel-head">
-                  <div>
-                    <h3>{activeTestimonial.name}</h3>
-                    <p>{activeTestimonial.role}</p>
-                  </div>
-                  <span className="testimonial-tag">{activeTestimonial.focus}</span>
-                </div>
-                <p className="testimonial-quote">“{activeTestimonial.quote}”</p>
-                <div className="testimonial-controls">
-                  <button className="nav-dot" type="button" onClick={handlePrevTestimonial} aria-label="Previous testimonial">
-                    ←
-                  </button>
-                  <span className="testimonial-count">
-                    {String(testimonialIndex + 1).padStart(2, "0")} / {String(testimonials.length).padStart(2, "0")}
-                  </span>
-                  <button className="nav-dot" type="button" onClick={handleNextTestimonial} aria-label="Next testimonial">
-                    →
-                  </button>
-                </div>
-              </div>
-            </div>
+            <FloatingReviews />
           </section>
         </div>
       </section>
 
-      <footer className="landing-footer content content-landing">
-        <a className="landing-footer-link" href="/terms.html">
-          Terms &amp; Conditions
-        </a>
-        <a className="landing-footer-link" href="/privacy.html">
-          Privacy Policy
-        </a>
-        <a className="landing-footer-link" href="/contact.html">Contact</a>
-      </footer>
+      <Footer />
 
       {/* Package plans removed from home screen */}
     </>

@@ -107,7 +107,8 @@ export const API_URLS = {
   socialSchedule: apiUrl("social/posts/schedule"),
   socialScheduledPosts: apiUrl("social/posts/scheduled"),
   socialXConnect: apiUrl("social/x/connect"),
-  socialAICaption: apiUrl("social/ai/caption")
+  socialAICaption: apiUrl("social/ai/caption"),
+  chat: apiUrl("chat")
 };
 
 

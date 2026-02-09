@@ -8,7 +8,8 @@ import azure.functions as func
 # Accept both legacy Azure settings (CORS/CORSCredentials) and the newer CORS_ORIGIN flag.
 def _raw_origins() -> str:
     return (
-        os.getenv("CORS")
+        os.getenv("ALLOWED_ORIGINS")
+        or os.getenv("CORS")
         or os.getenv("CORS_ORIGIN")
         or os.getenv("CORS_ALLOWED_ORIGINS")
         or "http://localhost:5173"
@@ -82,9 +83,10 @@ def build_cors_headers(req: func.HttpRequest, allowed_methods: Iterable[str]) ->
         # When credentials are allowed, echo the caller's origin instead of "*".
         headers.update(
             {
-                "Access-Control-Allow-Origin": origin if ALLOW_CREDENTIALS and origin else ("*" if allow_all else origin),
+                "Access-Control-Allow-Origin": origin if (ALLOW_CREDENTIALS and origin) else ("*" if allow_all else (origin or "*")),
                 "Access-Control-Allow-Methods": ", ".join(methods_list),
                 "Access-Control-Allow-Headers": "Content-Type, Authorization",
+                "Access-Control-Expose-Headers": "X-Conversation-Id",
             }
         )
         if ALLOW_CREDENTIALS:
