@@ -1,8 +1,8 @@
 import React from "react";
 
 const cards = [
-  { title: "Insights", subtitle: "Analytics", desc: "Track user behavior", stat: "1k+", statLabel: "Trusted by users" },
-  { title: "Overview", subtitle: "Dashboard", desc: "Centralized data view", stat: "65%", statLabel: "Wait time reduction" },
+  { title: "Insights", subtitle: "", desc: "Conversion rate with AI Agents", stat: "81%", statLabel: "" },
+  { title: "Overview", subtitle: "", desc: "", stat: "65%", statLabel: "Wait time reduction" },
   {
     title: "Teamwork",
     subtitle: "Collaboration",

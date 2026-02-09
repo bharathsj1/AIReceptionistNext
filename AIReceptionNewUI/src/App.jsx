@@ -24,6 +24,7 @@ import BusinessDetailsScreen from "./screens/BusinessDetailsScreen";
 import BusinessTypeScreen from "./screens/BusinessTypeScreen";
 import ProjectsScreen from "./screens/ProjectsScreen";
 import BusinessReviewScreen from "./screens/BusinessReviewScreen";
+import ChatWidget from "./components/chat/ChatWidget";
 
 const STAGES = {
   LANDING: "landing",
@@ -198,6 +199,7 @@ export default function App() {
   const [twilioAssignedNumber, setTwilioAssignedNumber] = useState("");
   const [selectedTwilioNumber, setSelectedTwilioNumber] = useState("");
   const [detectedCountry, setDetectedCountry] = useState("");
+  const [isMobile, setIsMobile] = useState(false);
   const [serviceSlug, setServiceSlug] = useState("receptionist");
   const validStages = useMemo(() => new Set(Object.values(STAGES)), []);
   const [bookingSettings, setBookingSettings] = useState({
@@ -273,6 +275,10 @@ export default function App() {
         setCountryName(data?.country_name || null);
       } catch (err) {
         console.warn("Unable to fetch geo location", err);
+        if (!cancelled) {
+          setCountryCode((prev) => prev || "GB");
+          setCountryName((prev) => prev || "United Kingdom");
+        }
       }
     };
     fetchGeo();
@@ -2547,6 +2553,13 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const updateMobile = () => setIsMobile(typeof window !== "undefined" && window.innerWidth <= 768);
+    updateMobile();
+    window.addEventListener("resize", updateMobile);
+    return () => window.removeEventListener("resize", updateMobile);
+  }, []);
+
+  useEffect(() => {
     if (!validStages.has(stage)) {
       setStage(STAGES.LANDING);
       return;
@@ -2787,8 +2800,10 @@ export default function App() {
                 aria-label={`Detected location: ${countryName || "Detecting location"}`}
                 title={countryName || "Detecting location"}
               >
-                <span className="nav-geo-flag" aria-hidden>{countryCodeToFlag(countryCode)}</span>
-                <span className="nav-geo-label">{countryName || "Detecting..."}</span>
+                <span className="nav-geo-flag" aria-hidden>
+                  {countryCodeToFlag(countryCode || "GB")}
+                </span>
+                {!isMobile && <span className="nav-geo-label">{countryName || "Detecting..."}</span>}
               </div>
               <button className="login-cta" onClick={() => setStage(STAGES.LOGIN)}>
                 <span aria-hidden>→</span>
@@ -3105,6 +3120,7 @@ export default function App() {
             />
           </div>
         )}
+        <ChatWidget />
         </main>
       </div>
     </div>

@@ -33,3 +33,4 @@ import tasks_reject  # noqa
 import tasks_stream  # noqa
 import tasks_changes  # noqa
 import contact_message_endpoints  # noqa
+import chat  # noqa
