@@ -183,7 +183,6 @@ const ChatWidget: React.FC = () => {
             <div className="chat-header-left">
               <div className="chat-avatar">S4U</div>
               <div className="chat-title">
-                <div className="chat-title-text">SmartConnect4u Assistant</div>
                 <div className="chat-subtitle">
                   <StatusDot status={status} /> {status === "online" ? "Online" : "Idle"}
                 </div>
@@ -191,7 +190,7 @@ const ChatWidget: React.FC = () => {
             </div>
             <div className="chat-header-actions">
               <button type="button" className="chat-secondary-btn" onClick={handleNewConversation}>
-                New conversation
+                New chat
               </button>
               <button type="button" className="chat-icon-btn" onClick={toggleOpen} aria-label="Close chat">
                 ✕
