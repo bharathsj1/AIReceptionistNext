@@ -107,7 +107,7 @@ def _load_messages(conversation_id: str, limit: int) -> List[dict]:
     safe_conv = conversation_id.replace("'", "''")
     filter_expr = f"PartitionKey eq '{safe_conv}'"
     try:
-        entities = list(table_client.query_entities(filter=filter_expr))
+        entities = list(table_client.query_entities(query_filter=filter_expr))
         entities.sort(key=lambda item: item.get("RowKey", ""))
         return [
             {"role": entity.get("role", "assistant"), "content": entity.get("content", "")}
@@ -151,41 +151,21 @@ def _build_messages(history: List[dict], user_message: str) -> List[dict]:
     return messages
 
 
-def _openai_stream(messages: List[dict]) -> Iterable[str]:
+def _openai_complete(messages: List[dict]) -> str:
     headers = {
         "Authorization": f"Bearer {OPENAI_API_KEY}",
         "Content-Type": "application/json",
     }
-    payload = {
-        "model": OPENAI_MODEL,
-        "messages": messages,
-        "stream": True,
-        "temperature": 0.4,
-    }
+    payload = {"model": OPENAI_MODEL, "messages": messages, "temperature": 0.4}
     timeout = httpx.Timeout(
         timeout=None, connect=OPENAI_CONNECT_TIMEOUT, read=OPENAI_READ_TIMEOUT, write=30, pool=OPENAI_CONNECT_TIMEOUT
     )
     with httpx.Client(timeout=timeout) as client:
-        with client.stream("POST", "https://api.openai.com/v1/chat/completions", headers=headers, json=payload) as res:
-            if res.status_code >= 400:
-                detail = res.text
-                raise RuntimeError(f"OpenAI error {res.status_code}: {detail}")
-            for line in res.iter_lines():
-                if not line:
-                    continue
-                text_line = line.decode() if isinstance(line, (bytes, bytearray)) else line
-                if text_line.startswith("data:"):
-                    text_line = text_line.replace("data:", "", 1).strip()
-                if not text_line or text_line == "[DONE]":
-                    continue
-                try:
-                    payload = json.loads(text_line)
-                    delta = payload.get("choices", [{}])[0].get("delta", {})
-                    content = delta.get("content")
-                    if content:
-                        yield content
-                except Exception:
-                    continue
+        res = client.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
+        if res.status_code >= 400:
+            raise RuntimeError(f"OpenAI error {res.status_code}: {res.text}")
+        data = res.json()
+        return data.get("choices", [{}])[0].get("message", {}).get("content", "") or ""
 
 
 def _cors(req: func.HttpRequest) -> Dict[str, str]:
@@ -264,30 +244,28 @@ def chat(req: func.HttpRequest) -> func.HttpResponse:
     _save_message(conversation_id, "user", user_message, page_url)
 
     if not OPENAI_API_KEY:
+        offline_msg = "The assistant is offline right now. Please try again in a moment."
+        _save_message(conversation_id, "assistant", offline_msg, page_url)
         return func.HttpResponse(
-            json.dumps({"error": "OPENAI_API_KEY not configured", "requestId": request_id}),
-            status_code=500,
-            headers={**response_headers, "Content-Type": "application/json"},
+            offline_msg,
+            status_code=200,
+            headers={**response_headers, "Content-Type": "text/plain; charset=utf-8"},
         )
 
-    def stream_body() -> Generator[str, None, None]:
-        assistant_text = ""
-        try:
-            for token in _openai_stream(_build_messages(history, user_message)):
-                assistant_text += token
-                yield token
-        except Exception as exc:  # pylint: disable=broad-except
-            logger.warning(
-                "Chat stream failed",
-                extra={"conversationId": conversation_id, "requestId": request_id, "error": str(exc)},
-            )
-            yield "\nSorry, something went wrong. Please try again."
-        finally:
-            if assistant_text:
-                _save_message(conversation_id, "assistant", assistant_text, page_url)
+    assistant_text = ""
+    try:
+        assistant_text = _openai_complete(_build_messages(history, user_message))
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.warning(
+            "Chat completion failed",
+            extra={"conversationId": conversation_id, "requestId": request_id, "error": str(exc)},
+        )
+        assistant_text = "Sorry, something went wrong. Please try again."
+    if assistant_text:
+        _save_message(conversation_id, "assistant", assistant_text, page_url)
 
     return func.HttpResponse(
-        body=stream_body(),
+        body=assistant_text,
         status_code=200,
-        headers={**response_headers, "Content-Type": "text/plain; charset=utf-8", "Transfer-Encoding": "chunked"},
+        headers={**response_headers, "Content-Type": "text/plain; charset=utf-8"},
     )
