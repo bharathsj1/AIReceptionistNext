@@ -6,7 +6,7 @@ import os
 import time
 from datetime import datetime, timezone
 from threading import Lock
-from typing import Dict, Generator, Iterable, List
+from typing import Dict, List
 from uuid import uuid4
 
 import azure.functions as func
@@ -247,12 +247,11 @@ def chat(req: func.HttpRequest) -> func.HttpResponse:
         offline_msg = "The assistant is offline right now. Please try again in a moment."
         _save_message(conversation_id, "assistant", offline_msg, page_url)
         return func.HttpResponse(
-            offline_msg,
+            body=offline_msg,
             status_code=200,
             headers={**response_headers, "Content-Type": "text/plain; charset=utf-8"},
         )
 
-    assistant_text = ""
     try:
         assistant_text = _openai_complete(_build_messages(history, user_message))
     except Exception as exc:  # pylint: disable=broad-except
@@ -264,6 +263,7 @@ def chat(req: func.HttpRequest) -> func.HttpResponse:
     if assistant_text:
         _save_message(conversation_id, "assistant", assistant_text, page_url)
 
+    # Return plain string (no generators) to satisfy Azure Functions Python worker
     return func.HttpResponse(
         body=assistant_text,
         status_code=200,
