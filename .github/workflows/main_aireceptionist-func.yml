@@ -42,34 +42,34 @@ jobs:
           name: python-app
           path: release.zip
 
-  deploy:
-    runs-on: ubuntu-latest
-    needs: build
-    permissions:
-      id-token: write
-      contents: read
+      deploy:
+      runs-on: ubuntu-latest
+      needs: build
+      permissions:
+        id-token: write
+        contents: read
+  
+      steps:
+        - name: Download artifact
+          uses: actions/download-artifact@v4
+          with:
+            name: python-app
+  
+        - name: List contents (debug)
+          run: ls -l .
+  
+        - name: Login to Azure
+          uses: azure/login@v2
+          with:
+            client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_2FFFCADF99574FB59B9BF9603D8AE7B9 }}
+            tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_14042EF8FB5045AAB6D55F5E8517E878 }}
+            subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_9F33AF52B31C4241A9234F47F9D339E4 }}
+  
+        - name: Deploy to Azure Functions
+          uses: Azure/functions-action@v1
+          with:
+            app-name: aireceptionist-func
+            slot-name: Production
+            package: release.zip
 
-    steps:
-      - name: Download artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: python-app
 
-      - name: Unzip artifact
-        run: |
-          unzip release.zip
-          rm release.zip
-
-      - name: Login to Azure
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_2FFFCADF99574FB59B9BF9603D8AE7B9 }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_14042EF8FB5045AAB6D55F5E8517E878 }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_9F33AF52B31C4241A9234F47F9D339E4 }}
-
-      - name: Deploy to Azure Functions
-        uses: Azure/functions-action@v1
-        with:
-          app-name: aireceptionist-func
-          slot-name: Production
-          package: release.zip
