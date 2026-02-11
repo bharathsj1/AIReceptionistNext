@@ -19,9 +19,10 @@ const devJitsiHost = (import.meta.env.VITE_JITSI_FUNCTION_HOST || "http://localh
   ""
 );
 const devJitsiApiBase = `${devJitsiHost}/api`;
+const prodJitsiDefault = "https://smartconnect4u-jitsi-eugahzaha5hcdefa.westeurope-01.azurewebsites.net/api";
 const JITSI_API_BASE = import.meta.env.DEV
   ? rawJitsiBase || devJitsiApiBase
-  : rawJitsiBase || devJitsiApiBase;
+  : rawJitsiBase || prodJitsiDefault;
 
 export { JITSI_API_BASE };
 export const jitsiApiUrl = (path) =>
