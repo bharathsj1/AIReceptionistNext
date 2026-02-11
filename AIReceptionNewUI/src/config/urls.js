@@ -11,6 +11,22 @@ const isAzureHost =
   typeof rawApiBase === "string" &&
   rawApiBase.toLowerCase().includes("azurewebsites.net");
 
+// Dedicated Jitsi/meetings function app base
+const rawJitsiBase =
+  import.meta.env.VITE_JITSI_API_BASE || import.meta.env.NEXT_PUBLIC_JITSI_API_BASE;
+const devJitsiHost = (import.meta.env.VITE_JITSI_FUNCTION_HOST || "http://localhost:7072").replace(
+  /\/$/,
+  ""
+);
+const devJitsiApiBase = `${devJitsiHost}/api`;
+const JITSI_API_BASE = import.meta.env.DEV
+  ? rawJitsiBase || devJitsiApiBase
+  : rawJitsiBase || devJitsiApiBase;
+
+export { JITSI_API_BASE };
+export const jitsiApiUrl = (path) =>
+  `${JITSI_API_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
+
 export const API_PROXY_BASE = import.meta.env.DEV
   ? rawApiBase && !isAzureHost
     ? rawApiBase
@@ -20,6 +36,14 @@ export const apiUrl = (path) =>
   `${API_PROXY_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
 
 export const API_URLS = {
+  // Jitsi meetings app (new function app)
+  jitsiMeetings: jitsiApiUrl("meetings"),
+  jitsiMeeting: (id) => jitsiApiUrl(`meetings/${id}`),
+  jitsiMeetingAudio: (id) => jitsiApiUrl(`meetings/${id}/audio`),
+  jitsiMeetingArtifacts: (id) => jitsiApiUrl(`meetings/${id}/artifacts`),
+  jitsiMeetingSummarize: (id) => jitsiApiUrl(`meetings/${id}/summarize`),
+  jitsiMeetingTasks: (id) => jitsiApiUrl(`meetings/${id}/tasks`),
+
   crawlKnowledgeBase: apiUrl("crawl-kb"),
   businessProfile: apiUrl("business-profile"),
   ultravoxPrompt: apiUrl("ultravox/prompt"),

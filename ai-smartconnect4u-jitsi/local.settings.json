@@ -1,0 +1,16 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "AzureWebJobsStorage": "DefaultEndpointsProtocol=https;AccountName=smartconnect4u;AccountKey=+rRQ8JG/hWkbmnwlZ+N7QTI32cBId3wNaVCW3hT3XG0MIdxvqADr/Q/03U+C6f7LVJzDVs56T4Mg+AStQWfm0w==;EndpointSuffix=core.windows.net",
+    "TEMP_AUDIO_CONTAINER": "meeting-audio-temp",
+    "PROCESSING_QUEUE_NAME": "meeting-audio-jobs",
+    "OPENAI_API_KEY": "",
+    "OPENAI_MODEL_TRANSCRIBE": "whisper-1",
+    "OPENAI_MODEL_SUMMARIZE": "gpt-4o-mini",
+    "CORS": "http://localhost:5173,http://localhost:5174,http://localhost:3000",
+    "CORS_ALLOW_CREDENTIALS": "true",
+    "AZURE_STORAGE_CONNECTION_STRING": "DefaultEndpointsProtocol=https;AccountName=smartconnect4u;AccountKey=+rRQ8JG/hWkbmnwlZ+N7QTI32cBId3wNaVCW3hT3XG0MIdxvqADr/Q/03U+C6f7LVJzDVs56T4Mg+AStQWfm0w==;EndpointSuffix=core.windows.net"
+
+  }
+}
