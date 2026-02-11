@@ -1,0 +1,7 @@
+azure-functions
+azure-data-tables
+azure-storage-blob
+azure-storage-queue
+openai>=1.12.0
+requests
+python-dotenv
