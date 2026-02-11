@@ -52,7 +52,6 @@ import TaskBoard from "./tasks/TaskBoard";
 import TaskManagerScreen from "./TaskManagerScreen";
 import ContactsScreen from "./ContactsScreen";
 import { createTaskManagerItem } from "../lib/api/taskManager";
-import MeetingsScreen from "./meetings/MeetingsScreen";
 
 const resolveFeatureFlag = (value) => {
   if (value === undefined || value === null) return false;
@@ -3133,13 +3132,6 @@ export default function DashboardScreen({
       copy: "Route, transcribe, and analyze every customer conversation."
     },
     {
-      id: "meetings",
-      label: "Meetings",
-      eyebrow: "Jitsi + AI",
-      icon: CalendarClock,
-      copy: "Schedule, join, record, and summarize meetings with AI tasks."
-    },
-    {
       id: "email_manager",
       label: "Email Manager",
       eyebrow: "Email",
@@ -3208,7 +3200,6 @@ export default function DashboardScreen({
     if (toolId === "dashboard_analytics") return false;
     if (toolId === "task_manager") return false;
     if (toolId === "contacts") return false;
-    if (toolId === "meetings" && anyActiveSubscription) return false; // unlock Jitsi/Meetings for any plan
     const entry = toolSubscriptions?.[toolId];
     if (entry && typeof entry.active === "boolean") return !entry.active;
     if (subscriptionsLoading) return false;
@@ -5030,20 +5021,6 @@ export default function DashboardScreen({
             email={user?.email}
             businessName={clientData?.business_name || clientData?.name}
           />
-        )}
-
-        {currentTool === "meetings" && (
-          <ToolGate
-            locked={activeToolLocked}
-            loading={subscriptionsLoading}
-            message="Subscribe to Meetings to unlock AI summaries."
-          >
-            <MeetingsScreen
-              tenantId={clientData?.id || clientData?.client_id || user?.id}
-              userId={user?.id}
-              userEmail={user?.email}
-            />
-          </ToolGate>
         )}
 
         {currentTool === "contacts" && (
