@@ -101,7 +101,7 @@ def create_meeting(
 def list_meetings(*, tenant_id: str, limit: int = 50) -> List[Dict[str, Any]]:
     client = _table_client(MEETINGS_TABLE)
     filter_expr = f"PartitionKey eq '{tenant_id}'"
-    items = list(client.query_entities(filter=filter_expr))
+    items = list(client.query_entities(query_filter=filter_expr))
     items.sort(key=lambda e: e.get("createdAt", "") or e.get("scheduledFor", ""), reverse=True)
     return items[:limit]
 
@@ -129,7 +129,7 @@ def find_meeting_by_id(meeting_id: str) -> Optional[Tuple[str, Dict[str, Any]]]:
     """Lookup a meeting by RowKey across partitions for public endpoints."""
     client = _table_client(MEETINGS_TABLE)
     try:
-        results = list(client.query_entities(filter=f"RowKey eq '{meeting_id}'"))
+        results = list(client.query_entities(query_filter=f"RowKey eq '{meeting_id}'"))
         if not results:
             return None
         entity = results[0]
