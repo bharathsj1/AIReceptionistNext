@@ -24,6 +24,7 @@ import BusinessDetailsScreen from "./screens/BusinessDetailsScreen";
 import BusinessTypeScreen from "./screens/BusinessTypeScreen";
 import ProjectsScreen from "./screens/ProjectsScreen";
 import BusinessReviewScreen from "./screens/BusinessReviewScreen";
+import PublicMeetingScreen from "./screens/PublicMeetingScreen";
 import ChatWidget from "./components/chat/ChatWidget";
 
 const STAGES = {
@@ -45,7 +46,8 @@ const STAGES = {
   BUSINESS_TYPE: "businessType",
   BUSINESS_INFO_MANUAL: "businessInfoManual",
   BUSINESS_INFO_REVIEW: "businessInfoReview",
-  PROJECTS: "projects"
+  PROJECTS: "projects",
+  PUBLIC_MEETING: "publicMeeting"
 };
 const ALLOWED_STAGE_VALUES = new Set(Object.values(STAGES));
 const TOOL_IDS = {
@@ -202,6 +204,7 @@ export default function App() {
   const [isMobile, setIsMobile] = useState(false);
   const [serviceSlug, setServiceSlug] = useState("receptionist");
   const validStages = useMemo(() => new Set(Object.values(STAGES)), []);
+  const [publicMeetingId, setPublicMeetingId] = useState(null);
   const [bookingSettings, setBookingSettings] = useState({
     booking_enabled: false,
     booking_duration_minutes: 30,
@@ -1226,6 +1229,11 @@ export default function App() {
     showHeader ? " page-content-with-header" : ""
   }`;
   const contentClassName = `content${isLandingStage ? " content-landing" : ""}${isDashboardStage ? " content-wide" : ""}`;
+
+  // Public meeting rendering bypasses the rest of the app shell
+  if (stage === STAGES.PUBLIC_MEETING) {
+    return <PublicMeetingScreen meetingId={publicMeetingId} />;
+  }
 
   const handleEmailSubmit = async (event) => {
     event.preventDefault();
@@ -2709,6 +2717,16 @@ export default function App() {
 
   useEffect(() => {
     // handled via Lenis scroll listener above
+  }, []);
+
+  // Public meeting deep link: /meet/{id}
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const match = window.location.pathname.match(/^\/meet\/([^/]+)/);
+    if (match && match[1]) {
+      setPublicMeetingId(match[1]);
+      setStage(STAGES.PUBLIC_MEETING);
+    }
   }, []);
 
   useEffect(() => {

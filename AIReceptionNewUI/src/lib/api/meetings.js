@@ -17,11 +17,19 @@ export async function listMeetings({ tenantId, userId, email }) {
   return payload?.meetings || [];
 }
 
-export async function createMeeting({ tenantId, userId, email, title, scheduledFor, publicJoin }) {
+export async function createMeeting({
+  tenantId,
+  userId,
+  email,
+  title,
+  scheduledFor,
+  publicJoin,
+  metadata,
+}) {
   const res = await fetch(API_URLS.jitsiMeetings, {
     method: "POST",
     headers: defaultHeaders(tenantId, userId, email),
-    body: JSON.stringify({ title, scheduledFor, publicJoin }),
+    body: JSON.stringify({ title, scheduledFor, publicJoin, metadata }),
   });
   const payload = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(payload?.error || "Failed to create meeting");
@@ -29,7 +37,8 @@ export async function createMeeting({ tenantId, userId, email, title, scheduledF
 }
 
 export async function getMeeting({ tenantId, userId, email, meetingId }) {
-  const res = await fetch(API_URLS.jitsiMeeting(meetingId), { headers: defaultHeaders(tenantId, userId, email) });
+  const headers = defaultHeaders(tenantId, userId, email);
+  const res = await fetch(API_URLS.jitsiMeeting(meetingId), { headers });
   const payload = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(payload?.error || "Failed to load meeting");
   return payload;

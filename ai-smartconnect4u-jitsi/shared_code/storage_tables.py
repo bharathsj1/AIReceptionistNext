@@ -106,6 +106,17 @@ def list_meetings(*, tenant_id: str, limit: int = 50) -> List[Dict[str, Any]]:
     return items[:limit]
 
 
+def list_public_meetings(*, limit: int = 50) -> List[Dict[str, Any]]:
+    """Return latest public-join meetings across all tenants."""
+    client = _table_client(MEETINGS_TABLE)
+    try:
+        items = list(client.query_entities(filter="publicJoin eq true"))
+    except Exception:  # pylint: disable=broad-except
+        items = list(client.list_entities())  # fallback if filter not supported
+    items.sort(key=lambda e: e.get("createdAt", "") or e.get("scheduledFor", ""), reverse=True)
+    return items[:limit]
+
+
 def get_meeting(tenant_id: str, meeting_id: str) -> Optional[Dict[str, Any]]:
     client = _table_client(MEETINGS_TABLE)
     try:

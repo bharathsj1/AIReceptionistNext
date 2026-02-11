@@ -1,5 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Circle, Copy, ExternalLink, Loader2, Mic, Pause, RefreshCw, Upload } from "lucide-react";
+import {
+  CalendarDays,
+  Circle,
+  Copy,
+  ExternalLink,
+  Folder,
+  FolderPlus,
+  LayoutList,
+  Loader2,
+  Mic,
+  Pause,
+  RefreshCw,
+  Upload,
+  Users,
+} from "lucide-react";
 import JitsiEmbed from "../../components/meetings/JitsiEmbed";
 import {
   createMeeting,
@@ -25,20 +39,108 @@ const statusColor = (status) => {
 
 const emptyArtifact = { transcript: null, summary: null, tasks: null, status: "created" };
 
+const subTabs = [
+  { id: "my", label: "My Meetings", icon: Users },
+  { id: "all", label: "All Meetings", icon: LayoutList },
+  { id: "shared", label: "Shared with me", icon: Copy },
+  { id: "status", label: "Meeting Status", icon: CalendarDays },
+];
+
 export default function MeetingsScreen({ tenantId, userId, userEmail }) {
   const [meetings, setMeetings] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [createModal, setCreateModal] = useState({ open: false, title: "", scheduledFor: "", publicJoin: true, status: "idle", error: "" });
+  const [createModal, setCreateModal] = useState({
+    open: false,
+    title: "",
+    scheduledFor: "",
+    publicJoin: true,
+    team: "",
+    folder: "",
+    sharedWith: "",
+    status: "idle",
+    error: "",
+  });
   const [selected, setSelected] = useState(null);
   const [meetingMeta, setMeetingMeta] = useState(null);
   const [artifacts, setArtifacts] = useState(emptyArtifact);
   const [polling, setPolling] = useState(false);
   const [recording, setRecording] = useState(false);
   const [uploadStatus, setUploadStatus] = useState({ status: "idle", message: "" });
+  const [activeTab, setActiveTab] = useState("my");
+  const [folderFilter, setFolderFilter] = useState(null);
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
 
   const headers = useMemo(() => ({ tenantId, userId, email: userEmail }), [tenantId, userId, userEmail]);
+
+  const monthFolder = (iso) => {
+    if (!iso) return "General";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "General";
+    return `${d.toLocaleString("default", { month: "long" })} ${d.getFullYear()}`;
+  };
+
+  const folderName = (meeting) => meeting?.metadata?.folder || monthFolder(meeting?.scheduledFor || meeting?.createdAt);
+  const teamName = (meeting) => meeting?.metadata?.team;
+  const sharedWithList = (meeting) => {
+    const list = meeting?.metadata?.sharedWith;
+    if (Array.isArray(list)) return list;
+    if (typeof list === "string") return list.split(",").map((s) => s.trim()).filter(Boolean);
+    return [];
+  };
+
+  const folderBuckets = useMemo(() => {
+    const counts = new Map();
+    meetings.forEach((m) => {
+      const key = folderName(m);
+      counts.set(key, (counts.get(key) || 0) + 1);
+    });
+    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+  }, [meetings]);
+
+  const upcomingMeetings = useMemo(() => {
+    const safeTime = (value) => {
+      const ts = new Date(value).getTime();
+      return Number.isNaN(ts) ? Number.POSITIVE_INFINITY : ts;
+    };
+    const withDates = meetings
+      .map((m) => ({ ...m, when: m.scheduledFor || m.createdAt }))
+      .filter((m) => m.when)
+      .sort((a, b) => safeTime(a.when) - safeTime(b.when));
+    return withDates.slice(0, 6);
+  }, [meetings]);
+
+  const filteredMeetings = useMemo(() => {
+    let base = meetings;
+    if (activeTab === "my") {
+      base = meetings.filter((m) => (m.createdByUserId && userId ? m.createdByUserId === userId : true));
+    } else if (activeTab === "shared") {
+      const emailLower = (userEmail || "").toLowerCase();
+      base = meetings.filter((m) => {
+        const shared = sharedWithList(m).map((s) => s.toLowerCase());
+        if (shared.includes(emailLower)) return true;
+        if (m.createdByUserId && userId && m.createdByUserId !== userId) return true;
+        return false;
+      });
+    }
+    if (folderFilter) {
+      base = base.filter((m) => folderName(m) === folderFilter);
+    }
+    return base;
+  }, [meetings, activeTab, folderFilter, userId, userEmail]);
+
+  useEffect(() => {
+    if (!filteredMeetings.length) {
+      setSelected(null);
+      return;
+    }
+    const stillExists = filteredMeetings.some(
+      (m) => (selected?.meetingId || selected?.RowKey) === (m.meetingId || m.RowKey)
+    );
+    if (!stillExists) {
+      setSelected(filteredMeetings[0]);
+    }
+  }, [filteredMeetings, selected]);
 
   const loadMeetings = async () => {
     setLoading(true);
@@ -131,8 +233,32 @@ export default function MeetingsScreen({ tenantId, userId, userEmail }) {
   const handleCreate = async () => {
     setCreateModal((prev) => ({ ...prev, status: "loading", error: "" }));
     try {
-      const payload = await createMeeting({ ...headers, title: createModal.title, scheduledFor: createModal.scheduledFor, publicJoin: createModal.publicJoin });
-      setCreateModal({ open: false, title: "", scheduledFor: "", publicJoin: true, status: "idle", error: "" });
+      const sharedWith = createModal.sharedWith
+        ? createModal.sharedWith.split(",").map((e) => e.trim()).filter(Boolean)
+        : [];
+      const metadata = {
+        team: createModal.team || undefined,
+        folder: createModal.folder || undefined,
+        sharedWith,
+      };
+      const payload = await createMeeting({
+        ...headers,
+        title: createModal.title,
+        scheduledFor: createModal.scheduledFor,
+        publicJoin: createModal.publicJoin,
+        metadata,
+      });
+      setCreateModal({
+        open: false,
+        title: "",
+        scheduledFor: "",
+        publicJoin: true,
+        team: "",
+        folder: "",
+        sharedWith: "",
+        status: "idle",
+        error: "",
+      });
       await loadMeetings();
       setSelected({ meetingId: payload.meetingId });
     } catch (err) {
@@ -232,15 +358,69 @@ export default function MeetingsScreen({ tenantId, userId, userEmail }) {
               onClick={() => copyLink(selected)}
               className="inline-flex items-center gap-2 rounded-lg border border-white/15 px-3 py-1.5 text-xs font-semibold text-white hover:border-white/30"
             >
-              <Copy className="h-3.5 w-3.5" />
-              Copy meeting link
-            </button>
-          )}
+            <Copy className="h-3.5 w-3.5" />
+            Copy meeting link
+          </button>
+        )}
         </div>
+
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          {subTabs.map((tab) => {
+            const Icon = tab.icon;
+            const active = tab.id === activeTab;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={`inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition ${
+                  active ? "bg-indigo-600 text-white shadow" : "bg-white/10 text-slate-100 hover:bg-white/15"
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-xs font-semibold text-white">
+              <Folder className="h-4 w-4" />
+              Folders
+            </div>
+            <button
+              type="button"
+              onClick={() => setFolderFilter(null)}
+              className="text-[11px] text-indigo-200 underline decoration-dotted"
+            >
+              Clear
+            </button>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {folderBuckets.map(([name, count]) => (
+              <button
+                key={name}
+                type="button"
+                onClick={() => setFolderFilter(name)}
+                className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-[11px] font-semibold transition ${
+                  folderFilter === name ? "bg-indigo-600 text-white" : "bg-white/10 text-slate-100 hover:bg-white/15"
+                }`}
+              >
+                <FolderPlus className="h-3.5 w-3.5" />
+                {name}
+                <span className="rounded-full bg-white/15 px-2 py-[1px] text-[10px]">{count}</span>
+              </button>
+            ))}
+            {folderBuckets.length === 0 && <p className="text-[11px] text-slate-400">No folders yet.</p>}
+          </div>
+        </div>
+
         <div className="mt-4 space-y-2 max-h-[520px] overflow-y-auto pr-1">
           {loading && <p className="text-xs text-slate-300">Loading meetings…</p>}
-          {!loading && meetings.length === 0 && <p className="text-xs text-slate-400">No meetings yet.</p>}
-          {meetings.map((m) => (
+          {!loading && filteredMeetings.length === 0 && <p className="text-xs text-slate-400">No meetings yet.</p>}
+          {filteredMeetings.map((m) => (
             <button
               key={m.meetingId || m.RowKey}
               type="button"
@@ -260,6 +440,21 @@ export default function MeetingsScreen({ tenantId, userId, userEmail }) {
                 </span>
               </div>
               <p className="mt-1 text-[12px] text-slate-300">Room: {m.jitsiRoomName}</p>
+              <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-[2px] text-indigo-100">
+                  <Folder className="h-3 w-3" /> {folderName(m)}
+                </span>
+                {teamName(m) && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-[2px] text-emerald-100">
+                    <Users className="h-3 w-3" /> {teamName(m)}
+                  </span>
+                )}
+                {sharedWithList(m).length > 0 && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-[2px] text-slate-100">
+                    <Copy className="h-3 w-3" /> {sharedWithList(m).length} shared
+                  </span>
+                )}
+              </div>
             </button>
           ))}
         </div>
@@ -274,6 +469,18 @@ export default function MeetingsScreen({ tenantId, userId, userEmail }) {
                 <p className="text-xs uppercase tracking-[0.2em] text-indigo-200">Meeting</p>
                 <h3 className="text-2xl font-semibold text-white">{meetingMeta?.title || selected.title || "Untitled"}</h3>
                 <p className="text-sm text-slate-300">Room: {meetingMeta?.jitsiRoomName || selected.jitsiRoomName}</p>
+                <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-indigo-100">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-[2px]">
+                    <Folder className="h-3 w-3" />
+                    {folderName(meetingMeta || selected)}
+                  </span>
+                  {teamName(meetingMeta || selected) && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-[2px]">
+                      <Users className="h-3 w-3" />
+                      {teamName(meetingMeta || selected)}
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <span className={`inline-flex items-center gap-1 rounded-full px-2 py-[2px] text-[11px] font-semibold ${statusColor(activeStatus)}`}>
@@ -295,6 +502,41 @@ export default function MeetingsScreen({ tenantId, userId, userEmail }) {
                 </button>
               </div>
             </div>
+
+            {activeTab === "status" && (
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-white">
+                    <CalendarDays className="h-4 w-4" />
+                    Meeting timeline
+                  </div>
+                  <span className="text-[11px] text-slate-300">Next {upcomingMeetings.length || 0}</span>
+                </div>
+                <div className="mt-3 space-y-2">
+                  {upcomingMeetings.length === 0 && <p className="text-[12px] text-slate-400">No upcoming meetings.</p>}
+                  {upcomingMeetings.map((m) => (
+                    <div
+                      key={`${m.meetingId || m.RowKey}-timeline`}
+                      className="flex items-center justify-between rounded-xl border border-white/10 bg-black/30 px-3 py-2"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-white truncate">{m.title || "Untitled"}</p>
+                        <p className="text-[11px] text-slate-300">
+                          {formatDateShort(m.scheduledFor || m.createdAt)} • {folderName(m)}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setSelected(m)}
+                        className="rounded-lg bg-indigo-600 px-3 py-1 text-[11px] font-semibold text-white hover:bg-indigo-500"
+                      >
+                        View
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="grid gap-4 lg:grid-cols-[1.2fr,0.8fr]">
               <div className="rounded-2xl border border-white/10 bg-black/60 p-3">
@@ -435,6 +677,33 @@ export default function MeetingsScreen({ tenantId, userId, userEmail }) {
                 onChange={(e) => setCreateModal((prev) => ({ ...prev, scheduledFor: e.target.value }))}
               />
             </label>
+            <label className="mt-3 block text-sm text-slate-200">
+              Team / Folder label
+              <input
+                className="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
+                value={createModal.team}
+                onChange={(e) => setCreateModal((prev) => ({ ...prev, team: e.target.value }))}
+                placeholder="Design team"
+              />
+            </label>
+            <label className="mt-3 block text-sm text-slate-200">
+              Folder name (optional)
+              <input
+                className="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
+                value={createModal.folder}
+                onChange={(e) => setCreateModal((prev) => ({ ...prev, folder: e.target.value }))}
+                placeholder="June 2024"
+              />
+            </label>
+            <label className="mt-3 block text-sm text-slate-200">
+              Shared with (comma separated emails)
+              <input
+                className="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
+                value={createModal.sharedWith}
+                onChange={(e) => setCreateModal((prev) => ({ ...prev, sharedWith: e.target.value }))}
+                placeholder="alex@example.com, sam@example.com"
+              />
+            </label>
             <label className="mt-3 inline-flex items-center gap-2 text-sm text-slate-200">
               <input
                 type="checkbox"
@@ -447,7 +716,19 @@ export default function MeetingsScreen({ tenantId, userId, userEmail }) {
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setCreateModal({ open: false, title: "", scheduledFor: "", publicJoin: true, status: "idle", error: "" })}
+                onClick={() =>
+                  setCreateModal({
+                    open: false,
+                    title: "",
+                    scheduledFor: "",
+                    publicJoin: true,
+                    team: "",
+                    folder: "",
+                    sharedWith: "",
+                    status: "idle",
+                    error: "",
+                  })
+                }
                 className="rounded-lg border border-white/10 px-3 py-2 text-sm font-semibold text-white hover:border-white/30"
               >
                 Cancel
