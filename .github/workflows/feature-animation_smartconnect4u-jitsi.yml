@@ -3,7 +3,7 @@ name: Build and deploy Python project to Azure Function App - smartconnect4u-jit
 on:
   push:
     branches:
-      - Feature/animation
+      - main
   workflow_dispatch:
 
 env:
@@ -74,3 +74,4 @@ jobs:
           app-name: 'smartconnect4u-jitsi'
           slot-name: 'Production'
           package: app
+
