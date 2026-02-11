@@ -10,7 +10,7 @@ from email.policy import default as default_policy
 import azure.functions as func
 
 from function_app import app
-from shared_code.auth_context import AuthContext, require_auth
+from shared_code.auth_context import AuthContext, AuthError, require_auth
 from shared_code.cors import build_cors_headers
 from shared_code import storage_tables
 from shared_code import storage_blobs
@@ -90,8 +90,8 @@ def _extract_audio(req: func.HttpRequest) -> Tuple[Optional[bytes], Optional[str
     return None, None, None
 
 
-def _meeting_for_public(entity: Dict[str, Any]) -> Dict[str, Any]:
-    return {
+def _meeting_for_public(entity: Dict[str, Any], include_private: bool = False) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {
         "meetingId": entity.get("meetingId") or entity.get("RowKey"),
         "joinUrl": entity.get("joinUrl"),
         "jitsiRoomName": entity.get("jitsiRoomName"),
@@ -101,6 +101,18 @@ def _meeting_for_public(entity: Dict[str, Any]) -> Dict[str, Any]:
         "scheduledFor": entity.get("scheduledFor"),
         "lastUpdatedAt": entity.get("lastUpdatedAt"),
     }
+
+    if include_private:
+        payload["createdAt"] = entity.get("createdAt")
+        payload["createdByUserId"] = entity.get("createdByUserId")
+        metadata = entity.get("metadataJson")
+        if metadata:
+            try:
+                payload["metadata"] = json.loads(metadata)
+            except Exception:  # pylint: disable=broad-except
+                payload["metadata"] = metadata
+
+    return payload
 
 
 def _load_transcript_text(artifacts: Dict[str, Any]) -> Optional[str]:
@@ -125,27 +137,56 @@ def _load_transcript_text(artifacts: Dict[str, Any]) -> Optional[str]:
 @app.function_name(name="Meetings")
 @app.route(route="meetings", methods=["GET", "POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def meetings(req: func.HttpRequest) -> func.HttpResponse:
-    """Combined handler to avoid route conflicts for GET and POST /meetings."""
+    """Combined handler to avoid route conflicts for GET and POST /meetings.
+
+    GET: Public/unauthenticated allowed with tenantId parameter.
+    POST: Auth required (same as before).
+    """
 
     cors = build_cors_headers(req, ["GET", "POST", "OPTIONS"])
     if req.method == "OPTIONS":
         return func.HttpResponse("", status_code=204, headers=cors)
 
-    auth = require_auth(req, cors)
-    if isinstance(auth, func.HttpResponse):
-        return auth
-
+    # ------------------------
+    # GET /meetings (public)
+    # ------------------------
     if req.method == "GET":
+        tenant_id = (
+            req.params.get("tenantId")
+            or req.params.get("tenant_id")
+            or req.params.get("clientId")
+            or req.params.get("client_id")
+        )
+        include_private = False
+
+        # Auth present? use it and include private fields for that tenant.
         try:
-            meetings = storage_tables.list_meetings(tenant_id=auth.tenant_id, limit=50)
+            auth_ctx = require_auth(req, cors)
+            if not isinstance(auth_ctx, func.HttpResponse):
+                tenant_id = tenant_id or auth_ctx.tenant_id
+                include_private = True
+        except Exception:
+            auth_ctx = None
+
+        try:
+            if tenant_id:
+                meetings = storage_tables.list_meetings(tenant_id=tenant_id, limit=50)
+            else:
+                meetings = storage_tables.list_public_meetings(limit=50)
         except Exception as exc:  # pylint: disable=broad-except
             logger.error("Failed to list meetings: %s", exc)
             return _json_response({"error": "failed_to_list", "details": str(exc)}, 500, cors)
 
-        payload = [_meeting_for_public(m) for m in meetings]
+        payload = [_meeting_for_public(m, include_private=include_private) for m in meetings]
         return _json_response({"meetings": payload}, 200, cors)
 
-    # POST - create
+    # ------------------------
+    # POST /meetings (auth)
+    # ------------------------
+    auth = require_auth(req, cors)
+    if isinstance(auth, func.HttpResponse):
+        return auth
+
     body = _json_body(req)
     parsed = _parse_meeting_body(body)
 
@@ -183,12 +224,21 @@ def get_meeting(req: func.HttpRequest) -> func.HttpResponse:
 
     meeting_id = req.route_params.get("meetingId")
     auth_ctx: AuthContext | None = None
-    auth_result = require_auth(req, cors)
-    if not isinstance(auth_result, func.HttpResponse):
-        auth_ctx = auth_result  # optional if tenant not provided for public join
+    tenant_id_param = (
+        req.params.get("tenantId")
+        or req.params.get("tenant_id")
+        or req.params.get("clientId")
+        or req.params.get("client_id")
+    )
+    try:
+        auth_result = require_auth(req, cors)
+        if not isinstance(auth_result, func.HttpResponse):
+            auth_ctx = auth_result  # optional if tenant not provided for public join
+    except Exception:
+        auth_ctx = None
 
     meeting = None
-    tenant_id = auth_ctx.tenant_id if auth_ctx else None
+    tenant_id = auth_ctx.tenant_id if auth_ctx else tenant_id_param
 
     if tenant_id:
         meeting = storage_tables.get_meeting(tenant_id, meeting_id)
@@ -202,15 +252,15 @@ def get_meeting(req: func.HttpRequest) -> func.HttpResponse:
 
     public_join = bool(meeting.get("publicJoin", False))
     if not public_join:
-        if not auth_ctx or tenant_id != auth_ctx.tenant_id:
+        if not auth_ctx:
+            return _forbidden(cors, "tenant_mismatch_or_unauthorized")
+        if tenant_id and tenant_id != auth_ctx.tenant_id:
             return _forbidden(cors, "tenant_mismatch_or_unauthorized")
 
-    payload = _meeting_for_public(meeting)
-    if auth_ctx and tenant_id == auth_ctx.tenant_id:
-        payload["metadata"] = meeting.get("metadataJson")
-        payload["status"] = meeting.get("status")
-        payload["createdAt"] = meeting.get("createdAt")
-        payload["createdByUserId"] = meeting.get("createdByUserId")
+    payload = _meeting_for_public(
+        meeting,
+        include_private=bool(auth_ctx and (tenant_id == auth_ctx.tenant_id)),
+    )
     return _json_response(payload, 200, cors)
 
 
