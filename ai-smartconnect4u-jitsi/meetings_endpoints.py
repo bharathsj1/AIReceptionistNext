@@ -122,10 +122,12 @@ def _load_transcript_text(artifacts: Dict[str, Any]) -> Optional[str]:
 # ---------------------------------------------------------------------------
 
 
-@app.function_name(name="CreateMeeting")
-@app.route(route="meetings", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
-def create_meeting(req: func.HttpRequest) -> func.HttpResponse:
-    cors = build_cors_headers(req, ["POST", "OPTIONS"])
+@app.function_name(name="Meetings")
+@app.route(route="meetings", methods=["GET", "POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def meetings(req: func.HttpRequest) -> func.HttpResponse:
+    """Combined handler to avoid route conflicts for GET and POST /meetings."""
+
+    cors = build_cors_headers(req, ["GET", "POST", "OPTIONS"])
     if req.method == "OPTIONS":
         return func.HttpResponse("", status_code=204, headers=cors)
 
@@ -133,6 +135,17 @@ def create_meeting(req: func.HttpRequest) -> func.HttpResponse:
     if isinstance(auth, func.HttpResponse):
         return auth
 
+    if req.method == "GET":
+        try:
+            meetings = storage_tables.list_meetings(tenant_id=auth.tenant_id, limit=50)
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.error("Failed to list meetings: %s", exc)
+            return _json_response({"error": "failed_to_list", "details": str(exc)}, 500, cors)
+
+        payload = [_meeting_for_public(m) for m in meetings]
+        return _json_response({"meetings": payload}, 200, cors)
+
+    # POST - create
     body = _json_body(req)
     parsed = _parse_meeting_body(body)
 
@@ -159,27 +172,6 @@ def create_meeting(req: func.HttpRequest) -> func.HttpResponse:
         201,
         cors,
     )
-
-
-@app.function_name(name="ListMeetings")
-@app.route(route="meetings", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
-def list_meetings(req: func.HttpRequest) -> func.HttpResponse:
-    cors = build_cors_headers(req, ["GET", "OPTIONS"])
-    if req.method == "OPTIONS":
-        return func.HttpResponse("", status_code=204, headers=cors)
-
-    auth = require_auth(req, cors)
-    if isinstance(auth, func.HttpResponse):
-        return auth
-
-    try:
-        meetings = storage_tables.list_meetings(tenant_id=auth.tenant_id, limit=50)
-    except Exception as exc:  # pylint: disable=broad-except
-        logger.error("Failed to list meetings: %s", exc)
-        return _json_response({"error": "failed_to_list", "details": str(exc)}, 500, cors)
-
-    payload = [_meeting_for_public(m) for m in meetings]
-    return _json_response({"meetings": payload}, 200, cors)
 
 
 @app.function_name(name="GetMeeting")
