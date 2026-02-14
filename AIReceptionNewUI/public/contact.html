@@ -387,6 +387,10 @@
         <a class="nav-link" href="/blog.html">Blog</a>
       </div>
       <div class="nav-actions">
+        <button class="login-cta live-chat-launcher" type="button">
+          <span aria-hidden>💬</span>
+          <span>Live Chat</span>
+        </button>
         <a class="login-cta" href="/#login">
           <span aria-hidden>→</span>
           <span>Login</span>
@@ -450,6 +454,10 @@
               <span aria-hidden>⏱</span>
               <span>Hours: 9am – 6pm PT, Mon–Fri</span>
             </div>
+            <button id="live-chat-btn" class="primary-btn" type="button" style="width:100%;margin-top:12px;">
+              <span aria-hidden>💬</span>
+              <span>Live Chat</span>
+            </button>
           </div>
           <div class="contact-social">
             <a class="social-pill" href="#" aria-label="Facebook">
@@ -468,6 +476,8 @@
     <script>
       const form = document.getElementById("contact-form");
       const statusEl = document.getElementById("contact-status");
+      const liveChatBtn = document.getElementById("live-chat-btn");
+      const liveChatHeaderBtn = document.querySelector(".live-chat-launcher");
 
       form?.addEventListener("submit", async (event) => {
         event.preventDefault();
@@ -499,6 +509,24 @@
         } catch (err) {
           statusEl.textContent = err?.message || "Unable to send message right now.";
           statusEl.className = "status error";
+        }
+      });
+
+      liveChatBtn?.addEventListener("click", () => {
+        const launcher = document.querySelector(".chat-launcher");
+        if (launcher) {
+          launcher.dispatchEvent(new Event("click", { bubbles: true }));
+        } else {
+          window.location.href = "/"; // fallback to home where chat is available
+        }
+      });
+
+      liveChatHeaderBtn?.addEventListener("click", () => {
+        const launcher = document.querySelector(".chat-launcher");
+        if (launcher) {
+          launcher.dispatchEvent(new Event("click", { bubbles: true }));
+        } else {
+          window.location.href = "/";
         }
       });
     </script>
