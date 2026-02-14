@@ -82,6 +82,7 @@
   flex-direction: column;
   height: 520px;
   max-height: calc(100vh - 160px);
+  min-height: 0;
   border-radius: 22px;
   background: linear-gradient(145deg, rgba(8, 14, 34, 0.94), rgba(15, 20, 38, 0.92));
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -186,15 +187,19 @@
   flex-direction: column;
   padding: 12px 14px 6px;
   gap: 12px;
+  min-height: 0;
 }
 
 .chat-messages {
   flex: 1;
-  overflow: auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding-right: 4px;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  overscroll-behavior: contain;
 }
 
 .chat-bubble {
