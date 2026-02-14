@@ -380,6 +380,10 @@
         <a class="nav-link" href="/blog.html">Blog</a>
       </div>
       <div class="nav-actions">
+        <button class="login-cta live-chat-launcher" type="button">
+          <span aria-hidden>💬</span>
+          <span>Live Chat</span>
+        </button>
         <a class="login-cta" href="/#login">
           <span aria-hidden>→</span>
           <span>Login</span>
@@ -579,6 +583,16 @@
       if (sections[0]) {
         setActive(sections[0].id);
       }
+
+      const liveChatHeaderBtn = document.querySelector(".live-chat-launcher");
+      liveChatHeaderBtn?.addEventListener("click", () => {
+        const launcher = document.querySelector(".chat-launcher");
+        if (launcher) {
+          launcher.dispatchEvent(new Event("click", { bubbles: true }));
+        } else {
+          window.location.href = "/";
+        }
+      });
     </script>
   </body>
 </html>

@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>About | SmartConnect4u</title>
+    <link rel="icon" type="image/png" href="/favicon-32x32.png" />
+    <style>
+      @import url("https://fonts.cdnfonts.com/css/product-sans");
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Product Sans", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+        background: radial-gradient(circle at 20% 20%, rgba(123, 198, 255, 0.16), transparent 32%),
+          radial-gradient(circle at 80% 0%, rgba(124, 58, 237, 0.18), transparent 36%),
+          linear-gradient(140deg, #0a0c2f, #0f1238 45%, #0b0f1f 100%);
+        color: #e6ebff;
+        min-height: 100vh;
+      }
+      a { color: #9fb6ff; text-decoration: none; }
+      a:hover { color: #ffffff; }
+      .screen-panel { max-width: 1100px; margin: 0 auto; padding: 0 18px; width: 100%; }
+      .nav-card {
+        display: grid; align-items: center; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+        gap: 20px; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.06);
+        padding: 12px 16px; box-shadow: 0 12px 36px rgba(0,0,0,0.35); backdrop-filter: blur(10px);
+        position: sticky; top: 0; z-index: 10;
+      }
+      .nav-brand { display: flex; align-items: center; }
+      .nav-brand img { height: 28px; }
+      .nav-links { display: flex; gap: 16px; justify-self: center; flex-wrap: wrap; }
+      .nav-link { color: #e6ebff; font-weight: 600; font-size: 14px; }
+      .nav-link:hover { color: #fff; }
+      .nav-actions { display: flex; gap: 10px; justify-self: end; }
+      .login-cta { padding: 8px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.18); background: #4f46e5; color: #fff; font-weight: 700; }
+      .hero { padding: 120px 0 32px; }
+      .eyebrow { text-transform: uppercase; letter-spacing: 0.18em; font-size: 12px; color: #9fb6ff; margin-bottom: 10px; }
+      h1 { font-size: clamp(32px, 6vw, 44px); margin: 0 0 16px; color: #fff; }
+      p.lead { font-size: 17px; color: #cfd7f5; max-width: 760px; line-height: 1.6; }
+      .grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); margin: 32px 0; }
+      .card {
+        padding: 18px 18px;
+        border-radius: 14px;
+        background: rgba(255,255,255,0.03);
+        border: 1px solid rgba(255,255,255,0.06);
+        box-shadow: 0 10px 28px rgba(0,0,0,0.25);
+      }
+      .card h3 { margin: 0 0 8px; color: #fff; }
+      .card p { margin: 0; color: #cfd7f5; line-height: 1.5; }
+      .pill-links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+      .pill {
+        padding: 8px 12px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.12);
+        background: rgba(255,255,255,0.06); color: #e6ebff; font-weight: 600; font-size: 13px;
+      }
+      .pill:hover { background: rgba(255,255,255,0.12); }
+    </style>
+  </head>
+  <body>
+    <header class="nav-card">
+      <div class="nav-brand">
+        <a class="brand" href="/">
+          <img class="brand-logo" src="/media/sc_logo_main.png" alt="SmartConnect4u logo" />
+        </a>
+      </div>
+      <div class="nav-links">
+        <a class="nav-link" href="/about.html">About Us</a>
+        <a class="nav-link" href="/careers.html">Careers</a>
+        <a class="nav-link" href="/pricing.html">Pricing</a>
+        <a class="nav-link" href="/blog.html">Blog</a>
+        <a class="nav-link" href="/contact.html">Contact</a>
+      </div>
+      <div class="nav-actions">
+        <a class="login-cta" href="/#login">Login</a>
+      </div>
+    </header>
+
+    <main class="screen-panel">
+      <section class="hero">
+        <p class="eyebrow">About us</p>
+        <h1>We build AI co-pilots that keep your customer conversations running 24/7</h1>
+        <p class="lead">
+          SmartConnect4u brings voice, email, and social messaging together under one AI-assisted roof. We help teams answer
+          faster, schedule smarter, and never miss a lead—whether it arrives by phone, inbox, or chat.
+        </p>
+      </section>
+
+      <section class="grid">
+        <div class="card">
+          <h3>What we do</h3>
+          <p>
+            We provide AI receptionists, smart email management, and social automation that slot into your workflows. From
+            answering calls to drafting replies and booking meetings, we keep every channel responsive and on-brand.
+          </p>
+        </div>
+        <div class="card">
+          <h3>Our vision</h3>
+          <p>
+            To make every business instantly reachable and reliably helpful—without adding headcount. We believe AI should
+            feel like a trusted teammate, not a black box.
+          </p>
+        </div>
+        <div class="card">
+          <h3>How we work</h3>
+          <p>
+            Human-in-the-loop by design, with transparent controls, audit trails, and configurable handoffs. We integrate
+            with the tools you already use, and we keep people in charge.
+          </p>
+        </div>
+      </section>
+
+      <section class="grid">
+        <div class="card">
+          <h3>Channels we power</h3>
+          <p>Voice, SMS, email, WhatsApp, and web chat—covered with unified AI and live-agent routing.</p>
+        </div>
+        <div class="card">
+          <h3>Availability</h3>
+          <p>24/7 responsiveness with SLAs you set, plus live agent escalation when customers need a human.</p>
+        </div>
+        <div class="card">
+          <h3>Security & privacy</h3>
+          <p>Data encrypted at rest and in transit, role-based access, and privacy-first defaults.</p>
+        </div>
+      </section>
+
+      <div class="pill-links">
+        <a class="pill" href="/receptionist.html">AI Receptionist</a>
+        <a class="pill" href="/email-manager.html">Smart Email Manager</a>
+        <a class="pill" href="/social-manager.html">Social Media Manager</a>
+        <a class="pill" href="/contact.html">Talk to sales</a>
+      </div>
+    </main>
+  </body>
+</html>

@@ -87,6 +87,21 @@
   overflow: hidden;
 }
 
+.promo-media--sm {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.promo-media--sm .promo-media__image {
+  position: relative;
+  width: 50%;
+  min-width: 240px;
+  height: auto;
+  object-fit: contain;
+  filter: brightness(0.95);
+}
+
 .promo-media__video {
   position: absolute;
   inset: 0;
