@@ -3,6 +3,7 @@
 # azure-monitor-opentelemetry 
 
 azure-functions
+python-dotenv
 azure-data-tables
 httpx
 requests

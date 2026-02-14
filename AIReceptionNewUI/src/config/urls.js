@@ -134,6 +134,8 @@ export const API_URLS = {
   socialXConnect: apiUrl("social/x/connect"),
   socialAICaption: apiUrl("social/ai/caption"),
   chat: apiUrl("chat")
+  ,
+  liveHandoff: apiUrl("live-handoff")
 };
 
 

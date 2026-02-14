@@ -15,6 +15,7 @@ const WELCOME: ChatMessage = {
   role: "assistant",
   content: "Hi! I'm the SmartConnect4u Assistant. Ask about products, pricing, or book a quick demo—I'll keep it concise."
 };
+const HANDOFF_KEYWORDS = ["agent", "human", "live support", "live agent", "real person", "representative"];
 
 const StatusDot: React.FC<{ status: "online" | "idle" }> = ({ status }) => (
   <span className={`chat-status-dot chat-status-${status}`} aria-label={status === "online" ? "Online" : "Idle"} />
@@ -32,6 +33,7 @@ const ChatWidget: React.FC = () => {
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
+  const [handoffPending, setHandoffPending] = useState(false);
 
   const listRef = useRef<HTMLDivElement | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
@@ -82,6 +84,15 @@ const ChatWidget: React.FC = () => {
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setError(null);
+
+    const isHandoff = HANDOFF_KEYWORDS.some((k) => text.toLowerCase().includes(k));
+    if (isHandoff) {
+      setIsSending(true);
+      setIsStreaming(false);
+      await triggerHandoff(userMessage);
+      return;
+    }
+
     setIsSending(true);
     setIsStreaming(true);
 
@@ -162,6 +173,51 @@ const ChatWidget: React.FC = () => {
   };
 
   const bubbleText = isOpen ? "Hide assistant" : "Ask SmartConnect4u";
+
+  const triggerHandoff = async (userMessage: ChatMessage) => {
+    if (handoffPending) return;
+    setHandoffPending(true);
+    const payload = {
+      name: "",
+      email: "",
+      company: "",
+      message: userMessage.content,
+      conversation: [...messages, userMessage].map((m) => ({
+        role: m.role,
+        content: m.content
+      }))
+    };
+
+    try {
+      await fetch(API_URLS.liveHandoff, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: nowId("assistant"),
+          role: "assistant",
+          content: "I’m handing you off to a live agent now. They’ll respond shortly in this chat or via the contact details you shared."
+        }
+      ]);
+    } catch (err) {
+      console.error("[chat-widget] handoff failed", err);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: nowId("assistant"),
+          role: "assistant",
+          content: "Sorry, I couldn’t reach a live agent right now. Please try again or provide an email to reach you."
+        }
+      ]);
+    } finally {
+      setHandoffPending(false);
+      setIsSending(false);
+      setIsStreaming(false);
+    }
+  };
 
   return (
     <>
