@@ -25,6 +25,7 @@ import BusinessTypeScreen from "./screens/BusinessTypeScreen";
 import ProjectsScreen from "./screens/ProjectsScreen";
 import BusinessReviewScreen from "./screens/BusinessReviewScreen";
 import PublicMeetingScreen from "./screens/PublicMeetingScreen";
+import AboutScreen from "./screens/AboutScreen";
 import ChatWidget from "./components/chat/ChatWidget";
 
 const STAGES = {
@@ -47,6 +48,7 @@ const STAGES = {
   BUSINESS_INFO_MANUAL: "businessInfoManual",
   BUSINESS_INFO_REVIEW: "businessInfoReview",
   PROJECTS: "projects",
+  ABOUT: "about",
   PUBLIC_MEETING: "publicMeeting"
 };
 const ALLOWED_STAGE_VALUES = new Set(Object.values(STAGES));
@@ -235,6 +237,15 @@ export default function App() {
     const match = dateRanges.find((r) => r.label === dateRange);
     return match?.days || 7;
   }, [dateRange, dateRanges]);
+
+  // Handle direct navigation (e.g., /about)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const path = window.location.pathname.toLowerCase();
+    if (path.startsWith("/about")) {
+      setStage(STAGES.ABOUT);
+    }
+  }, []);
   const suppressHistoryRef = useRef(false);
   const hasMountedHistoryRef = useRef(false);
   const hasLoadedPersistedRef = useRef(false);
@@ -496,6 +507,13 @@ export default function App() {
     if (typeof window !== "undefined") {
       const safeSlug = slug || "receptionist";
       window.history.replaceState({ stage: STAGES.PROJECTS }, "", `/${safeSlug}`);
+    }
+  };
+
+  const handleGoAbout = () => {
+    setStage(STAGES.ABOUT);
+    if (typeof window !== "undefined") {
+      window.history.replaceState({ stage: STAGES.ABOUT }, "", "/about");
     }
   };
 
@@ -2814,6 +2832,7 @@ export default function App() {
                   </div>
                 </div>
               </div>
+              <button className="nav-link" type="button" onClick={handleGoAbout}>About</button>
               <a className="nav-link" href="/contact.html">Contact</a>
             </div>
             <div className="nav-actions">
@@ -2848,6 +2867,7 @@ export default function App() {
         {stage === STAGES.PROJECTS && (
           <ProjectsScreen serviceSlug={serviceSlug} onStartSignup={goToSignup} />
         )}
+        {stage === STAGES.ABOUT && <AboutScreen />}
         {stage === STAGES.PACKAGES && !hasActiveSubscription && (
           <div className="shell-card screen-panel">
             <PricingPackages

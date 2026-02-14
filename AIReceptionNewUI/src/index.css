@@ -2533,8 +2533,8 @@ html {
 
 .nav-links {
   display: flex;
-  gap: 24px;
-  flex-wrap: nowrap;
+  gap: 16px;
+  flex-wrap: wrap;
   align-items: center;
   justify-self: center;
 }
