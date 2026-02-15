@@ -307,6 +307,7 @@ export default function App() {
   const hasMountedHistoryRef = useRef(false);
   const hasLoadedPersistedRef = useRef(false);
   const hasLoadedDashboardRef = useRef(false);
+  const resetFlowActiveRef = useRef(false);
   const STORAGE_KEY = "ai-reception-app-state";
   const loadingSteps = useMemo(
     () => ({
@@ -388,6 +389,7 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     const token = params.get("reset_token");
     if (token) {
+      resetFlowActiveRef.current = true;
       setResetToken(token);
       setStage(STAGES.RESET_PASSWORD);
       setStatus("idle");
@@ -2418,7 +2420,7 @@ export default function App() {
       const raw = window.localStorage.getItem(STORAGE_KEY);
       if (!raw) return;
       const saved = JSON.parse(raw);
-      if (saved.stage) setStage(saved.stage);
+      if (!resetFlowActiveRef.current && saved.stage) setStage(saved.stage);
       if (saved.isLoggedIn) setIsLoggedIn(true);
       if (saved.user) setUser(saved.user);
       if (saved.email) setEmail(saved.email);
@@ -2472,6 +2474,7 @@ export default function App() {
   // Ensure logged-in users retain access to dashboard across refreshes
   useEffect(() => {
     if (!isLoggedIn) return;
+    if (stage === STAGES.RESET_PASSWORD) return;
     const onboardingStages = new Set([
       STAGES.BUSINESS_DETAILS,
       STAGES.BUSINESS_TYPE,
@@ -2486,6 +2489,7 @@ export default function App() {
       STAGES.NUMBER_SELECT,
       STAGES.BUSINESS_INFO_MANUAL,
       STAGES.BUSINESS_INFO_REVIEW,
+      STAGES.RESET_PASSWORD,
     ]);
     if (onboardingStages.has(stage)) return;
     if (stage === STAGES.PROJECTS) return;
