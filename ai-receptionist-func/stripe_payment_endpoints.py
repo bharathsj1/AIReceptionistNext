@@ -12,11 +12,12 @@ from typing import Dict
 import azure.functions as func
 import httpx
 import stripe
+from sqlalchemy import func as sa_func
 from sqlalchemy.orm import Session
 
 from function_app import app
 from shared.config import get_required_setting, get_setting, get_smtp_settings
-from shared.db import SessionLocal, Subscription, Payment, AITool
+from shared.db import SessionLocal, Subscription, Payment, AITool, Client, User, ClientUser
 from utils.cors import build_cors_headers
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,55 @@ PLAN_AMOUNTS_BY_TOOL = {
     "email_manager": PLAN_AMOUNTS,
     "social_media_manager": PLAN_AMOUNTS,
 }
+
+
+def _normalize_email(value: str | None) -> str:
+    return str(value or "").strip().lower()
+
+
+def _resolve_subscription_lookup_emails(db: Session, email: str) -> list[str]:
+    normalized = _normalize_email(email)
+    if not normalized:
+        return []
+
+    emails = {normalized}
+    client = (
+        db.query(Client)
+        .filter(sa_func.lower(sa_func.trim(Client.email)) == normalized)
+        .order_by(Client.id.asc())
+        .first()
+    )
+    user = (
+        db.query(User)
+        .filter(sa_func.lower(sa_func.trim(User.email)) == normalized)
+        .order_by(User.id.asc())
+        .first()
+    )
+    client_user = (
+        db.query(ClientUser)
+        .filter(sa_func.lower(sa_func.trim(ClientUser.email)) == normalized)
+        .order_by(ClientUser.id.asc())
+        .first()
+    )
+
+    if not client and client_user:
+        client = db.query(Client).filter(Client.id == client_user.client_id).one_or_none()
+    if not client and user:
+        client = db.query(Client).filter(Client.user_id == user.id).order_by(Client.id.asc()).first()
+    if client and not user and client.user_id:
+        user = db.query(User).filter(User.id == client.user_id).one_or_none()
+
+    if client and client.email:
+        emails.add(_normalize_email(client.email))
+    if user and user.email:
+        emails.add(_normalize_email(user.email))
+    if client:
+        for row in db.query(ClientUser.email).filter(ClientUser.client_id == client.id).all():
+            member_email = _normalize_email(row[0] if row else "")
+            if member_email:
+                emails.add(member_email)
+
+    return sorted(email for email in emails if email)
 
 
 def _get_stripe_client() -> stripe.StripeClient:
@@ -799,7 +849,7 @@ def get_subscription_status(req: func.HttpRequest) -> func.HttpResponse:
     if req.method == "OPTIONS":
         return func.HttpResponse("", status_code=204, headers=cors)
 
-    email = req.params.get("email")
+    email = _normalize_email(req.params.get("email"))
     tool_param = (req.params.get("tool") or req.params.get("toolId") or "").lower() or None
     if not email:
         return func.HttpResponse(
@@ -810,9 +860,12 @@ def get_subscription_status(req: func.HttpRequest) -> func.HttpResponse:
         )
     try:
         db = SessionLocal()
+        lookup_emails = _resolve_subscription_lookup_emails(db, email)
+        if not lookup_emails:
+            lookup_emails = [email]
         subs = (
             db.query(Subscription)
-            .filter(Subscription.email == email)
+            .filter(sa_func.lower(sa_func.trim(Subscription.email)).in_(lookup_emails))
             .order_by(Subscription.updated_at.desc())
             .all()
         )

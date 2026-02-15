@@ -133,6 +133,10 @@ export const API_URLS = {
   socialScheduledPosts: apiUrl("social/posts/scheduled"),
   socialXConnect: apiUrl("social/x/connect"),
   socialAICaption: apiUrl("social/ai/caption"),
+  clientUsersList: apiUrl("auth/client-users/list"),
+  clientUsersCreate: apiUrl("auth/client-users"),
+  clientUsersDelete: (id) => apiUrl(`auth/client-users/${id}`),
+  clientUsersUpdate: (id) => apiUrl(`auth/client-users/${id}/update`),
   chat: apiUrl("chat")
   ,
   liveHandoff: apiUrl("live-handoff")

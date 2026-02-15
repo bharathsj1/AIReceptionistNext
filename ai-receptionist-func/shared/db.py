@@ -489,6 +489,27 @@ class SocialScheduledPost(Base):
     )
 
 
+class ClientUser(Base):
+    __tablename__ = "client_users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
+    email = Column(String, nullable=False, unique=True, index=True)
+    password_hash = Column(String, nullable=False)
+    reset_token = Column(String, nullable=True)
+    reset_token_expires = Column(DateTime, nullable=True)
+    role = Column(String, nullable=True, default="admin")
+    is_active = Column(Boolean, default=True)
+    status = Column(String, nullable=True, default="active")  # active | invited | disabled
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_login_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("client_id", "email", name="uq_client_user_email"),
+    )
+
+
 def init_db() -> None:
     """Create tables if they do not exist."""
     strict = os.getenv("DB_INIT_STRICT", "true").strip().lower() in {"1", "true", "yes", "on"}
@@ -1153,6 +1174,24 @@ def _ensure_optional_columns() -> None:
                 "ON social_scheduled_posts (business_id, scheduled_for DESC)"
             )
         )
+
+        # client_users optional columns/backfills
+        if "client_users" in existing_tables:
+            cu_columns = {col["name"] for col in inspector.get_columns("client_users")}
+            if "status" not in cu_columns:
+                conn.execute(
+                    text(
+                        "ALTER TABLE client_users ADD COLUMN IF NOT EXISTS status VARCHAR DEFAULT 'active'"
+                    )
+                )
+            if "reset_token" not in cu_columns:
+                conn.execute(
+                    text("ALTER TABLE client_users ADD COLUMN IF NOT EXISTS reset_token VARCHAR")
+                )
+            if "reset_token_expires" not in cu_columns:
+                conn.execute(
+                    text("ALTER TABLE client_users ADD COLUMN IF NOT EXISTS reset_token_expires TIMESTAMP")
+                )
 
         # Seed default tools and backfill tool_id where missing.
         default_tools = [

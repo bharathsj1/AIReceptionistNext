@@ -14,6 +14,7 @@ import httpx
 from azure.storage.blob import BlobServiceClient, ContentSettings, PublicAccess
 from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
 from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy import func as sa_func
 
 from adapters import meta as meta_adapter
 from adapters import whatsapp_meta as whatsapp_adapter
@@ -22,6 +23,7 @@ from function_app import app
 from shared.config import get_public_api_base, get_required_setting, get_setting
 from shared.db import (
     Client,
+    ClientUser,
     SessionLocal,
     SocialConnection,
     SocialConversation,
@@ -184,10 +186,39 @@ def _decode_state(state: Optional[str]) -> Optional[dict]:
         return None
 
 
+def _normalize_email(value: Optional[str]) -> str:
+    return str(value or "").strip().lower()
+
+
 def _get_user_and_client(db, email: Optional[str], user_id: Optional[str]) -> tuple[Optional[User], Optional[Client]]:
     user = None
     if email:
-        user = db.query(User).filter_by(email=email).one_or_none()
+        normalized = _normalize_email(email)
+        user = (
+            db.query(User)
+            .filter(sa_func.lower(sa_func.trim(User.email)) == normalized)
+            .order_by(User.id.asc())
+            .first()
+        )
+        if not user:
+            client_user = (
+                db.query(ClientUser)
+                .filter(sa_func.lower(sa_func.trim(ClientUser.email)) == normalized)
+                .order_by(ClientUser.id.asc())
+                .first()
+            )
+            if client_user:
+                client = db.query(Client).filter_by(id=client_user.client_id).one_or_none()
+                if client and client.user_id:
+                    user = db.query(User).filter_by(id=client.user_id).one_or_none()
+                elif client and client.email:
+                    owner_email = _normalize_email(client.email)
+                    user = (
+                        db.query(User)
+                        .filter(sa_func.lower(sa_func.trim(User.email)) == owner_email)
+                        .order_by(User.id.asc())
+                        .first()
+                    )
     elif user_id:
         try:
             user = db.query(User).filter_by(id=int(user_id)).one_or_none()
@@ -198,7 +229,23 @@ def _get_user_and_client(db, email: Optional[str], user_id: Optional[str]) -> tu
     if user and user.id:
         client = db.query(Client).filter_by(user_id=user.id).one_or_none()
     if not client and email:
-        client = db.query(Client).filter_by(email=email).one_or_none()
+        normalized = _normalize_email(email)
+        client = (
+            db.query(Client)
+            .filter(sa_func.lower(sa_func.trim(Client.email)) == normalized)
+            .order_by(Client.id.asc())
+            .first()
+        )
+    if not client and email:
+        normalized = _normalize_email(email)
+        client_user = (
+            db.query(ClientUser)
+            .filter(sa_func.lower(sa_func.trim(ClientUser.email)) == normalized)
+            .order_by(ClientUser.id.asc())
+            .first()
+        )
+        if client_user:
+            client = db.query(Client).filter_by(id=client_user.client_id).one_or_none()
     return user, client
 
 

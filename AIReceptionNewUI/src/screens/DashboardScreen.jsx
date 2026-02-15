@@ -52,6 +52,12 @@ import TaskBoard from "./tasks/TaskBoard";
 import TaskManagerScreen from "./TaskManagerScreen";
 import ContactsScreen from "./ContactsScreen";
 import { createTaskManagerItem } from "../lib/api/taskManager";
+import {
+  listClientUsers,
+  createClientUser,
+  deleteClientUser,
+  updateClientUser
+} from "../lib/api/clientUsers";
 
 const resolveFeatureFlag = (value) => {
   if (value === undefined || value === null) return false;
@@ -586,8 +592,8 @@ export default function DashboardScreen({
   const [promptActionStatus, setPromptActionStatus] = useState({ status: "idle", message: "" });
   const [userForm, setUserForm] = useState({
     email: user?.email || "",
-    businessName: userProfile?.business_name || "",
-    businessNumber: userProfile?.business_number || ""
+    businessName: userProfile?.business_name || clientData?.business_name || clientData?.name || "",
+    businessNumber: userProfile?.business_number || clientData?.business_phone || ""
   });
   const [editingEvent, setEditingEvent] = useState(null);
   const [calendarEditForm, setCalendarEditForm] = useState({
@@ -621,6 +627,12 @@ export default function DashboardScreen({
   const [emailMessages, setEmailMessages] = useState([]);
   const [emailLoading, setEmailLoading] = useState(false);
   const [emailError, setEmailError] = useState("");
+  const clientId = useMemo(() => clientData?.id || clientData?.client_id || clientData?.clientId || null, [clientData]);
+  const userId = user?.id || userProfile?.id || null;
+  const [clientUsers, setClientUsers] = useState([]);
+  const [clientUserSlots, setClientUserSlots] = useState({ remaining: 5, limit: 5 });
+  const [clientUsersStatus, setClientUsersStatus] = useState({ status: "idle", message: "" });
+  const [clientUserForm, setClientUserForm] = useState({ email: "", password: "", role: "admin" });
   const [emailAccountEmail, setEmailAccountEmail] = useState("");
   const [emailPageTokens, setEmailPageTokens] = useState([null]);
   const [emailCurrentPage, setEmailCurrentPage] = useState(1);
@@ -766,6 +778,129 @@ export default function DashboardScreen({
   const calendarFetchTimerRef = useRef(null);
   const emailLoadedRef = useRef(false);
   const emailLabelsLoadedRef = useRef(false);
+
+  // ---------------------------------------------------------------------------
+  // Client user management (up to 5 users per client)
+  // ---------------------------------------------------------------------------
+  const loadClientUsers = async () => {
+    if (!clientId) {
+      setClientUsersStatus({ status: "error", message: "Client not set yet." });
+      return;
+    }
+    setClientUsersStatus({ status: "loading", message: "Loading users..." });
+    try {
+      const { users: fetched, remaining, limit } = await listClientUsers({
+        clientId,
+        userId,
+        email: user?.email
+      });
+      setClientUsers(fetched || []);
+      setClientUserSlots({ remaining, limit });
+      setClientUsersStatus({ status: "success", message: "" });
+    } catch (err) {
+      setClientUsersStatus({
+        status: "error",
+        message: err?.message || "Unable to load users"
+      });
+    }
+  };
+
+  const handleAddClientUser = async () => {
+    if (!clientId) {
+      setClientUsersStatus({ status: "error", message: "Missing client ID." });
+      return;
+    }
+    const normalizedEmail = (clientUserForm.email || "").trim().toLowerCase();
+    const normalizedPassword = (clientUserForm.password || "").trim();
+    if (!normalizedEmail || !normalizedPassword) {
+      setClientUsersStatus({ status: "error", message: "Email and password are required." });
+      return;
+    }
+    setClientUsersStatus({ status: "loading", message: "Creating user..." });
+    try {
+      await createClientUser({
+        clientId,
+        userId,
+        email: user?.email,
+        newEmail: normalizedEmail,
+        password: normalizedPassword,
+        role: clientUserForm.role || "admin"
+      });
+      setClientUserForm({ email: "", password: "", role: "admin" });
+      await loadClientUsers();
+      setClientUsersStatus({ status: "success", message: "User added." });
+    } catch (err) {
+      setClientUsersStatus({
+        status: "error",
+        message: err?.message || "Unable to create user"
+      });
+    }
+  };
+
+  const handleDeleteClientUser = async (targetId) => {
+    if (!clientId || !targetId) return;
+    setClientUsersStatus({ status: "loading", message: "Removing user..." });
+    try {
+      await deleteClientUser({ clientId, userId, email: user?.email, targetUserId: targetId });
+      await loadClientUsers();
+      setClientUsersStatus({ status: "success", message: "User removed." });
+    } catch (err) {
+      setClientUsersStatus({
+        status: "error",
+        message: err?.message || "Unable to remove user"
+      });
+    }
+  };
+
+  const handleToggleClientUser = async (entry) => {
+    if (!entry || !clientId) return;
+    const nextActive = !entry.is_active;
+    setClientUsersStatus({ status: "loading", message: nextActive ? "Enabling user..." : "Disabling user..." });
+    try {
+      await updateClientUser({
+        clientId,
+        userId,
+        email: user?.email,
+        targetUserId: entry.id,
+        data: { is_active: nextActive, status: nextActive ? "active" : "disabled" }
+      });
+      await loadClientUsers();
+      setClientUsersStatus({ status: "success", message: "" });
+    } catch (err) {
+      setClientUsersStatus({
+        status: "error",
+        message: err?.message || "Unable to update user"
+      });
+    }
+  };
+
+  const handleResetPassword = async (entry) => {
+    if (!entry || !clientId) return;
+    // eslint-disable-next-line no-alert
+    const nextPassword = window.prompt(`Enter a new password for ${entry.email}:`);
+    if (!nextPassword) return;
+    const cleanedPassword = nextPassword.trim();
+    if (!cleanedPassword) {
+      setClientUsersStatus({ status: "error", message: "Password cannot be empty." });
+      return;
+    }
+    setClientUsersStatus({ status: "loading", message: "Updating password..." });
+    try {
+      await updateClientUser({
+        clientId,
+        userId,
+        email: user?.email,
+        targetUserId: entry.id,
+        data: { password: cleanedPassword }
+      });
+      setClientUsersStatus({ status: "success", message: "Password updated." });
+    } catch (err) {
+      setClientUsersStatus({
+        status: "error",
+        message: err?.message || "Unable to update password"
+      });
+    }
+  };
   const emailClassifyTimerRef = useRef(null);
   const emailActionsTimerRef = useRef(null);
   const emailAutoTagTimerRef = useRef(null);
@@ -2604,7 +2739,7 @@ export default function DashboardScreen({
   };
 
   const getSocialIdentity = () => ({
-    email: user?.email || userForm.email || "",
+    email: (user?.email || userForm.email || "").trim().toLowerCase(),
     userId: user?.id || ""
   });
 
@@ -3186,7 +3321,8 @@ export default function DashboardScreen({
   const settingsSections = [
     { id: "automation", label: "Automation summary" },
     { id: "business", label: "Business profile" },
-    { id: "user", label: "User profile" }
+    { id: "user", label: "User profile" },
+    { id: "users", label: "User management" }
   ];
 
   const anyActiveSubscription = useMemo(
@@ -3207,6 +3343,18 @@ export default function DashboardScreen({
   };
 
   const currentTool = activeTool || "ai_receptionist";
+  const isClientUser = user?.scope === "client_user";
+  const visibleSettingsSections = useMemo(
+    () =>
+      isClientUser
+        ? settingsSections.filter((section) => section.id === "automation" || section.id === "user")
+        : settingsSections,
+    [isClientUser]
+  );
+  const visibleSettingsSectionIds = useMemo(
+    () => new Set(visibleSettingsSections.map((section) => section.id)),
+    [visibleSettingsSections]
+  );
   const isEmailManager = currentTool === "email_manager";
   const activeToolLocked = isToolLocked(currentTool);
   const navTabs = [...dashboardMenuItems, ...toolTabs];
@@ -3247,6 +3395,12 @@ export default function DashboardScreen({
   const emailActionButtonClass = lightThemeActive
     ? "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
     : "border-white/10 bg-white/10 text-white hover:border-white/30 hover:bg-white/20";
+
+  useEffect(() => {
+    if (visibleSettingsSectionIds.has(settingsSection)) return;
+    const fallbackSection = visibleSettingsSections[0]?.id || "automation";
+    setSettingsSection(fallbackSection);
+  }, [settingsSection, visibleSettingsSectionIds, visibleSettingsSections]);
   const emailHasNext = Boolean(emailPageTokens[emailCurrentPage]);
   const selectedEmailIds = Array.from(emailSelectedIds);
   const emailSelectionCount = selectedEmailIds.length;
@@ -3788,12 +3942,25 @@ export default function DashboardScreen({
   ]);
 
   useEffect(() => {
+    if (isClientUser) return;
+    if (settingsSection !== "users") return;
+    loadClientUsers();
+  }, [settingsSection, clientId, isClientUser]);
+
+  useEffect(() => {
     setUserForm({
       email: user?.email || "",
-      businessName: userProfile?.business_name || "",
-      businessNumber: userProfile?.business_number || ""
+      businessName: userProfile?.business_name || clientData?.business_name || clientData?.name || "",
+      businessNumber: userProfile?.business_number || clientData?.business_phone || ""
     });
-  }, [user?.email, userProfile?.business_name, userProfile?.business_number]);
+  }, [
+    user?.email,
+    userProfile?.business_name,
+    userProfile?.business_number,
+    clientData?.business_name,
+    clientData?.business_phone,
+    clientData?.name
+  ]);
 
   useEffect(() => {
     emailLoadedRef.current = false;
@@ -7158,7 +7325,7 @@ export default function DashboardScreen({
                     <nav className="rounded-3xl border border-white/10 bg-white/5 p-3 shadow-xl backdrop-blur">
                       <p className="text-[11px] uppercase tracking-[0.28em] text-indigo-200">Settings</p>
                       <div className="mt-3 flex gap-2 overflow-x-auto pb-1 lg:flex-col lg:gap-2 lg:overflow-visible">
-                        {settingsSections.map((section) => (
+                        {visibleSettingsSections.map((section) => (
                           <button
                             key={section.id}
                             type="button"
@@ -7343,7 +7510,7 @@ export default function DashboardScreen({
                           </div>
                         </>
                       )}
-                      {settingsSection === "business" && (
+                      {!isClientUser && settingsSection === "business" && (
                         <>
                           <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
                           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -7745,15 +7912,30 @@ export default function DashboardScreen({
                               value={userForm.businessName}
                               onChange={(e) => setUserForm({ ...userForm, businessName: e.target.value })}
                               placeholder="Business name"
-                              className="rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
+                              readOnly={isClientUser}
+                              className={`rounded-xl border border-white/10 px-3 py-2 text-sm ${
+                                isClientUser
+                                  ? "bg-slate-900/40 text-slate-200"
+                                  : "bg-slate-900/60 text-slate-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
+                              }`}
                             />
                             <input
                               type="tel"
                               value={userForm.businessNumber}
                               onChange={(e) => setUserForm({ ...userForm, businessNumber: e.target.value })}
                               placeholder="Business number"
-                              className="rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
+                              readOnly={isClientUser}
+                              className={`rounded-xl border border-white/10 px-3 py-2 text-sm ${
+                                isClientUser
+                                  ? "bg-slate-900/40 text-slate-200"
+                                  : "bg-slate-900/60 text-slate-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
+                              }`}
                             />
+                            {isClientUser ? (
+                              <p className="text-xs text-slate-400">
+                                Business details are managed by the primary client account.
+                              </p>
+                            ) : null}
                             <div className="rounded-2xl border border-white/10 bg-slate-900/40 p-3 text-xs text-slate-200">
                               <div className="flex items-center justify-between gap-2">
                                 <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Subscriptions</p>
@@ -7795,19 +7977,147 @@ export default function DashboardScreen({
                                 <p className="mt-2 text-[11px] text-slate-400">No subscription details yet.</p>
                               )}
                             </div>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                onBusinessSave?.({
-                                  businessName: userForm.businessName,
-                                  businessPhone: userForm.businessNumber,
-                                  websiteUrl: businessForm.website
-                                })
-                              }
-                              className="inline-flex items-center gap-2 self-start rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:border-white/30 hover:bg-white/20"
-                            >
-                              Update profile
-                            </button>
+                            {!isClientUser ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onBusinessSave?.({
+                                    businessName: userForm.businessName,
+                                    businessPhone: userForm.businessNumber,
+                                    websiteUrl: businessForm.website
+                                  })
+                                }
+                                className="inline-flex items-center gap-2 self-start rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:border-white/30 hover:bg-white/20"
+                              >
+                                Update profile
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
+                      )}
+                      {!isClientUser && settingsSection === "users" && (
+                        <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl backdrop-blur">
+                          <div className="mb-3 flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <Users className="h-5 w-5 text-indigo-200" />
+                              <div>
+                                <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Team</p>
+                                <h4 className="text-lg font-semibold text-white">User management</h4>
+                              </div>
+                            </div>
+                            <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-200">
+                              Slots left: {clientUserSlots.remaining} / {clientUserSlots.limit}
+                            </div>
+                          </div>
+                          <div className="grid gap-3">
+                            <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-3">
+                              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Add user</p>
+                              <div className="mt-2 grid gap-2 sm:grid-cols-[2fr_1.2fr_1fr_auto] sm:items-center">
+                                <input
+                                  type="email"
+                                  value={clientUserForm.email}
+                                  onChange={(e) => setClientUserForm((prev) => ({ ...prev, email: e.target.value }))}
+                                  placeholder="user@example.com"
+                                  className="rounded-xl border border-white/10 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
+                                />
+                                <input
+                                  type="password"
+                                  value={clientUserForm.password}
+                                  onChange={(e) =>
+                                    setClientUserForm((prev) => ({ ...prev, password: e.target.value }))
+                                  }
+                                  placeholder="Temporary password"
+                                  className="rounded-xl border border-white/10 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
+                                />
+                                <select
+                                  value={clientUserForm.role}
+                                  onChange={(e) => setClientUserForm((prev) => ({ ...prev, role: e.target.value }))}
+                                  className="rounded-xl border border-white/10 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
+                                >
+                                  <option value="admin">Admin</option>
+                                  <option value="editor">Editor</option>
+                                </select>
+                                <button
+                                  type="button"
+                                  onClick={handleAddClientUser}
+                                  disabled={
+                                    clientUsersStatus.status === "loading" || clientUserSlots.remaining <= 0 || !clientId
+                                  }
+                                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-indigo-300/60 bg-indigo-500/20 px-3 py-2 text-sm font-semibold text-indigo-50 transition hover:-translate-y-0.5 hover:border-indigo-200 hover:bg-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  <UserPlus className="h-4 w-4" />
+                                  Add user
+                                </button>
+                              </div>
+                              {clientUsersStatus.status === "error" ? (
+                                <div className="mt-2 text-xs text-rose-300">{clientUsersStatus.message}</div>
+                              ) : null}
+                              {clientUsersStatus.status === "loading" ? (
+                                <div className="mt-2 text-xs text-slate-300">Working...</div>
+                              ) : null}
+                              {clientUsersStatus.status === "success" && clientUsersStatus.message ? (
+                                <div className="mt-2 text-xs text-emerald-200">{clientUsersStatus.message}</div>
+                              ) : null}
+                            </div>
+
+                            <div className="grid gap-2">
+                              {clientUsers?.length ? (
+                                clientUsers.map((u) => (
+                                  <div
+                                    key={u.id}
+                                    className="flex flex-col gap-2 rounded-2xl border border-white/10 bg-slate-900/60 p-3 sm:flex-row sm:items-center sm:justify-between"
+                                  >
+                                    <div className="flex flex-col gap-1 text-sm text-slate-100">
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-semibold">{u.email}</span>
+                                        <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-slate-200">
+                                          {u.role || "admin"}
+                                        </span>
+                                        <span
+                                          className={`rounded-full px-2 py-0.5 text-[11px] ${
+                                            u.is_active
+                                              ? "border border-emerald-200/60 bg-emerald-500/20 text-emerald-50"
+                                              : "border border-slate-400/50 bg-slate-800 text-slate-200"
+                                          }`}
+                                        >
+                                          {u.status || (u.is_active ? "active" : "disabled")}
+                                        </span>
+                                      </div>
+                                      <div className="text-[11px] text-slate-400">
+                                        Last login: {u.last_login_at ? formatDate(u.last_login_at) : "—"}
+                                      </div>
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleToggleClientUser(u)}
+                                        className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:border-white/30 hover:bg-white/15"
+                                      >
+                                        {u.is_active ? "Disable" : "Enable"}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleResetPassword(u)}
+                                        className="rounded-lg border border-indigo-300/50 bg-indigo-500/20 px-3 py-1.5 text-xs font-semibold text-indigo-50 transition hover:-translate-y-0.5 hover:border-indigo-200 hover:bg-indigo-500/30"
+                                      >
+                                        Reset password
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteClientUser(u.id)}
+                                        className="rounded-lg border border-rose-300/50 bg-rose-500/15 px-3 py-1.5 text-xs font-semibold text-rose-50 transition hover:-translate-y-0.5 hover:border-rose-200 hover:bg-rose-500/25"
+                                      >
+                                        Remove
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))
+                              ) : (
+                                <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-3 text-sm text-slate-300">
+                                  No users yet. Add teammates above (max 5 per client).
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
                       )}

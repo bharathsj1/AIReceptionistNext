@@ -124,7 +124,7 @@ export default function PricingPackages({
 
   const displayPackages = getDisplayPackages(geoCountryCode, fxRates);
   const nameClass = "text-sm font-semibold uppercase tracking-[0.16em] text-slate-200/80";
-  const priceClass = ""; // prices hidden on home screen
+  const priceClass = centered ? "" : "mt-1 text-2xl font-semibold text-white";
   const descClass = centered
     ? "relative mt-3 text-[16px] md:text-lg text-slate-100/90 leading-snug font-bold"
     : "relative mt-3 text-sm text-slate-100/85 md:text-base leading-snug";

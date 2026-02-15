@@ -4086,6 +4086,37 @@ html {
   margin-top: 4px;
 }
 
+.checkout-plan-summary {
+  margin: 14px 0 10px;
+  border: 1px solid rgba(250, 204, 21, 0.45);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: rgba(250, 204, 21, 0.14);
+}
+
+.checkout-plan-summary__label {
+  margin: 0 0 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  color: #fde68a;
+}
+
+.checkout-plan-summary__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 14px;
+  color: #f8fafc;
+}
+
+.checkout-plan-summary__row strong {
+  color: #fef08a;
+  font-weight: 700;
+}
+
 @media (max-width: 900px) {
   .login-layout {
     grid-template-columns: 1fr;

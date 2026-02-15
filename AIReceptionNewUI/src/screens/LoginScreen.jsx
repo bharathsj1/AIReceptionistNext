@@ -4,6 +4,7 @@ import { Eye, EyeOff } from "lucide-react";
 export default function LoginScreen({
   loginEmail,
   loginPassword,
+  checkoutPlanSummary,
   status,
   responseMessage,
   responseLink,
@@ -89,6 +90,15 @@ export default function LoginScreen({
                 <li>Capture leads, book meetings, and route VIPs.</li>
                 <li>Syncs with your calendar and CRM out of the box.</li>
               </ul>
+              {checkoutPlanSummary ? (
+                <div className="checkout-plan-summary" aria-label="Selected checkout plan">
+                  <p className="checkout-plan-summary__label">Selected plan</p>
+                  <div className="checkout-plan-summary__row">
+                    <span>{checkoutPlanSummary.name}</span>
+                    <strong>{checkoutPlanSummary.price}</strong>
+                  </div>
+                </div>
+              ) : null}
               <p className="hint">New here? Hit Create an account to start with your URL.</p>
             </aside>
           </div>
