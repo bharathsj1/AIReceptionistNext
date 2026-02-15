@@ -5,6 +5,7 @@ export default function CreateAccountScreen({
   name,
   email,
   password,
+  checkoutPlanSummary,
   onNameChange,
   onEmailChange,
   onPasswordChange,
@@ -116,6 +117,15 @@ export default function CreateAccountScreen({
                 <li>Capture leads, book meetings, and route VIPs.</li>
                 <li>Syncs with your calendar and CRM out of the box.</li>
               </ul>
+              {checkoutPlanSummary ? (
+                <div className="checkout-plan-summary" aria-label="Selected checkout plan">
+                  <p className="checkout-plan-summary__label">Selected plan</p>
+                  <div className="checkout-plan-summary__row">
+                    <span>{checkoutPlanSummary.name}</span>
+                    <strong>{checkoutPlanSummary.price}</strong>
+                  </div>
+                </div>
+              ) : null}
             </div>
           </div>
         </div>

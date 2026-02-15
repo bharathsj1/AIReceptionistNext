@@ -14,10 +14,11 @@ from urllib.parse import parse_qs, quote
 
 import azure.functions as func
 import requests
+from sqlalchemy import func as sa_func, or_
 from sqlalchemy.exc import OperationalError
 from function_app import app
 from shared.config import get_google_oauth_settings, get_outlook_oauth_settings, get_public_api_base, get_setting, get_smtp_settings
-from shared.db import SessionLocal, User, Client, GoogleToken, OutlookToken
+from shared.db import SessionLocal, User, Client, GoogleToken, OutlookToken, ClientUser
 from utils.cors import build_cors_headers
 from services.ultravox_service import (
     create_ultravox_webhook,
@@ -48,6 +49,68 @@ def _verify_password(password: str, stored: str) -> bool:
     salt, hashed = stored.split("$", 1)
     check = hashlib.sha256((salt + password).encode("utf-8")).hexdigest()
     return secrets.compare_digest(check, hashed)
+
+
+def _normalize_email(value: Optional[str]) -> str:
+    return str(value or "").strip().lower()
+
+
+def _resolve_primary_user(db, email: Optional[str] = None, user_id: Optional[str] = None) -> Optional[User]:
+    normalized = _normalize_email(email) if email else ""
+    if normalized:
+        user = (
+            db.query(User)
+            .filter(sa_func.lower(sa_func.trim(User.email)) == normalized)
+            .order_by(User.id.asc())
+            .first()
+        )
+        if user:
+            return user
+        cuser = (
+            db.query(ClientUser)
+            .filter(sa_func.lower(sa_func.trim(ClientUser.email)) == normalized)
+            .order_by(ClientUser.id.asc())
+            .first()
+        )
+        if cuser:
+            client = db.query(Client).filter_by(id=cuser.client_id).one_or_none()
+            if client and client.user_id:
+                return db.query(User).filter_by(id=client.user_id).one_or_none()
+            if client and client.email:
+                owner_email = _normalize_email(client.email)
+                return (
+                    db.query(User)
+                    .filter(sa_func.lower(sa_func.trim(User.email)) == owner_email)
+                    .order_by(User.id.asc())
+                    .first()
+                )
+        return None
+    if user_id:
+        try:
+            return db.query(User).filter_by(id=int(user_id)).one_or_none()
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _is_client_user_email(db, email: Optional[str]) -> bool:
+    normalized = _normalize_email(email)
+    if not normalized:
+        return False
+    entry = (
+        db.query(ClientUser)
+        .filter(sa_func.lower(sa_func.trim(ClientUser.email)) == normalized)
+        .filter(
+            or_(
+                ClientUser.is_active.is_(True),
+                ClientUser.is_active.is_(None),
+            )
+        )
+        .filter(sa_func.lower(sa_func.coalesce(ClientUser.status, "active")) != "disabled")
+        .order_by(ClientUser.id.asc())
+        .first()
+    )
+    return entry is not None
 
 
 def _generate_reset_token() -> str:
@@ -246,6 +309,40 @@ def _extract_time_fields(payload: dict) -> Tuple[Optional[str], Optional[str], O
     duration = first("duration_minutes", "durationMinutes", "duration")
     buffer = first("buffer_minutes", "bufferMinutes", "buffer")
     return start_iso, end_iso, duration, buffer
+
+
+def _get_client_id(req: func.HttpRequest, body: Optional[dict] = None) -> Optional[int]:
+    """
+    Try to extract a client identifier from headers or body.
+    Accepts: x-client-id, x-tenant-id headers or clientId / client_id / tenantId keys in the body.
+    """
+    body = body or {}
+    candidates = []
+    for key in ("clientId", "client_id", "tenantId", "tenant_id"):
+        if key in body and body.get(key) is not None:
+            candidates.append(body.get(key))
+    for key in ("x-client-id", "x-tenant-id", "x-tenantid"):
+        header_val = req.headers.get(key)
+        if header_val:
+            candidates.append(header_val)
+    for val in candidates:
+        try:
+            cid = int(val)
+            if cid > 0:
+                return cid
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _get_request_user_email(req: func.HttpRequest) -> Optional[str]:
+    for key in ("x-user-email", "X-User-Email", "x-useremail"):
+        value = req.headers.get(key)
+        if value:
+            normalized = _normalize_email(value)
+            if normalized:
+                return normalized
+    return None
 
 
 def _send_appointment_confirmation_email(
@@ -789,8 +886,8 @@ def auth_signup(req: func.HttpRequest) -> func.HttpResponse:
         body = req.get_json()
     except ValueError:
         body = None
-    email = (body or {}).get("email")
-    password = (body or {}).get("password")
+    email = _normalize_email((body or {}).get("email"))
+    password = str((body or {}).get("password") or "")
     if not email or not password:
         return func.HttpResponse(
             json.dumps({"error": "email and password are required"}),
@@ -801,7 +898,11 @@ def auth_signup(req: func.HttpRequest) -> func.HttpResponse:
 
     db = SessionLocal()
     try:
-        existing = db.query(User).filter_by(email=email).one_or_none()
+        existing = (
+            db.query(User)
+            .filter(sa_func.lower(sa_func.trim(User.email)) == email)
+            .one_or_none()
+        )
         if existing:
             return func.HttpResponse(
                 json.dumps({"error": "User already exists"}),
@@ -815,7 +916,11 @@ def auth_signup(req: func.HttpRequest) -> func.HttpResponse:
         db.flush()
 
         # Link to client if exists
-        client = db.query(Client).filter_by(email=email).one_or_none()
+        client = (
+            db.query(Client)
+            .filter(sa_func.lower(sa_func.trim(Client.email)) == email)
+            .one_or_none()
+        )
         if client:
             client.user_id = user.id
 
@@ -850,8 +955,8 @@ def auth_login(req: func.HttpRequest) -> func.HttpResponse:
         body = req.get_json()
     except ValueError:
         body = None
-    email = (body or {}).get("email")
-    password = (body or {}).get("password")
+    email = _normalize_email((body or {}).get("email"))
+    password = str((body or {}).get("password") or "")
     if not email or not password:
         return func.HttpResponse(
             json.dumps({"error": "email and password are required"}),
@@ -862,21 +967,79 @@ def auth_login(req: func.HttpRequest) -> func.HttpResponse:
 
     db = SessionLocal()
     try:
-        user = db.query(User).filter_by(email=email).one_or_none()
-        if not user or not _verify_password(password, user.password_hash):
+        # 1) Try client-level users first
+        password_candidates = [password]
+        trimmed_password = password.strip()
+        if trimmed_password and trimmed_password != password:
+            password_candidates.append(trimmed_password)
+
+        candidate_client_users = (
+            db.query(ClientUser)
+            .filter(sa_func.lower(sa_func.trim(ClientUser.email)) == email)
+            .filter(
+                or_(
+                    ClientUser.is_active.is_(True),
+                    ClientUser.is_active.is_(None),
+                )
+            )
+            .filter(sa_func.lower(sa_func.coalesce(ClientUser.status, "active")) != "disabled")
+            .order_by(ClientUser.id.asc())
+            .all()
+        )
+        cuser = next(
+            (
+                entry
+                for entry in candidate_client_users
+                if any(_verify_password(candidate, entry.password_hash) for candidate in password_candidates)
+            ),
+            None,
+        )
+        if cuser:
+            cuser.last_login_at = datetime.utcnow()
+            db.commit()
+            return func.HttpResponse(
+                json.dumps(
+                    {
+                        "user_id": cuser.id,
+                        "email": cuser.email,
+                        "client_id": cuser.client_id,
+                        "role": cuser.role or "admin",
+                        "scope": "client_user",
+                    }
+                ),
+                status_code=200,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        # 2) Fallback to legacy single-user login
+        user = (
+            db.query(User)
+            .filter(sa_func.lower(sa_func.trim(User.email)) == email)
+            .order_by(User.id.asc())
+            .first()
+        )
+        if not user or not any(_verify_password(candidate, user.password_hash) for candidate in password_candidates):
             return func.HttpResponse(
                 json.dumps({"error": "Invalid credentials"}),
                 status_code=401,
                 mimetype="application/json",
                 headers=cors,
             )
-        client = db.query(Client).filter_by(email=email).one_or_none()
+        client = (
+            db.query(Client)
+            .filter(sa_func.lower(sa_func.trim(Client.email)) == email)
+            .order_by(Client.id.asc())
+            .first()
+        )
         return func.HttpResponse(
             json.dumps(
                 {
                     "user_id": user.id,
                     "email": user.email,
                     "client_id": client.id if client else None,
+                    "role": "admin",
+                    "scope": "primary_user",
                 }
             ),
             status_code=200,
@@ -885,6 +1048,10 @@ def auth_login(req: func.HttpRequest) -> func.HttpResponse:
         )
     except Exception as exc:  # pylint: disable=broad-except
         logger.error("Login failed: %s", exc)
+        try:
+            db.rollback()
+        except Exception:  # pylint: disable=broad-except
+            pass
         return func.HttpResponse(
             json.dumps({"error": "Login failed", "details": str(exc)}),
             status_code=500,
@@ -906,7 +1073,7 @@ def auth_email_exists(req: func.HttpRequest) -> func.HttpResponse:
     if req.method == "OPTIONS":
         return func.HttpResponse("", status_code=204, headers=cors)
 
-    email = req.params.get("email")
+    email = _normalize_email(req.params.get("email"))
     if not email:
         return func.HttpResponse(
             json.dumps({"error": "email is required"}),
@@ -916,10 +1083,409 @@ def auth_email_exists(req: func.HttpRequest) -> func.HttpResponse:
         )
     db = SessionLocal()
     try:
-        existing = db.query(User).filter_by(email=email).one_or_none()
+        exists = (
+            db.query(User)
+            .filter(sa_func.lower(sa_func.trim(User.email)) == email)
+            .count()
+            > 0
+            or db.query(ClientUser)
+            .filter(sa_func.lower(sa_func.trim(ClientUser.email)) == email)
+            .count()
+            > 0
+        )
         return func.HttpResponse(
-            json.dumps({"exists": existing is not None}),
+            json.dumps({"exists": exists}),
             status_code=200,
+            mimetype="application/json",
+            headers=cors,
+        )
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# Client user management (multi-user per client)
+# ---------------------------------------------------------------------------
+
+
+@app.function_name(name="ClientUsersList")
+@app.route(route="auth/client-users/list", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def client_users_list(req: func.HttpRequest) -> func.HttpResponse:
+    cors = build_cors_headers(req, ["GET", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
+    client_id = _get_client_id(req)
+    if not client_id:
+        return func.HttpResponse(
+            json.dumps({"error": "clientId is required (header x-client-id or body clientId)"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    db = SessionLocal()
+    try:
+        requester_email = _get_request_user_email(req)
+        if requester_email and _is_client_user_email(db, requester_email):
+            return func.HttpResponse(
+                json.dumps({"error": "Added users cannot change settings"}),
+                status_code=403,
+                mimetype="application/json",
+                headers=cors,
+            )
+        users = (
+            db.query(ClientUser)
+            .filter(ClientUser.client_id == client_id, ClientUser.is_active.is_(True))
+            .order_by(ClientUser.created_at.asc())
+            .all()
+        )
+        total_active = len(users)
+        remaining = max(0, 5 - total_active)
+        payload = [
+            {
+                "id": u.id,
+                "email": u.email,
+                "role": u.role or "admin",
+                "status": u.status or ("active" if u.is_active else "disabled"),
+                "is_active": bool(u.is_active),
+                "created_at": u.created_at.isoformat() if u.created_at else None,
+                "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
+            }
+            for u in users
+        ]
+        return func.HttpResponse(
+            json.dumps({"client_id": client_id, "users": payload, "remaining_slots": remaining, "limit": 5}),
+            status_code=200,
+            mimetype="application/json",
+            headers=cors,
+        )
+    finally:
+        db.close()
+
+
+@app.function_name(name="ClientUsersCreate")
+@app.route(route="auth/client-users", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def client_users_create(req: func.HttpRequest) -> func.HttpResponse:
+    cors = build_cors_headers(req, ["POST", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
+    try:
+        body = req.get_json()
+    except ValueError:
+        body = {}
+
+    client_id = _get_client_id(req, body)
+    email = _normalize_email((body or {}).get("email"))
+    password = str((body or {}).get("password") or "").strip()
+    role = ((body or {}).get("role") or "admin").strip().lower()
+
+    if not client_id:
+        return func.HttpResponse(
+            json.dumps({"error": "clientId is required (header x-client-id or body clientId)"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+    if not email or not password:
+        return func.HttpResponse(
+            json.dumps({"error": "email and password are required"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    db = SessionLocal()
+    try:
+        requester_email = _get_request_user_email(req)
+        if requester_email and _is_client_user_email(db, requester_email):
+            return func.HttpResponse(
+                json.dumps({"error": "Added users cannot change settings"}),
+                status_code=403,
+                mimetype="application/json",
+                headers=cors,
+            )
+        active_count = (
+            db.query(ClientUser)
+            .filter(ClientUser.client_id == client_id, ClientUser.is_active.is_(True))
+            .count()
+        )
+        if active_count >= 5:
+            return func.HttpResponse(
+                json.dumps({"error": "Maximum users reached", "limit": 5}),
+                status_code=409,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        existing = (
+            db.query(ClientUser)
+            .filter(sa_func.lower(sa_func.trim(ClientUser.email)) == email)
+            .order_by(ClientUser.id.asc())
+            .first()
+        )
+        if existing:
+            if existing.client_id != client_id:
+                return func.HttpResponse(
+                    json.dumps({"error": "Email already used for another client"}),
+                    status_code=400,
+                    mimetype="application/json",
+                    headers=cors,
+                )
+            # If same client, allow reset/reactivation with new password/role
+            existing.password_hash = _hash_password(password)
+            existing.role = role
+            existing.is_active = True
+            user_obj = existing
+        else:
+            user_obj = ClientUser(
+                client_id=client_id,
+                email=email,
+                password_hash=_hash_password(password),
+                role=role,
+                is_active=True,
+                status="active",
+            )
+            db.add(user_obj)
+
+        # Backward compatibility: ensure a legacy user row exists for this email.
+        # Do not overwrite an existing primary user password.
+        legacy_user = (
+            db.query(User)
+            .filter(sa_func.lower(sa_func.trim(User.email)) == email)
+            .order_by(User.id.asc())
+            .first()
+        )
+        if not legacy_user:
+            db.add(
+                User(
+                    email=email,
+                    password_hash=user_obj.password_hash,
+                    is_admin=(role == "admin"),
+                )
+            )
+
+        db.commit()
+        db.refresh(user_obj)
+        return func.HttpResponse(
+            json.dumps(
+                {
+                    "id": user_obj.id,
+                    "email": user_obj.email,
+                    "client_id": user_obj.client_id,
+                    "role": user_obj.role or "admin",
+                }
+            ),
+            status_code=201,
+            mimetype="application/json",
+            headers=cors,
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        try:
+            db.rollback()
+        except Exception:  # pylint: disable=broad-except
+            pass
+        logger.error("Failed to create client user: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "Unable to create user", "details": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+            headers=cors,
+        )
+    finally:
+        db.close()
+
+
+@app.function_name(name="ClientUsersDelete")
+@app.route(route="auth/client-users/{user_id}", methods=["DELETE", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def client_users_delete(req: func.HttpRequest) -> func.HttpResponse:
+    cors = build_cors_headers(req, ["DELETE", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
+    client_id = _get_client_id(req)
+    if not client_id:
+        return func.HttpResponse(
+            json.dumps({"error": "clientId is required (header x-client-id or body clientId)"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+    route_params = req.route_params or {}
+    user_id_val = route_params.get("user_id")
+    try:
+        uid = int(user_id_val)
+    except (TypeError, ValueError):
+        return func.HttpResponse(
+            json.dumps({"error": "user_id must be an integer"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    db = SessionLocal()
+    try:
+        requester_email = _get_request_user_email(req)
+        if requester_email and _is_client_user_email(db, requester_email):
+            return func.HttpResponse(
+                json.dumps({"error": "Added users cannot change settings"}),
+                status_code=403,
+                mimetype="application/json",
+                headers=cors,
+            )
+        user_obj = (
+            db.query(ClientUser)
+            .filter(ClientUser.id == uid, ClientUser.client_id == client_id)
+            .one_or_none()
+        )
+        if not user_obj:
+            return func.HttpResponse(
+                json.dumps({"error": "User not found"}),
+                status_code=404,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        db.delete(user_obj)
+        db.commit()
+        return func.HttpResponse("", status_code=204, headers=cors)
+    except Exception as exc:  # pylint: disable=broad-except
+        try:
+            db.rollback()
+        except Exception:  # pylint: disable=broad-except
+            pass
+        logger.error("Failed to delete client user: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "Unable to delete user", "details": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+            headers=cors,
+        )
+    finally:
+        db.close()
+
+
+@app.function_name(name="ClientUsersUpdate")
+@app.route(route="auth/client-users/{user_id}/update", methods=["PATCH", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def client_users_update(req: func.HttpRequest) -> func.HttpResponse:
+    cors = build_cors_headers(req, ["PATCH", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
+    client_id = _get_client_id(req)
+    if not client_id:
+        return func.HttpResponse(
+            json.dumps({"error": "clientId is required (header x-client-id or body clientId)"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    route_params = req.route_params or {}
+    user_id_val = route_params.get("user_id")
+    try:
+        uid = int(user_id_val)
+    except (TypeError, ValueError):
+        return func.HttpResponse(
+            json.dumps({"error": "user_id must be an integer"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    try:
+        body = req.get_json()
+    except ValueError:
+        body = {}
+
+    allowed_status = {"active", "invited", "disabled"}
+    new_status = body.get("status")
+    new_role = body.get("role")
+    new_password = body.get("password")
+    new_active = body.get("is_active")
+
+    db = SessionLocal()
+    try:
+        requester_email = _get_request_user_email(req)
+        if requester_email and _is_client_user_email(db, requester_email):
+            return func.HttpResponse(
+                json.dumps({"error": "Added users cannot change settings"}),
+                status_code=403,
+                mimetype="application/json",
+                headers=cors,
+            )
+        user_obj = (
+            db.query(ClientUser)
+            .filter(ClientUser.id == uid, ClientUser.client_id == client_id)
+            .one_or_none()
+        )
+        if not user_obj:
+            return func.HttpResponse(
+                json.dumps({"error": "User not found"}),
+                status_code=404,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        if new_status:
+            if new_status not in allowed_status:
+                return func.HttpResponse(
+                    json.dumps({"error": f"status must be one of {sorted(allowed_status)}"}),
+                    status_code=400,
+                    mimetype="application/json",
+                    headers=cors,
+                )
+            user_obj.status = new_status
+            user_obj.is_active = new_status != "disabled"
+
+        if new_role:
+            user_obj.role = str(new_role).strip().lower()
+
+        if new_password is not None:
+            cleaned_password = str(new_password).strip()
+            if not cleaned_password:
+                return func.HttpResponse(
+                    json.dumps({"error": "password cannot be empty"}),
+                    status_code=400,
+                    mimetype="application/json",
+                    headers=cors,
+                )
+            user_obj.password_hash = _hash_password(cleaned_password)
+
+        if isinstance(new_active, bool):
+            user_obj.is_active = new_active
+            if new_active and user_obj.status == "disabled":
+                user_obj.status = "active"
+            if not new_active and user_obj.status == "active":
+                user_obj.status = "disabled"
+
+        db.commit()
+        db.refresh(user_obj)
+        return func.HttpResponse(
+            json.dumps(
+                {
+                    "id": user_obj.id,
+                    "email": user_obj.email,
+                    "client_id": user_obj.client_id,
+                    "role": user_obj.role,
+                    "status": user_obj.status,
+                    "is_active": user_obj.is_active,
+                }
+            ),
+            status_code=200,
+            mimetype="application/json",
+            headers=cors,
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        try:
+            db.rollback()
+        except Exception:  # pylint: disable=broad-except
+            pass
+        logger.error("Failed to update client user: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "Unable to update user", "details": str(exc)}),
+            status_code=500,
             mimetype="application/json",
             headers=cors,
         )
@@ -942,7 +1508,7 @@ def client_business_details(req: func.HttpRequest) -> func.HttpResponse:
         body = req.get_json()
     except ValueError:
         body = None
-    email = (body or {}).get("email")
+    email = _normalize_email((body or {}).get("email"))
     business_name = (body or {}).get("businessName")
     business_phone = (body or {}).get("businessPhone")
     business_category = (body or {}).get("businessCategory")
@@ -963,12 +1529,30 @@ def client_business_details(req: func.HttpRequest) -> func.HttpResponse:
 
     db = SessionLocal()
     try:
-        user = db.query(User).filter_by(email=email).one_or_none()
+        if _is_client_user_email(db, email):
+            return func.HttpResponse(
+                json.dumps({"error": "Added users cannot change settings"}),
+                status_code=403,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        user = (
+            db.query(User)
+            .filter(sa_func.lower(sa_func.trim(User.email)) == email)
+            .order_by(User.id.asc())
+            .first()
+        )
         if user:
             user.business_name = business_name
             user.business_number = business_phone
             db.flush()
-        client = db.query(Client).filter_by(email=email).one_or_none()
+        client = (
+            db.query(Client)
+            .filter(sa_func.lower(sa_func.trim(Client.email)) == email)
+            .order_by(Client.id.asc())
+            .first()
+        )
         if client:
             client.business_name = business_name
             client.business_phone = business_phone
@@ -1060,7 +1644,7 @@ def user_by_email(req: func.HttpRequest) -> func.HttpResponse:
     if req.method == "OPTIONS":
         return func.HttpResponse("", status_code=204, headers=cors)
 
-    email = req.params.get("email")
+    email = _normalize_email(req.params.get("email"))
     if not email:
         return func.HttpResponse(
             json.dumps({"error": "email is required"}),
@@ -1070,20 +1654,49 @@ def user_by_email(req: func.HttpRequest) -> func.HttpResponse:
         )
     db = SessionLocal()
     try:
-        user = db.query(User).filter_by(email=email).one_or_none()
-        if not user:
-            return func.HttpResponse(
-                json.dumps({"error": "not found"}),
-                status_code=404,
-                mimetype="application/json",
-                headers=cors,
+        user = (
+            db.query(User)
+            .filter(sa_func.lower(sa_func.trim(User.email)) == email)
+            .order_by(User.id.asc())
+            .first()
+        )
+
+        if user:
+            payload = {
+                "user_id": user.id,
+                "email": user.email,
+                "business_name": user.business_name,
+                "business_number": user.business_number,
+            }
+        else:
+            cuser = (
+                db.query(ClientUser)
+                .filter(sa_func.lower(sa_func.trim(ClientUser.email)) == email)
+                .order_by(ClientUser.id.asc())
+                .first()
             )
-        payload = {
-            "user_id": user.id,
-            "email": user.email,
-            "business_name": user.business_name,
-            "business_number": user.business_number,
-        }
+            if not cuser:
+                return func.HttpResponse(
+                    json.dumps({"error": "not found"}),
+                    status_code=404,
+                    mimetype="application/json",
+                    headers=cors,
+                )
+
+            client = db.query(Client).filter_by(id=cuser.client_id).one_or_none()
+            owner = None
+            if client and client.user_id:
+                owner = db.query(User).filter_by(id=client.user_id).one_or_none()
+
+            payload = {
+                "user_id": cuser.id,
+                "email": cuser.email,
+                "business_name": (owner.business_name if owner else None) or (client.business_name if client else None),
+                "business_number": (owner.business_number if owner else None) or (client.business_phone if client else None),
+                "client_id": cuser.client_id,
+                "role": cuser.role or "admin",
+                "scope": "client_user",
+            }
         return func.HttpResponse(
             json.dumps(payload),
             status_code=200,
@@ -1101,7 +1714,7 @@ def client_by_email(req: func.HttpRequest) -> func.HttpResponse:
     if req.method == "OPTIONS":
         return func.HttpResponse("", status_code=204, headers=cors)
 
-    email = req.params.get("email")
+    email = _normalize_email(req.params.get("email"))
     if not email:
         return func.HttpResponse(
             json.dumps({"error": "email is required"}),
@@ -1111,7 +1724,21 @@ def client_by_email(req: func.HttpRequest) -> func.HttpResponse:
         )
     db = SessionLocal()
     try:
-        client = db.query(Client).filter_by(email=email).one_or_none()
+        client = (
+            db.query(Client)
+            .filter(sa_func.lower(sa_func.trim(Client.email)) == email)
+            .order_by(Client.id.asc())
+            .first()
+        )
+        if not client:
+            cuser = (
+                db.query(ClientUser)
+                .filter(sa_func.lower(sa_func.trim(ClientUser.email)) == email)
+                .order_by(ClientUser.id.asc())
+                .first()
+            )
+            if cuser:
+                client = db.query(Client).filter_by(id=cuser.client_id).one_or_none()
         if not client:
             return func.HttpResponse(
                 json.dumps({"error": "not found"}),
@@ -1157,7 +1784,7 @@ def auth_forgot_password(req: func.HttpRequest) -> func.HttpResponse:
         body = req.get_json()
     except ValueError:
         body = None
-    email = (body or {}).get("email")
+    email = _normalize_email((body or {}).get("email"))
     if not email:
         return func.HttpResponse(
             json.dumps({"error": "email is required"}),
@@ -1168,17 +1795,48 @@ def auth_forgot_password(req: func.HttpRequest) -> func.HttpResponse:
 
     db = SessionLocal()
     try:
-        user = db.query(User).filter_by(email=email).one_or_none()
-        if not user:
+        user = (
+            db.query(User)
+            .filter(sa_func.lower(sa_func.trim(User.email)) == email)
+            .order_by(User.id.asc())
+            .first()
+        )
+        if user:
+            user.reset_token = _generate_reset_token()
+            user.reset_token_expires = datetime.utcnow() + timedelta(hours=1)
+            token = user.reset_token
+        else:
+            cuser = (
+                db.query(ClientUser)
+                .filter(sa_func.lower(sa_func.trim(ClientUser.email)) == email)
+                .filter(
+                    or_(
+                        ClientUser.is_active.is_(True),
+                        ClientUser.is_active.is_(None),
+                    )
+                )
+                .filter(sa_func.lower(sa_func.coalesce(ClientUser.status, "active")) != "disabled")
+                .order_by(ClientUser.id.asc())
+                .first()
+            )
+            if not cuser:
+                return func.HttpResponse(
+                    json.dumps({"message": "If the account exists, a reset link will be sent."}),
+                    status_code=200,
+                    mimetype="application/json",
+                    headers=cors,
+                )
+            cuser.reset_token = _generate_reset_token()
+            cuser.reset_token_expires = datetime.utcnow() + timedelta(hours=1)
+            token = cuser.reset_token
+
+        if not token:
             return func.HttpResponse(
                 json.dumps({"message": "If the account exists, a reset link will be sent."}),
                 status_code=200,
                 mimetype="application/json",
                 headers=cors,
             )
-        token = _generate_reset_token()
-        user.reset_token = token
-        user.reset_token_expires = datetime.utcnow() + timedelta(hours=1)
         db.commit()
 
         # In a real system, send email here. For now, return the link for manual testing.
@@ -1264,17 +1922,35 @@ def auth_reset_password(req: func.HttpRequest) -> func.HttpResponse:
             .filter(User.reset_token == token, User.reset_token_expires >= datetime.utcnow())
             .one_or_none()
         )
-        if not user:
-            return func.HttpResponse(
-                json.dumps({"error": "Invalid or expired token"}),
-                status_code=400,
-                mimetype="application/json",
-                headers=cors,
+        cuser = None
+        if user:
+            user.password_hash = _hash_password(new_password)
+            user.reset_token = None
+            user.reset_token_expires = None
+        else:
+            cuser = (
+                db.query(ClientUser)
+                .filter(ClientUser.reset_token == token, ClientUser.reset_token_expires >= datetime.utcnow())
+                .filter(
+                    or_(
+                        ClientUser.is_active.is_(True),
+                        ClientUser.is_active.is_(None),
+                    )
+                )
+                .filter(sa_func.lower(sa_func.coalesce(ClientUser.status, "active")) != "disabled")
+                .one_or_none()
             )
+            if not cuser:
+                return func.HttpResponse(
+                    json.dumps({"error": "Invalid or expired token"}),
+                    status_code=400,
+                    mimetype="application/json",
+                    headers=cors,
+                )
+            cuser.password_hash = _hash_password(new_password)
+            cuser.reset_token = None
+            cuser.reset_token_expires = None
 
-        user.password_hash = _hash_password(new_password)
-        user.reset_token = None
-        user.reset_token_expires = None
         db.commit()
 
         return func.HttpResponse(
@@ -1533,11 +2209,7 @@ def calendar_events(req: func.HttpRequest) -> func.HttpResponse:
 
     db = SessionLocal()
     try:
-        user = None
-        if email:
-            user = db.query(User).filter_by(email=email).one_or_none()
-        elif user_id:
-            user = db.query(User).filter_by(id=int(user_id)).one_or_none()
+        user = _resolve_primary_user(db, email=email, user_id=user_id)
         if not user:
             return func.HttpResponse(
                 json.dumps({"error": "User not found"}),
@@ -1664,11 +2336,7 @@ def calendar_update(req: func.HttpRequest) -> func.HttpResponse:
 
     db = SessionLocal()
     try:
-        user = None
-        if email:
-            user = db.query(User).filter_by(email=email).one_or_none()
-        elif user_id:
-            user = db.query(User).filter_by(id=int(user_id)).one_or_none()
+        user = _resolve_primary_user(db, email=email, user_id=user_id)
         if not user:
             return func.HttpResponse(
                 json.dumps({"error": "User not found"}),
@@ -1774,11 +2442,7 @@ def calendar_create(req: func.HttpRequest) -> func.HttpResponse:
 
     db = SessionLocal()
     try:
-        user = None
-        if email:
-            user = db.query(User).filter_by(email=email).one_or_none()
-        elif user_id:
-            user = db.query(User).filter_by(id=int(user_id)).one_or_none()
+        user = _resolve_primary_user(db, email=email, user_id=user_id)
         if not user:
             return func.HttpResponse(
                 json.dumps({"error": "User not found"}),

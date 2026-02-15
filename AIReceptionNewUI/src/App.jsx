@@ -66,6 +66,40 @@ const TOOL_ID_ALIASES = {
   "social media manager": "social_media_manager",
   "social-media-manager": "social_media_manager"
 };
+const PLAN_PRICING = {
+  bronze: { name: "Bronze", baseAmount: 500, baseCurrency: "CAD" },
+  silver: { name: "Silver", baseAmount: 600, baseCurrency: "CAD" },
+  gold: { name: "Gold", baseAmount: 700, baseCurrency: "CAD" },
+  custom: { name: "Custom", price: "Let's talk" }
+};
+
+const currencyForCountry = (code) => {
+  if (!code) return "USD";
+  const upper = code.toUpperCase();
+  if (upper === "CA") return "CAD";
+  if (upper === "GB" || upper === "UK") return "GBP";
+  return "USD";
+};
+
+const convertAmount = (amount, fromCurrency, toCurrency, fxRates) => {
+  if (!amount) return amount;
+  if (fromCurrency === toCurrency) return amount;
+  const toPerUsd = fxRates?.[toCurrency] || null;
+  const fromPerUsd = fxRates?.[fromCurrency] || null;
+  if (!toPerUsd || !fromPerUsd) return amount;
+  const usd = amount / fromPerUsd;
+  return usd * toPerUsd;
+};
+
+const formatPlanPrice = (amount, currency) => {
+  if (!amount) return "Let's talk";
+  return `${new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  }).format(amount)}/mo`;
+};
 const normalizeToolId = (value) => {
   const base = (value || DEFAULT_TOOL_ID).toString().toLowerCase().trim();
   if (!base) return DEFAULT_TOOL_ID;
@@ -155,6 +189,29 @@ export default function App() {
     () => Object.values(toolSubscriptions || {}).some((entry) => entry?.active),
     [toolSubscriptions]
   );
+  const checkoutPlanSummary = useMemo(() => {
+    if (!selectedPlan) return null;
+    const planKey = String(selectedPlan).toLowerCase();
+    const selected = PLAN_PRICING[planKey];
+    if (!selected) return null;
+    if (selected.price) {
+      return {
+        name: selected.name,
+        price: selected.price
+      };
+    }
+    const currency = currencyForCountry(countryCode || "US");
+    const converted = convertAmount(
+      selected.baseAmount,
+      selected.baseCurrency || "CAD",
+      currency,
+      fxRates
+    );
+    return {
+      name: selected.name,
+      price: formatPlanPrice(converted, currency)
+    };
+  }, [countryCode, fxRates, selectedPlan]);
   const dateRanges = useMemo(
     () => [
       { label: "Last 1 day", days: 1 },
@@ -522,12 +579,13 @@ export default function App() {
     setStatus("loading");
     setResponseMessage("");
     setResponseLink(null);
+    const normalizedLoginEmail = loginEmail.trim().toLowerCase();
 
     try {
       const res = await fetch(API_URLS.authLogin, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: loginEmail.trim(), password: loginPassword })
+        body: JSON.stringify({ email: normalizedLoginEmail, password: loginPassword })
       });
       const text = await res.text();
       let data = {};
@@ -541,7 +599,7 @@ export default function App() {
         throw new Error(data?.error || data?.details || "Login failed");
       }
 
-      const userEmail = data?.email || loginEmail.trim();
+      const userEmail = data?.email || normalizedLoginEmail;
       const displayName =
         data?.name ||
         (userEmail && userEmail.includes("@") ? userEmail.split("@")[0] : userEmail);
@@ -549,7 +607,10 @@ export default function App() {
       setUser({
         id: data?.user_id,
         email: userEmail,
-        name: displayName
+        name: displayName,
+        client_id: data?.client_id ?? null,
+        role: data?.role || null,
+        scope: data?.scope || null
       });
       setEmail(userEmail || "");
       setSignupEmail(userEmail || "");
@@ -1780,6 +1841,13 @@ export default function App() {
   const handleAgentSave = useCallback(
     async (updates) => {
       if (!user?.email) return;
+      if (user?.scope === "client_user") {
+        setAgentSaveStatus({
+          status: "error",
+          message: "Added users cannot change settings."
+        });
+        return;
+      }
       setAgentSaveStatus({ status: "loading", message: "" });
       try {
         const res = await fetch(API_URLS.dashboardAgent, {
@@ -1810,7 +1878,7 @@ export default function App() {
         });
       }
     },
-    [agentDetails.systemPrompt, agentDetails.temperature, agentDetails.voice, loadDashboard, user?.email]
+    [agentDetails.systemPrompt, agentDetails.temperature, agentDetails.voice, loadDashboard, user?.email, user?.scope]
   );
 
   const triggerPromptGeneration = useCallback(
@@ -1844,6 +1912,13 @@ export default function App() {
   const handleBusinessSave = useCallback(
     async ({ businessName: name, businessPhone: phone, websiteUrl, websiteData } = {}) => {
       if (!user?.email) return;
+      if (user?.scope === "client_user") {
+        setBusinessSaveStatus({
+          status: "error",
+          message: "Added users cannot change settings."
+        });
+        return;
+      }
       setBusinessSaveStatus({ status: "loading", message: "" });
       try {
         const payload = {
@@ -1880,12 +1955,19 @@ export default function App() {
         });
       }
     },
-    [businessName, businessPhone, clientData?.website_url, loadDashboard, triggerPromptGeneration, url, user?.email]
+    [businessName, businessPhone, clientData?.website_url, loadDashboard, triggerPromptGeneration, url, user?.email, user?.scope]
   );
 
   const handleBookingSettingsSave = useCallback(
     async (nextSettings) => {
       if (!user?.email) return;
+      if (user?.scope === "client_user") {
+        setBookingStatus({
+          status: "error",
+          message: "Added users cannot change settings."
+        });
+        return;
+      }
       setBookingStatus({ status: "loading", message: "" });
       try {
         const res = await fetch(API_URLS.dashboardBookingSettings, {
@@ -1912,7 +1994,7 @@ export default function App() {
         });
       }
     },
-    [user?.email]
+    [user?.email, user?.scope]
   );
 
   const handleTestBooking = useCallback(
@@ -2906,6 +2988,7 @@ export default function App() {
             <LoginScreen
               loginEmail={loginEmail}
               loginPassword={loginPassword}
+              checkoutPlanSummary={checkoutPlanSummary}
               status={status}
               responseMessage={responseMessage}
               responseLink={responseLink}
@@ -2925,6 +3008,7 @@ export default function App() {
               name={signupName}
               email={signupEmail}
               password={signupPassword}
+              checkoutPlanSummary={checkoutPlanSummary}
               onNameChange={setSignupName}
               onEmailChange={setSignupEmail}
               onPasswordChange={setSignupPassword}

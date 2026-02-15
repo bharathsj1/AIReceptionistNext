@@ -3,6 +3,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional, Tuple
 
+from sqlalchemy import func as sa_func
 from sqlalchemy.orm import Session
 
 import azure.functions as func
@@ -11,7 +12,7 @@ import requests
 from function_app import app
 from repository.contacts_repo import contact_to_dict, delete_contact, list_contacts, upsert_contact
 from shared.config import get_google_oauth_settings, get_outlook_oauth_settings
-from shared.db import SessionLocal, User, Client, GoogleToken, OutlookToken
+from shared.db import SessionLocal, User, Client, ClientUser, GoogleToken, OutlookToken
 from tasks_shared import parse_json_body
 from utils.cors import build_cors_headers
 
@@ -21,9 +22,40 @@ DEFAULT_CONTACT_LIMIT = 200
 DEFAULT_IMPORT_LIMIT = 500
 
 
+def _normalize_email(value: Optional[str]) -> str:
+    return str(value or "").strip().lower()
+
+
 def _get_user(db: Session, email: Optional[str], user_id: Optional[str]) -> Optional[User]:
     if email:
-        return db.query(User).filter_by(email=email).one_or_none()
+        normalized = _normalize_email(email)
+        user = (
+            db.query(User)
+            .filter(sa_func.lower(sa_func.trim(User.email)) == normalized)
+            .order_by(User.id.asc())
+            .first()
+        )
+        if user:
+            return user
+        client_user = (
+            db.query(ClientUser)
+            .filter(sa_func.lower(sa_func.trim(ClientUser.email)) == normalized)
+            .order_by(ClientUser.id.asc())
+            .first()
+        )
+        if client_user:
+            client = db.query(Client).filter_by(id=client_user.client_id).one_or_none()
+            if client and client.user_id:
+                return db.query(User).filter_by(id=client.user_id).one_or_none()
+            if client and client.email:
+                owner_email = _normalize_email(client.email)
+                return (
+                    db.query(User)
+                    .filter(sa_func.lower(sa_func.trim(User.email)) == owner_email)
+                    .order_by(User.id.asc())
+                    .first()
+                )
+        return None
     if user_id:
         try:
             return db.query(User).filter_by(id=int(user_id)).one_or_none()
@@ -38,9 +70,23 @@ def _get_client_id(db: Session, user: Optional[User], email: Optional[str]) -> O
         if client:
             return client.id
     if email:
-        client = db.query(Client).filter_by(email=email).one_or_none()
+        normalized = _normalize_email(email)
+        client = (
+            db.query(Client)
+            .filter(sa_func.lower(sa_func.trim(Client.email)) == normalized)
+            .order_by(Client.id.asc())
+            .first()
+        )
         if client:
             return client.id
+        client_user = (
+            db.query(ClientUser)
+            .filter(sa_func.lower(sa_func.trim(ClientUser.email)) == normalized)
+            .order_by(ClientUser.id.asc())
+            .first()
+        )
+        if client_user:
+            return client_user.client_id
     return None
 
 

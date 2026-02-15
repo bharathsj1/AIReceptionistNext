@@ -51,12 +51,43 @@ ALLOW_CREDENTIALS = _env_flag(
     ["CORS_ALLOW_CREDENTIALS", "CORS_ALLOW_CREDENTIAL", "CORS_CREDENTIALS", "CORSCredentials"]
 )
 ALLOW_LOCALHOST = _env_flag(["CORS_ALLOW_LOCALHOST", "ALLOW_LOCALHOST_CORS"], default=True)
+DEFAULT_ALLOWED_HEADERS = [
+    "Content-Type",
+    "Authorization",
+    "x-client-id",
+    "x-tenant-id",
+    "x-tenantid",
+    "x-user-id",
+    "x-user-email",
+]
 
 
 def _is_local_origin(origin: str | None) -> bool:
     if not origin:
         return False
     return origin.startswith("http://localhost") or origin.startswith("http://127.0.0.1")
+
+
+def _allow_headers(req: func.HttpRequest) -> str:
+    """
+    Build the Access-Control-Allow-Headers value.
+    Includes known application headers and mirrors any extra headers requested
+    by the browser preflight to avoid accidental frontend/backend drift.
+    """
+    requested = req.headers.get("Access-Control-Request-Headers", "")
+    merged: Dict[str, str] = {}
+
+    for name in DEFAULT_ALLOWED_HEADERS:
+        cleaned = name.strip()
+        if cleaned:
+            merged[cleaned.lower()] = cleaned
+
+    for name in requested.split(","):
+        cleaned = name.strip()
+        if cleaned:
+            merged.setdefault(cleaned.lower(), cleaned)
+
+    return ", ".join(merged.values())
 
 
 def build_cors_headers(req: func.HttpRequest, allowed_methods: Iterable[str]) -> Dict[str, str]:
@@ -85,7 +116,7 @@ def build_cors_headers(req: func.HttpRequest, allowed_methods: Iterable[str]) ->
             {
                 "Access-Control-Allow-Origin": origin if (ALLOW_CREDENTIALS and origin) else ("*" if allow_all else (origin or "*")),
                 "Access-Control-Allow-Methods": ", ".join(methods_list),
-                "Access-Control-Allow-Headers": "Content-Type, Authorization",
+                "Access-Control-Allow-Headers": _allow_headers(req),
                 "Access-Control-Expose-Headers": "X-Conversation-Id",
             }
         )

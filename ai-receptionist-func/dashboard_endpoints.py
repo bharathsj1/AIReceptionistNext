@@ -23,6 +23,7 @@ from shared.db import (
     Subscription,
     Task,
     User,
+    ClientUser,
 )
 from utils.cors import build_cors_headers
 from sqlalchemy.exc import OperationalError
@@ -34,11 +35,56 @@ import requests
 logger = logging.getLogger(__name__)
 
 
+def _normalize_email(value: str | None) -> str:
+    return str(value or "").strip().lower()
+
+
+def _is_client_user_email(db, email: str | None) -> bool:
+    normalized = _normalize_email(email)
+    if not normalized:
+        return False
+    entry = (
+        db.query(ClientUser)
+        .filter(sa_func.lower(sa_func.trim(ClientUser.email)) == normalized)
+        .filter(
+            or_(
+                ClientUser.is_active.is_(True),
+                ClientUser.is_active.is_(None),
+            )
+        )
+        .filter(sa_func.lower(sa_func.coalesce(ClientUser.status, "active")) != "disabled")
+        .order_by(ClientUser.id.asc())
+        .first()
+    )
+    return entry is not None
+
+
 def _find_client_and_user(db, email: str) -> tuple[Optional[Client], Optional[User]]:
-    user = db.query(User).filter_by(email=email).one_or_none()
-    client = db.query(Client).filter_by(email=email).one_or_none()
+    normalized = _normalize_email(email)
+    user = (
+        db.query(User)
+        .filter(sa_func.lower(sa_func.trim(User.email)) == normalized)
+        .order_by(User.id.asc())
+        .first()
+    )
+    client = (
+        db.query(Client)
+        .filter(sa_func.lower(sa_func.trim(Client.email)) == normalized)
+        .order_by(Client.id.asc())
+        .first()
+    )
+    client_user = (
+        db.query(ClientUser)
+        .filter(sa_func.lower(sa_func.trim(ClientUser.email)) == normalized)
+        .order_by(ClientUser.id.asc())
+        .first()
+    )
+    if not client and client_user:
+        client = db.query(Client).filter_by(id=client_user.client_id).one_or_none()
     if not client and user:
         client = db.query(Client).filter_by(user_id=user.id).one_or_none()
+    if client and not user and client.user_id:
+        user = db.query(User).filter_by(id=client.user_id).one_or_none()
     return client, user
 
 
@@ -181,9 +227,20 @@ def _build_dashboard_payload(db, email: str) -> dict:
         except Exception as exc:  # pylint: disable=broad-except
             logger.error("Failed to fetch Ultravox agent: %s", exc)
 
+    subscription_emails = {_normalize_email(email)}
+    if client and client.email:
+        subscription_emails.add(_normalize_email(client.email))
+    if user and user.email:
+        subscription_emails.add(_normalize_email(user.email))
+    if client:
+        for row in db.query(ClientUser.email).filter(ClientUser.client_id == client.id).all():
+            member_email = _normalize_email(row[0] if row else "")
+            if member_email:
+                subscription_emails.add(member_email)
+
     subscriptions = (
         db.query(Subscription)
-        .filter(Subscription.email == email)
+        .filter(sa_func.lower(sa_func.trim(Subscription.email)).in_(list(subscription_emails)))
         .order_by(Subscription.updated_at.desc())
         .all()
     )
@@ -603,6 +660,13 @@ def dashboard_update_agent(req: func.HttpRequest) -> func.HttpResponse:
 
     db = SessionLocal()
     try:
+        if _is_client_user_email(db, email):
+            return func.HttpResponse(
+                json.dumps({"error": "Added users cannot change settings"}),
+                status_code=403,
+                mimetype="application/json",
+                headers=cors,
+            )
         client, _ = _find_client_and_user(db, email)
         if not client or not client.ultravox_agent_id:
             return func.HttpResponse(
@@ -961,6 +1025,13 @@ def dashboard_booking_settings(req: func.HttpRequest) -> func.HttpResponse:
 
     db = SessionLocal()
     try:
+        if _is_client_user_email(db, email):
+            return func.HttpResponse(
+                json.dumps({"error": "Added users cannot change settings"}),
+                status_code=403,
+                mimetype="application/json",
+                headers=cors,
+            )
         client, _ = _find_client_and_user(db, email)
         if not client:
             return func.HttpResponse(
