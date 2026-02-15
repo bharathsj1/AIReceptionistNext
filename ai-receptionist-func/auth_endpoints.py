@@ -428,6 +428,85 @@ def _send_appointment_confirmation_email(
             return False
 
 
+def _send_password_reset_email(
+    to_email: str,
+    reset_link: str,
+    app_reset_link: Optional[str] = None,
+) -> bool:
+    smtp = get_smtp_settings()
+    if not smtp.get("host") or not smtp.get("from_email"):
+        logger.warning("SMTP not configured; skipping password reset email.")
+        return False
+    if smtp.get("username") and not smtp.get("password"):
+        logger.warning("SMTP username is set but password is missing; skipping password reset email.")
+        return False
+
+    subject = "Reset your SmartConnect4u password"
+    preferred_link = app_reset_link or reset_link
+    body = (
+        "Hi,\n\n"
+        "We received a request to reset your password.\n\n"
+        f"Reset password: {preferred_link}\n"
+    )
+    if app_reset_link and reset_link and app_reset_link != reset_link:
+        body += f"Fallback reset link: {reset_link}\n"
+    body += (
+        "\nThis link expires in 1 hour.\n"
+        "If you did not request this, you can ignore this email.\n\n"
+        "Thanks,\nSmartConnect4u\n"
+    )
+
+    message = (
+        f"From: {smtp['from_email']}\r\n"
+        f"To: {to_email}\r\n"
+        f"Subject: {subject}\r\n"
+        "\r\n"
+        f"{body}"
+    )
+
+    host = smtp["host"]
+    use_tls = smtp.get("use_tls", True)
+    use_ssl = smtp.get("use_ssl", False)
+    port = smtp.get("port")
+    if port is None:
+        port = 465 if use_ssl else (587 if use_tls else 25)
+
+    def _send():
+        if use_ssl:
+            context = ssl.create_default_context()
+            with smtplib.SMTP_SSL(host, port, context=context) as server:
+                server.ehlo()
+                if smtp.get("username") and not server.has_extn("auth"):
+                    raise RuntimeError("SMTP AUTH not supported on this endpoint/port.")
+                if smtp.get("username"):
+                    server.login(smtp["username"], smtp["password"])
+                server.sendmail(smtp["from_email"], [to_email], message.encode("utf-8"))
+        else:
+            context = ssl.create_default_context() if use_tls else None
+            with smtplib.SMTP(host, port) as server:
+                server.ehlo()
+                if use_tls:
+                    server.starttls(context=context)
+                    server.ehlo()
+                if smtp.get("username") and not server.has_extn("auth"):
+                    raise RuntimeError("SMTP AUTH not supported on this endpoint/port.")
+                if smtp.get("username"):
+                    server.login(smtp["username"], smtp["password"])
+                server.sendmail(smtp["from_email"], [to_email], message.encode("utf-8"))
+
+    try:
+        _send()
+        return True
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.warning("First attempt to send password reset email failed: %s", exc)
+        try:
+            _send()
+            return True
+        except Exception as exc2:  # pylint: disable=broad-except
+            logger.error("Failed to send password reset email after retry: %s", exc2)
+            return False
+
+
 def _build_google_auth_url(state: str, force_consent: bool = False) -> str:
     settings = get_google_oauth_settings()
     scope = settings["scopes"]
@@ -1839,10 +1918,35 @@ def auth_forgot_password(req: func.HttpRequest) -> func.HttpResponse:
             )
         db.commit()
 
-        # In a real system, send email here. For now, return the link for manual testing.
         reset_link = f"{req.url.replace('/auth/forgot-password', '/auth/reset-password')}?token={token}"
+        frontend_base = (
+            get_setting("PUBLIC_WEB_APP_URL")
+            or get_setting("WEB_APP_URL")
+            or get_setting("APP_URL")
+            or req.headers.get("origin")
+        )
+        app_reset_link = None
+        if frontend_base:
+            safe_frontend_base = str(frontend_base).strip().rstrip("/")
+            if safe_frontend_base:
+                app_reset_link = f"{safe_frontend_base}/?reset_token={token}"
+
+        email_sent = _send_password_reset_email(
+            to_email=email,
+            reset_link=reset_link,
+            app_reset_link=app_reset_link,
+        )
+        if not email_sent:
+            logger.warning("Password reset email send failed for: %s", email)
         return func.HttpResponse(
-            json.dumps({"message": "Reset link generated", "reset_link": reset_link}),
+            json.dumps(
+                {
+                    "message": "If the account exists, a reset link will be sent.",
+                    "email_sent": email_sent,
+                    "reset_link": reset_link if not email_sent else None,
+                    "reset_password_url": app_reset_link if not email_sent else None,
+                }
+            ),
             status_code=200,
             mimetype="application/json",
             headers=cors,
