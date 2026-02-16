@@ -3148,6 +3148,7 @@ export default function App() {
             hasActiveSubscription={hasActiveSubscription}
             onResumeBusinessDetails={handleResumeBusinessDetails}
             onLogout={handleLogout}
+            geoCountryCode={countryCode}
           />
         )}
 

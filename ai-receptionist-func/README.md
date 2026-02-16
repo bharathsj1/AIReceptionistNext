@@ -92,3 +92,122 @@ Connect WhatsApp (MVP manual):
 - Configure CORS origins (`ALLOWED_ORIGINS`) to your domains.  
 - Build and deploy the Vite frontend (`npm run build`) and ensure it calls the deployed `/api/chat`.  
 - Verify streaming works via browser DevTools (Network -> chat -> Preview should stream).
+
+---
+
+## CRM Manager (new)
+
+### Overview
+CRM Manager adds tenant-isolated entities in Azure Table Storage:
+- `CRMContacts`
+- `CRMCompanies`
+- `CRMDeals`
+- `CRMTasks`
+- `CRMComments`
+- `CRMActivities`
+- `CRMEmailLinks`
+- `CRMNotifications`
+- `CRMAuditLog`
+- `CRMTaskByAssignee`
+- `CRMTaskByStatus`
+
+All CRM entities are always stored with `PartitionKey = tenantId` (resolved from existing auth context/user email), never from a user-provided tenant id.
+
+### API routes
+- `GET|POST /api/crm/tasks`
+- `GET|PATCH|DELETE /api/crm/tasks/{task_id}`
+- `GET|POST /api/crm/tasks/{task_id}/comments`
+- `GET|POST /api/crm/deals/{deal_id}/comments`
+- `GET|POST /api/crm/contacts/{contact_id}/comments`
+- `GET|POST /api/crm/comments`
+- `GET|PATCH|DELETE /api/crm/comments/{comment_id}`
+- `GET|POST /api/crm/deals`
+- `GET|PATCH|DELETE /api/crm/deals/{deal_id}`
+- `GET|POST /api/crm/companies`
+- `GET|PATCH|DELETE /api/crm/companies/{company_id}`
+- `GET|POST /api/crm/contacts`
+- `GET|PATCH|DELETE /api/crm/contacts/{contact_id}`
+- `GET|POST /api/crm/activities`
+- `GET|POST /api/crm/email-links`
+- `GET /api/crm/dashboard`
+- `GET /api/crm/users`
+- `GET /api/crm/notifications`
+- `PATCH /api/crm/notifications/{notif_id}/read`
+- `GET /api/crm/audit`
+- `GET /api/crm/reports/tasks` (CSV export)
+- `GET /api/crm/reports/deals` (CSV export)
+
+### RBAC
+- Primary client user: `admin`
+- Added user role `admin/manager`: treated as `manager`
+- Added user role `editor/member/user`: treated as `member`
+
+Enforcement happens in backend:
+- `admin`/`manager`: full tenant CRUD for CRM entities
+- `member`: limited to assigned/watcher/collaborator visibility and limited task/deal/contact updates
+
+### Example requests
+```bash
+# List CRM tasks for the signed-in tenant
+curl -s "http://localhost:7071/api/crm/tasks?status=in_progress&limit=20" \
+  -H "x-user-email: owner@yourtenant.com"
+
+# Create a task (manager/admin)
+curl -s -X POST "http://localhost:7071/api/crm/tasks" \
+  -H "Content-Type: application/json" \
+  -H "x-user-email: owner@yourtenant.com" \
+  -d '{
+    "title": "Follow up proposal",
+    "description": "Send final quote and timeline",
+    "priority": "high",
+    "dueDate": "2026-02-20T10:00:00Z",
+    "assignedToEmail": "manager@yourtenant.com",
+    "watchers": ["owner@yourtenant.com"],
+    "status": "new"
+  }'
+
+# Move task status (optimistic UI path)
+curl -s -X PATCH "http://localhost:7071/api/crm/tasks/<task_id>" \
+  -H "Content-Type: application/json" \
+  -H "x-user-email: manager@yourtenant.com" \
+  -d '{"status":"in_progress","progressPercent":40}'
+
+# Link email thread/message to task
+curl -s -X POST "http://localhost:7071/api/crm/email-links" \
+  -H "Content-Type: application/json" \
+  -H "x-user-email: manager@yourtenant.com" \
+  -d '{
+    "entityType":"task",
+    "entityId":"<task_id>",
+    "provider":"gmail",
+    "threadId":"<gmail_thread_id>",
+    "messageId":"<gmail_message_id>",
+    "subject":"Re: Proposal",
+    "snippet":"Client asked for revised scope."
+  }'
+
+# Export tasks report CSV (primary tenant admin)
+curl -s "http://localhost:7071/api/crm/reports/tasks" \
+  -H "x-user-email: owner@yourtenant.com"
+```
+
+### Optional env overrides
+- `CRM_CONTACTS_TABLE`
+- `CRM_COMPANIES_TABLE`
+- `CRM_DEALS_TABLE`
+- `CRM_TASKS_TABLE`
+- `CRM_COMMENTS_TABLE`
+- `CRM_ACTIVITIES_TABLE`
+- `CRM_EMAIL_LINKS_TABLE`
+- `CRM_NOTIFICATIONS_TABLE`
+- `CRM_AUDIT_TABLE`
+- `CRM_TASK_ASSIGNEE_INDEX_TABLE`
+- `CRM_TASK_STATUS_INDEX_TABLE`
+
+If not set, defaults shown in the Overview are used.
+
+### Seed demo data
+```bash
+cd ai-receptionist-func
+python3 scripts/seed_crm_demo.py --tenant-id 123 --owner-email owner@yourtenant.com
+```

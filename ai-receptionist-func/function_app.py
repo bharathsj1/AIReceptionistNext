@@ -25,6 +25,7 @@ import contacts_endpoints  # noqa
 import social_endpoints  # noqa
 import social_ai_caption  # noqa
 import task_manager_endpoints  # noqa
+import crm_endpoints  # noqa
 import tasks_create  # noqa
 import tasks_list  # noqa
 import tasks_detail  # noqa

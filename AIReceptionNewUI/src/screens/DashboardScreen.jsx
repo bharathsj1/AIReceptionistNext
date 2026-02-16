@@ -51,6 +51,7 @@ import { API_URLS } from "../config/urls";
 import TaskBoard from "./tasks/TaskBoard";
 import TaskManagerScreen from "./TaskManagerScreen";
 import ContactsScreen from "./ContactsScreen";
+import CRMManagerScreen from "./CRMManagerScreen";
 import { createTaskManagerItem } from "../lib/api/taskManager";
 import {
   listClientUsers,
@@ -545,7 +546,8 @@ export default function DashboardScreen({
   hasActiveSubscription,
   onResumeBusinessDetails,
   onLogout,
-  handleGoHome
+  handleGoHome,
+  geoCountryCode
 }) {
   const pageSize = 8;
   const totalPages = Math.max(1, Math.ceil((recentCalls?.length || 0) / pageSize));
@@ -3288,6 +3290,13 @@ export default function DashboardScreen({
       copy: "Organize tasks on a shared calendar and keep timelines visible."
     },
     {
+      id: "crm_manager",
+      label: "CRM Manager",
+      eyebrow: "Pipeline",
+      icon: ClipboardList,
+      copy: "Manage contacts, deals, tasks, comments, and team workflows in one place."
+    },
+    {
       id: "contacts",
       label: "Contacts",
       eyebrow: "Directory",
@@ -3335,6 +3344,7 @@ export default function DashboardScreen({
   const isToolLocked = (toolId) => {
     if (toolId === "dashboard_analytics") return false;
     if (toolId === "task_manager") return false;
+    if (toolId === "crm_manager") return false;
     if (toolId === "contacts") return false;
     const entry = toolSubscriptions?.[toolId];
     if (entry && typeof entry.active === "boolean") return !entry.active;
@@ -4627,6 +4637,7 @@ export default function DashboardScreen({
       email_manager: "from-sky-500/80 via-cyan-400/70 to-blue-400/70",
       social_media_manager: "from-fuchsia-500/80 via-pink-400/70 to-rose-400/70",
       task_manager: "from-amber-500/80 via-orange-400/70 to-rose-400/60",
+      crm_manager: "from-violet-500/80 via-indigo-400/70 to-sky-400/70",
       contacts: "from-rose-500/80 via-red-400/70 to-orange-300/70"
     };
     const accent = toolAccentMap[tool.id] || "from-slate-500/70 to-slate-400/70";
@@ -4859,7 +4870,7 @@ export default function DashboardScreen({
                 : "gap-5 overflow-y-auto"
             }`}
           >
-            {currentTool !== "email_manager" && currentTool !== "task_manager" && (
+            {currentTool !== "email_manager" && currentTool !== "task_manager" && currentTool !== "crm_manager" && (
             <header className="dashboard-hero flex flex-col gap-3 rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl backdrop-blur">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
@@ -5187,6 +5198,14 @@ export default function DashboardScreen({
           <TaskManagerScreen
             email={user?.email}
             businessName={clientData?.business_name || clientData?.name}
+          />
+        )}
+
+        {currentTool === "crm_manager" && (
+          <CRMManagerScreen
+            user={user}
+            businessName={clientData?.business_name || clientData?.name}
+            geoCountryCode={geoCountryCode}
           />
         )}
 
