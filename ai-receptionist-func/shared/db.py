@@ -183,6 +183,7 @@ class TaskManagerItem(Base):
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    owner_email = Column(String, nullable=True, index=True)
     source_type = Column(String, nullable=True, index=True)
     source_id = Column(String, nullable=True, index=True)
     title = Column(String, nullable=False)
@@ -990,6 +991,7 @@ def _ensure_optional_columns() -> None:
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         client_id INTEGER NOT NULL,
                         user_id INTEGER,
+                        owner_email VARCHAR,
                         source_type VARCHAR,
                         source_id VARCHAR,
                         title VARCHAR NOT NULL,
@@ -1005,8 +1007,13 @@ def _ensure_optional_columns() -> None:
                     """
                 )
             )
+        else:
+            task_manager_columns = {col["name"] for col in inspector.get_columns("task_manager_items")}
+            if "owner_email" not in task_manager_columns:
+                conn.execute(text("ALTER TABLE task_manager_items ADD COLUMN IF NOT EXISTS owner_email VARCHAR"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_task_manager_client_start ON task_manager_items (client_id, start_time)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_task_manager_client_end ON task_manager_items (client_id, end_time)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_task_manager_client_owner ON task_manager_items (client_id, owner_email)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_task_manager_source ON task_manager_items (source_type, source_id)"))
 
         if "social_connections" not in existing_tables:

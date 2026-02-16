@@ -12,7 +12,7 @@ import {
   DialogContent,
   Input
 } from "../components/ui/index.jsx";
-import { CalendarClock, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
+import { CalendarClock, ChevronLeft, ChevronRight, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 import {
   createTaskManagerItem,
   deleteTaskManagerItem,
@@ -75,8 +75,19 @@ const normalizeItems = (items) =>
     end: item.end || item.end_time || item.endTime
   }));
 
+const toCalendarScrollTime = (value = new Date()) => {
+  const date = value instanceof Date ? value : new Date(value);
+  const shifted = new Date(date.getTime() - 2 * 60 * 60 * 1000);
+  const hour = shifted.getHours();
+  const minute = shifted.getMinutes();
+  if (hour < 6) return "06:00:00";
+  if (hour >= 22) return "21:00:00";
+  return `${pad(hour)}:${pad(minute)}:00`;
+};
+
 export default function TaskManagerScreen({ email, businessName }) {
   const calendarRef = useRef(null);
+  const initialScrollTime = useMemo(() => toCalendarScrollTime(), []);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -267,6 +278,46 @@ export default function TaskManagerScreen({ email, businessName }) {
     }
   };
 
+  const focusCalendarNow = useCallback(() => {
+    const api = calendarRef.current?.getApi?.();
+    if (!api) return;
+    const viewType = api.view?.type || "";
+    if (!viewType.startsWith("timeGrid")) return;
+    requestAnimationFrame(() => {
+      api.scrollToTime(toCalendarScrollTime());
+    });
+  }, []);
+
+  const switchToView = (viewName) => {
+    const api = calendarRef.current?.getApi?.();
+    if (!api) return;
+    api.changeView(viewName);
+    if (viewName.startsWith("timeGrid")) {
+      focusCalendarNow();
+    }
+  };
+
+  const jumpToToday = () => {
+    const api = calendarRef.current?.getApi?.();
+    if (!api) return;
+    api.today();
+    focusCalendarNow();
+  };
+
+  const goToPrevious = () => {
+    const api = calendarRef.current?.getApi?.();
+    if (!api) return;
+    api.prev();
+    focusCalendarNow();
+  };
+
+  const goToNext = () => {
+    const api = calendarRef.current?.getApi?.();
+    if (!api) return;
+    api.next();
+    focusCalendarNow();
+  };
+
   return (
     <section className="task-manager-shell">
       <Card className="task-manager-card border-white/10 bg-slate-900/70">
@@ -313,28 +364,46 @@ export default function TaskManagerScreen({ email, businessName }) {
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => calendarRef.current?.getApi().today()}
+                onClick={goToPrevious}
+                title="Previous period"
+                aria-label="Previous period"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={jumpToToday}
               >
                 Today
               </Button>
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => calendarRef.current?.getApi().changeView("timeGridDay")}
+                onClick={goToNext}
+                title="Next period"
+                aria-label="Next period"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => switchToView("timeGridDay")}
               >
                 Day
               </Button>
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => calendarRef.current?.getApi().changeView("timeGridWeek")}
+                onClick={() => switchToView("timeGridWeek")}
               >
                 Week
               </Button>
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => calendarRef.current?.getApi().changeView("dayGridMonth")}
+                onClick={() => switchToView("dayGridMonth")}
               >
                 Month
               </Button>
@@ -399,6 +468,9 @@ export default function TaskManagerScreen({ email, businessName }) {
                   };
                   setCalendarRange(nextRange);
                   loadItems(nextRange);
+                  if (range.view?.type?.startsWith("timeGrid")) {
+                    focusCalendarNow();
+                  }
                 }}
                 eventClick={(info) => {
                   const details = info.event.extendedProps || {};
@@ -429,6 +501,8 @@ export default function TaskManagerScreen({ email, businessName }) {
                 }}
                 eventDrop={(info) => handleDragUpdate(info.event, info.revert)}
                 eventResize={(info) => handleDragUpdate(info.event, info.revert)}
+                scrollTime={initialScrollTime}
+                scrollTimeReset={false}
                 slotMinTime="06:00:00"
                 slotMaxTime="22:00:00"
               />

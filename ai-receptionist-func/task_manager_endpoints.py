@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 import azure.functions as func
-from sqlalchemy import func as sa_func
+from sqlalchemy import func as sa_func, or_
 
 from function_app import app
 from shared.db import Client, ClientUser, SessionLocal, TaskManagerItem, User
@@ -17,7 +17,7 @@ def _normalize_email(value: str | None) -> str:
     return str(value or "").strip().lower()
 
 
-def _find_client_and_user(db, email: str) -> tuple[Optional[Client], Optional[User]]:
+def _find_client_and_user(db, email: str) -> tuple[Optional[Client], Optional[User], Optional[ClientUser]]:
     normalized = _normalize_email(email)
     user = (
         db.query(User)
@@ -43,7 +43,7 @@ def _find_client_and_user(db, email: str) -> tuple[Optional[Client], Optional[Us
         client = db.query(Client).filter_by(user_id=user.id).one_or_none()
     if client and not user and client.user_id:
         user = db.query(User).filter_by(id=client.user_id).one_or_none()
-    return client, user
+    return client, user, client_user
 
 
 def _parse_iso(value: Optional[str]) -> Optional[datetime]:
@@ -61,6 +61,7 @@ def _item_to_dict(item: TaskManagerItem) -> dict:
         "id": item.id,
         "clientId": item.client_id,
         "userId": item.user_id,
+        "ownerEmail": _normalize_email(getattr(item, "owner_email", None)),
         "sourceType": item.source_type,
         "sourceId": item.source_id,
         "title": item.title,
@@ -71,6 +72,14 @@ def _item_to_dict(item: TaskManagerItem) -> dict:
         "createdAt": item.created_at.isoformat() if item.created_at else None,
         "updatedAt": item.updated_at.isoformat() if item.updated_at else None,
     }
+
+
+def _is_item_owned_by_requester(item: TaskManagerItem, email: str, user: Optional[User]) -> bool:
+    normalized = _normalize_email(email)
+    owner_email = _normalize_email(getattr(item, "owner_email", None))
+    if owner_email:
+        return owner_email == normalized
+    return bool(user and item.user_id and int(item.user_id) == int(user.id))
 
 
 @app.function_name(name="TaskManager")
@@ -97,7 +106,8 @@ def task_manager(req: func.HttpRequest) -> func.HttpResponse:
 
         db = SessionLocal()
         try:
-            client, _ = _find_client_and_user(db, email)
+            normalized_email = _normalize_email(email)
+            client, user, _ = _find_client_and_user(db, normalized_email)
             if not client:
                 return func.HttpResponse(
                     json.dumps({"error": "Client not found"}),
@@ -107,6 +117,11 @@ def task_manager(req: func.HttpRequest) -> func.HttpResponse:
                 )
 
             query = db.query(TaskManagerItem).filter(TaskManagerItem.client_id == client.id)
+            email_filter = sa_func.lower(sa_func.coalesce(TaskManagerItem.owner_email, "")) == normalized_email
+            if user and user.id:
+                query = query.filter(or_(email_filter, TaskManagerItem.user_id == user.id))
+            else:
+                query = query.filter(email_filter)
             if start_dt and end_dt:
                 query = query.filter(
                     TaskManagerItem.start_time < end_dt, TaskManagerItem.end_time > start_dt
@@ -174,7 +189,8 @@ def task_manager(req: func.HttpRequest) -> func.HttpResponse:
 
     db = SessionLocal()
     try:
-        client, user = _find_client_and_user(db, email)
+        normalized_email = _normalize_email(email)
+        client, user, _ = _find_client_and_user(db, normalized_email)
         if not client:
             return func.HttpResponse(
                 json.dumps({"error": "Client not found"}),
@@ -186,6 +202,7 @@ def task_manager(req: func.HttpRequest) -> func.HttpResponse:
         item = TaskManagerItem(
             client_id=client.id,
             user_id=user.id if user else None,
+            owner_email=normalized_email,
             source_type=body.get("sourceType") or body.get("source_type"),
             source_id=body.get("sourceId") or body.get("source_id"),
             title=str(title).strip(),
@@ -248,7 +265,8 @@ def task_manager_update(req: func.HttpRequest) -> func.HttpResponse:
                     headers=cors,
                 )
 
-            client, _ = _find_client_and_user(db, email)
+            normalized_email = _normalize_email(email)
+            client, user, _ = _find_client_and_user(db, normalized_email)
             if not client:
                 return func.HttpResponse(
                     json.dumps({"error": "Client not found"}),
@@ -263,6 +281,13 @@ def task_manager_update(req: func.HttpRequest) -> func.HttpResponse:
                 .one_or_none()
             )
             if not item:
+                return func.HttpResponse(
+                    json.dumps({"error": "Task manager item not found"}),
+                    status_code=404,
+                    mimetype="application/json",
+                    headers=cors,
+                )
+            if not _is_item_owned_by_requester(item, normalized_email, user):
                 return func.HttpResponse(
                     json.dumps({"error": "Task manager item not found"}),
                     status_code=404,
@@ -306,7 +331,8 @@ def task_manager_update(req: func.HttpRequest) -> func.HttpResponse:
         start_dt = _parse_iso(body.get("start") or body.get("start_time"))
         end_dt = _parse_iso(body.get("end") or body.get("end_time"))
 
-        client, _ = _find_client_and_user(db, email)
+        normalized_email = _normalize_email(email)
+        client, user, _ = _find_client_and_user(db, normalized_email)
         if not client:
             return func.HttpResponse(
                 json.dumps({"error": "Client not found"}),
@@ -321,6 +347,13 @@ def task_manager_update(req: func.HttpRequest) -> func.HttpResponse:
             .one_or_none()
         )
         if not item:
+            return func.HttpResponse(
+                json.dumps({"error": "Task manager item not found"}),
+                status_code=404,
+                mimetype="application/json",
+                headers=cors,
+            )
+        if not _is_item_owned_by_requester(item, normalized_email, user):
             return func.HttpResponse(
                 json.dumps({"error": "Task manager item not found"}),
                 status_code=404,
@@ -345,6 +378,8 @@ def task_manager_update(req: func.HttpRequest) -> func.HttpResponse:
             )
         if isinstance(body.get("status"), str) and body.get("status").strip():
             item.status = body.get("status").strip()
+        if not getattr(item, "owner_email", None):
+            item.owner_email = normalized_email
 
         db.add(item)
         db.commit()

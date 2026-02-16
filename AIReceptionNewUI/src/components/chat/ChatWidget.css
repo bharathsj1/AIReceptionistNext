@@ -4,7 +4,8 @@
   bottom: 20px;
   z-index: 60;
   height: 54px;
-  padding: 0 18px 0 14px;
+  width: 56px;
+  padding: 0 10px;
   border: none;
   border-radius: 999px;
   background: radial-gradient(circle at 20% 20%, rgba(120, 181, 255, 0.9), rgba(96, 73, 255, 0.82), rgba(13, 184, 197, 0.9));
@@ -13,16 +14,24 @@
   letter-spacing: 0.01em;
   display: inline-flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 10px;
+  overflow: hidden;
   cursor: pointer;
   box-shadow: 0 16px 38px rgba(31, 46, 116, 0.35), 0 6px 16px rgba(0, 0, 0, 0.25);
-  transition: transform 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
+  transition: width 220ms ease, transform 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
   backdrop-filter: blur(14px);
 }
 
 .chat-launcher:hover {
   transform: translateY(-1px);
   box-shadow: 0 20px 44px rgba(31, 46, 116, 0.42), 0 10px 24px rgba(0, 0, 0, 0.32);
+}
+
+.chat-launcher:hover,
+.chat-launcher:focus-visible,
+.chat-launcher[data-open="true"] {
+  width: 300px;
 }
 
 .chat-launcher:active {
@@ -33,6 +42,7 @@
 .chat-launcher-icon {
   width: 34px;
   height: 34px;
+  flex: 0 0 34px;
   border-radius: 12px;
   display: inline-flex;
   align-items: center;
@@ -54,7 +64,20 @@
 }
 
 .chat-launcher-label {
+  white-space: nowrap;
+  max-width: 0;
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: max-width 220ms ease, opacity 180ms ease, transform 180ms ease;
   font-size: 15px;
+}
+
+.chat-launcher:hover .chat-launcher-label,
+.chat-launcher:focus-visible .chat-launcher-label,
+.chat-launcher[data-open="true"] .chat-launcher-label {
+  max-width: 230px;
+  opacity: 1;
+  transform: translateX(0);
 }
 
 .chat-shell {
