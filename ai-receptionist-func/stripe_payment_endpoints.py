@@ -16,6 +16,7 @@ from sqlalchemy import func as sa_func
 from sqlalchemy.orm import Session
 
 from function_app import app
+from services.receptionist_usage_service import build_receptionist_usage_summary
 from shared.config import get_required_setting, get_setting, get_smtp_settings
 from shared.db import SessionLocal, Subscription, Payment, AITool, Client, User, ClientUser
 from utils.cors import build_cors_headers
@@ -47,10 +48,10 @@ def _normalize_email(value: str | None) -> str:
     return str(value or "").strip().lower()
 
 
-def _resolve_subscription_lookup_emails(db: Session, email: str) -> list[str]:
+def _resolve_subscription_lookup_context(db: Session, email: str) -> tuple[list[str], Client | None]:
     normalized = _normalize_email(email)
     if not normalized:
-        return []
+        return [], None
 
     emails = {normalized}
     client = (
@@ -89,7 +90,12 @@ def _resolve_subscription_lookup_emails(db: Session, email: str) -> list[str]:
             if member_email:
                 emails.add(member_email)
 
-    return sorted(email for email in emails if email)
+    return sorted(email for email in emails if email), client
+
+
+def _resolve_subscription_lookup_emails(db: Session, email: str) -> list[str]:
+    emails, _ = _resolve_subscription_lookup_context(db, email)
+    return emails
 
 
 def _get_stripe_client() -> stripe.StripeClient:
@@ -860,7 +866,7 @@ def get_subscription_status(req: func.HttpRequest) -> func.HttpResponse:
         )
     try:
         db = SessionLocal()
-        lookup_emails = _resolve_subscription_lookup_emails(db, email)
+        lookup_emails, client = _resolve_subscription_lookup_context(db, email)
         if not lookup_emails:
             lookup_emails = [email]
         subs = (
@@ -895,6 +901,7 @@ def get_subscription_status(req: func.HttpRequest) -> func.HttpResponse:
             "active": primary["active"] if tool_param else active_any,
             "tool": tool_param,
             "subscriptions": subscriptions_payload,
+            "receptionist_usage": build_receptionist_usage_summary(db, client, lookup_emails),
         }
         if primary:
             body["status"] = primary["status"]

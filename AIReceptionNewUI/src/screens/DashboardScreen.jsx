@@ -98,6 +98,16 @@ const formatDate = (iso) => {
   }
 };
 
+const formatDateOnly = (iso) => {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString();
+  } catch {
+    return iso;
+  }
+};
+
 const pad2 = (value) => String(value).padStart(2, "0");
 
 const toDateTimeInput = (value) => {
@@ -122,6 +132,13 @@ const buildDefaultSchedule = () => {
 
 const formatStatusLabel = (value) => {
   if (!value) return "Inactive";
+  return String(value)
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
+const formatPlanLabel = (value) => {
+  if (!value) return "Plan";
   return String(value)
     .replace(/_/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
@@ -541,6 +558,7 @@ export default function DashboardScreen({
   onLoadTranscript,
   onRefreshCalls,
   onRefreshDashboard,
+  receptionistUsage,
   assignNumberStatus,
   onAssignNumber,
   hasActiveSubscription,
@@ -3382,6 +3400,14 @@ export default function DashboardScreen({
   const needsNumberAssignment = !hasTwilioNumber;
   const showAssignCta = hasReceptionistSubscription && needsNumberAssignment;
   const showNumberGate = currentTool === "ai_receptionist" && showAssignCta;
+  const usageIncluded = Number(receptionistUsage?.includedMinutes);
+  const usageUsed = Number(receptionistUsage?.usedMinutes || 0);
+  const usageRemaining = Number(receptionistUsage?.remainingMinutes);
+  const hasUsageData = Boolean(receptionistUsage);
+  const hasLimitedUsagePlan = Number.isFinite(usageIncluded);
+  const hasRemainingUsage = Number.isFinite(usageRemaining);
+  const usageLimitReached =
+    Boolean(receptionistUsage?.limitReached) || (hasRemainingUsage && usageRemaining <= 0);
   const assignBusy = assignNumberStatus?.status === "loading";
   const assignError =
     assignNumberStatus?.status === "error" ? assignNumberStatus?.message : "";
@@ -4931,6 +4957,58 @@ export default function DashboardScreen({
                             <span className="text-xs text-rose-300">{assignError}</span>
                           )}
                         </div>
+                      )}
+                    </div>
+                  )}
+                  {currentTool === "ai_receptionist" && (
+                    <div
+                      className={`rounded-2xl border px-4 py-3 text-sm font-semibold shadow ${
+                        usageLimitReached
+                          ? "border-rose-400/40 bg-rose-900/30 text-rose-100"
+                          : "border-indigo-300/30 bg-indigo-500/10 text-indigo-50"
+                      }`}
+                    >
+                      <p
+                        className={`text-xs uppercase tracking-[0.2em] ${
+                          usageLimitReached ? "text-rose-200" : "text-indigo-200"
+                        }`}
+                      >
+                        Monthly Minutes
+                      </p>
+                      {hasUsageData ? (
+                        <div className="mt-1 space-y-1">
+                          {hasLimitedUsagePlan ? (
+                            <>
+                              <div className="text-lg">
+                                {hasRemainingUsage ? usageRemaining : 0}
+                                <span className="ml-1 text-xs font-medium uppercase tracking-[0.14em]">
+                                  Left
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-slate-200">
+                                {usageUsed} / {usageIncluded} used • {formatPlanLabel(receptionistUsage?.planId)}
+                              </p>
+                            </>
+                          ) : (
+                            <>
+                              <div className="text-lg">{usageUsed} min</div>
+                              <p className="text-[11px] text-slate-200">
+                                Used this cycle • {formatPlanLabel(receptionistUsage?.planId)}
+                              </p>
+                            </>
+                          )}
+                          {(receptionistUsage?.cycleStart || receptionistUsage?.cycleEnd) ? (
+                            <p className="text-[11px] text-slate-300">
+                              Cycle:{" "}
+                              {formatDateOnly(receptionistUsage?.cycleStartDate || receptionistUsage?.cycleStart)} to{" "}
+                              {formatDateOnly(receptionistUsage?.cycleEndDate || receptionistUsage?.cycleEnd)}
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <p className="mt-2 text-xs font-medium text-slate-300">
+                          Usage data will appear once an active plan is detected.
+                        </p>
                       )}
                     </div>
                   )}

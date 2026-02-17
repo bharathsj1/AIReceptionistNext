@@ -8,6 +8,7 @@ from function_app import app
 from onboarding_endpoints import get_twilio_client
 from datetime import datetime, timedelta, timezone
 from services.ultravox_service import get_ultravox_agent, get_ultravox_call_messages
+from services.receptionist_usage_service import build_receptionist_usage_summary
 from shared.config import get_required_setting
 from shared.db import (
     Call,
@@ -257,6 +258,7 @@ def _build_dashboard_payload(db, email: str) -> dict:
                     "currentPeriodEnd": sub.current_period_end.isoformat() if sub.current_period_end else None,
                 }
             )
+    receptionist_usage = build_receptionist_usage_summary(db, client, subscription_emails)
 
     return {
         "user": {
@@ -286,6 +288,7 @@ def _build_dashboard_payload(db, email: str) -> dict:
         "phone_numbers": phone_list,
         "ultravox_agent": agent_info,
         "subscriptions": subscription_payload,
+        "receptionist_usage": receptionist_usage,
     }
 
 

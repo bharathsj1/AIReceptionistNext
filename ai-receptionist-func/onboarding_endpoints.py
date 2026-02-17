@@ -25,6 +25,10 @@ from services.ultravox_service import (
     update_ultravox_agent_prompt,
 )
 from services.call_service import upsert_call, attach_ultravox_call, update_call_status
+from services.receptionist_usage_service import (
+    build_receptionist_usage_summary,
+    collect_subscription_emails_for_client,
+)
 from shared.config import get_public_api_base, get_required_setting, get_setting, get_smtp_settings
 from shared.db import Client, PhoneNumber, SessionLocal, Subscription, User, init_db
 from services.prompt_registry_service import resolve_prompt_for_call
@@ -953,6 +957,25 @@ def twilio_incoming(req: func.HttpRequest) -> func.HttpResponse:
             )
 
         client_record: Client = db.query(Client).filter_by(id=phone_record.client_id).one()
+        subscription_emails = collect_subscription_emails_for_client(db, client_record)
+        usage_summary = build_receptionist_usage_summary(db, client_record, subscription_emails)
+        if usage_summary and usage_summary.get("isLimitedPlan") and usage_summary.get("limitReached"):
+            logger.info(
+                "TwilioIncoming blocked due to minute limit. client_id=%s plan=%s used=%s included=%s",
+                client_record.id,
+                usage_summary.get("planId"),
+                usage_summary.get("usedMinutes"),
+                usage_summary.get("includedMinutes"),
+            )
+            twiml = (
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                "<Response>"
+                "<Say voice=\"alice\">You have reached your monthly call minutes for this plan. Please upgrade or wait for your next billing cycle.</Say>"
+                "<Hangup/>"
+                "</Response>"
+            )
+            return func.HttpResponse(twiml, status_code=200, mimetype="text/xml", headers=cors)
+
         if call_sid:
             upsert_call(
                 db,

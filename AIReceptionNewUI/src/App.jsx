@@ -181,6 +181,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("agents");
   const [activeTool, setActiveTool] = useState(DEFAULT_TOOL_ID);
   const [toolSubscriptions, setToolSubscriptions] = useState({});
+  const [receptionistUsage, setReceptionistUsage] = useState(null);
   const [subscriptionsLoading, setSubscriptionsLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState(null);
@@ -1194,6 +1195,7 @@ export default function App() {
     setIsLoggedIn(false);
     setActiveTool(DEFAULT_TOOL_ID);
     setToolSubscriptions({});
+    setReceptionistUsage(null);
     setSubscriptionsLoading(false);
     setAllCalls([]);
     setStage(STAGES.LANDING);
@@ -1663,6 +1665,7 @@ export default function App() {
     async (emailAddress = null) => {
       const targetEmail = emailAddress || user?.email || email || signupEmail || loginEmail;
       if (!targetEmail) {
+        setReceptionistUsage(null);
         setSubscriptionsLoading(false);
         return;
       }
@@ -1719,6 +1722,7 @@ export default function App() {
             return prev || DEFAULT_TOOL_ID;
           });
         }
+        setReceptionistUsage(dashData?.receptionist_usage || dashData?.receptionistUsage || null);
 
         setBookingSettings((prev) => ({
           booking_enabled: Boolean(
@@ -3143,6 +3147,7 @@ export default function App() {
             onLoadTranscript={loadCallTranscript}
             onRefreshCalls={loadCallLogs}
             onRefreshDashboard={handleRefreshDashboardAll}
+            receptionistUsage={receptionistUsage}
             assignNumberStatus={assignNumberStatus}
             onAssignNumber={handleAssignNumber}
             hasActiveSubscription={hasActiveSubscription}
