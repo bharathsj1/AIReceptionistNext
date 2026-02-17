@@ -5339,6 +5339,7 @@ export default function DashboardScreen({
             user={user}
             userProfile={userProfile}
             sessionEmail={user?.email || userProfile?.contact_email || clientData?.email || ""}
+            geoCountryCode={geoCountryCode || ""}
           />
         )}
 

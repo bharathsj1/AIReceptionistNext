@@ -15,6 +15,7 @@ const DIAL_PAD = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "+", "0", "⌫"];
 const TWILIO_SDK_URL =
   import.meta.env.VITE_TWILIO_VOICE_SDK_URL ||
   "https://sdk.twilio.com/js/voice/releases/2.12.3/twilio.min.js";
+const TWILIO_SDK_LOAD_TIMEOUT_MS = 12000;
 
 const normalizeDialInput = (value) => {
   const trimmed = String(value || "").trim();
@@ -70,34 +71,74 @@ const loadTwilioVoiceSdk = () =>
       resolve(window.Twilio.Device);
       return;
     }
+    let settled = false;
+    let timeoutId = null;
+    const settle = (cb, value) => {
+      if (settled) return;
+      settled = true;
+      if (timeoutId) window.clearTimeout(timeoutId);
+      cb(value);
+    };
+    const withTimeout = () => {
+      timeoutId = window.setTimeout(() => {
+        settle(reject, new Error("Twilio Voice SDK load timed out."));
+      }, TWILIO_SDK_LOAD_TIMEOUT_MS);
+    };
     const existing = document.querySelector(`script[data-twilio-voice-sdk="1"]`);
     if (existing) {
-      existing.addEventListener("load", () => {
+      const loadState = existing.getAttribute("data-load-state");
+      if (loadState === "loaded") {
         if (window.Twilio?.Device) {
-          resolve(window.Twilio.Device);
+          settle(resolve, window.Twilio.Device);
         } else {
-          reject(new Error("Twilio SDK loaded without Device constructor."));
+          settle(reject, new Error("Twilio SDK loaded without Device constructor."));
         }
-      });
-      existing.addEventListener("error", () => reject(new Error("Failed to load Twilio Voice SDK.")));
+        return;
+      }
+      if (loadState === "failed") {
+        settle(reject, new Error("Failed to load Twilio Voice SDK."));
+        return;
+      }
+      const onLoad = () => {
+        if (window.Twilio?.Device) {
+          settle(resolve, window.Twilio.Device);
+        } else {
+          settle(reject, new Error("Twilio SDK loaded without Device constructor."));
+        }
+      };
+      const onError = () => settle(reject, new Error("Failed to load Twilio Voice SDK."));
+      existing.addEventListener("load", onLoad, { once: true });
+      existing.addEventListener("error", onError, { once: true });
+      withTimeout();
       return;
     }
     const script = document.createElement("script");
     script.src = TWILIO_SDK_URL;
     script.async = true;
     script.dataset.twilioVoiceSdk = "1";
+    script.setAttribute("data-load-state", "loading");
     script.onload = () => {
+      script.setAttribute("data-load-state", "loaded");
       if (window.Twilio?.Device) {
-        resolve(window.Twilio.Device);
+        settle(resolve, window.Twilio.Device);
       } else {
-        reject(new Error("Twilio SDK loaded without Device constructor."));
+        settle(reject, new Error("Twilio SDK loaded without Device constructor."));
       }
     };
-    script.onerror = () => reject(new Error("Failed to load Twilio Voice SDK."));
+    script.onerror = () => {
+      script.setAttribute("data-load-state", "failed");
+      settle(reject, new Error("Failed to load Twilio Voice SDK."));
+    };
     document.head.appendChild(script);
+    withTimeout();
   });
 
-export default function SalesDialerScreen({ user, userProfile, sessionEmail = "" }) {
+export default function SalesDialerScreen({
+  user,
+  userProfile,
+  sessionEmail = "",
+  geoCountryCode = ""
+}) {
   const userEmail = useMemo(
     () =>
       String(
@@ -115,6 +156,9 @@ export default function SalesDialerScreen({ user, userProfile, sessionEmail = ""
   const [inputNumber, setInputNumber] = useState("");
   const [repPhone, setRepPhone] = useState("");
   const [callerId, setCallerId] = useState("+1 431 340 0857");
+  const [callerOptions, setCallerOptions] = useState([]);
+  const [resolvedCountry, setResolvedCountry] = useState("");
+  const [selectedCallerId, setSelectedCallerId] = useState("");
   const [deviceState, setDeviceState] = useState("idle");
   const [callState, setCallState] = useState("idle");
   const [callSeconds, setCallSeconds] = useState(0);
@@ -229,18 +273,30 @@ export default function SalesDialerScreen({ user, userProfile, sessionEmail = ""
     setTokenError("");
     setActionError("");
     try {
-      if (!twilioDeviceCtorRef.current) {
-        twilioDeviceCtorRef.current = await loadTwilioVoiceSdk();
-      }
+      setDeviceState("fetching-token");
       const tokenRes = await fetch(
-        `${API_URLS.voiceToken}?email=${encodeURIComponent(userEmail)}`,
+        `${API_URLS.voiceToken}?email=${encodeURIComponent(userEmail)}${
+          geoCountryCode ? `&country=${encodeURIComponent(geoCountryCode)}` : ""
+        }`,
         { headers: { "x-user-email": userEmail } }
       );
       const tokenPayload = await tokenRes.json().catch(() => ({}));
       if (!tokenRes.ok) {
         throw new Error(tokenPayload?.error || "Unable to load Twilio token.");
       }
-      setCallerId(tokenPayload?.callerId || "+14313400857");
+      const activeCaller = tokenPayload?.callerId || "+14313400857";
+      const options = Array.isArray(tokenPayload?.callerIdOptions)
+        ? tokenPayload.callerIdOptions.filter((item) => String(item || "").trim())
+        : [];
+      setCallerId(activeCaller);
+      setCallerOptions(options);
+      setResolvedCountry(tokenPayload?.resolvedCountry || "");
+      setSelectedCallerId((prev) => (options.includes(prev) ? prev : activeCaller));
+
+      if (!twilioDeviceCtorRef.current) {
+        setDeviceState("loading-sdk");
+        twilioDeviceCtorRef.current = await loadTwilioVoiceSdk();
+      }
       const DeviceCtor = twilioDeviceCtorRef.current;
       if (!DeviceCtor) {
         throw new Error("Twilio Voice SDK not available.");
@@ -313,14 +369,30 @@ export default function SalesDialerScreen({ user, userProfile, sessionEmail = ""
     }
     try {
       setCallState("ringing");
-      const connection = await device.connect({ params: { To: normalizedTarget } });
+      const connection = await device.connect({
+        params: {
+          To: normalizedTarget,
+          CallerId: selectedCallerId || callerId
+        }
+      });
+      if (!connection) {
+        throw new Error("Device connect failed to create an active call.");
+      }
       activeCallRef.current = connection;
       attachConnectionListeners(connection);
     } catch (err) {
       setCallState("error");
       setActionError(err?.message || "Unable to place browser call.");
     }
-  }, [attachConnectionListeners, bootstrapDevice, canDial, normalizedTarget, userEmail]);
+  }, [
+    attachConnectionListeners,
+    bootstrapDevice,
+    callerId,
+    canDial,
+    normalizedTarget,
+    selectedCallerId,
+    userEmail
+  ]);
 
   const startDialoutFallback = useCallback(async () => {
     setActionError("");
@@ -341,19 +413,31 @@ export default function SalesDialerScreen({ user, userProfile, sessionEmail = ""
         body: JSON.stringify({
           email: userEmail,
           to: normalizedTarget,
-          repPhone: rep
+          repPhone: rep,
+          callerId: selectedCallerId || callerId
         })
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(payload?.error || "Dial-out failed.");
+        const detail = payload?.details ? ` (${payload.details})` : "";
+        throw new Error((payload?.error || "Dial-out failed.") + detail);
       }
       loadRecentCalls();
     } catch (err) {
       setCallState("error");
       setActionError(err?.message || "Dial-out failed.");
     }
-  }, [authHeaders, canDial, loadRecentCalls, normalizedTarget, repPhone, userEmail, userProfile?.business_number]);
+  }, [
+    authHeaders,
+    callerId,
+    canDial,
+    loadRecentCalls,
+    normalizedTarget,
+    repPhone,
+    selectedCallerId,
+    userEmail,
+    userProfile?.business_number
+  ]);
 
   const hangup = useCallback(() => {
     try {
@@ -462,9 +546,36 @@ export default function SalesDialerScreen({ user, userProfile, sessionEmail = ""
           <p className="text-sm text-slate-300">UK reps calling Canada using your Twilio caller ID.</p>
         </div>
         <div className="rounded-xl border border-white/10 bg-slate-900/50 px-3 py-2 text-sm text-slate-200">
-          From: <span className="font-semibold text-white">{callerId || "+14313400857"}</span>
+          <div className="flex flex-col gap-1">
+            <span>
+              From:{" "}
+              <span className="font-semibold text-white">{selectedCallerId || callerId || "+14313400857"}</span>
+            </span>
+            {resolvedCountry ? (
+              <span className="text-xs text-slate-300">Country preference: {resolvedCountry}</span>
+            ) : null}
+          </div>
         </div>
       </div>
+
+      {callerOptions.length > 1 && (
+        <div className="mt-3 rounded-2xl border border-white/10 bg-slate-900/40 p-3">
+          <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-300">
+            Select caller ID
+          </label>
+          <select
+            value={selectedCallerId || callerId}
+            onChange={(event) => setSelectedCallerId(event.target.value)}
+            className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-white outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
+          >
+            {callerOptions.map((number) => (
+              <option key={number} value={number}>
+                {number}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div className="mt-4 inline-flex rounded-2xl border border-white/10 bg-slate-900/40 p-1">
         <button

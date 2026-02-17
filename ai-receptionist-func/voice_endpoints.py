@@ -22,7 +22,7 @@ from twilio.twiml.voice_response import VoiceResponse
 from function_app import app
 from services.sales_dialer_store import list_call_logs, upsert_call_log
 from shared.config import get_public_api_base, get_required_setting, get_setting
-from shared.db import Client, ClientUser, SessionLocal, User
+from shared.db import Client, ClientUser, PhoneNumber, SessionLocal, User
 from utils.cors import build_cors_headers
 
 logger = logging.getLogger(__name__)
@@ -38,6 +38,16 @@ BLOCKED_PREFIXES = [
     for raw in (os.getenv("VOICE_BLOCKED_PREFIXES") or "+1900,+1976,+979").split(",")
     if str(raw).strip()
 ]
+COUNTRY_TO_DIAL_PREFIXES = {
+    "GB": ["+44"],
+    "UK": ["+44"],
+    "CA": ["+1"],
+    "US": ["+1"],
+    "AU": ["+61"],
+    "NZ": ["+64"],
+    "IE": ["+353"],
+    "IN": ["+91"],
+}
 
 
 @dataclass
@@ -116,6 +126,79 @@ def _is_valid_e164(value: str) -> bool:
 def _is_blocked_number(number: str) -> bool:
     candidate = str(number or "")
     return any(candidate.startswith(prefix) for prefix in BLOCKED_PREFIXES)
+
+
+def _resolve_country_code(req: func.HttpRequest) -> str:
+    header_keys = [
+        "cf-ipcountry",
+        "x-country-code",
+        "x-geo-country",
+        "x-azure-country",
+        "x-appservice-country",
+    ]
+    for key in header_keys:
+        value = req.headers.get(key)
+        if value:
+            code = str(value).strip().upper()
+            if len(code) == 2:
+                return code
+    query_country = req.params.get("country") or req.params.get("countryCode") or req.params.get("country_code")
+    if query_country:
+        code = str(query_country).strip().upper()
+        if len(code) == 2:
+            return code
+    return (get_setting("TWILIO_DEFAULT_COUNTRY") or "CA").strip().upper() or "CA"
+
+
+def _matches_country_prefix(number: str, country_code: str) -> bool:
+    prefixes = COUNTRY_TO_DIAL_PREFIXES.get(str(country_code or "").upper(), [])
+    if not prefixes:
+        return False
+    return any(str(number or "").startswith(prefix) for prefix in prefixes)
+
+
+def _tenant_active_caller_ids(db, client_id: int) -> list[str]:
+    rows = (
+        db.query(PhoneNumber.twilio_phone_number)
+        .filter(PhoneNumber.client_id == int(client_id), PhoneNumber.is_active.is_(True))
+        .order_by(PhoneNumber.id.asc())
+        .all()
+    )
+    out: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        candidate = _normalize_e164(row[0] if row else "")
+        if not _is_valid_e164(candidate):
+            continue
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        out.append(candidate)
+    return out
+
+
+def _resolve_caller_id_for_actor(
+    db,
+    req: func.HttpRequest,
+    actor: VoiceActor,
+    requested: Optional[str] = None,
+) -> tuple[str, list[str], str]:
+    tenant_numbers = _tenant_active_caller_ids(db, actor.client_id)
+    env_default = _normalize_e164(DEFAULT_CALLER_ID)
+    options = list(tenant_numbers)
+    if _is_valid_e164(env_default) and env_default not in options:
+        options.append(env_default)
+    if not options:
+        return env_default, [env_default] if env_default else [], _resolve_country_code(req)
+
+    country_code = _resolve_country_code(req)
+    preferred_pool = [number for number in options if _matches_country_prefix(number, country_code)] or options
+    preferred = preferred_pool[0]
+
+    requested_e164 = _normalize_e164(requested)
+    if _is_valid_e164(requested_e164) and requested_e164 in options:
+        return requested_e164, options, country_code
+    return preferred, options, country_code
 
 
 def _extract_client_ip(req: func.HttpRequest) -> str:
@@ -401,23 +484,6 @@ def _twilio_client() -> TwilioRestClient:
     return TwilioRestClient(api_key_sid, api_key_secret, account_sid)
 
 
-def _caller_id_for_tenant(tenant_id: str) -> str:
-    default_caller = _normalize_e164(DEFAULT_CALLER_ID)
-    raw_map = os.getenv("TWILIO_CALLER_ID_BY_TENANT_JSON")
-    if not raw_map:
-        return default_caller
-    try:
-        payload = json.loads(raw_map)
-    except json.JSONDecodeError:
-        return default_caller
-    if not isinstance(payload, dict):
-        return default_caller
-    candidate = _normalize_e164(payload.get(str(tenant_id)))
-    if candidate and _is_valid_e164(candidate):
-        return candidate
-    return default_caller
-
-
 def _status_callback_url(
     *,
     tenant_id: str,
@@ -497,6 +563,11 @@ def voice_token(req: func.HttpRequest) -> func.HttpResponse:
     try:
         identity = _build_identity(actor)
         jwt = _voice_access_token(identity)
+        db = SessionLocal()
+        try:
+            caller_id, caller_options, country_code = _resolve_caller_id_for_actor(db, req, actor)
+        finally:
+            db.close()
         return _json_response(
             {
                 "token": jwt,
@@ -504,7 +575,9 @@ def voice_token(req: func.HttpRequest) -> func.HttpResponse:
                 "expiresIn": VOICE_TOKEN_TTL_SECONDS,
                 "tenantId": actor.tenant_id,
                 "userId": actor.user_key,
-                "callerId": _caller_id_for_tenant(actor.tenant_id),
+                "callerId": caller_id,
+                "callerIdOptions": caller_options,
+                "resolvedCountry": country_code,
             },
             200,
             cors,
@@ -537,9 +610,16 @@ def voice_twiml(req: func.HttpRequest) -> func.HttpResponse:
             {**cors, "Retry-After": str(retry_after)},
         )
 
+    requested_caller_id = (
+        form_payload.get("CallerId")
+        or form_payload.get("callerId")
+        or form_payload.get("FromNumber")
+        or ""
+    )
     db = SessionLocal()
     try:
         actor = _resolve_actor_from_identity(db, identity)
+        caller_id, _, _ = _resolve_caller_id_for_actor(db, req, actor, requested=requested_caller_id) if actor else ("", [], "")
     finally:
         db.close()
     if not actor or not _is_allowed_sales_role(actor.role, actor.scope):
@@ -551,7 +631,8 @@ def voice_twiml(req: func.HttpRequest) -> func.HttpResponse:
     if _is_blocked_number(to_number):
         return _json_response({"error": "target number blocked"}, 400, cors)
 
-    caller_id = _caller_id_for_tenant(actor.tenant_id)
+    if not _is_valid_e164(caller_id):
+        return _json_response({"error": "no active caller ID available"}, 400, cors)
     status_callback = _status_callback_url(
         tenant_id=actor.tenant_id,
         user_key=actor.user_key,
@@ -617,8 +698,29 @@ def voice_dialout(req: func.HttpRequest) -> func.HttpResponse:
         return _json_response({"error": "target number blocked"}, 400, cors)
     if not _is_valid_e164(rep_phone):
         return _json_response({"error": "valid repPhone is required for dial-out fallback"}, 400, cors)
+    requested_caller_id = body.get("callerId") or body.get("from") or body.get("fromNumber")
+    db = SessionLocal()
+    try:
+        caller_id, _, _ = _resolve_caller_id_for_actor(db, req, actor, requested=requested_caller_id)
+    finally:
+        db.close()
+    if not _is_valid_e164(caller_id):
+        return _json_response({"error": "no active caller ID available"}, 400, cors)
+    if rep_phone == caller_id:
+        return _json_response(
+            {
+                "error": "repPhone must be the sales rep personal/verified number, not the Twilio caller ID"
+            },
+            400,
+            cors,
+        )
+    if rep_phone == to_number:
+        return _json_response(
+            {"error": "repPhone and target number cannot be the same"},
+            400,
+            cors,
+        )
 
-    caller_id = _caller_id_for_tenant(actor.tenant_id)
     bridge_status_callback = _status_callback_url(
         tenant_id=actor.tenant_id,
         user_key=actor.user_key,
@@ -656,7 +758,8 @@ def voice_dialout(req: func.HttpRequest) -> func.HttpResponse:
         )
     except Exception as exc:  # pylint: disable=broad-except
         logger.error("Dial-out call creation failed: %s", exc)
-        return _json_response({"error": "dial-out failed"}, 500, cors)
+        details = str(exc)[:500]
+        return _json_response({"error": "dial-out failed", "details": details}, 500, cors)
 
     upsert_call_log(
         actor.tenant_id,
