@@ -5625,7 +5625,6 @@ export default function DashboardScreen({
                       >
                         Copy
                       </button>
-                      <span>{callTranscript?.recordings?.length || 0} recording(s)</span>
                     </div>
                   </div>
                   <div
@@ -5661,43 +5660,6 @@ export default function DashboardScreen({
                           <p className="text-slate-100">{line.text || "No text returned"}</p>
                         </div>
                       ))
-                    )}
-                  </div>
-                  <div className="mt-3 rounded-xl border border-white/10 bg-slate-900/40 p-3">
-                    <div className="text-xs font-semibold text-slate-200">Recordings</div>
-                    {callTranscript?.recordings?.length ? (
-                      <div className="mt-2 space-y-3">
-                        {callTranscript.recordings.map((rec, idx) => {
-                          const emailParam = user?.email ? encodeURIComponent(user.email) : "";
-                          const playbackUrl = emailParam
-                            ? `${API_URLS.dashboardRecordingMedia}/${rec.sid}/media?email=${emailParam}`
-                            : "";
-                          return (
-                            <div
-                              key={rec.sid || `recording-${idx}`}
-                              className="rounded-lg border border-white/10 bg-slate-950/50 p-2"
-                            >
-                              <div className="flex items-center justify-between text-xs text-slate-400">
-                                <span>Recording {idx + 1}</span>
-                                <span>
-                                  {rec.duration ? `${rec.duration}s` : "—"} · {formatDate(rec.date_created)}
-                                </span>
-                              </div>
-                              {playbackUrl ? (
-                                <audio controls preload="none" className="mt-2 w-full">
-                                  <source src={playbackUrl} type="audio/mpeg" />
-                                </audio>
-                              ) : (
-                                <p className="mt-2 text-xs text-slate-400">
-                                  Recording available once the account email is loaded.
-                                </p>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <p className="mt-2 text-xs text-slate-400">No recordings available yet.</p>
                     )}
                   </div>
                 </div>

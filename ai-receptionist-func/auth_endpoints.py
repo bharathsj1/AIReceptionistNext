@@ -1298,52 +1298,50 @@ def client_users_create(req: func.HttpRequest) -> func.HttpResponse:
                 headers=cors,
             )
 
-        existing = (
+        existing_client_user = (
             db.query(ClientUser)
             .filter(sa_func.lower(sa_func.trim(ClientUser.email)) == email)
             .order_by(ClientUser.id.asc())
             .first()
         )
-        if existing:
-            if existing.client_id != client_id:
-                return func.HttpResponse(
-                    json.dumps({"error": "Email already used for another client"}),
-                    status_code=400,
-                    mimetype="application/json",
-                    headers=cors,
-                )
-            # If same client, allow reset/reactivation with new password/role
-            existing.password_hash = _hash_password(password)
-            existing.role = role
-            existing.is_active = True
-            user_obj = existing
-        else:
-            user_obj = ClientUser(
-                client_id=client_id,
-                email=email,
-                password_hash=_hash_password(password),
-                role=role,
-                is_active=True,
-                status="active",
-            )
-            db.add(user_obj)
-
-        # Backward compatibility: ensure a legacy user row exists for this email.
-        # Do not overwrite an existing primary user password.
-        legacy_user = (
+        existing_user = (
             db.query(User)
             .filter(sa_func.lower(sa_func.trim(User.email)) == email)
             .order_by(User.id.asc())
             .first()
         )
-        if not legacy_user:
-            db.add(
-                User(
-                    email=email,
-                    password_hash=user_obj.password_hash,
-                    is_admin=(role == "admin"),
-                )
+        existing_client_owner = (
+            db.query(Client)
+            .filter(sa_func.lower(sa_func.trim(Client.email)) == email)
+            .order_by(Client.id.asc())
+            .first()
+        )
+        if existing_client_user or existing_user or existing_client_owner:
+            return func.HttpResponse(
+                json.dumps({"error": "User is already present"}),
+                status_code=409,
+                mimetype="application/json",
+                headers=cors,
             )
+
+        user_obj = ClientUser(
+            client_id=client_id,
+            email=email,
+            password_hash=_hash_password(password),
+            role=role,
+            is_active=True,
+            status="active",
+        )
+        db.add(user_obj)
+
+        # Backward compatibility: create a legacy user row for this newly added client user.
+        db.add(
+            User(
+                email=email,
+                password_hash=user_obj.password_hash,
+                is_admin=(role == "admin"),
+            )
+        )
 
         db.commit()
         db.refresh(user_obj)

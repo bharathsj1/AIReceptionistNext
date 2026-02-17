@@ -1,17 +1,123 @@
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 import azure.functions as func
+from sqlalchemy import func as sa_func, or_
 
 from function_app import app
+from onboarding_endpoints import get_twilio_client
 from services.call_service import mark_call_ended, resolve_call, update_call_status, upsert_call
 from services.ultravox_service import get_ultravox_call_messages
 from shared.config import get_setting
-from shared.db import Call, PhoneNumber, SessionLocal, Client
+from shared.db import Call, PhoneNumber, SessionLocal, Client, ClientUser, User
 from utils.cors import build_cors_headers
 
 logger = logging.getLogger(__name__)
+TERMINAL_CALL_STATUSES = {"completed", "ended", "canceled", "cancelled", "failed", "busy", "no-answer"}
+
+
+def _normalize_email(value: str | None) -> str:
+    return str(value or "").strip().lower()
+
+
+def _resolve_client_by_email(db, email: str | None) -> Client | None:
+    normalized = _normalize_email(email)
+    if not normalized:
+        return None
+
+    client = (
+        db.query(Client)
+        .filter(sa_func.lower(sa_func.trim(Client.email)) == normalized)
+        .order_by(Client.id.asc())
+        .first()
+    )
+    if client:
+        return client
+
+    client_user = (
+        db.query(ClientUser)
+        .filter(sa_func.lower(sa_func.trim(ClientUser.email)) == normalized)
+        .filter(
+            or_(
+                ClientUser.is_active.is_(True),
+                ClientUser.is_active.is_(None),
+            )
+        )
+        .filter(sa_func.lower(sa_func.coalesce(ClientUser.status, "active")) != "disabled")
+        .order_by(ClientUser.id.asc())
+        .first()
+    )
+    if client_user:
+        return db.query(Client).filter_by(id=client_user.client_id).one_or_none()
+
+    user = (
+        db.query(User)
+        .filter(sa_func.lower(sa_func.trim(User.email)) == normalized)
+        .order_by(User.id.asc())
+        .first()
+    )
+    if user:
+        return db.query(Client).filter_by(user_id=user.id).one_or_none()
+    return None
+
+
+def _to_naive_utc(value: datetime | None) -> datetime | None:
+    if not value:
+        return None
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _parse_iso_to_naive_utc(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return _to_naive_utc(parsed)
+
+
+def _reconcile_call_status_with_twilio(db, calls: list[Call]) -> None:
+    active_calls = [
+        call
+        for call in calls
+        if not call.ended_at or str(call.status or "").strip().lower() not in TERMINAL_CALL_STATUSES
+    ]
+    if not active_calls:
+        return
+    try:
+        twilio_client = get_twilio_client()
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.warning("Calls reconciliation skipped: Twilio unavailable: %s", exc)
+        return
+
+    now = datetime.utcnow()
+    changed = False
+    for call in active_calls:
+        try:
+            twilio_call = twilio_client.calls(call.twilio_call_sid).fetch()
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.debug("Twilio fetch skipped for sid=%s: %s", call.twilio_call_sid, exc)
+            continue
+
+        twilio_status = str(getattr(twilio_call, "status", "") or "").strip().lower()
+        twilio_end = _to_naive_utc(getattr(twilio_call, "end_time", None))
+
+        if twilio_status and twilio_status != str(call.status or "").strip().lower():
+            call.status = twilio_status
+            changed = True
+        if twilio_end and call.ended_at != twilio_end:
+            call.ended_at = twilio_end
+            changed = True
+        elif twilio_status in TERMINAL_CALL_STATUSES and not call.ended_at:
+            call.ended_at = now
+            changed = True
+
+    if changed:
+        db.flush()
 
 
 def _verify_ultravox_secret(req: func.HttpRequest) -> bool:
@@ -148,7 +254,7 @@ def calls_list(req: func.HttpRequest) -> func.HttpResponse:
 
     db = SessionLocal()
     try:
-        client = db.query(Client).filter_by(email=email).one_or_none()
+        client = _resolve_client_by_email(db, email)
         if not client:
             return func.HttpResponse(
                 json.dumps({"calls": []}),
@@ -169,16 +275,16 @@ def calls_list(req: func.HttpRequest) -> func.HttpResponse:
         elif numbers:
             query = query.filter(Call.ai_phone_number.in_(numbers))
         if start_from:
-            try:
-                query = query.filter(Call.started_at >= datetime.fromisoformat(start_from.replace("Z", "+00:00")))
-            except ValueError:
-                pass
+            parsed_from = _parse_iso_to_naive_utc(start_from)
+            if parsed_from:
+                query = query.filter(Call.started_at >= parsed_from)
         if start_to:
-            try:
-                query = query.filter(Call.started_at <= datetime.fromisoformat(start_to.replace("Z", "+00:00")))
-            except ValueError:
-                pass
+            parsed_to = _parse_iso_to_naive_utc(start_to)
+            if parsed_to:
+                query = query.filter(Call.started_at <= parsed_to)
         calls = query.order_by(Call.started_at.desc(), Call.created_at.desc()).limit(200).all()
+        _reconcile_call_status_with_twilio(db, calls)
+        db.commit()
         payload = [
             {
                 "id": c.id,
@@ -192,6 +298,12 @@ def calls_list(req: func.HttpRequest) -> func.HttpResponse:
                 "started_at": c.started_at.isoformat() if c.started_at else None,
                 "start_time": c.started_at.isoformat() if c.started_at else None,
                 "ended_at": c.ended_at.isoformat() if c.ended_at else None,
+                "end_time": c.ended_at.isoformat() if c.ended_at else None,
+                "duration": (
+                    max(0, int((c.ended_at - c.started_at).total_seconds()))
+                    if c.started_at and c.ended_at
+                    else None
+                ),
             }
             for c in calls
         ]
