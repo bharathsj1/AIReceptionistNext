@@ -55,6 +55,13 @@ const initialsFromName = (name: string) => {
   return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
 };
 
+const formatRole = (title: string, company: string) => {
+  if (!title && !company) return "SMARTCONNECT4U";
+  if (!title) return company.toUpperCase();
+  if (!company) return title.toUpperCase();
+  return `${title} AT ${company}`.toUpperCase();
+};
+
 export default async function PrivateCardPage({ params, searchParams }: PageProps) {
   const token = (params?.token || "").trim();
   const key = normalizeKey(searchParams?.k).trim();
@@ -90,80 +97,100 @@ export default async function PrivateCardPage({ params, searchParams }: PageProp
   const email = (card.email || "").trim();
   const queryString = buildQuery(token, key);
   const saveContactUrl = `/api/private-vcard?${queryString}`;
+  const hasPhone = Boolean(primaryPhone);
+  const hasWhatsApp = Boolean(whatsappTarget);
+  const hasEmail = Boolean(email);
+  const hasMap = Boolean(card.mapUrl && card.address);
+  const roleText = formatRole(title, company);
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.22),_transparent_40%),radial-gradient(circle_at_bottom_right,_rgba(16,185,129,0.16),_transparent_50%),#020617] px-4 py-8 text-slate-100">
-      <div className="mx-auto max-w-md rounded-3xl border border-slate-700/80 bg-slate-900/85 p-6 shadow-2xl">
-        <div className="flex flex-col items-center text-center">
+    <main className="min-h-screen bg-[#e8eddf] px-3 py-6 text-[#161616] sm:px-6">
+      <div className="mx-auto max-w-md rounded-[28px] border border-black/10 bg-[#eff3e6] p-3 shadow-[0_18px_45px_rgba(0,0,0,0.18)]">
+        <div className="overflow-hidden rounded-[22px] bg-white">
           {card.photoUrl ? (
-            <img
-              src={card.photoUrl}
-              alt={name}
-              className="h-28 w-28 rounded-full border border-slate-600 object-cover"
-            />
+            <img src={card.photoUrl} alt={name} className="h-[320px] w-full object-cover" />
           ) : (
-            <div className="flex h-28 w-28 items-center justify-center rounded-full border border-slate-600 bg-slate-800 text-2xl font-bold">
+            <div className="flex h-[320px] w-full items-center justify-center bg-[#d8ddcf] text-6xl font-semibold text-[#73796d]">
               {initialsFromName(name)}
             </div>
           )}
-          <h1 className="mt-4 text-2xl font-semibold">{name}</h1>
-          {title ? <p className="mt-1 text-sm text-slate-300">{title}</p> : null}
-          <p className="mt-1 text-sm text-slate-400">{company}</p>
+
+          <div className="px-4 pb-4 pt-5">
+            <h1 className="text-[46px] font-semibold leading-[1] tracking-[-0.03em]">{name}</h1>
+            <p className="mt-2 text-sm font-semibold tracking-[0.04em] text-[#818181]">{roleText}</p>
+
+            <div className="mt-5 rounded-2xl bg-[#f5f5f5] px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-xl font-semibold tracking-tight">{company}</div>
+                <div className="text-xs text-[#6e6e6e]">We connect. For real.</div>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div className="mt-6 grid grid-cols-2 gap-3">
+        <div className="mt-3 grid grid-cols-2 gap-2">
           <a
-            href={primaryPhone ? `tel:${primaryPhone}` : "#"}
-            className="rounded-xl bg-cyan-500 px-4 py-3 text-center text-sm font-semibold text-slate-950"
+            href={saveContactUrl}
+            className="rounded-xl border border-black/8 bg-white px-3 py-4 text-center text-base font-semibold text-[#141414]"
+          >
+            Save Contact
+          </a>
+          <a
+            href={hasWhatsApp ? `https://wa.me/${whatsappTarget}` : hasEmail ? `mailto:${email}` : hasPhone ? `tel:${primaryPhone}` : "#"}
+            className={`rounded-xl px-3 py-4 text-center text-base font-semibold ${
+              hasWhatsApp || hasEmail || hasPhone ? "bg-[#dff25a] text-[#141414]" : "pointer-events-none bg-[#dadada] text-[#707070]"
+            }`}
+          >
+            Exchange Contact
+          </a>
+        </div>
+
+        <div className="mt-3 rounded-xl border border-black/8 bg-white px-4 py-4">
+          <h2 className="text-3xl font-semibold tracking-tight">My Bio</h2>
+          <div className="mt-3 space-y-2 text-[15px] text-[#404040]">
+            {card.department ? <p>{card.department}</p> : null}
+            {card.address ? <p>{card.address}</p> : null}
+            {card.website ? (
+              <p>
+                <a className="underline" href={card.website} target="_blank" rel="noreferrer">
+                  {card.website}
+                </a>
+              </p>
+            ) : null}
+            {hasMap ? (
+              <p>
+                <a className="underline" href={card.mapUrl} target="_blank" rel="noreferrer">
+                  Open in Maps
+                </a>
+              </p>
+            ) : null}
+            {card.linkedInUrl ? (
+              <p>
+                <a className="underline" href={card.linkedInUrl} target="_blank" rel="noreferrer">
+                  LinkedIn
+                </a>
+              </p>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <a
+            href={hasPhone ? `tel:${primaryPhone}` : "#"}
+            className={`rounded-xl border border-black/8 px-3 py-3 text-center text-sm font-semibold ${
+              hasPhone ? "bg-white text-[#141414]" : "pointer-events-none bg-[#ececec] text-[#777]"
+            }`}
           >
             Call
           </a>
           <a
-            href={whatsappTarget ? `https://wa.me/${whatsappTarget}` : "#"}
-            className="rounded-xl bg-emerald-500 px-4 py-3 text-center text-sm font-semibold text-slate-950"
-          >
-            WhatsApp
-          </a>
-          <a
-            href={email ? `mailto:${email}` : "#"}
-            className="rounded-xl bg-slate-200 px-4 py-3 text-center text-sm font-semibold text-slate-950"
+            href={hasEmail ? `mailto:${email}` : "#"}
+            className={`rounded-xl border border-black/8 px-3 py-3 text-center text-sm font-semibold ${
+              hasEmail ? "bg-white text-[#141414]" : "pointer-events-none bg-[#ececec] text-[#777]"
+            }`}
           >
             Email
           </a>
-          <a
-            href={saveContactUrl}
-            className="rounded-xl bg-amber-400 px-4 py-3 text-center text-sm font-semibold text-slate-950"
-          >
-            Save Contact
-          </a>
-        </div>
-
-        <div className="mt-6 space-y-3 text-sm">
-          {card.website ? (
-            <p>
-              <a className="text-cyan-300 underline" href={card.website} target="_blank" rel="noreferrer">
-                {card.website}
-              </a>
-            </p>
-          ) : null}
-          {card.address ? (
-            <p className="text-slate-300">
-              {card.mapUrl ? (
-                <a className="underline" href={card.mapUrl} target="_blank" rel="noreferrer">
-                  {card.address}
-                </a>
-              ) : (
-                card.address
-              )}
-            </p>
-          ) : null}
-          {card.linkedInUrl ? (
-            <p>
-              <a className="text-cyan-300 underline" href={card.linkedInUrl} target="_blank" rel="noreferrer">
-                LinkedIn
-              </a>
-            </p>
-          ) : null}
         </div>
       </div>
     </main>
