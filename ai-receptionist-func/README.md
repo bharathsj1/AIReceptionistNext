@@ -246,15 +246,14 @@ python3 scripts/seed_crm_demo.py --tenant-id 123 --owner-email owner@yourtenant.
 - `POST /api/private-cards` (admin-only)
 - `PUT /api/private-cards/{token}` (admin-only)
 - `POST /api/private-cards/{token}/photo` (admin-only)
-- `GET /api/private-card?token=...&k=...` (public by secret URL only)
-- `GET /api/private-vcard?token=...&k=...` (public by secret URL only)
+- `GET /api/private-card?token=...` (public by secret URL only)
+- `GET /api/private-vcard?token=...` (public by secret URL only)
 
 ### Required env vars
 - `PUBLIC_APP_URL` (default `https://smartconnect4u.com`)
 - `AZURE_STORAGE_CONNECTION_STRING`
 - `PRIVATE_CARDS_TABLE` (default `PrivateCards`)
 - `BLOB_CONTAINER_PHOTOS` (default `employee-photos`)
-- `VCARD_HASH_SALT` (required when `keyEnabled=true`)
 
 ### Create card (admin auth)
 ```bash
@@ -272,16 +271,14 @@ curl -X POST https://smartconnect4u.com/api/private-cards \
     "companyName": "SmartConnect4u",
     "address": "...",
     "mapUrl": "...",
-    "linkedInUrl": "...",
-    "keyEnabled": true
+    "linkedInUrl": "..."
   }'
 ```
 
 ### Create response
 - `url`: `https://smartconnect4u.com/card/{token}`
-- `key`: returned once only when `keyEnabled=true`
-- `cardUrl`: `https://smartconnect4u.com/api/private-card?token={token}&k={key}`
-- `vcardUrl`: `https://smartconnect4u.com/api/private-vcard?token={token}&k={key}`
+- `cardUrl`: `https://smartconnect4u.com/api/private-card?token={token}`
+- `vcardUrl`: `https://smartconnect4u.com/api/private-vcard?token={token}`
 
 ### QR payload format
-- Recommended: `https://smartconnect4u.com/card/{token}?k={key}`
+- `https://smartconnect4u.com/card/{token}`

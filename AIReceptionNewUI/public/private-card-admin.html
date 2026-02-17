@@ -206,11 +206,6 @@
             </div>
           </div>
 
-          <label class="check">
-            <input id="keyEnabled" type="checkbox" checked />
-            <span>Enable second secret key (`k=`)</span>
-          </label>
-
           <div class="actions">
             <button type="submit" id="createBtn">Create Card</button>
             <button class="alt" type="button" id="clearBtn">Clear</button>
@@ -247,8 +242,7 @@
         whatsappPhone: val("whatsappPhone"),
         linkedInUrl: val("linkedInUrl"),
         address: val("address"),
-        mapUrl: val("mapUrl"),
-        keyEnabled: $("keyEnabled").checked
+        mapUrl: val("mapUrl")
       });
 
       const copy = async (text) => {
@@ -280,9 +274,8 @@
       const buildCanonicalShareUrl = (response) => {
         const token = extractToken(response.url || "");
         if (!token) return response.url || "";
-        const key = response.key ? String(response.key).trim() : "";
         const origin = window.location.origin || "https://www.smartconnect4u.com";
-        return `${origin}/card/${token}${key ? `?k=${encodeURIComponent(key)}` : ""}`;
+        return `${origin}/card/${token}`;
       };
 
       const renderResult = (response, photoUrl) => {
@@ -293,7 +286,6 @@
           renderRow("Share URL", shareUrl),
           renderRow("Card API URL", response.cardUrl),
           renderRow("vCard URL", response.vcardUrl),
-          renderRow("One-time Key", response.key || ""),
           renderRow("Photo URL", photoUrl || "")
         ].join("");
 
@@ -370,7 +362,6 @@
         $("apiBase").value = "http://localhost:7071/api";
         $("companyName").value = "SmartConnect4u";
         $("website").value = "https://smartconnect4u.com";
-        $("keyEnabled").checked = true;
         resultEl.style.display = "none";
         setStatus("");
       });

@@ -18,12 +18,9 @@ from crm_shared import resolve_actor
 from function_app import app
 from shared_code.private_cards import (
     build_vcard,
-    constant_time_equals,
-    generate_key,
     generate_token,
     safe_filename,
     sanitize_public_card,
-    sha256_hex,
 )
 from utils.cors import build_cors_headers
 
@@ -32,7 +29,6 @@ logger = logging.getLogger(__name__)
 PRIVATE_PARTITION = "PRIVATE"
 PRIVATE_CARDS_TABLE = os.getenv("PRIVATE_CARDS_TABLE", "PrivateCards")
 PUBLIC_APP_URL = (os.getenv("PUBLIC_APP_URL") or "https://smartconnect4u.com").rstrip("/")
-VCARD_HASH_SALT = os.getenv("VCARD_HASH_SALT", "")
 BLOB_CONTAINER_PHOTOS = (os.getenv("BLOB_CONTAINER_PHOTOS") or "employee-photos").strip().lower()
 MAX_PHOTO_BYTES = int(os.getenv("PRIVATE_CARD_MAX_PHOTO_BYTES", str(5 * 1024 * 1024)))
 RATE_TOKENS = max(1, int(os.getenv("PRIVATE_CARD_RATE_LIMIT_TOKENS", "12")))
@@ -282,10 +278,6 @@ def _generate_unique_token() -> str:
     raise RuntimeError("Unable to generate unique private card token")
 
 
-def _hash_key(raw_key: str) -> str:
-    return sha256_hex(f"{raw_key}{VCARD_HASH_SALT}")
-
-
 def _require_admin(req: func.HttpRequest, body: Dict[str, Any], cors: Dict[str, str]) -> Tuple[Optional[Any], Optional[func.HttpResponse]]:
     actor = resolve_actor(req, body)
     if not actor:
@@ -327,15 +319,6 @@ def _resolve_public_card(req: func.HttpRequest) -> Optional[Dict[str, Any]]:
     entity = _get_card_entity(token)
     if not entity or not _to_bool(entity.get("isActive"), default=True):
         return None
-
-    key_hash = str(entity.get("keyHash") or "").strip()
-    if key_hash:
-        raw_key = (req.params.get("k") or "").strip()
-        if not raw_key or not VCARD_HASH_SALT:
-            return None
-        expected = _hash_key(raw_key)
-        if not constant_time_equals(expected, key_hash):
-            return None
 
     return entity
 
@@ -495,11 +478,6 @@ def private_cards_create(req: func.HttpRequest) -> func.HttpResponse:
     if not full_name or not email:
         return _json_response({"error": "fullName and email are required"}, 400, cors)
 
-    key_enabled = _to_bool(body.get("keyEnabled"), default=True)
-    if key_enabled and not VCARD_HASH_SALT:
-        return _json_response({"error": "VCARD_HASH_SALT is required when keyEnabled=true"}, 500, cors)
-
-    key = generate_key(24) if key_enabled else ""
     token = ""
     created = False
     for _ in range(8):
@@ -524,8 +502,6 @@ def private_cards_create(req: func.HttpRequest) -> func.HttpResponse:
             "createdAt": now_iso,
             "updatedAt": now_iso,
         }
-        if key_enabled:
-            entity["keyHash"] = _hash_key(key)
         try:
             created = _create_card_entity(token, entity)
         except Exception as exc:  # pylint: disable=broad-except
@@ -539,17 +515,12 @@ def private_cards_create(req: func.HttpRequest) -> func.HttpResponse:
     url = f"{PUBLIC_APP_URL}/card/{token}"
     card_url = f"{PUBLIC_APP_URL}/api/private-card?token={token}"
     vcard_url = f"{PUBLIC_APP_URL}/api/private-vcard?token={token}"
-    if key_enabled:
-        card_url = f"{card_url}&k={key}"
-        vcard_url = f"{vcard_url}&k={key}"
 
     payload = {
         "url": url,
         "cardUrl": card_url,
         "vcardUrl": vcard_url,
     }
-    if key_enabled:
-        payload["key"] = key
     return _json_response(payload, 201, cors)
 
 
