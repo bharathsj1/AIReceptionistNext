@@ -277,8 +277,16 @@
         `;
       };
 
+      const buildCanonicalShareUrl = (response) => {
+        const token = extractToken(response.url || "");
+        if (!token) return response.url || "";
+        const key = response.key ? String(response.key).trim() : "";
+        const origin = window.location.origin || "https://www.smartconnect4u.com";
+        return `${origin}/card/${token}${key ? `?k=${encodeURIComponent(key)}` : ""}`;
+      };
+
       const renderResult = (response, photoUrl) => {
-        const shareUrl = response.key ? `${response.url}?k=${response.key}` : response.url;
+        const shareUrl = buildCanonicalShareUrl(response);
         resultEl.style.display = "block";
         resultEl.innerHTML = [
           "<strong>Created</strong>",
