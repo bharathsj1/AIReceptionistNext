@@ -22,6 +22,32 @@ The Ultravox HTTP tool `calendar_book` is created and attached to each agent so 
 - Twilio voice webhook: `POST /api/twilio/incoming`
 - Ultravox mapping webhook: `POST /api/ultravox/webhook` (set `ULTRAVOX_WEBHOOK_SECRET` and pass `X-Ultravox-Webhook-Secret`)
 
+### Call Routing Scheduler + Warm Transfer
+- Dashboard settings API: `GET|PUT /api/dashboard/routing-settings?email=...`
+- Inbound routing webhook: `POST /api/twilio/voice/inbound`
+- Forward continuation webhook: `POST /api/twilio/voice/forward-next`
+- Whisper prompt webhook: `GET|POST /api/twilio/voice/whisper`
+- Whisper result webhook: `POST /api/twilio/voice/whisper-result`
+- Ultravox warm transfer tool: `POST /api/ultravox/tools/warm-transfer` (`X-ULTRAVOX-TOOL-SECRET` required)
+
+Storage tables (Azure Table Storage):
+- `RoutingConfigs` (PartitionKey=`tenantId`, RowKey=`twilioNumber`)
+- `ForwardTargets` (PartitionKey=`tenantId`, RowKey=`twilioNumber`)
+- `TransferLogs` (PartitionKey=`tenantId`, RowKey=`callSid`)
+
+Required/optional env vars:
+- `AZURE_STORAGE_CONNECTION_STRING` (required for persistent routing config/logs)
+- `TWILIO_AUTH_TOKEN` (required; all `/api/twilio/*` routes validate signature)
+- `TWILIO_VALIDATE_SIGNATURE` (optional, default `true`)
+- `ULTRAVOX_TOOL_SECRET` (required for `/api/ultravox/tools/warm-transfer`)
+- `ROUTING_CONFIGS_TABLE` / `FORWARD_TARGETS_TABLE` / `TRANSFER_LOGS_TABLE` (optional overrides)
+
+Local test flow:
+1. Open dashboard settings -> Phone routing and save config for your Twilio number.
+2. Point Twilio Voice webhook to `POST /api/twilio/voice/inbound`.
+3. Place a call during and outside configured AI windows and verify rule matching.
+4. Trigger warm transfer from Ultravox tool call and verify whisper + press 1 accept behavior.
+
 ### Gmail email manager
 - `GET /api/email/messages?email=...&max_results=20&label_ids=INBOX`
 - `POST /api/email/summary` with `{ "email": "...", "message_id": "..." }`
@@ -211,3 +237,51 @@ If not set, defaults shown in the Overview are used.
 cd ai-receptionist-func
 python3 scripts/seed_crm_demo.py --tenant-id 123 --owner-email owner@yourtenant.com
 ```
+
+---
+
+## Private Digital Business Cards (Internal-only)
+
+### API routes
+- `POST /api/private-cards` (admin-only)
+- `PUT /api/private-cards/{token}` (admin-only)
+- `POST /api/private-cards/{token}/photo` (admin-only)
+- `GET /api/private-card?token=...&k=...` (public by secret URL only)
+- `GET /api/private-vcard?token=...&k=...` (public by secret URL only)
+
+### Required env vars
+- `PUBLIC_APP_URL` (default `https://smartconnect4u.com`)
+- `AZURE_STORAGE_CONNECTION_STRING`
+- `PRIVATE_CARDS_TABLE` (default `PrivateCards`)
+- `BLOB_CONTAINER_PHOTOS` (default `employee-photos`)
+- `VCARD_HASH_SALT` (required when `keyEnabled=true`)
+
+### Create card (admin auth)
+```bash
+curl -X POST https://smartconnect4u.com/api/private-cards \
+  -H "Authorization: Bearer <token>" \
+  -H "x-user-email: <admin-email>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "fullName": "Mahmood Tariq",
+    "jobTitle": "Customer Success",
+    "email": "mahmood@smartconnect4u.com",
+    "workPhone": "+4420....",
+    "whatsappPhone": "+44....",
+    "website": "https://smartconnect4u.com",
+    "companyName": "SmartConnect4u",
+    "address": "...",
+    "mapUrl": "...",
+    "linkedInUrl": "...",
+    "keyEnabled": true
+  }'
+```
+
+### Create response
+- `url`: `https://smartconnect4u.com/card/{token}`
+- `key`: returned once only when `keyEnabled=true`
+- `cardUrl`: `https://smartconnect4u.com/api/private-card?token={token}&k={key}`
+- `vcardUrl`: `https://smartconnect4u.com/api/private-vcard?token={token}&k={key}`
+
+### QR payload format
+- Recommended: `https://smartconnect4u.com/card/{token}?k={key}`

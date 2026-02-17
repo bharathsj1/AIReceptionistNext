@@ -137,7 +137,10 @@ def fetch_task_events(client_id: str, since: Optional[str], limit: int = 100) ->
         safe_client = str(client_id).replace("'", "''")
         filter_expr = f"PartitionKey eq '{safe_client}' and RowKey gt '{since}'"
         try:
-            entities = list(table_client.query_entities(filter=filter_expr))
+            try:
+                entities = list(table_client.query_entities(query_filter=filter_expr))
+            except TypeError:
+                entities = list(table_client.query_entities(filter_expr))
             entities.sort(key=lambda item: item.get("RowKey", ""))
             if limit:
                 entities = entities[:limit]

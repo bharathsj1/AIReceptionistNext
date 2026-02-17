@@ -52,6 +52,7 @@ import TaskBoard from "./tasks/TaskBoard";
 import TaskManagerScreen from "./TaskManagerScreen";
 import ContactsScreen from "./ContactsScreen";
 import CRMManagerScreen from "./CRMManagerScreen";
+import RoutingSettingsPanel from "../components/RoutingSettingsPanel";
 import { createTaskManagerItem } from "../lib/api/taskManager";
 import {
   listClientUsers,
@@ -98,6 +99,16 @@ const formatDate = (iso) => {
   }
 };
 
+const formatDateOnly = (iso) => {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString();
+  } catch {
+    return iso;
+  }
+};
+
 const pad2 = (value) => String(value).padStart(2, "0");
 
 const toDateTimeInput = (value) => {
@@ -122,6 +133,13 @@ const buildDefaultSchedule = () => {
 
 const formatStatusLabel = (value) => {
   if (!value) return "Inactive";
+  return String(value)
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
+const formatPlanLabel = (value) => {
+  if (!value) return "Plan";
   return String(value)
     .replace(/_/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
@@ -541,6 +559,7 @@ export default function DashboardScreen({
   onLoadTranscript,
   onRefreshCalls,
   onRefreshDashboard,
+  receptionistUsage,
   assignNumberStatus,
   onAssignNumber,
   hasActiveSubscription,
@@ -3329,6 +3348,7 @@ export default function DashboardScreen({
   ];
   const settingsSections = [
     { id: "automation", label: "Automation summary" },
+    { id: "routing", label: "Phone routing" },
     { id: "business", label: "Business profile" },
     { id: "user", label: "User profile" },
     { id: "users", label: "User management" }
@@ -3357,7 +3377,9 @@ export default function DashboardScreen({
   const visibleSettingsSections = useMemo(
     () =>
       isClientUser
-        ? settingsSections.filter((section) => section.id === "automation" || section.id === "user")
+        ? settingsSections.filter(
+            (section) => section.id === "automation" || section.id === "routing" || section.id === "user"
+          )
         : settingsSections,
     [isClientUser]
   );
@@ -3382,6 +3404,14 @@ export default function DashboardScreen({
   const needsNumberAssignment = !hasTwilioNumber;
   const showAssignCta = hasReceptionistSubscription && needsNumberAssignment;
   const showNumberGate = currentTool === "ai_receptionist" && showAssignCta;
+  const usageIncluded = Number(receptionistUsage?.includedMinutes);
+  const usageUsed = Number(receptionistUsage?.usedMinutes || 0);
+  const usageRemaining = Number(receptionistUsage?.remainingMinutes);
+  const hasUsageData = Boolean(receptionistUsage);
+  const hasLimitedUsagePlan = Number.isFinite(usageIncluded);
+  const hasRemainingUsage = Number.isFinite(usageRemaining);
+  const usageLimitReached =
+    Boolean(receptionistUsage?.limitReached) || (hasRemainingUsage && usageRemaining <= 0);
   const assignBusy = assignNumberStatus?.status === "loading";
   const assignError =
     assignNumberStatus?.status === "error" ? assignNumberStatus?.message : "";
@@ -4934,6 +4964,58 @@ export default function DashboardScreen({
                       )}
                     </div>
                   )}
+                  {currentTool === "ai_receptionist" && (
+                    <div
+                      className={`rounded-2xl border px-4 py-3 text-sm font-semibold shadow ${
+                        usageLimitReached
+                          ? "border-rose-400/40 bg-rose-900/30 text-rose-100"
+                          : "border-indigo-300/30 bg-indigo-500/10 text-indigo-50"
+                      }`}
+                    >
+                      <p
+                        className={`text-xs uppercase tracking-[0.2em] ${
+                          usageLimitReached ? "text-rose-200" : "text-indigo-200"
+                        }`}
+                      >
+                        Monthly Minutes
+                      </p>
+                      {hasUsageData ? (
+                        <div className="mt-1 space-y-1">
+                          {hasLimitedUsagePlan ? (
+                            <>
+                              <div className="text-lg">
+                                {hasRemainingUsage ? usageRemaining : 0}
+                                <span className="ml-1 text-xs font-medium uppercase tracking-[0.14em]">
+                                  Left
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-slate-200">
+                                {usageUsed} / {usageIncluded} used • {formatPlanLabel(receptionistUsage?.planId)}
+                              </p>
+                            </>
+                          ) : (
+                            <>
+                              <div className="text-lg">{usageUsed} min</div>
+                              <p className="text-[11px] text-slate-200">
+                                Used this cycle • {formatPlanLabel(receptionistUsage?.planId)}
+                              </p>
+                            </>
+                          )}
+                          {(receptionistUsage?.cycleStart || receptionistUsage?.cycleEnd) ? (
+                            <p className="text-[11px] text-slate-300">
+                              Cycle:{" "}
+                              {formatDateOnly(receptionistUsage?.cycleStartDate || receptionistUsage?.cycleStart)} to{" "}
+                              {formatDateOnly(receptionistUsage?.cycleEndDate || receptionistUsage?.cycleEnd)}
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <p className="mt-2 text-xs font-medium text-slate-300">
+                          Usage data will appear once an active plan is detected.
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
               {currentTool === "ai_receptionist" && (
@@ -5625,7 +5707,6 @@ export default function DashboardScreen({
                       >
                         Copy
                       </button>
-                      <span>{callTranscript?.recordings?.length || 0} recording(s)</span>
                     </div>
                   </div>
                   <div
@@ -5661,43 +5742,6 @@ export default function DashboardScreen({
                           <p className="text-slate-100">{line.text || "No text returned"}</p>
                         </div>
                       ))
-                    )}
-                  </div>
-                  <div className="mt-3 rounded-xl border border-white/10 bg-slate-900/40 p-3">
-                    <div className="text-xs font-semibold text-slate-200">Recordings</div>
-                    {callTranscript?.recordings?.length ? (
-                      <div className="mt-2 space-y-3">
-                        {callTranscript.recordings.map((rec, idx) => {
-                          const emailParam = user?.email ? encodeURIComponent(user.email) : "";
-                          const playbackUrl = emailParam
-                            ? `${API_URLS.dashboardRecordingMedia}/${rec.sid}/media?email=${emailParam}`
-                            : "";
-                          return (
-                            <div
-                              key={rec.sid || `recording-${idx}`}
-                              className="rounded-lg border border-white/10 bg-slate-950/50 p-2"
-                            >
-                              <div className="flex items-center justify-between text-xs text-slate-400">
-                                <span>Recording {idx + 1}</span>
-                                <span>
-                                  {rec.duration ? `${rec.duration}s` : "—"} · {formatDate(rec.date_created)}
-                                </span>
-                              </div>
-                              {playbackUrl ? (
-                                <audio controls preload="none" className="mt-2 w-full">
-                                  <source src={playbackUrl} type="audio/mpeg" />
-                                </audio>
-                              ) : (
-                                <p className="mt-2 text-xs text-slate-400">
-                                  Recording available once the account email is loaded.
-                                </p>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <p className="mt-2 text-xs text-slate-400">No recordings available yet.</p>
                     )}
                   </div>
                 </div>
@@ -7528,6 +7572,9 @@ export default function DashboardScreen({
                             </p>
                           </div>
                         </>
+                      )}
+                      {settingsSection === "routing" && (
+                        <RoutingSettingsPanel email={user?.email} disabled={isClientUser} />
                       )}
                       {!isClientUser && settingsSection === "business" && (
                         <>

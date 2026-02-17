@@ -106,6 +106,7 @@ export const API_URLS = {
   dashboardAgent: apiUrl("dashboard/agent"),
   taskManager: apiUrl("task-manager"),
   dashboardBookingSettings: apiUrl("dashboard/booking-settings"),
+  dashboardRoutingSettings: apiUrl("dashboard/routing-settings"),
   dashboardCallTranscript: apiUrl("dashboard/call-transcript"),
   tasks: apiUrl("tasks"),
   tasksStream: apiUrl("tasks/stream"),
