@@ -25,6 +25,7 @@ import BusinessTypeScreen from "./screens/BusinessTypeScreen";
 import ProjectsScreen from "./screens/ProjectsScreen";
 import BusinessReviewScreen from "./screens/BusinessReviewScreen";
 import PublicMeetingScreen from "./screens/PublicMeetingScreen";
+import PrivateCardScreen from "./screens/PrivateCardScreen";
 import AboutScreen from "./screens/AboutScreen";
 import ChatWidget from "./components/chat/ChatWidget";
 
@@ -49,7 +50,8 @@ const STAGES = {
   BUSINESS_INFO_REVIEW: "businessInfoReview",
   PROJECTS: "projects",
   ABOUT: "about",
-  PUBLIC_MEETING: "publicMeeting"
+  PUBLIC_MEETING: "publicMeeting",
+  PRIVATE_CARD: "privateCard"
 };
 const ALLOWED_STAGE_VALUES = new Set(Object.values(STAGES));
 const TOOL_IDS = {
@@ -265,6 +267,8 @@ export default function App() {
   const [serviceSlug, setServiceSlug] = useState("receptionist");
   const validStages = useMemo(() => new Set(Object.values(STAGES)), []);
   const [publicMeetingId, setPublicMeetingId] = useState(null);
+  const [privateCardToken, setPrivateCardToken] = useState("");
+  const [privateCardKey, setPrivateCardKey] = useState("");
   const [bookingSettings, setBookingSettings] = useState({
     booking_enabled: false,
     booking_duration_minutes: 30,
@@ -1316,6 +1320,9 @@ export default function App() {
   // Public meeting rendering bypasses the rest of the app shell
   if (stage === STAGES.PUBLIC_MEETING) {
     return <PublicMeetingScreen meetingId={publicMeetingId} />;
+  }
+  if (stage === STAGES.PRIVATE_CARD) {
+    return <PrivateCardScreen token={privateCardToken} accessKey={privateCardKey} />;
   }
 
   const handleEmailSubmit = async (event) => {
@@ -2835,6 +2842,17 @@ export default function App() {
       setPublicMeetingId(match[1]);
       setStage(STAGES.PUBLIC_MEETING);
     }
+  }, []);
+
+  // Private card deep link: /card/{token}?k=...
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const match = window.location.pathname.match(/^\/card\/([A-Za-z0-9_-]{20,32})\/?$/);
+    if (!match || !match[1]) return;
+    const params = new URLSearchParams(window.location.search || "");
+    setPrivateCardToken(match[1]);
+    setPrivateCardKey((params.get("k") || "").trim());
+    setStage(STAGES.PRIVATE_CARD);
   }, []);
 
   useEffect(() => {
