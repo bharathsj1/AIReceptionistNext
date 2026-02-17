@@ -282,3 +282,56 @@ curl -X POST https://smartconnect4u.com/api/private-cards \
 
 ### QR payload format
 - `https://smartconnect4u.com/card/{token}`
+
+---
+
+## Sales Dialer Setup
+
+### API routes
+- `GET /api/voice/token` (auth required, role: `SalesRep` or `Admin`)
+- `POST /api/voice/twiml` (Twilio webhook for browser dialer routing)
+- `POST /api/voice/dialout` (auth required, fallback phone dial-out)
+- `POST /api/voice/status` (Twilio status callback for call log updates)
+- `GET /api/voice/logs` (auth required, tenant-isolated logs)
+
+### Required env vars
+- `TWILIO_ACCOUNT_SID`
+- `TWILIO_API_KEY_SID`
+- `TWILIO_API_KEY_SECRET`
+- `TWILIO_CALLER_APP_SID`
+- `TWILIO_CALLER_ID=+14313400857`
+- `AZURE_STORAGE_CONNECTION_STRING`
+
+### Recommended env vars
+- `TWILIO_AUTH_TOKEN` (recommended to validate Twilio webhook signatures)
+- `TWILIO_APP_SID` (legacy fallback; prefer `TWILIO_CALLER_APP_SID`)
+- `TWILIO_VALIDATE_SIGNATURE=true`
+- `SALES_CALL_LOGS_TABLE=SalesCallLogs`
+- `VOICE_DIAL_RATE_LIMIT_MAX=12`
+- `VOICE_DIAL_RATE_LIMIT_WINDOW_SECONDS=60`
+- `VOICE_BLOCKED_PREFIXES=+1900,+1976,+979`
+
+### Frontend env (optional)
+- `VITE_TWILIO_VOICE_SDK_URL=https://sdk.twilio.com/js/voice/releases/2.12.3/twilio.min.js`
+
+### Geo Permissions Note
+- Ensure Twilio Voice geographic permissions allow outbound calls from your account/subaccount to Canada (`+1`) from your configured caller ID.
+- If dialing is blocked, check Twilio Console:
+  - Voice geo permissions
+  - Verified caller IDs / number capability
+  - Any policy restrictions for destination prefixes
+
+### Quick test checklist
+1. Login as `Admin` or a client user with role `SalesRep`.
+2. Open Dashboard -> `Sales Dialer`.
+3. Browser Dialer test:
+   - Enter target in E.164 format (example: `+1416xxxxxxx`).
+   - Allow microphone.
+   - Click `Call` and confirm status moves `ringing -> connected -> ended`.
+4. Fallback test:
+   - Switch to `Phone Dial-Out`.
+   - Enter rep phone (E.164) and target number.
+   - Confirm rep phone rings first, then bridge to target.
+5. Confirm logs:
+   - `GET /api/voice/logs?email=<rep-email>`
+   - Validate `tenantId`, `to`, `from`, `status`, `duration`, and `callSid`.

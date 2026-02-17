@@ -38,3 +38,4 @@ import contact_message_endpoints  # noqa
 import chat  # noqa
 import live_handoff  # noqa
 import private_cards_endpoints  # noqa
+import voice_endpoints  # noqa
