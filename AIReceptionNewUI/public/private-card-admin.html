@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="robots" content="noindex,nofollow" />
+    <title>Private Card Admin</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      body {
+        margin: 0;
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: radial-gradient(circle at 15% 10%, #1f3f60, #0a1220 45%, #060a13);
+        color: #e6edf7;
+      }
+      .wrap {
+        max-width: 880px;
+        margin: 30px auto;
+        padding: 18px;
+      }
+      .panel {
+        background: rgba(13, 20, 35, 0.88);
+        border: 1px solid #2a3a55;
+        border-radius: 14px;
+        padding: 18px;
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+      }
+      h1 {
+        margin: 0 0 6px;
+        font-size: 24px;
+      }
+      .sub {
+        margin: 0 0 18px;
+        color: #9bb0d4;
+        font-size: 14px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .field.full {
+        grid-column: 1 / -1;
+      }
+      label {
+        font-size: 12px;
+        color: #b8c7e1;
+        letter-spacing: 0.03em;
+      }
+      input,
+      textarea {
+        border: 1px solid #395071;
+        background: #111a2d;
+        color: #eff5ff;
+        border-radius: 10px;
+        padding: 10px 12px;
+        outline: none;
+      }
+      input:focus,
+      textarea:focus {
+        border-color: #5fb7ff;
+      }
+      textarea {
+        min-height: 80px;
+        resize: vertical;
+      }
+      .check {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .actions {
+        margin-top: 14px;
+        display: flex;
+        gap: 10px;
+      }
+      button {
+        border: none;
+        border-radius: 10px;
+        padding: 10px 14px;
+        background: #2b9dff;
+        color: #04101f;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      button.alt {
+        background: #253751;
+        color: #c7d6ed;
+      }
+      .status {
+        margin-top: 12px;
+        font-size: 13px;
+        color: #9bb0d4;
+      }
+      .error {
+        color: #ff9ca8;
+      }
+      .result {
+        margin-top: 16px;
+        border: 1px solid #2a3a55;
+        border-radius: 12px;
+        padding: 12px;
+        background: #0e1728;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 120px 1fr auto;
+        gap: 10px;
+        align-items: center;
+        margin: 8px 0;
+      }
+      .key {
+        font-size: 12px;
+        color: #8fa8cc;
+      }
+      .val {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        word-break: break-all;
+      }
+      @media (max-width: 720px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+        .row {
+          grid-template-columns: 1fr;
+          gap: 6px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="panel">
+        <h1>SmartConnect4u Private Card Admin</h1>
+        <p class="sub">Internal use only. Not linked from client UI.</p>
+
+        <form id="cardForm">
+          <div class="grid">
+            <div class="field">
+              <label for="apiBase">API Base</label>
+              <input id="apiBase" value="http://localhost:7071/api" required />
+            </div>
+            <div class="field">
+              <label for="adminEmail">Admin Email (required)</label>
+              <input id="adminEmail" placeholder="admin@smartconnect4u.com" required />
+            </div>
+            <div class="field">
+              <label for="fullName">Full Name (required)</label>
+              <input id="fullName" required />
+            </div>
+            <div class="field">
+              <label for="email">Email (required)</label>
+              <input id="email" type="email" required />
+            </div>
+            <div class="field">
+              <label for="jobTitle">Job Title</label>
+              <input id="jobTitle" />
+            </div>
+            <div class="field">
+              <label for="department">Department</label>
+              <input id="department" />
+            </div>
+            <div class="field">
+              <label for="companyName">Company Name</label>
+              <input id="companyName" value="SmartConnect4u" />
+            </div>
+            <div class="field">
+              <label for="website">Website</label>
+              <input id="website" value="https://smartconnect4u.com" />
+            </div>
+            <div class="field">
+              <label for="workPhone">Work Phone</label>
+              <input id="workPhone" />
+            </div>
+            <div class="field">
+              <label for="mobilePhone">Mobile Phone</label>
+              <input id="mobilePhone" />
+            </div>
+            <div class="field">
+              <label for="whatsappPhone">WhatsApp Phone</label>
+              <input id="whatsappPhone" />
+            </div>
+            <div class="field">
+              <label for="linkedInUrl">LinkedIn URL</label>
+              <input id="linkedInUrl" />
+            </div>
+            <div class="field full">
+              <label for="address">Address</label>
+              <textarea id="address"></textarea>
+            </div>
+            <div class="field full">
+              <label for="mapUrl">Map URL</label>
+              <input id="mapUrl" />
+            </div>
+            <div class="field full">
+              <label for="photoFile">Photo (optional upload after create)</label>
+              <input id="photoFile" type="file" accept="image/*" />
+            </div>
+          </div>
+
+          <label class="check">
+            <input id="keyEnabled" type="checkbox" checked />
+            <span>Enable second secret key (`k=`)</span>
+          </label>
+
+          <div class="actions">
+            <button type="submit" id="createBtn">Create Card</button>
+            <button class="alt" type="button" id="clearBtn">Clear</button>
+          </div>
+        </form>
+
+        <div class="status" id="status"></div>
+        <div class="result" id="result" style="display: none"></div>
+      </div>
+    </div>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const statusEl = $("status");
+      const resultEl = $("result");
+      const form = $("cardForm");
+
+      const setStatus = (text, isError = false) => {
+        statusEl.textContent = text || "";
+        statusEl.className = isError ? "status error" : "status";
+      };
+
+      const val = (id) => ($(id).value || "").trim();
+
+      const toPayload = () => ({
+        fullName: val("fullName"),
+        email: val("email"),
+        jobTitle: val("jobTitle"),
+        department: val("department"),
+        companyName: val("companyName"),
+        website: val("website"),
+        workPhone: val("workPhone"),
+        mobilePhone: val("mobilePhone"),
+        whatsappPhone: val("whatsappPhone"),
+        linkedInUrl: val("linkedInUrl"),
+        address: val("address"),
+        mapUrl: val("mapUrl"),
+        keyEnabled: $("keyEnabled").checked
+      });
+
+      const copy = async (text) => {
+        try {
+          await navigator.clipboard.writeText(text);
+          setStatus("Copied to clipboard");
+        } catch {
+          setStatus("Copy failed. Please copy manually.", true);
+        }
+      };
+
+      const extractToken = (url) => {
+        const m = String(url || "").match(/\/card\/([A-Za-z0-9_-]{20,32})/);
+        return m ? m[1] : "";
+      };
+
+      const renderRow = (k, v) => {
+        if (!v) return "";
+        const escaped = String(v).replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        return `
+          <div class="row">
+            <div class="key">${k}</div>
+            <div class="val">${escaped}</div>
+            <button class="alt" type="button" data-copy="${escaped}">Copy</button>
+          </div>
+        `;
+      };
+
+      const renderResult = (response, photoUrl) => {
+        const shareUrl = response.key ? `${response.url}?k=${response.key}` : response.url;
+        resultEl.style.display = "block";
+        resultEl.innerHTML = [
+          "<strong>Created</strong>",
+          renderRow("Share URL", shareUrl),
+          renderRow("Card API URL", response.cardUrl),
+          renderRow("vCard URL", response.vcardUrl),
+          renderRow("One-time Key", response.key || ""),
+          renderRow("Photo URL", photoUrl || "")
+        ].join("");
+
+        resultEl.querySelectorAll("button[data-copy]").forEach((btn) => {
+          btn.addEventListener("click", () => copy(btn.getAttribute("data-copy") || ""));
+        });
+      };
+
+      const uploadPhotoIfAny = async (apiBase, adminEmail, token) => {
+        const file = $("photoFile").files && $("photoFile").files[0];
+        if (!file || !token) return "";
+
+        const formData = new FormData();
+        formData.append("file", file, file.name);
+
+        const res = await fetch(`${apiBase}/private-cards/${token}/photo`, {
+          method: "POST",
+          headers: { "x-user-email": adminEmail },
+          body: formData
+        });
+
+        if (!res.ok) {
+          const error = await res.text().catch(() => "");
+          throw new Error(`Photo upload failed: ${res.status} ${error}`);
+        }
+        const body = await res.json().catch(() => ({}));
+        return body.photoUrl || "";
+      };
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        resultEl.style.display = "none";
+        setStatus("Creating private card...");
+
+        const apiBase = val("apiBase").replace(/\/$/, "");
+        const adminEmail = val("adminEmail");
+        const payload = toPayload();
+
+        if (!payload.fullName || !payload.email || !adminEmail) {
+          setStatus("Admin email, full name, and email are required.", true);
+          return;
+        }
+
+        try {
+          $("createBtn").disabled = true;
+          const createRes = await fetch(`${apiBase}/private-cards`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-user-email": adminEmail
+            },
+            body: JSON.stringify(payload)
+          });
+
+          if (!createRes.ok) {
+            const errorText = await createRes.text().catch(() => "");
+            throw new Error(`Create failed: ${createRes.status} ${errorText}`);
+          }
+
+          const response = await createRes.json();
+          const token = extractToken(response.url);
+          const photoUrl = await uploadPhotoIfAny(apiBase, adminEmail, token);
+          renderResult(response, photoUrl);
+          setStatus("Private card created successfully.");
+        } catch (err) {
+          setStatus(String(err.message || err), true);
+        } finally {
+          $("createBtn").disabled = false;
+        }
+      });
+
+      $("clearBtn").addEventListener("click", () => {
+        form.reset();
+        $("apiBase").value = "http://localhost:7071/api";
+        $("companyName").value = "SmartConnect4u";
+        $("website").value = "https://smartconnect4u.com";
+        $("keyEnabled").checked = true;
+        resultEl.style.display = "none";
+        setStatus("");
+      });
+    </script>
+  </body>
+  </html>

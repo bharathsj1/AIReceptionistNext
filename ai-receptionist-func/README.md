@@ -237,3 +237,51 @@ If not set, defaults shown in the Overview are used.
 cd ai-receptionist-func
 python3 scripts/seed_crm_demo.py --tenant-id 123 --owner-email owner@yourtenant.com
 ```
+
+---
+
+## Private Digital Business Cards (Internal-only)
+
+### API routes
+- `POST /api/private-cards` (admin-only)
+- `PUT /api/private-cards/{token}` (admin-only)
+- `POST /api/private-cards/{token}/photo` (admin-only)
+- `GET /api/private-card?token=...&k=...` (public by secret URL only)
+- `GET /api/private-vcard?token=...&k=...` (public by secret URL only)
+
+### Required env vars
+- `PUBLIC_APP_URL` (default `https://smartconnect4u.com`)
+- `AZURE_STORAGE_CONNECTION_STRING`
+- `PRIVATE_CARDS_TABLE` (default `PrivateCards`)
+- `BLOB_CONTAINER_PHOTOS` (default `employee-photos`)
+- `VCARD_HASH_SALT` (required when `keyEnabled=true`)
+
+### Create card (admin auth)
+```bash
+curl -X POST https://smartconnect4u.com/api/private-cards \
+  -H "Authorization: Bearer <token>" \
+  -H "x-user-email: <admin-email>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "fullName": "Mahmood Tariq",
+    "jobTitle": "Customer Success",
+    "email": "mahmood@smartconnect4u.com",
+    "workPhone": "+4420....",
+    "whatsappPhone": "+44....",
+    "website": "https://smartconnect4u.com",
+    "companyName": "SmartConnect4u",
+    "address": "...",
+    "mapUrl": "...",
+    "linkedInUrl": "...",
+    "keyEnabled": true
+  }'
+```
+
+### Create response
+- `url`: `https://smartconnect4u.com/card/{token}`
+- `key`: returned once only when `keyEnabled=true`
+- `cardUrl`: `https://smartconnect4u.com/api/private-card?token={token}&k={key}`
+- `vcardUrl`: `https://smartconnect4u.com/api/private-vcard?token={token}&k={key}`
+
+### QR payload format
+- Recommended: `https://smartconnect4u.com/card/{token}?k={key}`
