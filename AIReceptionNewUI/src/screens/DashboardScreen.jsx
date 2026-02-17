@@ -52,6 +52,7 @@ import TaskBoard from "./tasks/TaskBoard";
 import TaskManagerScreen from "./TaskManagerScreen";
 import ContactsScreen from "./ContactsScreen";
 import CRMManagerScreen from "./CRMManagerScreen";
+import SalesDialerScreen from "./SalesDialerScreen";
 import RoutingSettingsPanel from "../components/RoutingSettingsPanel";
 import { createTaskManagerItem } from "../lib/api/taskManager";
 import {
@@ -73,6 +74,12 @@ const TASKS_LIVE_ENABLED = (() => {
   if (raw === undefined || raw === null || raw === "") return TASKS_ENABLED;
   return resolveFeatureFlag(raw);
 })();
+
+const normalizeRoleKey = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, "");
 
 const formatDuration = (seconds) => {
   if (seconds === null || seconds === undefined || seconds === "") return "—";
@@ -572,6 +579,9 @@ export default function DashboardScreen({
   const totalPages = Math.max(1, Math.ceil((recentCalls?.length || 0) / pageSize));
   const safePage = Math.min(Math.max(callsPage || 1, 1), totalPages);
   const pagedCalls = recentCalls.slice((safePage - 1) * pageSize, safePage * pageSize);
+  const roleKey = normalizeRoleKey(user?.role);
+  const canAccessSalesDialer =
+    user?.scope === "primary_user" || roleKey === "admin" || roleKey === "salesrep" || roleKey === "sales";
 
   const [selectedCall, setSelectedCall] = useState(pagedCalls[0] || null);
   useEffect(() => {
@@ -587,6 +597,12 @@ export default function DashboardScreen({
       setActiveTab?.(DASHBOARD_TABS[0]?.id || "agents");
     }
   }, [activeTab, activeTool, setActiveTab]);
+
+  useEffect(() => {
+    if ((activeTool || "ai_receptionist") !== "sales_dialer") return;
+    if (canAccessSalesDialer) return;
+    setActiveTool?.("ai_receptionist");
+  }, [activeTool, canAccessSalesDialer, setActiveTool]);
   const [businessForm, setBusinessForm] = useState({
     name: clientData?.business_name || clientData?.name || "",
     phone: clientData?.business_phone || "",
@@ -3279,7 +3295,7 @@ export default function DashboardScreen({
     }
   ];
 
-  const toolTabs = [
+  const baseToolTabs = [
     {
       id: "ai_receptionist",
       label: "AI receptionist",
@@ -3321,8 +3337,18 @@ export default function DashboardScreen({
       eyebrow: "Directory",
       icon: Users,
       copy: "Sync Gmail + Outlook contacts, plus AI receptionist leads."
+    },
+    {
+      id: "sales_dialer",
+      label: "Sales Dialer",
+      eyebrow: "Outbound voice",
+      icon: PhoneCall,
+      copy: "Browser softphone and fallback dial-out for outbound sales calls."
     }
   ];
+  const toolTabs = canAccessSalesDialer
+    ? baseToolTabs
+    : baseToolTabs.filter((tool) => tool.id !== "sales_dialer");
 
   const analyticsTabs = [
     { id: "ai_receptionist", label: "AI Receptionist", icon: Shield },
@@ -3366,6 +3392,7 @@ export default function DashboardScreen({
     if (toolId === "task_manager") return false;
     if (toolId === "crm_manager") return false;
     if (toolId === "contacts") return false;
+    if (toolId === "sales_dialer") return false;
     const entry = toolSubscriptions?.[toolId];
     if (entry && typeof entry.active === "boolean") return !entry.active;
     if (subscriptionsLoading) return false;
@@ -4668,7 +4695,8 @@ export default function DashboardScreen({
       social_media_manager: "from-fuchsia-500/80 via-pink-400/70 to-rose-400/70",
       task_manager: "from-amber-500/80 via-orange-400/70 to-rose-400/60",
       crm_manager: "from-violet-500/80 via-indigo-400/70 to-sky-400/70",
-      contacts: "from-rose-500/80 via-red-400/70 to-orange-300/70"
+      contacts: "from-rose-500/80 via-red-400/70 to-orange-300/70",
+      sales_dialer: "from-cyan-500/80 via-blue-500/70 to-indigo-400/70"
     };
     const accent = toolAccentMap[tool.id] || "from-slate-500/70 to-slate-400/70";
     const toolActiveClass = lightThemeActive
@@ -5304,6 +5332,14 @@ export default function DashboardScreen({
               googleAccountEmail={calendarAccountEmail}
             />
           </ToolGate>
+        )}
+
+        {currentTool === "sales_dialer" && canAccessSalesDialer && (
+          <SalesDialerScreen
+            user={user}
+            userProfile={userProfile}
+            sessionEmail={user?.email || userProfile?.contact_email || clientData?.email || ""}
+          />
         )}
 
         {currentTool === "ai_receptionist" && (
