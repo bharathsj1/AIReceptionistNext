@@ -22,6 +22,32 @@ The Ultravox HTTP tool `calendar_book` is created and attached to each agent so 
 - Twilio voice webhook: `POST /api/twilio/incoming`
 - Ultravox mapping webhook: `POST /api/ultravox/webhook` (set `ULTRAVOX_WEBHOOK_SECRET` and pass `X-Ultravox-Webhook-Secret`)
 
+### Call Routing Scheduler + Warm Transfer
+- Dashboard settings API: `GET|PUT /api/dashboard/routing-settings?email=...`
+- Inbound routing webhook: `POST /api/twilio/voice/inbound`
+- Forward continuation webhook: `POST /api/twilio/voice/forward-next`
+- Whisper prompt webhook: `GET|POST /api/twilio/voice/whisper`
+- Whisper result webhook: `POST /api/twilio/voice/whisper-result`
+- Ultravox warm transfer tool: `POST /api/ultravox/tools/warm-transfer` (`X-ULTRAVOX-TOOL-SECRET` required)
+
+Storage tables (Azure Table Storage):
+- `RoutingConfigs` (PartitionKey=`tenantId`, RowKey=`twilioNumber`)
+- `ForwardTargets` (PartitionKey=`tenantId`, RowKey=`twilioNumber`)
+- `TransferLogs` (PartitionKey=`tenantId`, RowKey=`callSid`)
+
+Required/optional env vars:
+- `AZURE_STORAGE_CONNECTION_STRING` (required for persistent routing config/logs)
+- `TWILIO_AUTH_TOKEN` (required; all `/api/twilio/*` routes validate signature)
+- `TWILIO_VALIDATE_SIGNATURE` (optional, default `true`)
+- `ULTRAVOX_TOOL_SECRET` (required for `/api/ultravox/tools/warm-transfer`)
+- `ROUTING_CONFIGS_TABLE` / `FORWARD_TARGETS_TABLE` / `TRANSFER_LOGS_TABLE` (optional overrides)
+
+Local test flow:
+1. Open dashboard settings -> Phone routing and save config for your Twilio number.
+2. Point Twilio Voice webhook to `POST /api/twilio/voice/inbound`.
+3. Place a call during and outside configured AI windows and verify rule matching.
+4. Trigger warm transfer from Ultravox tool call and verify whisper + press 1 accept behavior.
+
 ### Gmail email manager
 - `GET /api/email/messages?email=...&max_results=20&label_ids=INBOX`
 - `POST /api/email/summary` with `{ "email": "...", "message_id": "..." }`

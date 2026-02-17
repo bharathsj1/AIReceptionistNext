@@ -52,6 +52,7 @@ import TaskBoard from "./tasks/TaskBoard";
 import TaskManagerScreen from "./TaskManagerScreen";
 import ContactsScreen from "./ContactsScreen";
 import CRMManagerScreen from "./CRMManagerScreen";
+import RoutingSettingsPanel from "../components/RoutingSettingsPanel";
 import { createTaskManagerItem } from "../lib/api/taskManager";
 import {
   listClientUsers,
@@ -3347,6 +3348,7 @@ export default function DashboardScreen({
   ];
   const settingsSections = [
     { id: "automation", label: "Automation summary" },
+    { id: "routing", label: "Phone routing" },
     { id: "business", label: "Business profile" },
     { id: "user", label: "User profile" },
     { id: "users", label: "User management" }
@@ -3375,7 +3377,9 @@ export default function DashboardScreen({
   const visibleSettingsSections = useMemo(
     () =>
       isClientUser
-        ? settingsSections.filter((section) => section.id === "automation" || section.id === "user")
+        ? settingsSections.filter(
+            (section) => section.id === "automation" || section.id === "routing" || section.id === "user"
+          )
         : settingsSections,
     [isClientUser]
   );
@@ -7568,6 +7572,9 @@ export default function DashboardScreen({
                             </p>
                           </div>
                         </>
+                      )}
+                      {settingsSection === "routing" && (
+                        <RoutingSettingsPanel email={user?.email} disabled={isClientUser} />
                       )}
                       {!isClientUser && settingsSection === "business" && (
                         <>
