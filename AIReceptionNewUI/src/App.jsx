@@ -1317,6 +1317,17 @@ export default function App() {
   }`;
   const contentClassName = `content${isLandingStage ? " content-landing" : ""}${isDashboardStage ? " content-wide" : ""}`;
 
+  // Direct public card route render (robust against app stage/history state drift)
+  const directCardMatch =
+    typeof window !== "undefined"
+      ? (window.location.pathname || "").match(/^\/card\/([A-Za-z0-9_-]{20,32})\/?$/)
+      : null;
+  if (directCardMatch && directCardMatch[1]) {
+    const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search || "") : null;
+    const directKey = (params?.get("k") || "").trim();
+    return <PrivateCardScreen token={directCardMatch[1]} accessKey={directKey} />;
+  }
+
   // Public meeting rendering bypasses the rest of the app shell
   if (stage === STAGES.PUBLIC_MEETING) {
     return <PublicMeetingScreen meetingId={publicMeetingId} />;
