@@ -1834,6 +1834,7 @@ def client_by_email(req: func.HttpRequest) -> func.HttpResponse:
             "business_category": client.business_category,
             "business_sub_type": client.business_sub_type,
             "business_custom_type": client.business_custom_type,
+            "sales_dialer_enabled": bool(client.sales_dialer_enabled),
             "website_url": client.website_url,
             "website_data": client.website_data,
             "user_id": client.user_id,

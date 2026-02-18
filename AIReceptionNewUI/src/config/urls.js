@@ -120,6 +120,7 @@ export const API_URLS = {
   voiceTokenDialer: apiUrl("voice-token"),
   voiceOutboundDialer: apiUrl("voice-outbound"),
   callHistory: apiUrl("call-history"),
+  activePhoneNumbers: apiUrl("active-phone-numbers"),
   socialMetaAuthUrl: apiUrl("social/meta/auth-url"),
   socialMetaCallback: apiUrl("social/meta/callback"),
   socialConnections: apiUrl("social/connections"),

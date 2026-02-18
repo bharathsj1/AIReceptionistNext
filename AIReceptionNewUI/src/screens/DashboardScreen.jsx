@@ -75,12 +75,6 @@ const TASKS_LIVE_ENABLED = (() => {
   return resolveFeatureFlag(raw);
 })();
 
-const normalizeRoleKey = (value) =>
-  String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[\s_-]+/g, "");
-
 const formatDuration = (seconds) => {
   if (seconds === null || seconds === undefined || seconds === "") return "—";
   const totalSeconds = Number(seconds);
@@ -579,9 +573,7 @@ export default function DashboardScreen({
   const totalPages = Math.max(1, Math.ceil((recentCalls?.length || 0) / pageSize));
   const safePage = Math.min(Math.max(callsPage || 1, 1), totalPages);
   const pagedCalls = recentCalls.slice((safePage - 1) * pageSize, safePage * pageSize);
-  const roleKey = normalizeRoleKey(user?.role);
-  const canAccessSalesDialer =
-    user?.scope === "primary_user" || roleKey === "admin" || roleKey === "salesrep" || roleKey === "sales";
+  const canAccessSalesDialer = Boolean(clientData?.sales_dialer_enabled);
 
   const [selectedCall, setSelectedCall] = useState(pagedCalls[0] || null);
   useEffect(() => {
