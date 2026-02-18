@@ -30,11 +30,8 @@ const columns = [
 ];
 
 const socials = [
-  { href: "https://facebook.com", label: "Facebook", icon: "fb" },
-  { href: "https://x.com", label: "X", icon: "x" },
-  { href: "https://instagram.com", label: "Instagram", icon: "ig" },
-  { href: "https://linkedin.com", label: "LinkedIn", icon: "in" },
-  { href: "https://youtube.com", label: "YouTube", icon: "yt" }
+  { href: "https://www.facebook.com/smartconnect4u", label: "Facebook", icon: "fb" },
+  { href: "https://www.instagram.com/smartconnect_4u", label: "Instagram", icon: "ig" }
 ];
 
 export default function Footer() {
@@ -83,6 +80,8 @@ export default function Footer() {
                 key={s.icon}
                 href={s.href}
                 aria-label={s.label}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="flex h-9 w-9 items-center justify-center rounded-full border border-white/20 text-sm transition hover:border-white/40 hover:text-white"
               >
                 {s.icon.toUpperCase()}
