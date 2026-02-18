@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Careers | SmartConnect4u</title>
+    <style>
+      @import url("https://fonts.cdnfonts.com/css/product-sans");
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: "Product Sans", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+        background: radial-gradient(circle at 18% 16%, rgba(123, 198, 255, 0.14), transparent 34%),
+          radial-gradient(circle at 82% 2%, rgba(124, 58, 237, 0.16), transparent 36%),
+          linear-gradient(145deg, #0b0d2e, #0e1135 46%, #0a0e20 100%);
+        color: #e7ecff;
+        min-height: 100vh;
+      }
+      a {
+        color: #9fb6ff;
+        text-decoration: none;
+      }
+      a:hover {
+        color: #ffffff;
+      }
+      .screen-panel {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 0 16px;
+        width: 100%;
+      }
+      .nav-card {
+        display: grid;
+        align-items: center;
+        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+        gap: 20px;
+        background: rgba(0, 0, 0, 0.4);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        padding: 14px clamp(16px, 4vw, 48px);
+        box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+        backdrop-filter: blur(10px);
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 20;
+      }
+      .nav-brand {
+        display: flex;
+        align-items: center;
+      }
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        text-decoration: none;
+      }
+      .brand-logo {
+        max-width: 170px;
+        max-height: 50px;
+        width: auto;
+        height: auto;
+        object-fit: contain;
+      }
+      .nav-links {
+        display: flex;
+        gap: 28px;
+        align-items: center;
+        justify-self: center;
+      }
+      .nav-link {
+        background: transparent;
+        color: #e6ebff;
+        font-weight: 600;
+        font-size: 14px;
+      }
+      .nav-actions {
+        display: flex;
+        gap: 10px;
+        justify-self: end;
+      }
+      .login-cta {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        background: #4338ff;
+        color: #f7f7ff;
+        padding: 10px 14px;
+        border: 1px solid #4338ff;
+        border-radius: 0;
+        font-weight: 400;
+        letter-spacing: 0.02em;
+        cursor: pointer;
+      }
+      .login-cta:hover {
+        background: #ffffff;
+        color: #4338ff;
+      }
+      .page-shell {
+        padding-top: 132px;
+        padding-bottom: 64px;
+        display: grid;
+        gap: 18px;
+      }
+      .hero-card,
+      .panel {
+        background: rgba(8, 12, 28, 0.72);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 22px;
+        padding: clamp(18px, 3.2vw, 26px);
+        box-shadow: 0 22px 44px rgba(0, 0, 0, 0.28);
+      }
+      .hero-card h1 {
+        margin: 0;
+        font-size: clamp(28px, 4.2vw, 36px);
+        color: #f8faff;
+      }
+      .hero-card p {
+        margin: 10px 0 0;
+        color: #cfd7ff;
+        line-height: 1.6;
+        max-width: 760px;
+      }
+      .jobs-grid {
+        display: grid;
+        gap: 14px;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      }
+      .job-card {
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.03);
+        padding: 16px;
+        display: grid;
+        gap: 10px;
+      }
+      .job-title {
+        margin: 0;
+        font-size: 21px;
+        color: #f5f7ff;
+      }
+      .job-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .chip {
+        border: 1px solid rgba(123, 198, 255, 0.35);
+        background: rgba(67, 56, 255, 0.18);
+        color: #d8e2ff;
+        border-radius: 999px;
+        padding: 4px 9px;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+      }
+      .job-card h4 {
+        margin: 2px 0;
+        font-size: 13px;
+        letter-spacing: 0.03em;
+        color: #e5ebff;
+      }
+      .job-card ul {
+        margin: 0;
+        padding-left: 18px;
+        color: #c9d4ff;
+        display: grid;
+        gap: 5px;
+        font-size: 14px;
+      }
+      .job-actions {
+        margin-top: 6px;
+      }
+      .primary-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        border: 1px solid #4338ff;
+        background: linear-gradient(135deg, #7c3aed, #6366f1);
+        color: #ffffff;
+        padding: 11px 16px;
+        border-radius: 12px;
+        cursor: pointer;
+        font-weight: 700;
+      }
+      .primary-btn:hover {
+        transform: translateY(-1px);
+      }
+      .panel h2 {
+        margin: 0;
+        font-size: 28px;
+      }
+      .panel p.lead {
+        margin: 8px 0 18px;
+        color: #cfd7ff;
+      }
+      .form-grid {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .field {
+        display: grid;
+        gap: 6px;
+      }
+      .field.full {
+        grid-column: 1 / -1;
+      }
+      .field label {
+        font-size: 13px;
+        color: #d7dfff;
+      }
+      .input {
+        width: 100%;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(255, 255, 255, 0.04);
+        border-radius: 11px;
+        padding: 11px 12px;
+        color: #f8fbff;
+        font-size: 14px;
+        outline: none;
+      }
+      .input:focus {
+        border-color: rgba(123, 198, 255, 0.62);
+        box-shadow: 0 0 0 4px rgba(123, 198, 255, 0.16);
+      }
+      textarea.input {
+        resize: vertical;
+        min-height: 120px;
+      }
+      .hint {
+        font-size: 12px;
+        color: #a9b9ef;
+      }
+      .status {
+        margin-top: 10px;
+        font-size: 13px;
+      }
+      .status.success {
+        color: #7ae7c7;
+      }
+      .status.error {
+        color: #f8b4b4;
+      }
+      @media (max-width: 860px) {
+        .nav-card {
+          grid-template-columns: 1fr;
+          gap: 12px;
+        }
+        .nav-links {
+          justify-self: start;
+          flex-wrap: wrap;
+          gap: 14px;
+        }
+        .nav-actions {
+          justify-self: start;
+        }
+        .page-shell {
+          padding-top: 178px;
+        }
+      }
+      @media (max-width: 700px) {
+        .form-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="nav-card">
+      <div class="nav-brand">
+        <a class="brand" href="/">
+          <img class="brand-logo" src="/media/sc_logo_main.png" alt="SmartConnect4u logo" />
+        </a>
+      </div>
+      <div class="nav-links">
+        <a class="nav-link" href="/#capabilities">Our purpose</a>
+        <a class="nav-link" href="/#performance">What we do</a>
+        <a class="nav-link" href="/contact.html">Contact</a>
+        <a class="nav-link" href="/blog.html">Blog</a>
+      </div>
+      <div class="nav-actions">
+        <a class="login-cta" href="/#login">
+          <span aria-hidden>→</span>
+          <span>Login</span>
+        </a>
+      </div>
+    </header>
+
+    <main class="screen-panel page-shell">
+      <section class="hero-card">
+        <h1>Careers in Machine Learning (Canada)</h1>
+        <p>
+          Join SmartConnect4u to build real-world AI systems for voice, messaging, and workflow automation. We are hiring
+          across Canada for machine learning roles focused on production quality, measurable business outcomes, and
+          responsible AI.
+        </p>
+      </section>
+
+      <section class="panel">
+        <div class="jobs-grid">
+          <article class="job-card">
+            <h3 class="job-title">Senior Machine Learning Engineer</h3>
+            <div class="job-meta">
+              <span class="chip">Toronto, ON</span>
+              <span class="chip">Hybrid</span>
+              <span class="chip">Full-time</span>
+            </div>
+            <h4>What you will do</h4>
+            <ul>
+              <li>Design and deploy LLM-powered features for call summarization, intent detection, and reply generation.</li>
+              <li>Own model lifecycle from experimentation to production monitoring and drift response.</li>
+              <li>Collaborate with product and backend teams to improve latency, quality, and reliability.</li>
+            </ul>
+            <h4>What we are looking for</h4>
+            <ul>
+              <li>5+ years in applied ML, including production ML/LLM systems.</li>
+              <li>Strong Python skills and experience with ML infra (feature stores, eval pipelines, observability).</li>
+              <li>Hands-on experience with cloud deployment and CI/CD for ML services.</li>
+            </ul>
+            <div class="job-actions">
+              <button class="primary-btn apply-btn" type="button" data-job-title="Senior Machine Learning Engineer">
+                Apply
+              </button>
+            </div>
+          </article>
+
+          <article class="job-card">
+            <h3 class="job-title">Machine Learning Scientist - NLP</h3>
+            <div class="job-meta">
+              <span class="chip">Vancouver, BC</span>
+              <span class="chip">Remote (Canada)</span>
+              <span class="chip">Full-time</span>
+            </div>
+            <h4>What you will do</h4>
+            <ul>
+              <li>Develop and evaluate NLP models for classification, extraction, and multilingual customer interactions.</li>
+              <li>Create robust evaluation frameworks with offline/online metrics and error analysis loops.</li>
+              <li>Work on retrieval-augmented generation and grounding for high-trust AI responses.</li>
+            </ul>
+            <h4>What we are looking for</h4>
+            <ul>
+              <li>Advanced degree in ML, NLP, CS, or equivalent practical experience.</li>
+              <li>Strong understanding of transformers, prompt engineering, and model evaluation.</li>
+              <li>Ability to convert research ideas into scalable production experiments.</li>
+            </ul>
+            <div class="job-actions">
+              <button class="primary-btn apply-btn" type="button" data-job-title="Machine Learning Scientist - NLP">
+                Apply
+              </button>
+            </div>
+          </article>
+
+          <article class="job-card">
+            <h3 class="job-title">ML Ops Engineer</h3>
+            <div class="job-meta">
+              <span class="chip">Montreal, QC</span>
+              <span class="chip">Hybrid</span>
+              <span class="chip">Full-time</span>
+            </div>
+            <h4>What you will do</h4>
+            <ul>
+              <li>Build and operate training/inference pipelines for AI services used by customer-facing products.</li>
+              <li>Set up model registry, observability, and rollback-safe deployment strategies.</li>
+              <li>Improve infra cost/performance for high-throughput inference workloads.</li>
+            </ul>
+            <h4>What we are looking for</h4>
+            <ul>
+              <li>Experience with Docker, Kubernetes, and cloud-native monitoring.</li>
+              <li>Strong scripting in Python and automation mindset.</li>
+              <li>Practical knowledge of reliability, security, and compliance requirements for ML systems.</li>
+            </ul>
+            <div class="job-actions">
+              <button class="primary-btn apply-btn" type="button" data-job-title="ML Ops Engineer">
+                Apply
+              </button>
+            </div>
+          </article>
+
+          <article class="job-card">
+            <h3 class="job-title">Applied AI Engineer (Speech + LLM)</h3>
+            <div class="job-meta">
+              <span class="chip">Calgary, AB</span>
+              <span class="chip">Remote (Canada)</span>
+              <span class="chip">Full-time</span>
+            </div>
+            <h4>What you will do</h4>
+            <ul>
+              <li>Build speech-to-text and conversational AI capabilities for real-time call workflows.</li>
+              <li>Optimize prompts and routing logic for quality and low-latency user interactions.</li>
+              <li>Partner with UX and product to iterate quickly with measurable quality improvements.</li>
+            </ul>
+            <h4>What we are looking for</h4>
+            <ul>
+              <li>Strong software engineering fundamentals with practical ML/AI product experience.</li>
+              <li>Experience integrating speech/NLP services and shipping production APIs.</li>
+              <li>Excellent communication and ownership in cross-functional teams.</li>
+            </ul>
+            <div class="job-actions">
+              <button class="primary-btn apply-btn" type="button" data-job-title="Applied AI Engineer (Speech + LLM)">
+                Apply
+              </button>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel" id="apply-section">
+        <h2>Apply Now</h2>
+        <p class="lead">
+          Submit your details and CV. Our recruiting team will review your profile and contact you if there is a match.
+        </p>
+        <form id="careers-apply-form" class="form-grid">
+          <div class="field">
+            <label for="candidate-name">Full Name</label>
+            <input id="candidate-name" class="input" type="text" required />
+          </div>
+          <div class="field">
+            <label for="candidate-email">Email</label>
+            <input id="candidate-email" class="input" type="email" required />
+          </div>
+          <div class="field">
+            <label for="candidate-phone">Phone</label>
+            <input id="candidate-phone" class="input" type="text" placeholder="+1 ..." />
+          </div>
+          <div class="field">
+            <label for="candidate-location">Current Location</label>
+            <input id="candidate-location" class="input" type="text" placeholder="City, Province" />
+          </div>
+          <div class="field full">
+            <label for="candidate-role">Role</label>
+            <select id="candidate-role" class="input" required>
+              <option value="">Select the role you are applying for</option>
+              <option value="Senior Machine Learning Engineer">Senior Machine Learning Engineer</option>
+              <option value="Machine Learning Scientist - NLP">Machine Learning Scientist - NLP</option>
+              <option value="ML Ops Engineer">ML Ops Engineer</option>
+              <option value="Applied AI Engineer (Speech + LLM)">Applied AI Engineer (Speech + LLM)</option>
+            </select>
+          </div>
+          <div class="field full">
+            <label for="candidate-cover-letter">Cover Letter</label>
+            <textarea
+              id="candidate-cover-letter"
+              class="input"
+              placeholder="Share your background, impact, and why this role is a fit."
+            ></textarea>
+          </div>
+          <div class="field full">
+            <label for="candidate-cv">Upload CV (PDF, DOC, DOCX, TXT, RTF)</label>
+            <input id="candidate-cv" class="input" type="file" accept=".pdf,.doc,.docx,.txt,.rtf" required />
+            <span class="hint">Maximum file size: 8 MB.</span>
+          </div>
+          <div class="field full">
+            <button class="primary-btn" id="submit-btn" type="submit">
+              <span aria-hidden>↑</span>
+              <span>Submit Application</span>
+            </button>
+          </div>
+        </form>
+        <p id="apply-status" class="status" style="margin-bottom:0;"></p>
+      </section>
+    </main>
+
+    <script>
+      const APPLY_ENDPOINT = "/api/careers/apply";
+      const MAX_FILE_BYTES = 8 * 1024 * 1024;
+      const applyButtons = document.querySelectorAll(".apply-btn");
+      const applySection = document.getElementById("apply-section");
+      const roleSelect = document.getElementById("candidate-role");
+      const form = document.getElementById("careers-apply-form");
+      const statusEl = document.getElementById("apply-status");
+      const submitBtn = document.getElementById("submit-btn");
+
+      function setStatus(message, type) {
+        statusEl.textContent = message || "";
+        statusEl.className = `status ${type || ""}`.trim();
+      }
+
+      function toBase64(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const raw = typeof reader.result === "string" ? reader.result : "";
+            const encoded = raw.includes(",") ? raw.split(",")[1] : raw;
+            resolve(encoded || "");
+          };
+          reader.onerror = () => reject(new Error("Unable to read CV file."));
+          reader.readAsDataURL(file);
+        });
+      }
+
+      applyButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+          const jobTitle = button.getAttribute("data-job-title") || "";
+          roleSelect.value = jobTitle;
+          applySection.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+      });
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        setStatus("", "");
+
+        const name = (document.getElementById("candidate-name").value || "").trim();
+        const email = (document.getElementById("candidate-email").value || "").trim();
+        const phone = (document.getElementById("candidate-phone").value || "").trim();
+        const location = (document.getElementById("candidate-location").value || "").trim();
+        const jobTitle = (document.getElementById("candidate-role").value || "").trim();
+        const coverLetter = (document.getElementById("candidate-cover-letter").value || "").trim();
+        const cvFile = document.getElementById("candidate-cv").files?.[0] || null;
+
+        if (!name || !email || !jobTitle || !cvFile) {
+          setStatus("Please fill required fields and upload your CV.", "error");
+          return;
+        }
+
+        if (cvFile.size > MAX_FILE_BYTES) {
+          setStatus("CV exceeds 8 MB limit. Please upload a smaller file.", "error");
+          return;
+        }
+
+        submitBtn.disabled = true;
+        submitBtn.style.opacity = "0.8";
+        setStatus("Submitting application...", "");
+
+        try {
+          const cvBase64 = await toBase64(cvFile);
+          const response = await fetch(APPLY_ENDPOINT, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name,
+              email,
+              phone,
+              location,
+              job_title: jobTitle,
+              cover_letter: coverLetter,
+              cv_file_name: cvFile.name,
+              cv_file_base64: cvBase64
+            })
+          });
+
+          if (!response.ok) {
+            const payload = await response.json().catch(() => ({}));
+            throw new Error(payload.error || "Unable to submit application.");
+          }
+
+          setStatus("Application submitted successfully. We will contact you if shortlisted.", "success");
+          form.reset();
+        } catch (error) {
+          setStatus(error?.message || "Unable to submit application.", "error");
+        } finally {
+          submitBtn.disabled = false;
+          submitBtn.style.opacity = "1";
+        }
+      });
+    </script>
+  </body>
+  </html>
