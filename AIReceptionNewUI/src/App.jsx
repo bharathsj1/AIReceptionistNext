@@ -2537,7 +2537,15 @@ export default function App() {
       const raw = window.localStorage.getItem(STORAGE_KEY);
       if (!raw) return;
       const saved = JSON.parse(raw);
-      if (!resetFlowActiveRef.current && saved.stage) setStage(saved.stage);
+      const path = (window.location.pathname || "").toLowerCase();
+      const hasPathPriorityStage =
+        path.startsWith("/about") ||
+        path.startsWith("/dashboard") ||
+        /^\/meet\/[^/]+/.test(path) ||
+        /^\/card\/[a-z0-9_-]+\/?$/.test(path);
+      if (!resetFlowActiveRef.current && saved.stage && !hasPathPriorityStage) {
+        setStage(saved.stage);
+      }
       if (saved.isLoggedIn) setIsLoggedIn(true);
       if (saved.user) setUser(saved.user);
       if (saved.email) setEmail(saved.email);
@@ -2592,6 +2600,7 @@ export default function App() {
   useEffect(() => {
     if (!isLoggedIn) return;
     if (stage === STAGES.RESET_PASSWORD) return;
+    if (stage === STAGES.ABOUT) return;
     const onboardingStages = new Set([
       STAGES.BUSINESS_DETAILS,
       STAGES.BUSINESS_TYPE,
