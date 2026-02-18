@@ -12,7 +12,7 @@ def _raw_origins() -> str:
         or os.getenv("CORS")
         or os.getenv("CORS_ORIGIN")
         or os.getenv("CORS_ALLOWED_ORIGINS")
-        or "http://localhost:5173"
+        or "*"
     )
 
 
@@ -68,6 +68,11 @@ def _is_local_origin(origin: str | None) -> bool:
     return origin.startswith("http://localhost") or origin.startswith("http://127.0.0.1")
 
 
+def _local_only_origins(origins: Iterable[str]) -> bool:
+    cleaned = [origin for origin in origins if origin and origin != "*"]
+    return bool(cleaned) and all(_is_local_origin(origin) for origin in cleaned)
+
+
 def _allow_headers(req: func.HttpRequest) -> str:
     """
     Build the Access-Control-Allow-Headers value.
@@ -105,7 +110,7 @@ def build_cors_headers(req: func.HttpRequest, allowed_methods: Iterable[str]) ->
         methods_list.append("OPTIONS")
 
     headers: Dict[str, str] = {"Vary": "Origin"}
-    allow_all = "*" in ALLOWED_ORIGINS
+    allow_all = "*" in ALLOWED_ORIGINS or not ALLOWED_ORIGINS or _local_only_origins(ALLOWED_ORIGINS)
     origin_allowed = allow_all or (origin and origin in ALLOWED_ORIGINS)
     if not origin_allowed and ALLOW_LOCALHOST and _is_local_origin(origin):
         origin_allowed = True

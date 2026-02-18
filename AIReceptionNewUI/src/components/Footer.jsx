@@ -8,24 +8,6 @@ const columns = [
       { href: "/pricing.html", label: "Pricing" },
       { href: "/contact.html", label: "Contact" }
     ]
-  },
-  {
-    heading: "Product",
-    links: [
-      { href: "/features.html", label: "Features" },
-      { href: "/integrations.html", label: "Integrations" },
-      { href: "/pricing.html", label: "Pricing" },
-      { href: "/docs.html", label: "Documentation" }
-    ]
-  },
-  {
-    heading: "Solutions",
-    links: [
-      { href: "/solutions/support.html", label: "Customer Support" },
-      { href: "/solutions/qualification.html", label: "Sales & Lead Qualification" },
-      { href: "/solutions/scheduling.html", label: "Appointment Scheduling" },
-      { href: "/solutions/automation.html", label: "Call Automation" }
-    ]
   }
 ];
 
