@@ -5,7 +5,6 @@ const columns = [
       { href: "/about.html", label: "About Us" },
       { href: "/careers.html", label: "Careers" },
       { href: "/blog.html", label: "Blog" },
-      { href: "/pricing.html", label: "Pricing" },
       { href: "/contact.html", label: "Contact" }
     ]
   }
