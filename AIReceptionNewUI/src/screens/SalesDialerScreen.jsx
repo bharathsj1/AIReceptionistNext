@@ -11,6 +11,9 @@ const styles = `
 .sales-dialer-page {
   margin: 0;
   min-height: 100vh;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
   background: radial-gradient(circle at 85% 0%, #dce9ff 0%, rgba(220, 233, 255, 0) 30%), #f4f6fb;
   color: #0f1d3a;
   font-family: "Product Sans", "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -20,6 +23,8 @@ const styles = `
   box-sizing: border-box;
 }
 .sales-dialer-page .app {
+  width: 100%;
+  min-width: 0;
   max-width: 1300px;
   margin: 0 auto;
   display: grid;
@@ -27,7 +32,11 @@ const styles = `
   gap: 18px;
   align-items: start;
 }
+.sales-dialer-page .app > * {
+  min-width: 0;
+}
 .sales-dialer-page .panel {
+  min-width: 0;
   background: #ffffff;
   border: 1px solid #d7dfef;
   border-radius: 16px;
@@ -81,6 +90,7 @@ const styles = `
 .sales-dialer-page select,
 .sales-dialer-page textarea,
 .sales-dialer-page .btn {
+  min-width: 0;
   width: 100%;
   border: 1px solid #d7dfef;
   border-radius: 10px;
@@ -319,6 +329,7 @@ const styles = `
 @media (max-width: 1120px) {
   .sales-dialer-page .app {
     grid-template-columns: 1fr;
+    gap: 14px;
   }
   .sales-dialer-page .cards {
     grid-template-columns: repeat(2, 1fr);
@@ -367,7 +378,7 @@ const styles = `
   }
 
   .sales-dialer-page .cards {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr;
   }
 
   .sales-dialer-page .card .value {
@@ -389,7 +400,27 @@ const styles = `
   }
 
   .sales-dialer-page table {
-    min-width: 760px;
+    min-width: 100%;
+    table-layout: fixed;
+  }
+
+  .sales-dialer-page th,
+  .sales-dialer-page td {
+    font-size: 12px;
+    padding: 8px 6px;
+    word-break: break-word;
+  }
+
+  .sales-dialer-page th:nth-child(2),
+  .sales-dialer-page td:nth-child(2),
+  .sales-dialer-page th:nth-child(5),
+  .sales-dialer-page td:nth-child(5) {
+    display: none;
+  }
+
+  .sales-dialer-page .row-btn {
+    padding: 4px 6px;
+    font-size: 11px;
   }
 }
 
@@ -421,6 +452,11 @@ const styles = `
   .sales-dialer-page .dial-btn {
     min-height: 54px;
     font-size: 24px;
+  }
+
+  .sales-dialer-page th:nth-child(1),
+  .sales-dialer-page td:nth-child(1) {
+    display: none;
   }
 }
 `;
