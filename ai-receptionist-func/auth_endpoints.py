@@ -29,6 +29,7 @@ from services.ultravox_service import (
     list_ultravox_tools,
 )
 from services.prompt_registry_service import generate_prompt_record
+from crm_shared import issue_auth_session_token
 
 logger = logging.getLogger(__name__)
 
@@ -1004,8 +1005,24 @@ def auth_signup(req: func.HttpRequest) -> func.HttpResponse:
             client.user_id = user.id
 
         db.commit()
+        auth_token, auth_token_expires_at = issue_auth_session_token(
+            user.email,
+            client_id=client.id if client else None,
+            role="admin",
+            scope="primary_user",
+        )
         return func.HttpResponse(
-            json.dumps({"user_id": user.id, "email": user.email}),
+            json.dumps(
+                {
+                    "user_id": user.id,
+                    "email": user.email,
+                    "client_id": client.id if client else None,
+                    "role": "admin",
+                    "scope": "primary_user",
+                    "auth_token": auth_token,
+                    "auth_token_expires_at": auth_token_expires_at,
+                }
+            ),
             status_code=201,
             mimetype="application/json",
             headers=cors,
@@ -1076,6 +1093,12 @@ def auth_login(req: func.HttpRequest) -> func.HttpResponse:
         if cuser:
             cuser.last_login_at = datetime.utcnow()
             db.commit()
+            auth_token, auth_token_expires_at = issue_auth_session_token(
+                cuser.email,
+                client_id=cuser.client_id,
+                role=cuser.role or "admin",
+                scope="client_user",
+            )
             return func.HttpResponse(
                 json.dumps(
                     {
@@ -1084,6 +1107,8 @@ def auth_login(req: func.HttpRequest) -> func.HttpResponse:
                         "client_id": cuser.client_id,
                         "role": cuser.role or "admin",
                         "scope": "client_user",
+                        "auth_token": auth_token,
+                        "auth_token_expires_at": auth_token_expires_at,
                     }
                 ),
                 status_code=200,
@@ -1111,6 +1136,12 @@ def auth_login(req: func.HttpRequest) -> func.HttpResponse:
             .order_by(Client.id.asc())
             .first()
         )
+        auth_token, auth_token_expires_at = issue_auth_session_token(
+            user.email,
+            client_id=client.id if client else None,
+            role="admin",
+            scope="primary_user",
+        )
         return func.HttpResponse(
             json.dumps(
                 {
@@ -1119,6 +1150,8 @@ def auth_login(req: func.HttpRequest) -> func.HttpResponse:
                     "client_id": client.id if client else None,
                     "role": "admin",
                     "scope": "primary_user",
+                    "auth_token": auth_token,
+                    "auth_token_expires_at": auth_token_expires_at,
                 }
             ),
             status_code=200,
@@ -2251,6 +2284,8 @@ def auth_google_callback(req: func.HttpRequest) -> func.HttpResponse:
             "email": user.email,
             "state": state,
             "is_new_user": is_new_user,
+            "auth_token": None,
+            "auth_token_expires_at": None,
             "token": {
                 "expires_at": expires_at.isoformat() if expires_at else None,
                 "has_refresh": bool(refresh_token),
@@ -2259,6 +2294,14 @@ def auth_google_callback(req: func.HttpRequest) -> func.HttpResponse:
             "profile": {"name": name},
             "google_account_email": google_email,
         }
+        auth_token, auth_token_expires_at = issue_auth_session_token(
+            user.email,
+            client_id=client.id if client else None,
+            role="admin",
+            scope="primary_user",
+        )
+        payload["auth_token"] = auth_token
+        payload["auth_token_expires_at"] = auth_token_expires_at
         # If Google hits this endpoint directly, show simple HTML for the SPA to read.
         if req.method == "GET":
             html = (
@@ -3559,6 +3602,8 @@ def auth_outlook_callback(req: func.HttpRequest) -> func.HttpResponse:
             "email": user.email,
             "state": state,
             "is_new_user": is_new_user,
+            "auth_token": None,
+            "auth_token_expires_at": None,
             "token": {
                 "expires_at": expires_at.isoformat() if expires_at else None,
                 "has_refresh": bool(refresh_token),
@@ -3567,6 +3612,14 @@ def auth_outlook_callback(req: func.HttpRequest) -> func.HttpResponse:
             "profile": {"name": name},
             "outlook_account_email": outlook_email,
         }
+        auth_token, auth_token_expires_at = issue_auth_session_token(
+            user.email,
+            client_id=client.id if client else None,
+            role="admin",
+            scope="primary_user",
+        )
+        payload["auth_token"] = auth_token
+        payload["auth_token_expires_at"] = auth_token_expires_at
         if req.method == "GET":
             html = (
                 "<script>"

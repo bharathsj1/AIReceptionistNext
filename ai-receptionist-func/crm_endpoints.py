@@ -14,7 +14,7 @@ import azure.functions as func
 from sqlalchemy import func as sa_func
 
 from function_app import app
-from crm_shared import CRMActor, list_tenant_users, resolve_actor
+from crm_shared import CRMActor, list_tenant_users, resolve_actor_from_session
 from shared.config import get_setting
 from shared.db import Client, SessionLocal, TaskManagerItem, User
 from services.crm_rbac import (
@@ -271,12 +271,12 @@ def _resolve_actor_or_error(
     body: Dict[str, Any],
     cors: Dict[str, str],
 ) -> Tuple[Optional[CRMActor], Optional[func.HttpResponse]]:
-    actor = resolve_actor(req, body)
+    actor = resolve_actor_from_session(req, body)
     if not actor:
         return None, _error(
             cors=cors,
             status_code=401,
-            message="Unable to resolve authenticated user",
+            message="CRM authentication required",
             code="auth_required",
         )
     return actor, None

@@ -243,6 +243,12 @@ html {
   overflow-y: auto;
 }
 
+@media (max-width: 768px) {
+  .dashboard-theme .dashboard-main {
+    padding: 0 0 20px;
+  }
+}
+
 @media (min-width: 1024px) {
   .dashboard-theme .dashboard-main {
     padding: 24px 4px 32px;
@@ -4707,6 +4713,10 @@ html {
     height: auto;
     min-height: 100vh;
     overflow: auto;
+  }
+
+  .page.page-dashboard {
+    padding: 0;
   }
 
   .top-bar {
