@@ -4768,7 +4768,7 @@ export default function DashboardScreen({
   return (
     <section
       className={`relative p-0 dashboard-theme ${lightThemeActive ? "" : "dashboard-theme--dark"} ${
-        isEmailManager ? "min-h-screen sm:h-screen sm:overflow-hidden" : "min-h-screen"
+        isEmailManager ? "min-h-screen lg:h-screen lg:overflow-hidden" : "min-h-screen"
       }`}
     >
       <div className="absolute inset-0 dashboard-bg" />
@@ -4819,7 +4819,7 @@ export default function DashboardScreen({
                     if (!sideNavPinned) closeSideNav();
                   }
             }
-            className={`dashboard-sidenav sticky top-0 flex h-screen flex-none flex-col gap-3 overflow-hidden p-0 sm:p-2 transition-[width] duration-200 ${sideNavWidthClass} ${
+            className={`dashboard-sidenav sticky top-0 flex h-screen flex-none flex-col gap-3 overflow-x-hidden overflow-y-auto p-0 pb-14 sm:p-2 sm:pb-2 transition-[width] duration-200 ${sideNavWidthClass} ${
               sideNavHidden
                 ? "pointer-events-none overflow-hidden p-0 opacity-0"
                 : ""
@@ -4959,9 +4959,9 @@ export default function DashboardScreen({
           </aside>
 
           <div
-            className={`dashboard-main flex h-full min-h-0 flex-1 flex-col ${
+            className={`dashboard-main flex h-full min-h-0 min-w-0 flex-1 flex-col ${
               isEmailManager
-                ? "dashboard-main--full gap-0 overflow-hidden"
+                ? "dashboard-main--full gap-0 overflow-y-auto lg:overflow-hidden"
                 : "gap-5 overflow-y-auto"
             }`}
           >
@@ -6065,16 +6065,16 @@ export default function DashboardScreen({
             className="flex-1 min-h-0"
           >
             <div
-              className={`email-manager-shell min-h-screen sm:h-full sm:min-h-0 ${lightThemeActive ? "email-theme-light" : ""}`}
+              className={`email-manager-shell min-h-screen lg:h-full lg:min-h-0 ${lightThemeActive ? "email-theme-light" : ""}`}
             >
-              <div className="relative grid gap-4 sm:h-full sm:min-h-0 sm:grid-rows-[auto,1fr] sm:overflow-hidden">
+              <div className="relative grid gap-4 lg:h-full lg:min-h-0 lg:grid-rows-[auto,1fr] lg:overflow-hidden">
               <section
-                className={`grid gap-4 transition-[grid-template-columns] duration-200 ease-out sm:h-full sm:min-h-0 sm:overflow-hidden ${
+                className={`grid gap-4 transition-[grid-template-columns] duration-200 ease-out lg:h-full lg:min-h-0 lg:overflow-hidden ${
                   showEmailSidePanel
                     ? emailSubTab === "email"
                       ? emailPanelOpen
-                        ? "lg:grid-cols-[180px_1.25fr_1.6fr]"
-                        : "lg:grid-cols-[64px_1.41fr_1.6fr]"
+                        ? "grid-cols-[56px_minmax(0,1fr)] lg:grid-cols-[180px_1.25fr_1.6fr]"
+                        : "grid-cols-[56px_minmax(0,1fr)] lg:grid-cols-[64px_1.41fr_1.6fr]"
                       : emailPanelOpen
                         ? "lg:grid-cols-[180px_1.55fr]"
                         : "lg:grid-cols-[64px_1.84fr]"
@@ -6083,9 +6083,9 @@ export default function DashboardScreen({
               >
                 {showEmailSidePanel && (
                 <aside
-                  className="rounded-3xl border border-white/10 bg-white/5 shadow-xl backdrop-blur overflow-hidden flex flex-col p-3 sm:p-4 sm:min-h-0 sm:h-full"
+                  className="rounded-3xl border border-white/10 bg-white/5 shadow-xl backdrop-blur overflow-hidden flex flex-col p-2 sm:p-3 lg:p-4 lg:min-h-0 lg:h-full"
                 >
-                  <div className="flex min-h-[32px] items-center justify-between gap-2">
+                  <div className="hidden min-h-[32px] items-center justify-between gap-2 lg:flex">
                     <span
                       className={`text-[11px] font-semibold uppercase tracking-[0.24em] text-indigo-300 transition-[max-width,opacity] duration-300 ease-out ${
                         emailPanelContentVisible && gmailConnected
@@ -6112,19 +6112,23 @@ export default function DashboardScreen({
                   </div>
 
                   {emailSubTab === "email" ? (
-                    <div className="mt-4 border-t border-white/10 pt-4">
-                      <div className={`mt-2 grid gap-1 ${emailPanelOpen ? "" : "justify-items-center"}`}>
+                    <div className="mt-1 border-white/10 pt-1 lg:mt-4 lg:border-t lg:pt-4">
+                      <div
+                        className={`grid gap-1 lg:mt-2 lg:grid ${
+                          emailPanelOpen ? "" : "lg:justify-items-center"
+                        }`}
+                      >
                         <button
                           type="button"
                           onClick={() => openComposer("new")}
-                          className="flex h-10 w-full items-center gap-2 rounded-xl px-2 text-xs font-semibold text-emerald-100 transition hover:bg-white/10 hover:text-emerald-200"
+                          className="flex h-10 w-10 items-center justify-center gap-2 rounded-xl px-2 text-xs font-semibold text-emerald-100 transition hover:bg-white/10 hover:text-emerald-200 lg:w-full lg:justify-start"
                           aria-label="New mail"
                         >
                           <span className="flex h-7 w-7 items-center justify-center">
                             <MailPlus className="h-4 w-4" />
                           </span>
                           <span
-                            className={`whitespace-nowrap transition-[max-width,opacity] duration-300 ease-out ${
+                            className={`hidden whitespace-nowrap transition-[max-width,opacity] duration-300 ease-out lg:inline ${
                               emailPanelContentVisible
                                 ? "max-w-[140px] opacity-100"
                                 : "max-w-0 overflow-hidden opacity-0"
@@ -6141,7 +6145,7 @@ export default function DashboardScreen({
                               key={item.id}
                               type="button"
                               onClick={() => handleMailboxSelect(item.id)}
-                              className={`flex h-10 w-full items-center gap-2 rounded-xl px-2 text-xs transition ${
+                              className={`flex h-10 w-10 items-center justify-center gap-2 rounded-xl px-2 text-xs transition lg:w-full lg:justify-start ${
                                 isActive
                                   ? lightThemeActive
                                     ? "bg-slate-200/80 text-slate-900 shadow-[0_10px_22px_rgba(15,23,42,0.08)]"
@@ -6165,7 +6169,7 @@ export default function DashboardScreen({
                                 />
                               </span>
                               <span
-                                className={`whitespace-nowrap transition-[max-width,opacity] duration-300 ease-out ${
+                                className={`hidden whitespace-nowrap transition-[max-width,opacity] duration-300 ease-out lg:inline ${
                                   emailPanelContentVisible
                                     ? "max-w-[140px] opacity-100"
                                     : "max-w-0 overflow-hidden opacity-0"
@@ -6184,7 +6188,7 @@ export default function DashboardScreen({
 
                 {emailSubTab === "email" ? (
                   <div className="contents">
-                    <div className="rounded-3xl border border-white/10 bg-white/5 p-3 shadow-xl backdrop-blur flex flex-col overflow-hidden sm:min-h-0 sm:h-full sm:p-4">
+                    <div className="col-start-2 lg:col-start-auto rounded-3xl border border-white/10 bg-white/5 p-3 shadow-xl backdrop-blur flex flex-col overflow-hidden lg:min-h-0 lg:h-full lg:p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Inbox</p>
@@ -6226,7 +6230,7 @@ export default function DashboardScreen({
                         </div>
                       </div>
                     </div>
-                    <div className="mt-3 flex flex-nowrap items-center gap-2 overflow-x-auto rounded-xl border border-white/10 bg-slate-900/40 px-2 py-2 text-xs text-slate-200 sm:flex-wrap sm:overflow-visible">
+                    <div className="mt-3 flex flex-wrap items-center gap-2 overflow-visible rounded-xl border border-white/10 bg-slate-900/40 px-2 py-2 text-xs text-slate-200">
                       <label className="flex shrink-0 items-center gap-2">
                         <input
                           type="checkbox"
@@ -6568,11 +6572,11 @@ export default function DashboardScreen({
                     </div>
                   </div>
 
-                  <div className="rounded-3xl border border-white/10 bg-white/5 p-3 shadow-xl backdrop-blur overflow-hidden flex flex-col sm:min-h-0 sm:h-full sm:p-4">
+                  <div className="col-start-2 lg:col-start-auto rounded-3xl border border-white/10 bg-white/5 p-3 shadow-xl backdrop-blur overflow-hidden flex flex-col lg:min-h-0 lg:h-full lg:p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Summary preview</p>
-                        <div className="flex items-center gap-3 text-sm text-slate-200 min-w-[260px]">
+                        <div className="flex min-w-0 items-center gap-3 text-sm text-slate-200 sm:min-w-[260px]">
                           <span
                             className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/10 text-xs font-semibold text-slate-200"
                             style={headerSenderAvatarStyle}
