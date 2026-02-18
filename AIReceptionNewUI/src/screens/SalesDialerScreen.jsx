@@ -1,678 +1,959 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Mic,
-  MicOff,
-  Phone,
-  PhoneOff,
-  Search,
-  Volume2,
-  VolumeX
-} from "lucide-react";
 import { API_URLS } from "../config/urls";
 
+const NOTES_KEY = "appointment_dialer_notes_v1";
+const DIAL_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "+", "0", "#"];
 const E164_REGEX = /^\+[1-9]\d{7,14}$/;
-const DIAL_PAD = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "+", "0", "⌫"];
-const TWILIO_SDK_URL =
-  import.meta.env.VITE_TWILIO_VOICE_SDK_URL ||
-  "https://sdk.twilio.com/js/voice/releases/2.12.3/twilio.min.js";
 
-const normalizeDialInput = (value) => {
-  const trimmed = String(value || "").trim();
+const TWILIO_SDK_URL = "https://unpkg.com/@twilio/voice-sdk@2.18.0/dist/twilio.min.js";
+
+const styles = `
+.sales-dialer-page {
+  margin: 0;
+  min-height: 100vh;
+  background: radial-gradient(circle at 85% 0%, #dce9ff 0%, rgba(220, 233, 255, 0) 30%), #f4f6fb;
+  color: #0f1d3a;
+  font-family: "Product Sans", "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  padding: 24px;
+}
+.sales-dialer-page * {
+  box-sizing: border-box;
+}
+.sales-dialer-page .app {
+  max-width: 1300px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 420px 1fr;
+  gap: 18px;
+  align-items: start;
+}
+.sales-dialer-page .panel {
+  background: #ffffff;
+  border: 1px solid #d7dfef;
+  border-radius: 16px;
+  box-shadow: 0 18px 42px rgba(14, 24, 46, 0.11);
+  padding: 16px;
+}
+.sales-dialer-page h1,
+.sales-dialer-page h2,
+.sales-dialer-page h3 {
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+.sales-dialer-page h1 {
+  font-size: 30px;
+}
+.sales-dialer-page h2 {
+  font-size: 20px;
+  margin-bottom: 10px;
+}
+.sales-dialer-page h3 {
+  font-size: 16px;
+}
+.sales-dialer-page p {
+  margin: 8px 0 0;
+  color: #4f5b78;
+}
+.sales-dialer-page .stack {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+.sales-dialer-page .field-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.sales-dialer-page .input,
+.sales-dialer-page select,
+.sales-dialer-page textarea,
+.sales-dialer-page .btn {
+  width: 100%;
+  border: 1px solid #d7dfef;
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 15px;
+  padding: 10px 12px;
+  background: #fff;
+  color: #0f1d3a;
+}
+.sales-dialer-page textarea {
+  resize: vertical;
+  min-height: 78px;
+}
+.sales-dialer-page .input:focus,
+.sales-dialer-page select:focus,
+.sales-dialer-page textarea:focus {
+  outline: none;
+  border-color: #91b6ff;
+  box-shadow: 0 0 0 3px rgba(12, 109, 253, 0.16);
+}
+.sales-dialer-page .btn {
+  border: none;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.12s ease, transform 0.12s ease;
+}
+.sales-dialer-page .btn:hover {
+  transform: translateY(-1px);
+}
+.sales-dialer-page .btn:disabled {
+  cursor: not-allowed;
+  transform: none;
+  opacity: 0.55;
+}
+.sales-dialer-page .btn-primary {
+  background: #0c6dfd;
+  color: #fff;
+}
+.sales-dialer-page .btn-primary:hover {
+  background: #0958cc;
+}
+.sales-dialer-page .btn-danger {
+  background: #ca2a2a;
+  color: #fff;
+}
+.sales-dialer-page .btn-subtle {
+  background: #1f2937;
+  color: #fff;
+}
+.sales-dialer-page .status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: #eaf2ff;
+  border: 1px solid #bad3ff;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 7px 11px;
+  color: #1c4ea3;
+}
+.sales-dialer-page .dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #2ea043;
+}
+.sales-dialer-page .timer {
+  font-family: "Product Sans", "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 28px;
+  font-weight: 700;
+  margin-top: 8px;
+  color: #1f2937;
+}
+.sales-dialer-page .dialpad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 10px;
+}
+.sales-dialer-page .dial-btn {
+  border: 1px solid #d7dfef;
+  border-radius: 10px;
+  background: #fff;
+  color: #0f1d3a;
+  font-family: "Product Sans", "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 19px;
+  padding: 14px 8px;
+  cursor: pointer;
+  font-weight: 700;
+}
+.sales-dialer-page .dial-btn:hover {
+  background: #f2f7ff;
+}
+.sales-dialer-page .dial-actions,
+.sales-dialer-page .call-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 10px;
+}
+.sales-dialer-page .cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+.sales-dialer-page .card {
+  border: 1px solid #d7dfef;
+  border-radius: 12px;
+  padding: 12px;
+  background: #f8fbff;
+}
+.sales-dialer-page .card .label {
+  font-size: 12px;
+  color: #4f5b78;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.sales-dialer-page .card .value {
+  font-size: 26px;
+  font-weight: 700;
+  margin-top: 4px;
+}
+.sales-dialer-page .toolbar {
+  display: grid;
+  grid-template-columns: 170px minmax(220px, 1fr) 120px;
+  gap: 8px;
+  margin: 12px 0;
+}
+.sales-dialer-page .metric-toolbar {
+  display: grid;
+  grid-template-columns: 170px 150px 150px 120px;
+  gap: 8px;
+  margin: 10px 0 12px;
+}
+.sales-dialer-page table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.sales-dialer-page th,
+.sales-dialer-page td {
+  border-bottom: 1px solid #d7dfef;
+  padding: 9px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+.sales-dialer-page th {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #4f5b78;
+}
+.sales-dialer-page .row-btn {
+  border: 1px solid #b8cbef;
+  background: #eef4ff;
+  color: #123f85;
+  border-radius: 8px;
+  padding: 5px 7px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+.sales-dialer-page .badge {
+  display: inline-block;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.sales-dialer-page .badge-completed {
+  background: #e6f9ef;
+  color: #15633c;
+}
+.sales-dialer-page .badge-missed {
+  background: #fff1e7;
+  color: #9f4500;
+}
+.sales-dialer-page .badge-other {
+  background: #eef2f7;
+  color: #2a3a55;
+}
+.sales-dialer-page .missed-list {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.sales-dialer-page .missed-item {
+  border: 1px solid #ffd8c1;
+  background: #fff9f5;
+  border-radius: 10px;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+.sales-dialer-page .mono {
+  font-family: "Product Sans", "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+.sales-dialer-page .selected-call {
+  border: 1px solid #d7dfef;
+  border-radius: 10px;
+  background: #f8fbff;
+  padding: 10px;
+  font-size: 13px;
+  min-height: 54px;
+}
+.sales-dialer-page .response {
+  margin-top: 10px;
+  border: 1px solid #d0ddf7;
+  border-radius: 10px;
+  background: #0d1a35;
+  color: #dce9ff;
+  min-height: 120px;
+  padding: 11px;
+  font-family: "Product Sans", "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+@media (max-width: 1120px) {
+  .sales-dialer-page .app {
+    grid-template-columns: 1fr;
+  }
+  .sales-dialer-page .cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .sales-dialer-page .toolbar {
+    grid-template-columns: 1fr;
+  }
+  .sales-dialer-page .metric-toolbar {
+    grid-template-columns: 1fr;
+  }
+}
+`;
+
+const formatSeconds = (totalSeconds) => {
+  const safe = Math.max(0, Number(totalSeconds) || 0);
+  const mm = String(Math.floor(safe / 60)).padStart(2, "0");
+  const ss = String(Math.floor(safe % 60)).padStart(2, "0");
+  return `${mm}:${ss}`;
+};
+
+const toLocale = (iso) => {
+  if (!iso) return "-";
+  const dt = new Date(iso);
+  if (Number.isNaN(dt.getTime())) return "-";
+  return dt.toLocaleString();
+};
+
+const statusBadgeClass = (status, missed) => {
+  if (missed) return "badge badge-missed";
+  if (status === "completed") return "badge badge-completed";
+  return "badge badge-other";
+};
+
+const normalizePhone = (raw) => {
+  const trimmed = String(raw || "").trim();
   if (!trimmed) return "";
-  const keepLeadingPlus = trimmed.startsWith("+");
-  const digits = trimmed.replace(/\D/g, "");
-  if (!digits) return "";
-  return keepLeadingPlus ? `+${digits}` : digits;
+  return trimmed.replace(/[^\d+#*+]/g, "");
 };
 
-const toE164WithHelpers = (value) => {
-  const raw = normalizeDialInput(value);
-  if (!raw) return "";
-  if (raw.startsWith("+")) return raw;
-  if (raw.startsWith("00")) return `+${raw.slice(2)}`;
-  if (raw.startsWith("0")) return `+44${raw.slice(1)}`;
-  if (raw.length === 10) return `+1${raw}`;
-  if (raw.length === 11 && raw.startsWith("1")) return `+${raw}`;
-  return `+${raw}`;
-};
-
-const formatDuration = (seconds) => {
-  const total = Number(seconds || 0);
-  const mins = Math.floor(total / 60)
-    .toString()
-    .padStart(2, "0");
-  const secs = Math.floor(total % 60)
-    .toString()
-    .padStart(2, "0");
-  return `${mins}:${secs}`;
-};
-
-const statusTone = (value) => {
-  const normalized = String(value || "").toLowerCase();
-  if (["connected", "in-progress", "in_progress", "answered"].includes(normalized)) return "text-emerald-300";
-  if (["ringing", "initiated", "queued"].includes(normalized)) return "text-amber-300";
-  if (["failed", "error", "busy", "no-answer", "canceled", "cancelled"].includes(normalized)) return "text-rose-300";
-  return "text-slate-300";
-};
-
-const prettyStatus = (value) =>
-  String(value || "idle")
-    .replace(/[_-]/g, " ")
-    .replace(/\b\w/g, (char) => char.toUpperCase());
-
-const loadTwilioVoiceSdk = () =>
+const loadTwilioSdk = () =>
   new Promise((resolve, reject) => {
     if (typeof window === "undefined") {
-      reject(new Error("Browser runtime not available."));
+      reject(new Error("Browser runtime unavailable"));
       return;
     }
     if (window.Twilio?.Device) {
       resolve(window.Twilio.Device);
       return;
     }
-    const existing = document.querySelector(`script[data-twilio-voice-sdk="1"]`);
+
+    const existing = document.querySelector("script[data-twilio-voice-sdk='1']");
     if (existing) {
-      existing.addEventListener("load", () => {
-        if (window.Twilio?.Device) {
-          resolve(window.Twilio.Device);
-        } else {
-          reject(new Error("Twilio SDK loaded without Device constructor."));
-        }
+      existing.addEventListener("load", () => resolve(window.Twilio?.Device), { once: true });
+      existing.addEventListener("error", () => reject(new Error("Twilio Voice SDK failed to load.")), {
+        once: true
       });
-      existing.addEventListener("error", () => reject(new Error("Failed to load Twilio Voice SDK.")));
       return;
     }
+
     const script = document.createElement("script");
     script.src = TWILIO_SDK_URL;
     script.async = true;
     script.dataset.twilioVoiceSdk = "1";
-    script.onload = () => {
+    script.addEventListener("load", () => {
       if (window.Twilio?.Device) {
         resolve(window.Twilio.Device);
       } else {
-        reject(new Error("Twilio SDK loaded without Device constructor."));
+        reject(new Error("Twilio Voice SDK loaded without Device constructor."));
       }
-    };
-    script.onerror = () => reject(new Error("Failed to load Twilio Voice SDK."));
+    });
+    script.addEventListener("error", () => reject(new Error("Twilio Voice SDK failed to load.")));
     document.head.appendChild(script);
   });
 
-export default function SalesDialerScreen({ user, userProfile, sessionEmail = "" }) {
-  const userEmail = useMemo(
-    () =>
-      String(
-        sessionEmail ||
-          user?.email ||
-          userProfile?.contact_email ||
-          userProfile?.email ||
-          ""
-      )
-        .trim()
-        .toLowerCase(),
-    [sessionEmail, user?.email, userProfile?.contact_email, userProfile?.email]
-  );
-  const [mode, setMode] = useState("browser");
-  const [inputNumber, setInputNumber] = useState("");
-  const [repPhone, setRepPhone] = useState("");
-  const [callerId, setCallerId] = useState("+1 431 340 0857");
-  const [deviceState, setDeviceState] = useState("idle");
-  const [callState, setCallState] = useState("idle");
-  const [callSeconds, setCallSeconds] = useState(0);
-  const [isMuted, setIsMuted] = useState(false);
-  const [speakerOn, setSpeakerOn] = useState(true);
-  const [micPermission, setMicPermission] = useState("prompt");
-  const [tokenError, setTokenError] = useState("");
-  const [actionError, setActionError] = useState("");
-  const [recentCalls, setRecentCalls] = useState([]);
-  const [recentLoading, setRecentLoading] = useState(false);
-  const [contacts, setContacts] = useState([]);
-  const [contactsLoading, setContactsLoading] = useState(false);
-  const [contactSearch, setContactSearch] = useState("");
+const loadNotes = () => {
+  try {
+    const raw = localStorage.getItem(NOTES_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+};
+
+export default function SalesDialerScreen() {
+  const tokenEndpoint = API_URLS.voiceTokenDialer || "http://localhost:7071/api/voice-token";
+  const historyEndpoint = API_URLS.callHistory || "http://localhost:7071/api/call-history";
 
   const deviceRef = useRef(null);
   const activeCallRef = useRef(null);
-  const callStartRef = useRef(null);
-  const twilioDeviceCtorRef = useRef(null);
+  const callTimerRef = useRef(null);
+  const callStartAtRef = useRef(null);
 
-  const normalizedTarget = useMemo(() => toE164WithHelpers(inputNumber), [inputNumber]);
-  const canDial = E164_REGEX.test(normalizedTarget);
+  const [phoneInput, setPhoneInput] = useState("+447495957010");
+  const [statusText, setStatusText] = useState("Ready");
+  const [timerText, setTimerText] = useState("00:00");
+  const [responseText, setResponseText] = useState("Awaiting action...");
 
-  const authHeaders = useMemo(
-    () => ({
-      "Content-Type": "application/json",
-      "x-user-email": userEmail
-    }),
-    [userEmail]
+  const [summary, setSummary] = useState({
+    total_calls: 0,
+    completed_calls: 0,
+    missed_calls: 0,
+    total_minutes: 0
+  });
+  const [callHistory, setCallHistory] = useState([]);
+
+  const [metricPeriodFilter, setMetricPeriodFilter] = useState("all");
+  const [metricStartDateInput, setMetricStartDateInput] = useState("");
+  const [metricEndDateInput, setMetricEndDateInput] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [searchInput, setSearchInput] = useState("");
+
+  const [selectedCallSid, setSelectedCallSid] = useState("");
+  const [dispositionInput, setDispositionInput] = useState("");
+  const [followUpInput, setFollowUpInput] = useState("");
+  const [notesInput, setNotesInput] = useState("");
+  const [notesBySid, setNotesBySid] = useState(() => loadNotes());
+
+  const [connecting, setConnecting] = useState(false);
+  const [deviceReady, setDeviceReady] = useState(false);
+  const [placingCall, setPlacingCall] = useState(false);
+  const [callActive, setCallActive] = useState(false);
+
+  const selectedCall = useMemo(
+    () => callHistory.find((item) => item.sid === selectedCallSid) || null,
+    [callHistory, selectedCallSid]
   );
 
-  const attachConnectionListeners = useCallback((connection) => {
-    if (!connection) return;
-    connection.on("ringing", () => setCallState("ringing"));
-    connection.on("accept", () => {
-      callStartRef.current = Date.now();
-      setCallSeconds(0);
-      setCallState("connected");
-    });
-    connection.on("disconnect", () => {
-      activeCallRef.current = null;
-      setCallState("ended");
-      setIsMuted(false);
-    });
-    connection.on("cancel", () => setCallState("ended"));
-    connection.on("reject", () => setCallState("ended"));
-    connection.on("error", (err) => {
-      setCallState("error");
-      setActionError(err?.message || "Call failed.");
-    });
-  }, []);
+  const missedCalls = useMemo(
+    () => callHistory.filter((call) => call.is_missed).slice(0, 12),
+    [callHistory]
+  );
 
-  const loadRecentCalls = useCallback(async () => {
-    if (!userEmail) return;
-    setRecentLoading(true);
+  const setOutput = useCallback((payload) => {
     try {
-      const res = await fetch(
-        `${API_URLS.voiceLogs}?email=${encodeURIComponent(userEmail)}&limit=25`,
-        { headers: { "x-user-email": userEmail } }
-      );
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(payload?.error || "Unable to load recent calls");
-      }
-      setRecentCalls(Array.isArray(payload?.items) ? payload.items : []);
-    } catch (err) {
-      setActionError(err?.message || "Unable to load recent calls.");
-    } finally {
-      setRecentLoading(false);
-    }
-  }, [userEmail]);
-
-  const loadContacts = useCallback(async () => {
-    if (!userEmail) return;
-    setContactsLoading(true);
-    try {
-      const params = new URLSearchParams({ email: userEmail, limit: "20" });
-      if (contactSearch.trim()) params.set("search", contactSearch.trim());
-      const res = await fetch(`${API_URLS.contacts}?${params.toString()}`);
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(payload?.error || "Unable to load contacts");
-      }
-      setContacts(Array.isArray(payload?.contacts) ? payload.contacts : []);
-    } catch (err) {
-      setActionError(err?.message || "Unable to load contacts.");
-    } finally {
-      setContactsLoading(false);
-    }
-  }, [contactSearch, userEmail]);
-
-  const requestMicPermission = useCallback(async () => {
-    if (!navigator?.mediaDevices?.getUserMedia) {
-      setMicPermission("unsupported");
-      return;
-    }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach((track) => track.stop());
-      setMicPermission("granted");
+      setResponseText(JSON.stringify(payload, null, 2));
     } catch {
-      setMicPermission("denied");
+      setResponseText(String(payload));
     }
   }, []);
 
-  const bootstrapDevice = useCallback(async () => {
-    if (!userEmail) {
-      setDeviceState("error");
-      setTokenError("No signed-in email found. Please log in again.");
-      return null;
-    }
-    setDeviceState("initializing");
-    setTokenError("");
-    setActionError("");
-    try {
-      if (!twilioDeviceCtorRef.current) {
-        twilioDeviceCtorRef.current = await loadTwilioVoiceSdk();
-      }
-      const tokenRes = await fetch(
-        `${API_URLS.voiceToken}?email=${encodeURIComponent(userEmail)}`,
-        { headers: { "x-user-email": userEmail } }
-      );
-      const tokenPayload = await tokenRes.json().catch(() => ({}));
-      if (!tokenRes.ok) {
-        throw new Error(tokenPayload?.error || "Unable to load Twilio token.");
-      }
-      setCallerId(tokenPayload?.callerId || "+14313400857");
-      const DeviceCtor = twilioDeviceCtorRef.current;
-      if (!DeviceCtor) {
-        throw new Error("Twilio Voice SDK not available.");
-      }
-      if (deviceRef.current) {
-        try {
-          deviceRef.current.destroy();
-        } catch {
-          // no-op
-        }
-      }
-      const device = new DeviceCtor(tokenPayload.token, {
-        closeProtection: true,
-        codecPreferences: ["opus", "pcmu"],
-      });
-      deviceRef.current = device;
-      device.on("registering", () => setDeviceState("registering"));
-      device.on("registered", () => setDeviceState("ready"));
-      device.on("error", (err) => {
-        setDeviceState("error");
-        setTokenError(err?.message || "Twilio device error.");
-      });
-      device.on("connect", (connection) => {
-        activeCallRef.current = connection;
-        attachConnectionListeners(connection);
-      });
-      device.on("disconnect", () => {
-        activeCallRef.current = null;
-        setCallState("ended");
-        setIsMuted(false);
-        loadRecentCalls();
-      });
-      device.on("tokenWillExpire", async () => {
-        try {
-          const refreshed = await fetch(
-            `${API_URLS.voiceToken}?email=${encodeURIComponent(userEmail)}`,
-            { headers: { "x-user-email": userEmail } }
-          );
-          const refreshedPayload = await refreshed.json().catch(() => ({}));
-          if (refreshed.ok && refreshedPayload?.token) {
-            device.updateToken(refreshedPayload.token);
-          }
-        } catch {
-          // no-op best effort
-        }
-      });
-      await device.register();
-      return device;
-    } catch (err) {
-      setDeviceState("error");
-      setTokenError(err?.message || "Unable to initialize browser dialer.");
-      return null;
-    }
-  }, [attachConnectionListeners, loadRecentCalls, userEmail]);
-
-  const startBrowserCall = useCallback(async () => {
-    setActionError("");
-    if (!userEmail) {
-      setActionError("No signed-in email found. Please log in again.");
-      return;
-    }
-    if (!canDial) {
-      setActionError("Enter a valid E.164 number.");
-      return;
-    }
-    let device = deviceRef.current;
-    if (!device) {
-      device = await bootstrapDevice();
-      if (!device) return;
-    }
-    try {
-      setCallState("ringing");
-      const connection = await device.connect({ params: { To: normalizedTarget } });
-      activeCallRef.current = connection;
-      attachConnectionListeners(connection);
-    } catch (err) {
-      setCallState("error");
-      setActionError(err?.message || "Unable to place browser call.");
-    }
-  }, [attachConnectionListeners, bootstrapDevice, canDial, normalizedTarget, userEmail]);
-
-  const startDialoutFallback = useCallback(async () => {
-    setActionError("");
-    if (!canDial) {
-      setActionError("Enter a valid E.164 number.");
-      return;
-    }
-    const rep = toE164WithHelpers(repPhone || userProfile?.business_number || "");
-    if (!E164_REGEX.test(rep)) {
-      setActionError("Add a valid rep phone number for fallback.");
-      return;
-    }
-    try {
-      setCallState("ringing");
-      const res = await fetch(API_URLS.voiceDialout, {
-        method: "POST",
-        headers: authHeaders,
-        body: JSON.stringify({
-          email: userEmail,
-          to: normalizedTarget,
-          repPhone: rep
-        })
-      });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(payload?.error || "Dial-out failed.");
-      }
-      loadRecentCalls();
-    } catch (err) {
-      setCallState("error");
-      setActionError(err?.message || "Dial-out failed.");
-    }
-  }, [authHeaders, canDial, loadRecentCalls, normalizedTarget, repPhone, userEmail, userProfile?.business_number]);
-
-  const hangup = useCallback(() => {
-    try {
-      if (activeCallRef.current) {
-        activeCallRef.current.disconnect();
-      } else if (deviceRef.current) {
-        deviceRef.current.disconnectAll();
-      }
-      setCallState("ended");
-      setIsMuted(false);
-    } catch {
-      setActionError("Unable to hang up call.");
+  const stopCallTimer = useCallback(() => {
+    if (callTimerRef.current) {
+      window.clearInterval(callTimerRef.current);
+      callTimerRef.current = null;
     }
   }, []);
 
-  const toggleMute = useCallback(() => {
-    const connection = activeCallRef.current;
-    if (!connection) return;
-    const next = !isMuted;
-    try {
-      connection.mute(next);
-      setIsMuted(next);
-    } catch {
-      setActionError("Mute is not available for this call.");
-    }
-  }, [isMuted]);
-
-  const toggleSpeaker = useCallback(() => {
-    const device = deviceRef.current;
-    const next = !speakerOn;
-    try {
-      const speakerDevices = device?.audio?.speakerDevices;
-      if (speakerDevices?.set) {
-        speakerDevices.set(next ? "default" : []);
-      }
-      setSpeakerOn(next);
-    } catch {
-      setActionError("Speaker routing is browser-managed on this device.");
-    }
-  }, [speakerOn]);
-
-  useEffect(() => {
-    requestMicPermission();
-    loadRecentCalls();
-  }, [loadRecentCalls, requestMicPermission]);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      loadContacts();
-    }, 200);
-    return () => clearTimeout(timer);
-  }, [loadContacts]);
-
-  useEffect(() => {
-    if (mode !== "browser") return;
-    if (!userEmail) {
-      setDeviceState("error");
-      setTokenError("No signed-in email found. Please log in again.");
-      return undefined;
-    }
-    bootstrapDevice();
-    return () => {
-      if (deviceRef.current) {
-        try {
-          deviceRef.current.destroy();
-        } catch {
-          // no-op
-        }
-        deviceRef.current = null;
-      }
-      activeCallRef.current = null;
-    };
-  }, [bootstrapDevice, mode, userEmail]);
-
-  useEffect(() => {
-    if (callState !== "connected") return undefined;
-    const id = setInterval(() => {
-      const started = callStartRef.current || Date.now();
-      setCallSeconds(Math.max(0, Math.floor((Date.now() - started) / 1000)));
+  const startCallTimer = useCallback(() => {
+    stopCallTimer();
+    callStartAtRef.current = Date.now();
+    setTimerText("00:00");
+    callTimerRef.current = window.setInterval(() => {
+      const elapsedSec = Math.floor((Date.now() - (callStartAtRef.current || Date.now())) / 1000);
+      setTimerText(formatSeconds(elapsedSec));
     }, 1000);
-    return () => clearInterval(id);
-  }, [callState]);
+  }, [stopCallTimer]);
 
-  const handleDialPad = (value) => {
-    if (value === "⌫") {
-      setInputNumber((prev) => prev.slice(0, -1));
+  const fetchHistory = useCallback(async () => {
+    const period = metricPeriodFilter || "all";
+    const params = new URLSearchParams({
+      limit: "250",
+      status: statusFilter,
+      period
+    });
+
+    if (searchInput.trim()) {
+      params.set("q", searchInput.trim());
+    }
+    if (period === "custom") {
+      if (metricStartDateInput) params.set("start_date", metricStartDateInput);
+      if (metricEndDateInput) params.set("end_date", metricEndDateInput);
+    }
+
+    setStatusText("Loading history...");
+    try {
+      const res = await fetch(`${historyEndpoint}?${params.toString()}`);
+      const payload = await res.json();
+      if (!res.ok) {
+        setOutput(payload);
+        setStatusText("History failed");
+        return;
+      }
+
+      setCallHistory(Array.isArray(payload.calls) ? payload.calls : []);
+      setSummary(payload.summary || {});
+      setStatusText("Ready");
+    } catch (error) {
+      setStatusText("History failed");
+      setOutput({ error: String(error) });
+    }
+  }, [historyEndpoint, metricEndDateInput, metricPeriodFilter, metricStartDateInput, searchInput, setOutput, statusFilter]);
+
+  const connectMic = useCallback(async () => {
+    const identity = "agent_01";
+    setConnecting(true);
+    setStatusText("Connecting microphone...");
+
+    try {
+      const tokenRes = await fetch(`${tokenEndpoint}?identity=${encodeURIComponent(identity)}`);
+      const tokenPayload = await tokenRes.json();
+
+      if (!tokenRes.ok) {
+        setOutput(tokenPayload);
+        setStatusText("Token error");
+        return;
+      }
+
+      await loadTwilioSdk();
+      if (!window.Twilio?.Device) {
+        setOutput({ error: "Twilio Voice SDK failed to load." });
+        setStatusText("SDK unavailable");
+        return;
+      }
+
+      if (deviceRef.current) {
+        try {
+          deviceRef.current.destroy();
+        } catch {
+          // no-op
+        }
+      }
+
+      const device = new window.Twilio.Device(tokenPayload.token, {
+        logLevel: 1,
+        codecPreferences: ["opus", "pcmu"]
+      });
+
+      deviceRef.current = device;
+
+      device.on("registered", () => {
+        setDeviceReady(true);
+        setStatusText("Mic connected");
+        setOutput({ ok: true, identity: tokenPayload.identity });
+      });
+
+      device.on("error", (error) => {
+        setDeviceReady(false);
+        setCallActive(false);
+        setStatusText("Device error");
+        setOutput({ error: error.message, code: error.code });
+      });
+
+      await device.register();
+    } catch (error) {
+      setStatusText("Connect failed");
+      setOutput({ error: String(error) });
+    } finally {
+      setConnecting(false);
+    }
+  }, [setOutput, tokenEndpoint]);
+
+  const placeCall = useCallback(async () => {
+    const device = deviceRef.current;
+    if (!device) {
+      setOutput({ error: "Connect microphone first." });
+      setStatusText("No device");
       return;
     }
-    setInputNumber((prev) => `${prev}${value}`);
-  };
 
-  const placeCall = () => {
-    if (mode === "browser") {
-      startBrowserCall();
+    const to = normalizePhone(phoneInput);
+    if (!to || !E164_REGEX.test(to)) {
+      setOutput({ error: "Enter a valid E.164 destination number." });
       return;
     }
-    startDialoutFallback();
-  };
+
+    setPlacingCall(true);
+    setCallActive(true);
+    setStatusText("Dialing...");
+
+    try {
+      const activeCall = await device.connect({ params: { To: to } });
+      activeCallRef.current = activeCall;
+
+      activeCall.on("accept", () => {
+        startCallTimer();
+        setStatusText("Call connected");
+      });
+
+      const finishCall = (text) => {
+        stopCallTimer();
+        setCallActive(false);
+        setPlacingCall(false);
+        setStatusText(text);
+        activeCallRef.current = null;
+        fetchHistory();
+      };
+
+      activeCall.on("disconnect", () => finishCall("Call ended"));
+      activeCall.on("reject", () => finishCall("Call rejected"));
+      activeCall.on("cancel", () => finishCall("Call canceled"));
+      activeCall.on("error", (error) => {
+        setOutput({ error: error.message, code: error.code });
+        finishCall("Call error");
+      });
+    } catch (error) {
+      stopCallTimer();
+      setCallActive(false);
+      setPlacingCall(false);
+      setStatusText("Dial failed");
+      setOutput({ error: String(error) });
+    }
+  }, [fetchHistory, phoneInput, setOutput, startCallTimer, stopCallTimer]);
+
+  const hangUp = useCallback(() => {
+    if (activeCallRef.current) {
+      activeCallRef.current.disconnect();
+      return;
+    }
+    if (deviceRef.current) {
+      deviceRef.current.disconnectAll();
+    }
+  }, []);
+
+  const selectCall = useCallback(
+    (callSid) => {
+      setSelectedCallSid(callSid);
+      const note = notesBySid[callSid] || {};
+      setDispositionInput(note.disposition || "");
+      setFollowUpInput(note.followUp || "");
+      setNotesInput(note.notes || "");
+    },
+    [notesBySid]
+  );
+
+  const saveNote = useCallback(() => {
+    if (!selectedCallSid) {
+      setOutput({ error: "Select a call from history before saving a note." });
+      return;
+    }
+
+    const next = {
+      ...notesBySid,
+      [selectedCallSid]: {
+        disposition: dispositionInput,
+        followUp: followUpInput,
+        notes: notesInput.trim(),
+        updatedAt: new Date().toISOString()
+      }
+    };
+
+    setNotesBySid(next);
+    localStorage.setItem(NOTES_KEY, JSON.stringify(next));
+    setOutput({ ok: true, call_sid: selectedCallSid, note: next[selectedCallSid] });
+  }, [dispositionInput, followUpInput, notesBySid, notesInput, selectedCallSid, setOutput]);
+
+  useEffect(() => {
+    fetchHistory();
+  }, [fetchHistory]);
+
+  useEffect(() => {
+    return () => {
+      stopCallTimer();
+      if (activeCallRef.current) {
+        try {
+          activeCallRef.current.disconnect();
+        } catch {
+          // no-op
+        }
+      }
+      if (deviceRef.current) {
+        try {
+          deviceRef.current.destroy();
+        } catch {
+          // no-op
+        }
+      }
+    };
+  }, [stopCallTimer]);
+
+  const customPeriod = metricPeriodFilter === "custom";
+  const callButtonDisabled = !deviceReady || callActive || placingCall;
+  const hangupDisabled = !callActive;
 
   return (
-    <section className="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-xl backdrop-blur">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Sales tools</p>
-          <h3 className="text-xl font-semibold text-white">Sales Dialer</h3>
-          <p className="text-sm text-slate-300">UK reps calling Canada using your Twilio caller ID.</p>
-        </div>
-        <div className="rounded-xl border border-white/10 bg-slate-900/50 px-3 py-2 text-sm text-slate-200">
-          From: <span className="font-semibold text-white">{callerId || "+14313400857"}</span>
-        </div>
-      </div>
-
-      <div className="mt-4 inline-flex rounded-2xl border border-white/10 bg-slate-900/40 p-1">
-        <button
-          type="button"
-          onClick={() => setMode("browser")}
-          className={`rounded-xl px-3 py-2 text-xs font-semibold transition ${
-            mode === "browser" ? "bg-indigo-500/70 text-white" : "text-slate-300 hover:bg-white/10"
-          }`}
-        >
-          Browser Dialer (Recommended)
-        </button>
-        <button
-          type="button"
-          onClick={() => setMode("dialout")}
-          className={`rounded-xl px-3 py-2 text-xs font-semibold transition ${
-            mode === "dialout" ? "bg-indigo-500/70 text-white" : "text-slate-300 hover:bg-white/10"
-          }`}
-        >
-          Phone Dial-Out (Fallback)
-        </button>
-      </div>
-
-      <div className="mt-5 grid gap-5 xl:grid-cols-[1.2fr_1fr]">
-        <div className="space-y-4">
-          <div className="rounded-2xl border border-white/10 bg-slate-900/40 p-4">
-            <label className="mb-2 block text-sm font-semibold text-slate-200">Dial number (E.164)</label>
-            <input
-              type="tel"
-              value={inputNumber}
-              onChange={(event) => setInputNumber(event.target.value)}
-              placeholder="+14165551234"
-              className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-white outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
-            />
-            <div className="mt-2 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => setInputNumber((prev) => toE164WithHelpers(prev))}
-                className="rounded-lg border border-white/15 bg-white/5 px-2.5 py-1 text-xs font-semibold text-slate-200 hover:bg-white/10"
-              >
-                Auto format (UK/CA)
-              </button>
-              <span className={`text-xs ${canDial ? "text-emerald-300" : "text-amber-300"}`}>
-                {canDial ? `Ready: ${normalizedTarget}` : "Use +countrycode format"}
-              </span>
+    <>
+      <style>{styles}</style>
+      <div className="sales-dialer-page">
+        <div className="app">
+          <section className="panel stack">
+            <div>
+              <h1>Dialer Workspace</h1>
             </div>
-            {mode === "dialout" && (
-              <div className="mt-3">
-                <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-slate-300">
-                  Rep phone (verified)
-                </label>
-                <input
-                  type="tel"
-                  value={repPhone}
-                  onChange={(event) => setRepPhone(event.target.value)}
-                  placeholder={userProfile?.business_number || "+447700900123"}
-                  className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-white outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
-                />
-              </div>
-            )}
-          </div>
 
-          <div className="grid grid-cols-3 gap-2 rounded-2xl border border-white/10 bg-slate-900/40 p-4">
-            {DIAL_PAD.map((key) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => handleDialPad(key)}
-                className="rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-base font-semibold text-white transition hover:bg-white/15"
-              >
-                {key}
+            <div className="call-actions">
+              <button className="btn btn-subtle" id="connectBtn" type="button" onClick={connectMic} disabled={connecting}>
+                Connect Mic
               </button>
-            ))}
-          </div>
-
-          <div className="rounded-2xl border border-white/10 bg-slate-900/40 p-4">
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-              <button
-                type="button"
-                onClick={placeCall}
-                disabled={!canDial || (mode === "browser" && deviceState === "registering")}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-500/80 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Phone className="h-4 w-4" />
-                Call
-              </button>
-              <button
-                type="button"
-                onClick={hangup}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-rose-500/80 px-3 py-2 text-sm font-semibold text-white transition hover:bg-rose-500"
-              >
-                <PhoneOff className="h-4 w-4" />
-                Hang up
-              </button>
-              <button
-                type="button"
-                onClick={toggleMute}
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-semibold text-white transition hover:bg-white/10"
-              >
-                {isMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-                {isMuted ? "Unmute" : "Mute"}
-              </button>
-              <button
-                type="button"
-                onClick={toggleSpeaker}
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-semibold text-white transition hover:bg-white/10"
-              >
-                {speakerOn ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
-                {speakerOn ? "Speaker On" : "Speaker Off"}
+              <button className="btn btn-primary" id="refreshBtn" type="button" onClick={fetchHistory}>
+                Refresh History
               </button>
             </div>
 
-            <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
-              <div className="rounded-xl border border-white/10 bg-slate-950/50 px-3 py-2 text-slate-300">
-                Browser device: <span className={statusTone(deviceState)}>{prettyStatus(deviceState)}</span>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-slate-950/50 px-3 py-2 text-slate-300">
-                Call status: <span className={statusTone(callState)}>{prettyStatus(callState)}</span>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-slate-950/50 px-3 py-2 text-slate-300">
-                Microphone: <span className={statusTone(micPermission)}>{prettyStatus(micPermission)}</span>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-slate-950/50 px-3 py-2 text-slate-300">
-                Timer: <span className="text-white">{formatDuration(callSeconds)}</span>
-              </div>
-            </div>
-
-            {(tokenError || actionError) && (
-              <p className="mt-3 text-sm text-rose-300">{tokenError || actionError}</p>
-            )}
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <div className="rounded-2xl border border-white/10 bg-slate-900/40 p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <p className="text-sm font-semibold text-white">Recent calls</p>
-              <button
-                type="button"
-                onClick={loadRecentCalls}
-                className="rounded-lg border border-white/15 bg-white/5 px-2 py-1 text-xs text-slate-200 hover:bg-white/10"
-              >
-                Refresh
-              </button>
-            </div>
-            <div className="max-h-64 space-y-2 overflow-auto pr-1">
-              {recentLoading && <p className="text-xs text-slate-300">Loading recent calls...</p>}
-              {!recentLoading && recentCalls.length === 0 && (
-                <p className="text-xs text-slate-400">No calls logged yet.</p>
-              )}
-              {recentCalls.map((item) => (
-                <button
-                  key={`${item.callSid}-${item.updatedAt || ""}`}
-                  type="button"
-                  onClick={() => setInputNumber(item.to || "")}
-                  className="w-full rounded-xl border border-white/10 bg-slate-950/50 px-3 py-2 text-left hover:bg-slate-800/70"
-                >
-                  <p className="text-sm font-semibold text-white">{item.to || "Unknown target"}</p>
-                  <p className="text-xs text-slate-300">
-                    {prettyStatus(item.status)} • {item.duration ? `${item.duration}s` : "—"}
-                  </p>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-white/10 bg-slate-900/40 p-4">
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <p className="text-sm font-semibold text-white">Click-to-call contacts</p>
-              <div className="relative w-40">
-                <Search className="pointer-events-none absolute left-2 top-2.5 h-3.5 w-3.5 text-slate-400" />
-                <input
-                  type="text"
-                  value={contactSearch}
-                  onChange={(event) => setContactSearch(event.target.value)}
-                  placeholder="Search"
-                  className="w-full rounded-lg border border-white/10 bg-slate-950/60 py-2 pl-7 pr-2 text-xs text-white outline-none focus:border-indigo-400"
-                />
-              </div>
-            </div>
-            <div className="max-h-72 space-y-2 overflow-auto pr-1">
-              {contactsLoading && <p className="text-xs text-slate-300">Loading contacts...</p>}
-              {!contactsLoading && contacts.length === 0 && (
-                <p className="text-xs text-slate-400">No contacts with phone numbers found.</p>
-              )}
-              {contacts
-                .filter((entry) => String(entry?.phone || "").trim())
-                .map((entry) => (
-                  <div
-                    key={`${entry.id}-${entry.phone}`}
-                    className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-950/50 px-3 py-2"
+            <div>
+              <label className="field-label" htmlFor="phoneInput">
+                Destination Number (E.164)
+              </label>
+              <input
+                className="input"
+                id="phoneInput"
+                value={phoneInput}
+                onChange={(event) => setPhoneInput(event.target.value)}
+              />
+              <div className="dialpad" id="dialpad">
+                {DIAL_KEYS.map((key) => (
+                  <button
+                    key={key}
+                    className="dial-btn"
+                    type="button"
+                    onClick={() => {
+                      if (key === "+") {
+                        if (phoneInput.includes("+")) return;
+                        setPhoneInput(`${phoneInput}+`);
+                        return;
+                      }
+                      setPhoneInput(`${phoneInput}${key}`);
+                    }}
                   >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-white">{entry.name || "Unnamed"}</p>
-                      <p className="truncate text-xs text-slate-300">{entry.phone}</p>
+                    {key}
+                  </button>
+                ))}
+              </div>
+              <div className="dial-actions">
+                <button className="btn btn-primary" id="callBtn" type="button" disabled={callButtonDisabled} onClick={placeCall}>
+                  Call
+                </button>
+                <button className="btn btn-danger" id="hangupBtn" type="button" disabled={hangupDisabled} onClick={hangUp}>
+                  End
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <span className="status-chip">
+                <span className="dot" />
+                <span id="statusText">{statusText}</span>
+              </span>
+              <div className="timer" id="timer">
+                {timerText}
+              </div>
+            </div>
+
+            <div>
+              <h2>After-Call Notes</h2>
+              <div className="selected-call" id="selectedCall">
+                {selectedCall ? (
+                  <>
+                    <div>
+                      <strong>Call SID:</strong> <span className="mono">{selectedCall.sid}</span>
+                    </div>
+                    <div>
+                      <strong>From:</strong> <span className="mono">{selectedCall.from || "-"}</span> | <strong>To:</strong>{" "}
+                      <span className="mono">{selectedCall.to || "-"}</span>
+                    </div>
+                    <div>
+                      <strong>Status:</strong> {selectedCall.status || "-"} | <strong>Duration:</strong>{" "}
+                      {formatSeconds(selectedCall.duration_seconds || 0)}
+                    </div>
+                  </>
+                ) : (
+                  "Select a call from history to add notes."
+                )}
+              </div>
+              <label className="field-label" htmlFor="dispositionInput" style={{ marginTop: "10px" }}>
+                Disposition
+              </label>
+              <select id="dispositionInput" value={dispositionInput} onChange={(event) => setDispositionInput(event.target.value)}>
+                <option value="">Select outcome</option>
+                <option value="connected">Connected</option>
+                <option value="voicemail">Left voicemail</option>
+                <option value="no_answer">No answer</option>
+                <option value="not_interested">Not interested</option>
+                <option value="follow_up">Follow up scheduled</option>
+              </select>
+              <label className="field-label" htmlFor="followUpInput" style={{ marginTop: "10px" }}>
+                Follow-up Time
+              </label>
+              <input
+                className="input"
+                id="followUpInput"
+                type="datetime-local"
+                value={followUpInput}
+                onChange={(event) => setFollowUpInput(event.target.value)}
+              />
+              <label className="field-label" htmlFor="notesInput" style={{ marginTop: "10px" }}>
+                Notes
+              </label>
+              <textarea
+                id="notesInput"
+                placeholder="Add details for this call..."
+                value={notesInput}
+                onChange={(event) => setNotesInput(event.target.value)}
+              />
+              <button className="btn btn-primary" id="saveNoteBtn" style={{ marginTop: "10px" }} type="button" onClick={saveNote}>
+                Save Note
+              </button>
+            </div>
+
+            <div className="response" id="responseBox">
+              {responseText}
+            </div>
+          </section>
+
+          <section className="panel stack">
+            <div>
+              <h2>Call Performance</h2>
+              <div className="metric-toolbar">
+                <select value={metricPeriodFilter} onChange={(event) => setMetricPeriodFilter(event.target.value)}>
+                  <option value="all">All time</option>
+                  <option value="today">Today</option>
+                  <option value="this_week">This week</option>
+                  <option value="this_month">This month</option>
+                  <option value="custom">Custom range</option>
+                </select>
+                <input
+                  className="input"
+                  type="date"
+                  disabled={!customPeriod}
+                  value={metricStartDateInput}
+                  onChange={(event) => setMetricStartDateInput(event.target.value)}
+                />
+                <input
+                  className="input"
+                  type="date"
+                  disabled={!customPeriod}
+                  value={metricEndDateInput}
+                  onChange={(event) => setMetricEndDateInput(event.target.value)}
+                />
+                <button className="btn btn-primary" type="button" onClick={fetchHistory}>
+                  Apply
+                </button>
+              </div>
+              <div className="cards">
+                <div className="card">
+                  <div className="label">Total Calls</div>
+                  <div className="value">{String(summary.total_calls ?? 0)}</div>
+                </div>
+                <div className="card">
+                  <div className="label">Completed</div>
+                  <div className="value">{String(summary.completed_calls ?? 0)}</div>
+                </div>
+                <div className="card">
+                  <div className="label">Missed</div>
+                  <div className="value">{String(summary.missed_calls ?? 0)}</div>
+                </div>
+                <div className="card">
+                  <div className="label">Minutes</div>
+                  <div className="value">{String(summary.total_minutes ?? 0)}</div>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <h2>Call History</h2>
+              <div className="toolbar">
+                <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+                  <option value="all">All statuses</option>
+                  <option value="completed">Completed</option>
+                  <option value="missed">Missed</option>
+                  <option value="busy">Busy</option>
+                  <option value="no-answer">No answer</option>
+                  <option value="failed">Failed</option>
+                  <option value="canceled">Canceled</option>
+                </select>
+                <input
+                  className="input"
+                  placeholder="Search number or status"
+                  value={searchInput}
+                  onChange={(event) => setSearchInput(event.target.value)}
+                />
+                <button className="btn btn-primary" type="button" onClick={fetchHistory}>
+                  Apply
+                </button>
+              </div>
+              <div style={{ maxHeight: "350px", overflow: "auto", border: "1px solid #d7dfef", borderRadius: "10px" }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Time</th>
+                      <th>From</th>
+                      <th>To</th>
+                      <th>Status</th>
+                      <th>Duration</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {!callHistory.length && (
+                      <tr>
+                        <td colSpan={6}>No calls found.</td>
+                      </tr>
+                    )}
+                    {callHistory.map((call) => {
+                      const note = notesBySid[call.sid];
+                      return (
+                        <tr key={call.sid} onClick={() => selectCall(call.sid)}>
+                          <td>{toLocale(call.start_time || call.date_created)}</td>
+                          <td className="mono">{call.from || "-"}</td>
+                          <td className="mono">{call.to || "-"}</td>
+                          <td>
+                            <span className={statusBadgeClass(call.status, call.is_missed)}>{call.status || "unknown"}</span>
+                            {note?.disposition && (
+                              <div style={{ marginTop: "4px", fontSize: "11px", color: "#4f5b78" }}>Note: {note.disposition}</div>
+                            )}
+                          </td>
+                          <td className="mono">{formatSeconds(call.duration_seconds || 0)}</td>
+                          <td>
+                            <button
+                              className="row-btn"
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                if (call.to) setPhoneInput(call.to);
+                              }}
+                            >
+                              Call
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div>
+              <h2>Missed Calls</h2>
+              <ul className="missed-list">
+                {!missedCalls.length && <li className="missed-item">No missed calls found.</li>}
+                {missedCalls.map((call) => (
+                  <li className="missed-item" key={call.sid}>
+                    <div>
+                      <div className="mono" style={{ fontWeight: 700 }}>
+                        {call.to || call.from || "-"}
+                      </div>
+                      <div style={{ fontSize: "12px", color: "#5c6481" }}>
+                        {toLocale(call.start_time || call.date_created)} | {call.status}
+                      </div>
                     </div>
                     <button
+                      className="row-btn"
                       type="button"
-                      onClick={() => setInputNumber(entry.phone || "")}
-                      className="ml-3 rounded-lg border border-emerald-400/40 bg-emerald-500/20 px-2 py-1 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/30"
+                      onClick={() => {
+                        setPhoneInput(call.to || call.from || "");
+                      }}
                     >
-                      Use
+                      Redial
                     </button>
-                  </div>
+                  </li>
                 ))}
+              </ul>
             </div>
-          </div>
+          </section>
         </div>
       </div>
-    </section>
+    </>
   );
 }

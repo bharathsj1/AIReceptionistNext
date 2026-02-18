@@ -335,3 +335,8 @@ curl -X POST https://smartconnect4u.com/api/private-cards \
 5. Confirm logs:
    - `GET /api/voice/logs?email=<rep-email>`
    - Validate `tenantId`, `to`, `from`, `status`, `duration`, and `callSid`.
+
+### Caller ID selection behavior
+- Dialer resolves caller IDs from tenant active Twilio numbers (`phone_numbers.is_active = true`).
+- Country is inferred from request headers (`cf-ipcountry`, `x-country-code`, etc.), with query/env fallback.
+- If multiple active caller IDs exist, frontend shows a caller ID dropdown and sends selected `callerId` to backend.

@@ -4928,7 +4928,10 @@ export default function DashboardScreen({
                 : "gap-5 overflow-y-auto"
             }`}
           >
-            {currentTool !== "email_manager" && currentTool !== "task_manager" && currentTool !== "crm_manager" && (
+            {currentTool !== "email_manager" &&
+              currentTool !== "task_manager" &&
+              currentTool !== "crm_manager" &&
+              currentTool !== "sales_dialer" && (
             <header className="dashboard-hero flex flex-col gap-3 rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl backdrop-blur">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
@@ -5339,6 +5342,7 @@ export default function DashboardScreen({
             user={user}
             userProfile={userProfile}
             sessionEmail={user?.email || userProfile?.contact_email || clientData?.email || ""}
+            geoCountryCode={geoCountryCode || ""}
           />
         )}
 
