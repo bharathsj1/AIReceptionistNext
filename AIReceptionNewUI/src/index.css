@@ -1082,7 +1082,7 @@ html {
 }
 
 .page-content.page-content-landing {
-  padding-top: 120px;
+  padding-top: 0;
 }
 
 .screen-panel {
@@ -2571,6 +2571,7 @@ html {
 .nav-actions {
   display: flex;
   gap: 10px;
+  grid-column: 3;
   justify-self: end;
 }
 
@@ -4671,7 +4672,7 @@ html {
   }
 
   .page-content.page-content-landing {
-    padding-top: 96px;
+    padding-top: 0;
   }
 
   .page-content.page-content-with-header {
