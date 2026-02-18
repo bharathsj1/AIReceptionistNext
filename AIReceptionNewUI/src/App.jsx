@@ -3012,7 +3012,7 @@ export default function App() {
             <div className="nav-brand">
               <button type="button" className="brand brand-main" onClick={handleGoHome} aria-label="Go to home">
                 <img
-                  src={isMobile ? "/media/SC_logo.png" : "/media/sc_logo_main.png"}
+                  src="/media/sc_logo_main.png"
                   alt="SmartConnect4u logo"
                   className="brand-logo brand-logo-main"
                 />
