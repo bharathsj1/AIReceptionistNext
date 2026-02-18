@@ -596,23 +596,25 @@ def clients_provision(req: func.HttpRequest) -> func.HttpResponse:
             headers=cors,
         )
 
-    db = SessionLocal()
-    try:
-        has_valid_url = _is_valid_url(website_url) and website_url != "manual-entry"
-        if not has_valid_url:
-            website_url = "manual-entry"
-            name_guess, summary = _build_manual_summary(body if isinstance(body, dict) else {})
-        else:
+    manual_payload = body if isinstance(body, dict) else {}
+    has_valid_url = _is_valid_url(website_url) and website_url != "manual-entry"
+    if not has_valid_url:
+        website_url = "manual-entry"
+        name_guess, summary = _build_manual_summary(manual_payload)
+    else:
+        try:
             name_guess, summary = get_site_summary(website_url)
-    except Exception as exc:  # pylint: disable=broad-except
-        logger.error("Failed to crawl site: %s", exc)
-        return func.HttpResponse(
-            json.dumps({"error": f"Failed to crawl site: {exc}"}),
-            status_code=500,
-            mimetype="application/json",
-            headers=cors,
-        )
+        except Exception as exc:  # pylint: disable=broad-except
+            # Do not fail provisioning when crawling is unavailable.
+            logger.warning("Crawl failed for %s, falling back to manual payload: %s", website_url, exc)
+            name_guess, summary = _build_manual_summary(manual_payload)
 
+    if not name_guess:
+        name_guess = email or "Manual Business"
+    if not summary:
+        summary = "Business details provided manually."
+
+    db = SessionLocal()
     try:
         client_record: Client = db.query(Client).filter_by(email=email).one_or_none()
         if client_record:
@@ -764,6 +766,14 @@ def clients_assign_number(req: func.HttpRequest) -> func.HttpResponse:
         body = None
 
     email = body.get("email") if isinstance(body, dict) else None
+    selected_twilio_number = None
+    if isinstance(body, dict):
+        selected_twilio_number = (
+            body.get("selected_twilio_number")
+            or body.get("selectedTwilioNumber")
+            or body.get("twilio_number")
+            or body.get("twilioNumber")
+        )
     if not email:
         return func.HttpResponse(
             json.dumps({"error": "Missing required field: email"}),

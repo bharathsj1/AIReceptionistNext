@@ -65,6 +65,18 @@ const styles = `
   font-weight: 700;
   margin-bottom: 6px;
 }
+.sales-dialer-page .field-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.sales-dialer-page .field-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
 .sales-dialer-page .input,
 .sales-dialer-page select,
 .sales-dialer-page textarea,
@@ -142,6 +154,13 @@ const styles = `
   font-weight: 700;
   margin-top: 8px;
   color: #1f2937;
+}
+.sales-dialer-page .timer-inline {
+  font-family: "Product Sans", "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  color: #1f2937;
+  white-space: nowrap;
 }
 .sales-dialer-page .dialpad {
   display: grid;
@@ -324,6 +343,16 @@ const styles = `
 
   .sales-dialer-page h1 {
     font-size: 22px;
+  }
+
+  .sales-dialer-page .field-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .sales-dialer-page .field-meta {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .sales-dialer-page h2 {
@@ -882,9 +911,20 @@ export default function SalesDialerScreen({ geoCountryCode = "" }) {
             </div>
 
             <div>
-              <label className="field-label" htmlFor="phoneInput">
-                Destination Number (E.164)
-              </label>
+              <div className="field-head">
+                <label className="field-label" htmlFor="phoneInput" style={{ marginBottom: 0 }}>
+                  Destination Number (E.164)
+                </label>
+                <div className="field-meta">
+                  <span className="status-chip">
+                    <span className="dot" />
+                    <span id="statusText">{statusText}</span>
+                  </span>
+                  <span className="timer-inline" id="timer">
+                    {timerText}
+                  </span>
+                </div>
+              </div>
               <input
                 className="input"
                 id="phoneInput"
@@ -917,16 +957,6 @@ export default function SalesDialerScreen({ geoCountryCode = "" }) {
                 <button className="btn btn-danger" id="hangupBtn" type="button" disabled={hangupDisabled} onClick={hangUp}>
                   End
                 </button>
-              </div>
-            </div>
-
-            <div>
-              <span className="status-chip">
-                <span className="dot" />
-                <span id="statusText">{statusText}</span>
-              </span>
-              <div className="timer" id="timer">
-                {timerText}
               </div>
             </div>
 
