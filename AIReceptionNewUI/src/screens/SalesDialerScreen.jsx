@@ -23,7 +23,7 @@ const styles = `
   max-width: 1300px;
   margin: 0 auto;
   display: grid;
-  grid-template-columns: 420px 1fr;
+  grid-template-columns: minmax(360px, 420px) minmax(0, 1fr);
   gap: 18px;
   align-items: start;
 }
@@ -159,6 +159,7 @@ const styles = `
   padding: 14px 8px;
   cursor: pointer;
   font-weight: 700;
+  min-height: 68px;
 }
 .sales-dialer-page .dial-btn:hover {
   background: #f2f7ff;
@@ -310,6 +311,89 @@ const styles = `
     grid-template-columns: 1fr;
   }
 }
+
+@media (max-width: 768px) {
+  .sales-dialer-page {
+    padding: 12px;
+  }
+
+  .sales-dialer-page .panel {
+    padding: 12px;
+    border-radius: 12px;
+  }
+
+  .sales-dialer-page h1 {
+    font-size: 22px;
+  }
+
+  .sales-dialer-page h2 {
+    font-size: 18px;
+  }
+
+  .sales-dialer-page .call-actions,
+  .sales-dialer-page .dial-actions,
+  .sales-dialer-page .toolbar,
+  .sales-dialer-page .metric-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .sales-dialer-page .cards {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .sales-dialer-page .card .value {
+    font-size: 22px;
+  }
+
+  .sales-dialer-page .dialpad {
+    gap: 6px;
+  }
+
+  .sales-dialer-page .dial-btn {
+    min-height: 58px;
+    padding: 10px 6px;
+    font-size: 26px;
+  }
+
+  .sales-dialer-page .timer {
+    font-size: 24px;
+  }
+
+  .sales-dialer-page table {
+    min-width: 760px;
+  }
+}
+
+@media (max-width: 480px) {
+  .sales-dialer-page {
+    padding: 8px;
+  }
+
+  .sales-dialer-page .panel {
+    padding: 10px;
+  }
+
+  .sales-dialer-page .cards {
+    grid-template-columns: 1fr;
+  }
+
+  .sales-dialer-page .field-label {
+    font-size: 12px;
+  }
+
+  .sales-dialer-page .input,
+  .sales-dialer-page select,
+  .sales-dialer-page textarea,
+  .sales-dialer-page .btn {
+    font-size: 14px;
+    padding: 9px 10px;
+  }
+
+  .sales-dialer-page .dial-btn {
+    min-height: 54px;
+    font-size: 24px;
+  }
+}
 `;
 
 const formatSeconds = (totalSeconds) => {
@@ -382,9 +466,11 @@ const loadNotes = () => {
   }
 };
 
-export default function SalesDialerScreen() {
+export default function SalesDialerScreen({ geoCountryCode = "" }) {
   const tokenEndpoint = API_URLS.voiceTokenDialer || "http://localhost:7071/api/voice-token";
   const historyEndpoint = API_URLS.callHistory || "http://localhost:7071/api/call-history";
+  const activePhoneNumbersEndpoint =
+    API_URLS.activePhoneNumbers || "http://localhost:7071/api/active-phone-numbers";
 
   const deviceRef = useRef(null);
   const activeCallRef = useRef(null);
@@ -403,8 +489,11 @@ export default function SalesDialerScreen() {
     total_minutes: 0
   });
   const [callHistory, setCallHistory] = useState([]);
+  const [activeCallerNumbers, setActiveCallerNumbers] = useState([]);
+  const [selectedFromNumber, setSelectedFromNumber] = useState("");
+  const [loadingCallerNumbers, setLoadingCallerNumbers] = useState(false);
 
-  const [metricPeriodFilter, setMetricPeriodFilter] = useState("all");
+  const [metricPeriodFilter, setMetricPeriodFilter] = useState("today");
   const [metricStartDateInput, setMetricStartDateInput] = useState("");
   const [metricEndDateInput, setMetricEndDateInput] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -420,6 +509,7 @@ export default function SalesDialerScreen() {
   const [deviceReady, setDeviceReady] = useState(false);
   const [placingCall, setPlacingCall] = useState(false);
   const [callActive, setCallActive] = useState(false);
+  const autoConnectTriedRef = useRef(false);
 
   const selectedCall = useMemo(
     () => callHistory.find((item) => item.sid === selectedCallSid) || null,
@@ -456,6 +546,40 @@ export default function SalesDialerScreen() {
     }, 1000);
   }, [stopCallTimer]);
 
+  const fetchActiveCallerNumbers = useCallback(async () => {
+    setLoadingCallerNumbers(true);
+    try {
+      const params = new URLSearchParams();
+      const country = String(geoCountryCode || "").trim().toUpperCase();
+      if (country.length === 2) {
+        params.set("country", country);
+      }
+      const url = params.toString()
+        ? `${activePhoneNumbersEndpoint}?${params.toString()}`
+        : activePhoneNumbersEndpoint;
+      const res = await fetch(url);
+      const payload = await res.json();
+      if (!res.ok) {
+        setOutput(payload);
+        return;
+      }
+
+      const items = Array.isArray(payload.items) ? payload.items : [];
+      setActiveCallerNumbers(items);
+      setSelectedFromNumber((prev) => {
+        if (prev && items.some((item) => item.phone_number === prev)) return prev;
+        if (payload.selected && items.some((item) => item.phone_number === payload.selected)) {
+          return payload.selected;
+        }
+        return items[0]?.phone_number || "";
+      });
+    } catch (error) {
+      setOutput({ error: String(error) });
+    } finally {
+      setLoadingCallerNumbers(false);
+    }
+  }, [activePhoneNumbersEndpoint, geoCountryCode, setOutput]);
+
   const fetchHistory = useCallback(async () => {
     const period = metricPeriodFilter || "all";
     const params = new URLSearchParams({
@@ -491,12 +615,34 @@ export default function SalesDialerScreen() {
     }
   }, [historyEndpoint, metricEndDateInput, metricPeriodFilter, metricStartDateInput, searchInput, setOutput, statusFilter]);
 
-  const connectMic = useCallback(async () => {
+  const connectMic = useCallback(async ({ auto = false } = {}) => {
+    if (connecting || deviceReady) return;
+
     const identity = "agent_01";
     setConnecting(true);
     setStatusText("Connecting microphone...");
 
     try {
+      if (!navigator?.mediaDevices?.getUserMedia) {
+        setStatusText("Mic unsupported");
+        if (!auto) {
+          setOutput({ error: "This browser does not support microphone access." });
+        }
+        return;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((track) => track.stop());
+      } catch (error) {
+        setDeviceReady(false);
+        setStatusText("Mic blocked");
+        if (!auto) {
+          setOutput({ error: "Microphone permission denied.", details: String(error) });
+        }
+        return;
+      }
+
       const tokenRes = await fetch(`${tokenEndpoint}?identity=${encodeURIComponent(identity)}`);
       const tokenPayload = await tokenRes.json();
 
@@ -532,6 +678,7 @@ export default function SalesDialerScreen() {
         setDeviceReady(true);
         setStatusText("Mic connected");
         setOutput({ ok: true, identity: tokenPayload.identity });
+        fetchActiveCallerNumbers();
       });
 
       device.on("error", (error) => {
@@ -548,7 +695,7 @@ export default function SalesDialerScreen() {
     } finally {
       setConnecting(false);
     }
-  }, [setOutput, tokenEndpoint]);
+  }, [connecting, deviceReady, fetchActiveCallerNumbers, setOutput, tokenEndpoint]);
 
   const placeCall = useCallback(async () => {
     const device = deviceRef.current;
@@ -563,13 +710,22 @@ export default function SalesDialerScreen() {
       setOutput({ error: "Enter a valid E.164 destination number." });
       return;
     }
+    if (!selectedFromNumber || !E164_REGEX.test(selectedFromNumber)) {
+      setOutput({ error: "Select a valid active caller number before dialing." });
+      return;
+    }
 
     setPlacingCall(true);
     setCallActive(true);
     setStatusText("Dialing...");
 
     try {
-      const activeCall = await device.connect({ params: { To: to } });
+      const callParams = { To: to, FromNumber: selectedFromNumber };
+      const country = String(geoCountryCode || "").trim().toUpperCase();
+      if (country.length === 2) {
+        callParams.Country = country;
+      }
+      const activeCall = await device.connect({ params: callParams });
       activeCallRef.current = activeCall;
 
       activeCall.on("accept", () => {
@@ -600,7 +756,7 @@ export default function SalesDialerScreen() {
       setStatusText("Dial failed");
       setOutput({ error: String(error) });
     }
-  }, [fetchHistory, phoneInput, setOutput, startCallTimer, stopCallTimer]);
+  }, [fetchHistory, geoCountryCode, phoneInput, selectedFromNumber, setOutput, startCallTimer, stopCallTimer]);
 
   const hangUp = useCallback(() => {
     if (activeCallRef.current) {
@@ -649,6 +805,16 @@ export default function SalesDialerScreen() {
   }, [fetchHistory]);
 
   useEffect(() => {
+    fetchActiveCallerNumbers();
+  }, [fetchActiveCallerNumbers]);
+
+  useEffect(() => {
+    if (autoConnectTriedRef.current) return;
+    autoConnectTriedRef.current = true;
+    connectMic({ auto: true });
+  }, [connectMic]);
+
+  useEffect(() => {
     return () => {
       stopCallTimer();
       if (activeCallRef.current) {
@@ -669,7 +835,7 @@ export default function SalesDialerScreen() {
   }, [stopCallTimer]);
 
   const customPeriod = metricPeriodFilter === "custom";
-  const callButtonDisabled = !deviceReady || callActive || placingCall;
+  const callButtonDisabled = !deviceReady || callActive || placingCall || !selectedFromNumber;
   const hangupDisabled = !callActive;
 
   return (
@@ -684,11 +850,35 @@ export default function SalesDialerScreen() {
 
             <div className="call-actions">
               <button className="btn btn-subtle" id="connectBtn" type="button" onClick={connectMic} disabled={connecting}>
-                Connect Mic
+                {deviceReady ? "Mic Connected" : connecting ? "Connecting..." : "Connect Mic"}
               </button>
               <button className="btn btn-primary" id="refreshBtn" type="button" onClick={fetchHistory}>
                 Refresh History
               </button>
+            </div>
+
+            <div>
+              <label className="field-label" htmlFor="fromNumberSelect">
+                Caller Number (Active Twilio)
+              </label>
+              <select
+                id="fromNumberSelect"
+                value={selectedFromNumber}
+                onChange={(event) => setSelectedFromNumber(event.target.value)}
+                disabled={loadingCallerNumbers || !activeCallerNumbers.length}
+              >
+                {!activeCallerNumbers.length && (
+                  <option value="">
+                    {loadingCallerNumbers ? "Loading active numbers..." : "No active numbers found"}
+                  </option>
+                )}
+                {activeCallerNumbers.map((item) => (
+                  <option key={item.phone_number} value={item.phone_number}>
+                    {item.phone_number}
+                    {item.friendly_name && item.friendly_name !== item.phone_number ? ` - ${item.friendly_name}` : ""}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div>
@@ -872,7 +1062,15 @@ export default function SalesDialerScreen() {
                   Apply
                 </button>
               </div>
-              <div style={{ maxHeight: "350px", overflow: "auto", border: "1px solid #d7dfef", borderRadius: "10px" }}>
+              <div
+                style={{
+                  maxHeight: "350px",
+                  overflow: "auto",
+                  WebkitOverflowScrolling: "touch",
+                  border: "1px solid #d7dfef",
+                  borderRadius: "10px"
+                }}
+              >
                 <table>
                   <thead>
                     <tr>

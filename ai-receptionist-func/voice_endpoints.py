@@ -18,6 +18,20 @@ PHONE_PATTERN = re.compile(r"^\+[1-9]\d{7,14}$")
 IDENTITY_PATTERN = re.compile(r"^[A-Za-z0-9_]{1,121}$")
 MISSED_STATUSES = {"no-answer", "busy", "failed", "canceled"}
 SUPPORTED_PERIODS = {"all", "today", "this_week", "this_month", "custom"}
+COUNTRY_TO_DIAL_PREFIXES = {
+    "GB": ["+44"],
+    "UK": ["+44"],
+    "US": ["+1"],
+    "CA": ["+1"],
+    "AU": ["+61"],
+    "NZ": ["+64"],
+    "IE": ["+353"],
+    "IN": ["+91"],
+    "FR": ["+33"],
+    "DE": ["+49"],
+    "ES": ["+34"],
+    "IT": ["+39"],
+}
 API_HEADERS = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -85,6 +99,52 @@ def _to_int(value: Optional[str]) -> int:
         return 0
 
 
+def _normalize_e164(value: Optional[str]) -> str:
+    if not value:
+        return ""
+    raw = str(value).strip()
+    if not raw:
+        return ""
+    if raw.startswith("client:"):
+        return raw
+    plus = raw.startswith("+")
+    digits = re.sub(r"\D", "", raw)
+    if not digits:
+        return ""
+    candidate = f"+{digits}" if plus or digits else ""
+    return candidate if _is_e164(candidate) else ""
+
+
+def _resolve_country_code(req: func.HttpRequest) -> str:
+    header_keys = [
+        "cf-ipcountry",
+        "x-country-code",
+        "x-geo-country",
+        "x-azure-country",
+        "x-appservice-country",
+        "cloudfront-viewer-country",
+        "x-vercel-ip-country",
+        "x-country",
+    ]
+    for key in header_keys:
+        value = req.headers.get(key)
+        if value:
+            code = str(value).strip().upper()
+            if len(code) == 2:
+                return code
+
+    query_country = (req.params.get("country") or "").strip().upper()
+    if len(query_country) == 2:
+        return query_country
+
+    body_country = (_get_form_param(req, "Country") or "").strip().upper()
+    if len(body_country) == 2:
+        return body_country
+
+    fallback = (_get_setting("TWILIO_DEFAULT_COUNTRY") or "US").strip().upper()
+    return fallback if len(fallback) == 2 else "US"
+
+
 def _call_field(call, field_name: str, fallback: str = "") -> str:
     # Twilio objects can expose fields as attributes or in internal properties.
     attr_value = getattr(call, field_name, None)
@@ -98,6 +158,14 @@ def _call_field(call, field_name: str, fallback: str = "") -> str:
             return prop_value.strip()
 
     return fallback
+
+
+def _call_number_field(call, *field_names: str) -> str:
+    for field_name in field_names:
+        value = _call_field(call, field_name)
+        if value:
+            return value
+    return ""
 
 
 def _build_rest_client() -> Optional[Client]:
@@ -115,13 +183,88 @@ def _build_rest_client() -> Optional[Client]:
     return None
 
 
-def _call_to_payload(call) -> dict:
+def _list_active_numbers(client: Client, default_from: str = "") -> list[dict]:
+    options: list[dict] = []
+    seen: set[str] = set()
+
+    def add(number: str, friendly_name: str = "") -> None:
+        normalized = _normalize_e164(number)
+        if not normalized or normalized in seen:
+            return
+        seen.add(normalized)
+        options.append(
+            {
+                "phone_number": normalized,
+                "friendly_name": (friendly_name or normalized).strip(),
+            }
+        )
+
+    try:
+        for item in client.incoming_phone_numbers.list(limit=200):
+            add(getattr(item, "phone_number", ""), getattr(item, "friendly_name", ""))
+    except TwilioRestException:
+        pass
+    except Exception:
+        pass
+
+    try:
+        for item in client.outgoing_caller_ids.list(limit=200):
+            add(getattr(item, "phone_number", ""), getattr(item, "friendly_name", ""))
+    except TwilioRestException:
+        pass
+    except Exception:
+        pass
+
+    add(default_from, "Default caller ID")
+    return options
+
+
+def _select_number_for_country(options: list[dict], country_code: str, fallback_number: str) -> str:
+    prefixes = COUNTRY_TO_DIAL_PREFIXES.get(str(country_code or "").upper(), [])
+    if prefixes:
+        for item in options:
+            number = str(item.get("phone_number") or "")
+            if any(number.startswith(prefix) for prefix in prefixes):
+                return number
+
+    fallback_e164 = _normalize_e164(fallback_number)
+    if fallback_e164:
+        for item in options:
+            if item.get("phone_number") == fallback_e164:
+                return fallback_e164
+
+    return str(options[0].get("phone_number") or "") if options else ""
+
+
+def _resolve_selected_from_number(req: func.HttpRequest, client: Client, fallback_number: str) -> tuple[str, Optional[str]]:
+    requested = _get_form_param(req, "FromNumber") or _get_form_param(req, "callerId")
+    requested_e164 = _normalize_e164(requested)
+    options = _list_active_numbers(client, fallback_number)
+    allowed = {item["phone_number"] for item in options}
+
+    if requested and not requested_e164:
+        return "", "Invalid caller number format. Use E.164."
+    if requested_e164 and requested_e164 not in allowed:
+        return "", "Selected caller number is not active on this Twilio account."
+    if requested_e164:
+        return requested_e164, None
+
+    country_code = _resolve_country_code(req)
+    selected = _select_number_for_country(options, country_code, fallback_number)
+    if selected:
+        return selected, None
+    return "", "No active Twilio caller number is configured."
+
+
+def _call_to_payload(call, default_from_number: str = "") -> dict:
     status = (call.status or "").strip().lower()
     duration_seconds = _to_int(call.duration)
-    from_number = _call_field(call, "from")
-    to_number = _call_field(call, "to")
+    from_number = _call_number_field(call, "from", "from_", "from_formatted")
+    to_number = _call_number_field(call, "to", "to_formatted")
     direction = (call.direction or "").strip().lower()
     is_missed = status in MISSED_STATUSES
+    if not from_number and direction.startswith("outbound") and _is_e164(default_from_number):
+        from_number = default_from_number
 
     return {
         "sid": call.sid,
@@ -295,9 +438,20 @@ def voice_outbound(req: func.HttpRequest) -> func.HttpResponse:
         return func.HttpResponse(status_code=204, headers=API_HEADERS)
 
     to_number = _get_form_param(req, "To")
-    from_number = _get_setting("TWILIO_FROM_NUMBER") or _get_setting("TWILIO_CALLER_ID")
+    fallback_from = _get_setting("TWILIO_FROM_NUMBER") or _get_setting("TWILIO_CALLER_ID")
 
     response = VoiceResponse()
+    client = _build_rest_client()
+    if not client:
+        response.say("Twilio credentials are missing.", voice="alice", language="en-US")
+        response.hangup()
+        return _xml_response(str(response), status_code=200)
+
+    from_number, from_error = _resolve_selected_from_number(req, client, fallback_from)
+    if from_error:
+        response.say(from_error, voice="alice", language="en-US")
+        response.hangup()
+        return _xml_response(str(response), status_code=200)
 
     if not _is_e164(to_number):
         response.say("Invalid destination number.", voice="alice", language="en-US")
@@ -359,7 +513,8 @@ def call_history(req: func.HttpRequest) -> func.HttpResponse:
     except Exception as exc:  # pragma: no cover - defensive guard for runtime failures
         return _json_response({"error": "Failed to load call history", "details": str(exc)}, status_code=500)
 
-    items = [_call_to_payload(call) for call in calls]
+    default_from = _get_setting("TWILIO_FROM_NUMBER") or _get_setting("TWILIO_CALLER_ID")
+    items = [_call_to_payload(call, default_from_number=default_from) for call in calls]
 
     if query:
         items = [
@@ -407,3 +562,28 @@ def call_history(req: func.HttpRequest) -> func.HttpResponse:
         "end_date": end_date or None,
     }
     return _json_response({"summary": summary, "filters": filters, "calls": items})
+
+
+@app.function_name(name="ActivePhoneNumbers")
+@app.route(route="active-phone-numbers", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def active_phone_numbers(req: func.HttpRequest) -> func.HttpResponse:
+    if req.method == "OPTIONS":
+        return func.HttpResponse(status_code=204, headers=API_HEADERS)
+
+    client = _build_rest_client()
+    if not client:
+        return _json_response(
+            {
+                "error": (
+                    "Missing Twilio credentials. Set TWILIO_ACCOUNT_SID and either "
+                    "(TWILIO_API_KEY + TWILIO_API_SECRET) or TWILIO_AUTH_TOKEN."
+                )
+            },
+            status_code=500,
+        )
+
+    default_from = _get_setting("TWILIO_FROM_NUMBER") or _get_setting("TWILIO_CALLER_ID")
+    items = _list_active_numbers(client, default_from)
+    resolved_country = _resolve_country_code(req)
+    selected = _select_number_for_country(items, resolved_country, default_from)
+    return _json_response({"items": items, "selected": selected, "resolved_country": resolved_country})

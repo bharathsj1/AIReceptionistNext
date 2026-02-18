@@ -98,6 +98,7 @@ class Client(Base):
     business_category = Column(String, nullable=True)
     business_sub_type = Column(String, nullable=True)
     business_custom_type = Column(String, nullable=True)
+    sales_dialer_enabled = Column(Boolean, default=False)
     booking_enabled = Column(Boolean, default=False)
     booking_duration_minutes = Column(Integer, nullable=True)
     booking_buffer_minutes = Column(Integer, nullable=True)
@@ -560,6 +561,8 @@ def _ensure_optional_columns() -> None:
             conn.execute(text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS business_sub_type VARCHAR"))
         if "business_custom_type" not in client_columns:
             conn.execute(text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS business_custom_type VARCHAR"))
+        if "sales_dialer_enabled" not in client_columns:
+            conn.execute(text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS sales_dialer_enabled BOOLEAN DEFAULT FALSE"))
         if "booking_enabled" not in client_columns:
             conn.execute(text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS booking_enabled BOOLEAN DEFAULT FALSE"))
         if "booking_duration_minutes" not in client_columns:

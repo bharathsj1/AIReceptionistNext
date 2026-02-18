@@ -278,6 +278,7 @@ def _build_dashboard_payload(db, email: str) -> dict:
                 "business_category": client.business_category,
                 "business_sub_type": client.business_sub_type,
                 "business_custom_type": client.business_custom_type,
+                "sales_dialer_enabled": bool(client.sales_dialer_enabled),
                 "booking_enabled": bool(client.booking_enabled),
                 "booking_duration_minutes": client.booking_duration_minutes,
                 "booking_buffer_minutes": client.booking_buffer_minutes,
