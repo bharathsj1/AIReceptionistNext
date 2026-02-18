@@ -1341,6 +1341,85 @@ export default function App() {
     await runProvisionFlow();
   };
 
+  const handleNumberSelectionContinue = async () => {
+    const targetEmail = paymentInfo?.email || signupEmail || user?.email || email || loginEmail || "";
+    if (!targetEmail) {
+      setStatus("error");
+      setResponseMessage("Missing required field: email");
+      setResponseLink(null);
+      setStage(STAGES.COMPLETE);
+      return;
+    }
+
+    setStatus("loading");
+    setResponseMessage("");
+    setResponseLink(null);
+    setShowLoader(true);
+    setLoadingPhase("provision");
+    setStage(STAGES.LOADING);
+
+    try {
+      const assignRes = await fetch(API_URLS.assignAiNumber, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        mode: "cors",
+        body: JSON.stringify({
+          email: targetEmail,
+          selected_twilio_number: selectedTwilioNumber || ""
+        })
+      });
+      const assignData = await assignRes.json().catch(() => ({}));
+      if (!assignRes.ok) {
+        throw new Error(
+          assignData?.message || assignData?.error || assignData?.details || "Failed to assign AI number"
+        );
+      }
+
+      if (selectedVoiceId || (welcomeMessage || "").trim()) {
+        try {
+          await fetch(API_URLS.dashboardAgent, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            mode: "cors",
+            body: JSON.stringify({
+              email: targetEmail,
+              ...(selectedVoiceId ? { voice: selectedVoiceId } : {}),
+              ...((welcomeMessage || "").trim() ? { greeting: (welcomeMessage || "").trim() } : {})
+            })
+          });
+        } catch (err) {
+          console.warn("Failed to apply voice/greeting after number assignment", err);
+        }
+      }
+
+      setProvisionData((prev) => ({ ...(prev || {}), ...assignData }));
+      setStatus("success");
+      setResponseMessage("Your AI receptionist is ready!");
+      setResponseLink(null);
+
+      setUrl("");
+      setCrawlData(null);
+      setManualBusinessInfo(null);
+      setBusinessName("");
+      setBusinessPhone("");
+      setSelectedPlan(null);
+      setSelectedTool(DEFAULT_TOOL_ID);
+      setActiveTab("agents");
+      setActiveTool(DEFAULT_TOOL_ID);
+      setToolSubscriptions({});
+      setIsLoggedIn(true);
+      setStage(STAGES.DASHBOARD);
+      await loadDashboard(targetEmail);
+    } catch (error) {
+      setStatus("error");
+      setResponseMessage(error?.message || "Unable to finish setup. Please try again.");
+      setResponseLink(null);
+      setStage(STAGES.COMPLETE);
+    } finally {
+      setShowLoader(false);
+    }
+  };
+
   const runProvisionFlow = async ({
     emailOverride = null,
     manualInfoOverride = null,
@@ -3281,7 +3360,7 @@ export default function App() {
               selectedNumber={selectedTwilioNumber}
               onSelectNumber={setSelectedTwilioNumber}
               onRefreshNumbers={loadTwilioAvailableNumbers}
-              onContinue={runProvisionFlow}
+              onContinue={handleNumberSelectionContinue}
             />
           </div>
         )}

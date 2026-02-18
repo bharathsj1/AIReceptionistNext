@@ -766,6 +766,14 @@ def clients_assign_number(req: func.HttpRequest) -> func.HttpResponse:
         body = None
 
     email = body.get("email") if isinstance(body, dict) else None
+    selected_twilio_number = None
+    if isinstance(body, dict):
+        selected_twilio_number = (
+            body.get("selected_twilio_number")
+            or body.get("selectedTwilioNumber")
+            or body.get("twilio_number")
+            or body.get("twilioNumber")
+        )
     if not email:
         return func.HttpResponse(
             json.dumps({"error": "Missing required field: email"}),
