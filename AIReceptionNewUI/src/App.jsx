@@ -3027,41 +3027,6 @@ export default function App() {
                 />
               </button>
             </div>
-            <div className="nav-links">
-              <button className="nav-link" onClick={() => handleNavToSection("capabilities")}>Our purpose</button>
-              <div className="nav-item-with-mega">
-                <button className="nav-link nav-link-pill" type="button">Resources ▾</button>
-                <div className="mega-menu">
-                  <div className="mega-col">
-                    <p className="mega-heading">Support</p>
-                    <a className="mega-item" href="/contact.html">📞 Contact Us<span>24/5 live support &amp; 24/7 AI support</span></a>
-                    <a className="mega-item" href="/help-center.html">💡 Help Center<span>Guides to configure and use SmartConnect4u</span></a>
-                    <a className="mega-item" href="/terms.html">📄 Terms &amp; Conditions<span>Our policies and fine print</span></a>
-                    <a className="mega-item" href="/privacy.html">🛡 Privacy Policy<span>How we handle your data</span></a>
-                  </div>
-                  <div className="mega-col">
-                    <p className="mega-heading">Tools</p>
-                    <button className="mega-item" type="button" onClick={() => handleGoProjects("receptionist")}>
-                      🤖 AI Receptionist<span>24/7 AI call handling & scheduling</span>
-                    </button>
-                    <button className="mega-item" type="button" onClick={() => handleGoProjects("email-manager")}>
-                      📧 Smart Email Manager<span>Inbox triage, replies, and summaries</span>
-                    </button>
-                    <button className="mega-item" type="button" onClick={() => handleGoProjects("social-manager")}>
-                      📱 Social Media Manager<span>Plan, publish, and respond faster</span>
-                    </button>
-                  </div>
-                  <div className="mega-col">
-                    <p className="mega-heading">Learn</p>
-                    <a className="mega-item" href="/guides.html">🎥 Video Guides<span>Master business messaging &amp; AI tools</span></a>
-                    <a className="mega-item" href="/blog.html">📰 Blog<span>Practical tips to grow with messaging</span></a>
-                    <a className="mega-item" href="/developers.html">👩‍💻 Developer Hub<span>Docs to start building with SmartConnect4u</span></a>
-                  </div>
-                </div>
-              </div>
-              <button className="nav-link" type="button" onClick={handleGoAbout}>About</button>
-              <a className="nav-link" href="/contact.html">Contact</a>
-            </div>
             <div className="nav-actions">
               <div
                 className="nav-geo"
@@ -3069,7 +3034,7 @@ export default function App() {
                 title={countryName || "Detecting location"}
               >
                 <span className="nav-geo-flag" aria-hidden>
-                  {countryCodeToFlag(countryCode || "GB")}
+                  {countryCodeToFlag(countryCode)}
                 </span>
                 {!isMobile && <span className="nav-geo-label">{countryName || "Detecting..."}</span>}
               </div>

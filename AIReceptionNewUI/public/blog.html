@@ -1,598 +1,596 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Blog | SmartConnect4u</title>
-    <style>
-      @import url("https://fonts.cdnfonts.com/css/product-sans");
-      :root {
-        color-scheme: dark;
-      }
-      * {
-        box-sizing: border-box;
-      }
-      body {
-        margin: 0;
-        font-family: "Product Sans", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
-        background: radial-gradient(circle at 18% 18%, rgba(123, 198, 255, 0.16), transparent 40%),
-          radial-gradient(circle at 82% 0%, rgba(124, 58, 237, 0.18), transparent 40%),
-          linear-gradient(140deg, #0a0c2f, #0f1238 45%, #0b0f1f 100%);
-        color: #e6ebff;
-      }
-      a {
-        color: #9fb6ff;
-        text-decoration: none;
-      }
-      a:hover {
-        color: #ffffff;
-      }
-      .screen-panel {
-        max-width: 1200px;
-        margin: 0 auto;
-        padding: 0 16px;
-        width: 100%;
-      }
-      .nav-card {
-        display: grid;
-        align-items: center;
-        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-        gap: 20px;
-        background: rgba(0, 0, 0, 0.4);
-        border: 1px solid rgba(255, 255, 255, 0.06);
-        border-radius: 0;
-        padding: 14px clamp(16px, 4vw, 48px);
-        box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
-        backdrop-filter: blur(10px);
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        transform: translateY(0);
-        width: auto;
-        max-width: none;
-        margin: 0;
-        z-index: 20;
-        transition: transform 200ms ease, opacity 200ms ease;
-        font-family: "Product Sans", "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI",
-          Roboto, "Helvetica Neue", Arial, sans-serif;
-      }
-      .nav-brand {
-        display: flex;
-        align-items: center;
-        justify-self: start;
-      }
-      .brand {
-        display: inline-flex;
-        align-items: center;
-        gap: 10px;
-        padding: 0;
-        background: transparent;
-        border: none;
-        color: #dbe7ff;
-        font-weight: 700;
-        letter-spacing: 0.04em;
-        cursor: pointer;
-        text-decoration: none;
-        font-family: inherit;
-      }
-      .brand-logo {
-        max-width: 170px;
-        max-height: 50px;
-        width: auto;
-        height: auto;
-        object-fit: contain;
-        border-radius: 0;
-      }
-      .nav-links {
-        display: flex;
-        gap: 28px;
-        flex-wrap: nowrap;
-        align-items: center;
-        justify-self: center;
-      }
-      .nav-link {
-        background: transparent;
-        color: #e6ebff;
-        font-weight: 600;
-        font-size: 14px;
-        border: none;
-        padding: 4px 0;
-        cursor: pointer;
-        transition: color 160ms ease, text-shadow 180ms ease;
-        text-decoration: none;
-      }
-      .nav-link:hover {
-        color: #ffffff;
-        text-shadow: 0 0 12px rgba(123, 198, 255, 0.7), 0 0 28px rgba(123, 198, 255, 0.32);
-      }
-      .nav-actions {
-        display: flex;
-        gap: 10px;
-        justify-self: end;
-      }
-      .nav-item-with-sub {
-        position: relative;
-        display: inline-flex;
-        flex-direction: column;
-        align-items: stretch;
-      }
-      .nav-submenu {
-        position: absolute;
-        top: 100%;
-        left: 50%;
-        transform: translateX(-50%);
-        display: none;
-        gap: 6px;
-        background:
-          radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.04), transparent 30%),
-          radial-gradient(circle at 80% 0%, rgba(123, 156, 255, 0.14), transparent 32%),
-          linear-gradient(180deg, #050915, #050814 55%, #040712);
-        border: 1px solid rgba(123, 198, 255, 0.38);
-        border-radius: 8px;
-        padding: 12px;
-        min-width: 240px;
-        margin-top: 10px;
-        box-shadow: 0 18px 36px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.05);
-        backdrop-filter: blur(14px);
-        z-index: 20;
-        color: #e6ecff;
-      }
-      .nav-item-with-sub:hover .nav-submenu,
-      .nav-item-with-sub:focus-within .nav-submenu {
-        display: grid;
-      }
-      .nav-subitem {
-        background: transparent;
-        color: #f8fbff;
-        border: 1px solid rgba(255, 255, 255, 0.14);
-        border-radius: 0;
-        padding: 8px 10px;
-        text-align: left;
-        cursor: pointer;
-        transition: background 140ms ease, transform 120ms ease, border-color 160ms ease;
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-        text-shadow: 0 1px 6px rgba(0, 0, 0, 0.4);
-        text-decoration: none;
-      }
-      .nav-subitem:hover {
-        background: rgba(123, 198, 255, 0.2);
-        border-color: rgba(123, 198, 255, 0.68);
-        transform: translateY(-1px);
-      }
-      .login-cta {
-        display: inline-flex;
-        align-items: center;
-        gap: 10px;
-        background: #4338ff;
-        color: #f7f7ff;
-        padding: 10px 14px;
-        border: 1px solid #4338ff;
-        border-radius: 0;
-        font-weight: 400;
-        letter-spacing: 0.02em;
-        cursor: pointer;
-        box-shadow: 0 10px 22px rgba(67, 56, 255, 0.22);
-        transition: transform 140ms ease, box-shadow 160ms ease, background 160ms ease;
-        width: auto;
-        justify-content: center;
-        text-decoration: none;
-      }
-      .login-cta:hover {
-        transform: translateY(-1px);
-        background: #ffffff;
-        color: #4338ff;
-        border: 1px solid #4338ff;
-        box-shadow: 0 12px 28px rgba(67, 56, 255, 0.25);
-      }
-      .page-shell {
-        padding-top: 140px;
-        padding-bottom: 64px;
-      }
-      .blog-layout {
-        display: grid;
-        grid-template-columns: minmax(200px, 240px) minmax(0, 1fr);
-        gap: 18px;
-        margin-top: 18px;
-      }
-      .blog-sidebar {
-        position: sticky;
-        top: 120px;
-        align-self: start;
-        background: rgba(9, 12, 30, 0.85);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 20px;
-        padding: 16px;
-        box-shadow: 0 16px 32px rgba(0, 0, 0, 0.25);
-      }
-      .sidebar-title {
-        margin: 0 0 10px;
-        font-size: 12px;
-        text-transform: uppercase;
-        letter-spacing: 0.2em;
-        color: #9fb6ff;
-      }
-      .sidebar-links {
-        list-style: none;
-        margin: 0;
-        padding: 0;
-        display: grid;
-        gap: 8px;
-      }
-      .sidebar-links a {
-        display: block;
-        padding: 8px 10px;
-        border-radius: 10px;
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        background: rgba(255, 255, 255, 0.04);
-        color: #dbe3ff;
-        font-size: 14px;
-      }
-      .sidebar-links a:hover {
-        border-color: rgba(123, 198, 255, 0.5);
-        background: rgba(123, 198, 255, 0.12);
-        color: #ffffff;
-      }
-      .sidebar-links a.active {
-        border-color: rgba(123, 198, 255, 0.8);
-        background: rgba(123, 198, 255, 0.2);
-        color: #ffffff;
-        box-shadow: 0 10px 22px rgba(67, 56, 255, 0.22);
-      }
-      .hero {
-        display: grid;
-        gap: 12px;
-        padding: clamp(18px, 4vw, 28px);
-        background: rgba(255, 255, 255, 0.03);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 24px;
-        box-shadow: 0 24px 48px rgba(0, 0, 0, 0.3);
-      }
-      .hero h1 {
-        margin: 0;
-        font-size: clamp(28px, 4vw, 34px);
-        color: #f6f7ff;
-      }
-      .hero p {
-        margin: 0;
-        color: #cfd7ff;
-        line-height: 1.6;
-      }
-      .grid {
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: 16px;
-        margin-top: 18px;
-      }
-      .card {
-        background: rgba(9, 12, 30, 0.8);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 20px;
-        padding: 16px;
-        display: grid;
-        gap: 10px;
-        box-shadow: 0 16px 32px rgba(0, 0, 0, 0.25);
-      }
-      .card h2 {
-        margin: 0;
-        font-size: 20px;
-        color: #f7f8ff;
-      }
-      .card p {
-        margin: 0;
-        color: #cfd7ff;
-        line-height: 1.6;
-      }
-      .steps {
-        margin: 0;
-        padding-left: 18px;
-        color: #dbe3ff;
-        display: grid;
-        gap: 6px;
-      }
-      .detail {
-        margin: 0;
-        color: #c3cdf2;
-        line-height: 1.7;
-      }
-      .subhead {
-        margin: 10px 0 4px;
-        font-size: 14px;
-        text-transform: uppercase;
-        letter-spacing: 0.14em;
-        color: #9fb6ff;
-      }
-      .tag {
-        display: inline-block;
-        padding: 6px 10px;
-        border-radius: 999px;
-        border: 1px solid rgba(148, 163, 255, 0.3);
-        background: rgba(36, 46, 92, 0.6);
-        font-size: 12px;
-        color: #c7d2fe;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-      }
-      .screenshot {
-        border-radius: 16px;
-        border: 1px dashed rgba(255, 255, 255, 0.18);
-        background: linear-gradient(135deg, rgba(124, 58, 237, 0.16), rgba(59, 130, 246, 0.12));
-        min-height: 140px;
-        display: grid;
-        place-items: center;
-        color: #e9edff;
-        font-size: 13px;
-        text-align: center;
-        padding: 12px;
-      }
-      @media (max-width: 780px) {
-        .nav-card {
-          grid-template-columns: 1fr;
-          row-gap: 12px;
-        }
-        .nav-links {
-          justify-self: start;
-          flex-wrap: wrap;
-        }
-        .nav-actions {
-          justify-self: start;
-        }
-        .page-shell {
-          padding-top: 170px;
-        }
-        .blog-layout {
-          grid-template-columns: 1fr;
-        }
-        .blog-sidebar {
-          position: static;
-        }
-      }
-    </style>
-  </head>
-  <body>
-    <header class="nav-card">
-      <div class="nav-brand">
-        <a class="brand" href="/">
-          <img class="brand-logo" src="/media/sc_logo_main.png" alt="SmartConnect4u logo" />
-        </a>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Guides — SmartConnect4u</title>
+<style>
+  @import url("https://fonts.cdnfonts.com/css/product-sans");
+
+  :root {
+    --bg: #060912;
+    --bg2: #0c1220;
+    --surface: #111827;
+    --surface2: #1a2438;
+    --surface3: #0f1c2e;
+    --border: rgba(99,179,237,0.1);
+    --border2: rgba(99,179,237,0.18);
+    --accent: #3b9eff;
+    --accent2: #00e5c0;
+    --accent3: #a78bfa;
+    --accent4: #f59e0b;
+    --accent5: #f472b6;
+    --text: #e8edf5;
+    --muted: #7a8ba8;
+    --dim: #3d4f6a;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Product Sans", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.7;
+    overflow-x: hidden;
+  }
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(59,158,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(59,158,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none; z-index: 0;
+  }
+  .glow-orb { position: fixed; border-radius: 50%; filter: blur(120px); pointer-events: none; z-index: 0; }
+  .g1 { width:700px; height:500px; top:-150px; left:-200px; background: radial-gradient(ellipse, rgba(59,158,255,0.13), transparent 70%); }
+  .g2 { width:500px; height:500px; top:35%; right:-200px; background: radial-gradient(ellipse, rgba(0,229,192,0.09), transparent 70%); }
+  .g3 { width:400px; height:400px; bottom:10%; left:20%; background: radial-gradient(ellipse, rgba(167,139,250,0.08), transparent 70%); }
+
+  /* NAV */
+  .nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    background: rgba(0, 0, 0, 0.4);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(10px);
+    padding: 14px clamp(16px, 4vw, 48px);
+  }
+  .nav-inner {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    min-height: 50px;
+  }
+  .nav-logo {
+    display: inline-flex;
+    align-items: center;
+    width: 250px;
+    height: 50px;
+    text-decoration: none;
+  }
+  .nav-logo img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+
+  /* HERO */
+  .hero {
+    position:relative; z-index:1;
+    max-width:1200px; margin:0 auto;
+    padding: 130px 40px 0;
+    display:grid; grid-template-columns:1fr 360px; gap:60px; align-items:end;
+  }
+  @media(max-width:900px){ .hero{grid-template-columns:1fr;} .hero-aside{display:none;} }
+  .hero-eyebrow {
+    display:inline-flex; align-items:center; gap:8px;
+    font-family:"Product Sans","SF Pro Text",-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;
+    font-size:11px; letter-spacing:2px; text-transform:uppercase;
+    color:var(--accent2); background:rgba(0,229,192,0.08);
+    border:1px solid rgba(0,229,192,0.2);
+    padding:6px 14px; border-radius:4px; margin-bottom:24px;
+  }
+  .hero h1 {
+    font-family:"Product Sans","SF Pro Text",-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif; font-weight:900;
+    font-size: clamp(40px,5.5vw,68px);
+    line-height:1.06; letter-spacing:-1.5px; color:var(--text); margin-bottom:20px;
+  }
+  .hero h1 span {
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
+  }
+  .hero-desc { font-size:16.5px; color:var(--muted); max-width:500px; line-height:1.75; margin-bottom:36px; }
+  .hero-stats { display:flex; align-items:center; gap:32px; }
+  .stat-num { font-family:"Product Sans","SF Pro Text",-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif; font-weight:800; font-size:28px; color:var(--text); display:block; }
+  .stat-label { font-size:12px; color:var(--muted); letter-spacing:0.5px; }
+  .stat-sep { width:1px; height:36px; background:var(--dim); }
+
+  .aside-card { background:var(--surface); border:1px solid var(--border2); border-radius:20px; padding:24px; box-shadow:0 4px 40px rgba(0,0,0,0.4); }
+  .aside-title { font-family:"Product Sans","SF Pro Text",-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif; font-weight:700; font-size:12px; letter-spacing:1.5px; text-transform:uppercase; color:var(--dim); margin-bottom:14px; }
+  .ql { list-style:none; }
+  .ql li { margin-bottom:3px; }
+  .ql a {
+    display:flex; align-items:center; gap:10px;
+    padding:9px 12px; border-radius:10px;
+    text-decoration:none; color:var(--muted); font-size:13.5px;
+    border:1px solid transparent; transition:all 0.18s;
+  }
+  .ql a:hover { background:var(--surface2); border-color:var(--border2); color:var(--accent); }
+  .ql-ic { width:28px; height:28px; border-radius:8px; background:var(--surface2); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:13px; flex-shrink:0; }
+  .ql-arr { margin-left:auto; font-size:12px; color:var(--dim); }
+
+  /* DIVIDER */
+  .divbar { max-width:1200px; margin:56px auto 0; padding:0 40px; display:flex; align-items:center; gap:16px; position:relative; z-index:1; }
+  .divbar::before,.divbar::after { content:''; flex:1; height:1px; background:var(--border); }
+  .divbar-txt { font-family:"Product Sans","SF Pro Text",-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif; font-size:10px; letter-spacing:2px; text-transform:uppercase; color:var(--dim); white-space:nowrap; }
+
+  /* TABS */
+  .tabs-wrap { max-width:1200px; margin:0 auto; padding:40px 40px 0; position:relative; z-index:1; }
+  .tab-bar { display:flex; gap:4px; flex-wrap:wrap; background:var(--surface); border:1px solid var(--border2); border-radius:16px; padding:6px; }
+  .tab-btn {
+    display:flex; align-items:center; gap:8px;
+    padding:10px 18px; border-radius:10px; border:none;
+    background:transparent; color:var(--muted);
+    font-family:"Product Sans","SF Pro Text",-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif; font-size:13.5px; font-weight:500;
+    cursor:pointer; white-space:nowrap; transition:all 0.2s;
+  }
+  .tab-btn:hover { color:var(--text); background:var(--surface2); }
+  .tab-btn.active {
+    background: linear-gradient(135deg, rgba(59,158,255,0.15), rgba(0,229,192,0.08));
+    color:var(--accent); border:1px solid rgba(59,158,255,0.25);
+    box-shadow:0 2px 16px rgba(59,158,255,0.1);
+  }
+
+  /* PANELS */
+  .panels-wrap { max-width:1200px; margin:0 auto; padding:0 40px 80px; position:relative; z-index:1; }
+  .tool-panel { display:none; animation:panelIn 0.4s ease; }
+  .tool-panel.active { display:block; }
+  @keyframes panelIn { from{opacity:0;transform:translateY(14px);} to{opacity:1;transform:translateY(0);} }
+
+  /* TOOL STRIP */
+  .tool-strip {
+    margin-top:36px; border-radius:24px; overflow:hidden;
+    position:relative; padding:48px 52px;
+    display:grid; grid-template-columns:1fr auto; gap:40px; align-items:center;
+    border:1px solid transparent;
+  }
+  .tool-strip::before { content:''; position:absolute; inset:0; z-index:0; border-radius:24px; }
+  .tool-strip > * { position:relative; z-index:1; }
+
+  .ts-blue   { background:linear-gradient(135deg,#060e1f,#0d1f3a); border-color:rgba(59,158,255,0.25); }
+  .ts-blue::before   { background:radial-gradient(ellipse at 15% 50%, rgba(59,158,255,0.14),transparent 60%); }
+  .ts-teal   { background:linear-gradient(135deg,#061a18,#0d2e2a); border-color:rgba(0,229,192,0.25); }
+  .ts-teal::before   { background:radial-gradient(ellipse at 15% 50%, rgba(0,229,192,0.12),transparent 60%); }
+  .ts-purple { background:linear-gradient(135deg,#0e0a1e,#1c1035); border-color:rgba(167,139,250,0.25); }
+  .ts-purple::before { background:radial-gradient(ellipse at 15% 50%, rgba(167,139,250,0.12),transparent 60%); }
+  .ts-amber  { background:linear-gradient(135deg,#160d03,#2a1a06); border-color:rgba(245,158,11,0.25); }
+  .ts-amber::before  { background:radial-gradient(ellipse at 15% 50%, rgba(245,158,11,0.12),transparent 60%); }
+  .ts-pink   { background:linear-gradient(135deg,#160610,#2a0d20); border-color:rgba(244,114,182,0.25); }
+  .ts-pink::before   { background:radial-gradient(ellipse at 15% 50%, rgba(244,114,182,0.12),transparent 60%); }
+  .ts-green  { background:linear-gradient(135deg,#041208,#0b2212); border-color:rgba(52,211,153,0.25); }
+  .ts-green::before  { background:radial-gradient(ellipse at 15% 50%, rgba(52,211,153,0.12),transparent 60%); }
+
+  .strip-tag {
+    display:inline-flex; align-items:center; gap:6px;
+    font-family:"Product Sans","SF Pro Text",-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif; font-size:10px; letter-spacing:2px; text-transform:uppercase;
+    padding:5px 12px; border-radius:4px; margin-bottom:14px;
+  }
+  .ts-blue   .strip-tag { background:rgba(59,158,255,0.12); color:#7bb8f5; border:1px solid rgba(59,158,255,0.2); }
+  .ts-teal   .strip-tag { background:rgba(0,229,192,0.1);  color:#4dd9c4; border:1px solid rgba(0,229,192,0.2); }
+  .ts-purple .strip-tag { background:rgba(167,139,250,0.1);color:#c09cf5; border:1px solid rgba(167,139,250,0.2); }
+  .ts-amber  .strip-tag { background:rgba(245,158,11,0.1); color:#fbbf24; border:1px solid rgba(245,158,11,0.2); }
+  .ts-pink   .strip-tag { background:rgba(244,114,182,0.1);color:#f9a8d4; border:1px solid rgba(244,114,182,0.2); }
+  .ts-green  .strip-tag { background:rgba(52,211,153,0.1); color:#6ee7b7; border:1px solid rgba(52,211,153,0.2); }
+
+  .tool-strip h2 { font-family:"Product Sans","SF Pro Text",-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif; font-weight:900; font-size:clamp(28px,3.5vw,44px); color:var(--text); letter-spacing:-0.5px; line-height:1.1; margin-bottom:12px; }
+  .tool-strip p  { color:var(--muted); font-size:15px; max-width:520px; line-height:1.75; }
+  .strip-icon-wrap { text-align:center; }
+  .strip-big-icon { font-size:72px; line-height:1; display:block; filter:drop-shadow(0 8px 24px rgba(0,0,0,0.5)); }
+  .strip-sub-label { font-family:"Product Sans","SF Pro Text",-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif; font-size:10px; color:var(--dim); letter-spacing:2px; margin-top:10px; text-transform:uppercase; }
+  @media(max-width:700px){ .tool-strip{grid-template-columns:1fr;padding:32px 28px;} .strip-icon-wrap{display:none;} }
+
+  /* TWO-COL */
+  .two-col { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-top:24px; }
+  @media(max-width:760px){ .two-col{grid-template-columns:1fr;} }
+
+  /* CARD */
+  .card { background:var(--surface); border:1px solid var(--border2); border-radius:20px; overflow:hidden; box-shadow:0 4px 32px rgba(0,0,0,0.3); transition:border-color 0.2s; }
+  .card:hover { border-color:rgba(99,179,237,0.28); }
+  .card-head { padding:22px 26px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:14px; }
+  .ch-icon { width:38px; height:38px; border-radius:11px; display:flex; align-items:center; justify-content:center; font-size:17px; flex-shrink:0; }
+  .ch-blue   { background:rgba(59,158,255,0.12); border:1px solid rgba(59,158,255,0.2); }
+  .ch-teal   { background:rgba(0,229,192,0.1);   border:1px solid rgba(0,229,192,0.18); }
+  .ch-purple { background:rgba(167,139,250,0.1);  border:1px solid rgba(167,139,250,0.18); }
+  .ch-amber  { background:rgba(245,158,11,0.1);   border:1px solid rgba(245,158,11,0.18); }
+  .ch-pink   { background:rgba(244,114,182,0.1);  border:1px solid rgba(244,114,182,0.18); }
+  .ch-green  { background:rgba(52,211,153,0.1);   border:1px solid rgba(52,211,153,0.18); }
+  .card-head h3 { font-family:"Product Sans","SF Pro Text",-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif; font-weight:700; font-size:15px; color:var(--text); }
+  .card-head p  { font-size:12px; color:var(--dim); margin-top:2px; }
+
+  /* STEPS */
+  .steps-body { padding:18px 24px 22px; list-style:none; }
+  .step-item { display:grid; grid-template-columns:30px 1fr; gap:14px; align-items:start; padding:12px 0; border-bottom:1px solid var(--border); }
+  .step-item:last-child { border-bottom:none; }
+  .step-num {
+    width:28px; height:28px; border-radius:8px;
+    background:var(--surface2); border:1px solid var(--border2);
+    display:flex; align-items:center; justify-content:center;
+    font-family:"Product Sans","SF Pro Text",-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif; font-size:10px; font-weight:500;
+    color:var(--accent); flex-shrink:0; margin-top:3px;
+  }
+  .step-title { font-size:13.5px; font-weight:600; color:var(--text); margin-bottom:3px; }
+  .step-desc  { font-size:12.5px; color:var(--muted); line-height:1.55; }
+  .step-path {
+    display:inline-flex; align-items:center; gap:4px; margin-top:6px;
+    font-family:"Product Sans","SF Pro Text",-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif; font-size:10.5px;
+    background:var(--surface2); border:1px solid var(--border2);
+    color:var(--accent2); padding:3px 9px; border-radius:5px;
+  }
+  .card-foot { padding:14px 24px; border-top:1px solid var(--border); }
+  .ss-tag {
+    display:inline-flex; align-items:center; gap:7px;
+    font-family:"Product Sans","SF Pro Text",-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif; font-size:11px;
+    color:var(--dim); background:var(--surface2);
+    border:1px dashed var(--border2); padding:6px 14px; border-radius:99px;
+  }
+
+  /* TIPS */
+  .tips-card { background:var(--surface3); }
+  .tips-body { padding:18px 24px 22px; list-style:none; }
+  .tip-item { display:flex; align-items:flex-start; gap:12px; padding:11px 0; border-bottom:1px solid var(--border); font-size:13.5px; color:var(--muted); line-height:1.65; }
+  .tip-item:last-child { border-bottom:none; }
+  .tip-dot { width:22px; height:22px; border-radius:7px; background:var(--surface2); border:1px solid var(--border2); display:flex; align-items:center; justify-content:center; font-size:10px; color:var(--accent2); flex-shrink:0; margin-top:2px; }
+  .tip-item strong { color:var(--text); }
+
+  /* BEST PRACTICES */
+  .bp-card { margin-top:24px; background:var(--surface); border:1px solid var(--border2); border-radius:20px; overflow:hidden; box-shadow:0 4px 32px rgba(0,0,0,0.3); }
+  .bp-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); }
+  .bp-cell { padding:28px; border-right:1px solid var(--border); border-bottom:1px solid var(--border); transition:background 0.2s; }
+  .bp-cell:hover { background:var(--surface2); }
+  .bp-num { font-family:"Product Sans","SF Pro Text",-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif; font-size:10px; color:var(--dim); letter-spacing:2px; margin-bottom:12px; }
+  .bp-cell h4 { font-family:"Product Sans","SF Pro Text",-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif; font-weight:700; font-size:15px; color:var(--text); margin-bottom:8px; }
+  .bp-cell p  { font-size:13px; color:var(--muted); line-height:1.65; }
+
+  /* CHECKLIST */
+  .cklist-wrap { padding:28px 28px 30px; }
+  .cklist-wrap h3 { font-family:"Product Sans","SF Pro Text",-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif; font-weight:700; font-size:17px; color:var(--text); margin-bottom:6px; }
+  .cklist-sub { font-size:13px; color:var(--muted); margin-bottom:20px; }
+  .cklist { list-style:none; }
+  .ci { display:flex; align-items:flex-start; gap:12px; padding:12px 0; border-bottom:1px solid var(--border); font-size:14px; color:var(--text); cursor:pointer; transition:color 0.2s; user-select:none; }
+  .ci:last-child { border-bottom:none; }
+  .ci.checked { color:var(--dim); text-decoration:line-through; }
+  .cbox { width:22px; height:22px; border-radius:7px; border:1.5px solid var(--border2); background:var(--surface2); display:flex; align-items:center; justify-content:center; font-size:11px; flex-shrink:0; margin-top:1px; transition:all 0.2s; }
+  .ci.checked .cbox { background:var(--accent2); border-color:var(--accent2); color:#040f0d; }
+
+  /* HIGHLIGHT */
+  .hbox { background:linear-gradient(135deg,rgba(59,158,255,0.06),rgba(0,229,192,0.04)); border:1px solid rgba(59,158,255,0.18); border-radius:14px; padding:18px 22px; margin-top:20px; position:relative; overflow:hidden; }
+  .hbox::before { content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background:linear-gradient(180deg,var(--accent),var(--accent2)); }
+  .hbox p { color:#a8c4e0; font-size:13.5px; line-height:1.7; }
+
+  /* FOOTER */
+  .guide-footer { position:relative; z-index:1; max-width:1200px; margin:0 auto; padding:28px 40px; border-top:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px; font-size:12.5px; color:var(--dim); }
+  .footer-logo { display:flex; align-items:center; gap:8px; font-family:"Product Sans","SF Pro Text",-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif; font-weight:800; font-size:15px; color:var(--text); }
+  .footer-dot { width:8px; height:8px; border-radius:50%; background:linear-gradient(135deg,var(--accent),var(--accent2)); }
+  .footer-links { display:flex; gap:20px; }
+  .footer-links a { color:var(--dim); text-decoration:none; transition:color 0.2s; }
+  .footer-links a:hover { color:var(--accent); }
+
+  @media(max-width:600px){
+    .nav,.hero,.tabs-wrap,.panels-wrap,.guide-footer,.divbar { padding-left:20px; padding-right:20px; }
+    .hero { padding-top: 110px; }
+    .tool-strip { padding:28px 22px; }
+    .steps-body,.tips-body,.card-head,.card-foot,.cklist-wrap,.bp-cell { padding-left:18px; padding-right:18px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="glow-orb g1"></div>
+<div class="glow-orb g2"></div>
+<div class="glow-orb g3"></div>
+
+<!-- NAV -->
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="/" class="nav-logo" aria-label="Go to home">
+      <img src="/media/sc_logo_main.png" alt="SmartConnect4u logo">
+    </a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div>
+    <div class="hero-eyebrow">✦ Quick-Start Guides</div>
+    <h1>Set up in <span>minutes,</span><br>stay in control.</h1>
+    <p class="hero-desc">Step-by-step recipes for every AI tool — screenshots show exactly where to click. Automate the volume, keep humans in the loop for what matters.</p>
+    <div class="hero-stats">
+      <div><span class="stat-num">5</span><span class="stat-label">AI Tools</span></div>
+      <div class="stat-sep"></div>
+      <div><span class="stat-num">24/7</span><span class="stat-label">Automation</span></div>
+      <div class="stat-sep"></div>
+      <div><span class="stat-num">&lt;10m</span><span class="stat-label">Setup Time</span></div>
+    </div>
+  </div>
+  <div class="hero-aside">
+    <div class="aside-card">
+      <div class="aside-title">⚡ Quick Jump</div>
+      <ul class="ql">
+        <li><a href="#" onclick="switchTab('receptionist');return false;"><div class="ql-ic">🎙️</div>AI Receptionist<span class="ql-arr">›</span></a></li>
+        <li><a href="#" onclick="switchTab('email');return false;"><div class="ql-ic">✉️</div>Email Manager<span class="ql-arr">›</span></a></li>
+        <li><a href="#" onclick="switchTab('social');return false;"><div class="ql-ic">📱</div>Social Manager<span class="ql-arr">›</span></a></li>
+        <li><a href="#" onclick="switchTab('crm');return false;"><div class="ql-ic">🎯</div>CRM & Leads<span class="ql-arr">›</span></a></li>
+        <li><a href="#" onclick="switchTab('tasks');return false;"><div class="ql-ic">✅</div>Task Manager<span class="ql-arr">›</span></a></li>
+        <li><a href="#" onclick="switchTab('best');return false;"><div class="ql-ic">🏆</div>Best Practices<span class="ql-arr">›</span></a></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<div class="divbar"><span class="divbar-txt">Select a tool below</span></div>
+
+<!-- TABS -->
+<div class="tabs-wrap">
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="receptionist" onclick="switchTab('receptionist')">🎙️ AI Receptionist</button>
+    <button class="tab-btn" data-tab="email"   onclick="switchTab('email')">✉️ Email Manager</button>
+    <button class="tab-btn" data-tab="social"  onclick="switchTab('social')">📱 Social Manager</button>
+    <button class="tab-btn" data-tab="crm"     onclick="switchTab('crm')">🎯 CRM & Leads</button>
+    <button class="tab-btn" data-tab="tasks"   onclick="switchTab('tasks')">✅ Task Manager</button>
+    <button class="tab-btn" data-tab="best"    onclick="switchTab('best')">🏆 Best Practices</button>
+  </div>
+</div>
+
+<!-- PANELS -->
+<div class="panels-wrap">
+
+  <!-- RECEPTIONIST -->
+  <div class="tool-panel active" id="panel-receptionist">
+    <div class="tool-strip ts-blue">
+      <div>
+        <div class="strip-tag">✦ S4U-v3 Voice Concierge</div>
+        <h2>AI Receptionist</h2>
+        <p>Launch a 24/7 voice concierge that books meetings, captures leads, and routes VIP callers — all while keeping humans in the loop. S4U-v3 follows your policies, speaks in your brand voice, and logs every call.</p>
       </div>
-      <div class="nav-links">
-        <a class="nav-link" href="/#capabilities">Our purpose</a>
-        <a class="nav-link" href="/#performance">What we do</a>
-        <div class="nav-item-with-sub">
-          <button class="nav-link" type="button">Services</button>
-          <div class="nav-submenu">
-            <a class="nav-subitem" href="/#capabilities">AI Receptionist</a>
-            <a class="nav-subitem" href="/#capabilities">AI Social Media Manager</a>
-            <a class="nav-subitem" href="/#capabilities">Email Manager</a>
-            <a class="nav-subitem" href="/#capabilities">CRM &amp; Lead Manager</a>
-          </div>
-        </div>
-        <div class="nav-item-with-sub">
-          <button class="nav-link" type="button">Legal</button>
-          <div class="nav-submenu">
-            <a class="nav-subitem" href="/terms.html">Terms &amp; Conditions</a>
-            <a class="nav-subitem" href="/privacy.html">Privacy Policy</a>
-          </div>
-        </div>
-        <a class="nav-link" href="/#testimonials">Testimonials</a>
-        <a class="nav-link" href="/contact.html">Contact</a>
-        <a class="nav-link" href="/blog.html">Blog</a>
+      <div class="strip-icon-wrap"><span class="strip-big-icon">🎙️</span><div class="strip-sub-label">Always On</div></div>
+    </div>
+    <div class="two-col">
+      <div class="card">
+        <div class="card-head"><div class="ch-icon ch-blue">📋</div><div><h3>Setup Steps</h3><p>5 steps · ~8 minutes</p></div></div>
+        <ul class="steps-body">
+          <li class="step-item"><div class="step-num">01</div><div><div class="step-title">Connect Your Calendar</div><div class="step-desc">Link Google or Outlook Calendar.</div><span class="step-path">Dashboard → Settings → Calendar</span></div></li>
+          <li class="step-item"><div class="step-num">02</div><div><div class="step-title">Choose Voice & Greeting</div><div class="step-desc">Pick a voice persona and write your opening script.</div><span class="step-path">Dashboard → Agents → Voice & Greeting</span></div></li>
+          <li class="step-item"><div class="step-num">03</div><div><div class="step-title">Set Escalation Rules</div><div class="step-desc">Define when calls should hand off to a human.</div><span class="step-path">Dashboard → Agents → Escalation</span></div></li>
+          <li class="step-item"><div class="step-num">04</div><div><div class="step-title">Assign a Number & Test</div><div class="step-desc">Purchase or assign a number, then place a live test call.</div><span class="step-path">Dashboard → Numbers</span></div></li>
+          <li class="step-item"><div class="step-num">05</div><div><div class="step-title">Monitor & Refine</div><div class="step-desc">Review transcripts and update FAQs anytime.</div><span class="step-path">Dashboard → Calls</span></div></li>
+        </ul>
+        <div class="card-foot"><span class="ss-tag">📸 Dashboard → Agents → Voice & Greeting</span></div>
       </div>
-      <div class="nav-actions">
-        <button class="login-cta live-chat-launcher" type="button">
-          <span aria-hidden>💬</span>
-          <span>Live Chat</span>
-        </button>
-        <a class="login-cta" href="/#login">
-          <span aria-hidden>→</span>
-          <span>Login</span>
-        </a>
+      <div class="card tips-card">
+        <div class="card-head"><div class="ch-icon ch-teal">💡</div><div><h3>Pro Tips</h3><p>From power users</p></div></div>
+        <ul class="tips-body">
+          <li class="tip-item"><div class="tip-dot">→</div>Start with a greeting under 15 seconds, then add 5–10 FAQs: hours, pricing, and cancellation policy first.</li>
+          <li class="tip-item"><div class="tip-dot">→</div>Add VIP keywords like <strong>"urgent"</strong>, <strong>"executive"</strong>, <strong>"legal"</strong> to escalation rules so sensitive calls route to a human instantly.</li>
+          <li class="tip-item"><div class="tip-dot">→</div>Run a full end-to-end test with a teammate before going live — check tone, timing, and handoff accuracy.</li>
+          <li class="tip-item"><div class="tip-dot">→</div>Review Calls weekly. The transcript view shows missed FAQs you can add back in minutes.</li>
+        </ul>
       </div>
-    </header>
+    </div>
+  </div>
 
-    <main class="screen-panel page-shell">
-      <section class="hero">
-        <span class="tag">Guides</span>
-        <h1>How to get the most from SmartConnect4u</h1>
-        <p>
-          Quick-start recipes for our AI tools—set up in minutes, stay in control, and keep humans in the loop.
-          Screenshots show where to click so you can move fast.
-        </p>
-      </section>
+  <!-- EMAIL -->
+  <div class="tool-panel" id="panel-email">
+    <div class="tool-strip ts-teal">
+      <div>
+        <div class="strip-tag">✦ Inbox Automation</div>
+        <h2>Email Manager</h2>
+        <p>Automate triage and draft replies while keeping final approval in your hands. Use labels, SLAs, and escalation rules to keep urgent threads always prioritized.</p>
+      </div>
+      <div class="strip-icon-wrap"><span class="strip-big-icon">✉️</span><div class="strip-sub-label">Smart Triage</div></div>
+    </div>
+    <div class="two-col">
+      <div class="card">
+        <div class="card-head"><div class="ch-icon ch-teal">📋</div><div><h3>Setup Steps</h3><p>5 steps · ~6 minutes</p></div></div>
+        <ul class="steps-body">
+          <li class="step-item"><div class="step-num">01</div><div><div class="step-title">Connect Gmail or Outlook</div><div class="step-desc">Authorise your inbox in one click.</div><span class="step-path">Dashboard → Email → Connect</span></div></li>
+          <li class="step-item"><div class="step-num">02</div><div><div class="step-title">Set Labels & Review Mode</div><div class="step-desc">Choose folders to watch; pick auto-draft vs manual review.</div><span class="step-path">Email → Rules</span></div></li>
+          <li class="step-item"><div class="step-num">03</div><div><div class="step-title">Define Reply Tone</div><div class="step-desc">Set escalation rules for sensitive threads like billing or legal.</div><span class="step-path">Email → Rules → Tone</span></div></li>
+          <li class="step-item"><div class="step-num">04</div><div><div class="step-title">Use Suggest Reply</div><div class="step-desc">Approve AI drafts directly from the inbox, then send.</div><span class="step-path">Inbox → Suggest Reply</span></div></li>
+          <li class="step-item"><div class="step-num">05</div><div><div class="step-title">Review Analytics</div><div class="step-desc">Track response times, volume, and SLA performance.</div><span class="step-path">Dashboard → Email → Insights</span></div></li>
+        </ul>
+        <div class="card-foot"><span class="ss-tag">📸 Email → Connect & Rules</span></div>
+      </div>
+      <div class="card tips-card">
+        <div class="card-head"><div class="ch-icon ch-teal">💡</div><div><h3>Pro Tips</h3><p>From power users</p></div></div>
+        <ul class="tips-body">
+          <li class="tip-item"><div class="tip-dot">→</div>Turn on <strong>manual review</strong> for billing, legal, or refund keywords before switching to auto-send mode.</li>
+          <li class="tip-item"><div class="tip-dot">→</div>Build canned templates for your top 5 request types, then let S4U-v3 adapt the tone per customer context.</li>
+          <li class="tip-item"><div class="tip-dot">→</div>Start in review mode for 2 weeks. Graduate to auto-send only once you consistently trust the draft quality.</li>
+          <li class="tip-item"><div class="tip-dot">→</div>Set SLA alerts so overdue threads surface before customers ever notice a delay.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
 
-      <section class="blog-layout">
-        <aside class="blog-sidebar">
-          <p class="sidebar-title">Quick menu</p>
-          <ul class="sidebar-links">
-            <li><a href="#receptionist" class="sidebar-link">AI Receptionist</a></li>
-            <li><a href="#email-manager" class="sidebar-link">Email Manager</a></li>
-            <li><a href="#social-manager" class="sidebar-link">Social Manager</a></li>
-            <li><a href="#crm-lead" class="sidebar-link">CRM &amp; Lead Manager</a></li>
-            <li><a href="#task-manager" class="sidebar-link">Task Manager</a></li>
-            <li><a href="#best-practices" class="sidebar-link">Best practices</a></li>
-          </ul>
-        </aside>
+  <!-- SOCIAL -->
+  <div class="tool-panel" id="panel-social">
+    <div class="tool-strip ts-purple">
+      <div>
+        <div class="strip-tag">✦ Content Scheduling</div>
+        <h2>AI Social Manager</h2>
+        <p>Keep your calendar full with on-brand posts, scheduled and ready to publish. Drafts align with your tone, highlight your services, and include calls-to-action that drive real inquiries.</p>
+      </div>
+      <div class="strip-icon-wrap"><span class="strip-big-icon">📱</span><div class="strip-sub-label">On-Brand</div></div>
+    </div>
+    <div class="two-col">
+      <div class="card">
+        <div class="card-head"><div class="ch-icon ch-purple">📋</div><div><h3>Setup Steps</h3><p>5 steps · ~7 minutes</p></div></div>
+        <ul class="steps-body">
+          <li class="step-item"><div class="step-num">01</div><div><div class="step-title">Connect Channels</div><div class="step-desc">Link Meta and LinkedIn accounts.</div><span class="step-path">Dashboard → Social → Connections</span></div></li>
+          <li class="step-item"><div class="step-num">02</div><div><div class="step-title">Set Voice & Cadence</div><div class="step-desc">Define your tone, topics, and posting frequency.</div><span class="step-path">Social → Strategy</span></div></li>
+          <li class="step-item"><div class="step-num">03</div><div><div class="step-title">Generate & Edit Drafts</div><div class="step-desc">Generate a week of posts, then tweak headlines and captions.</div><span class="step-path">Social → Drafts</span></div></li>
+          <li class="step-item"><div class="step-num">04</div><div><div class="step-title">Schedule & Auto-Respond</div><div class="step-desc">Schedule posts and enable DM auto-responses for FAQs.</div><span class="step-path">Social → Schedule</span></div></li>
+          <li class="step-item"><div class="step-num">05</div><div><div class="step-title">Track Performance</div><div class="step-desc">Monitor reach, engagement, and inquiry volume.</div><span class="step-path">Social → Insights</span></div></li>
+        </ul>
+        <div class="card-foot"><span class="ss-tag">📸 Social → Drafts & Schedule</span></div>
+      </div>
+      <div class="card tips-card">
+        <div class="card-head"><div class="ch-icon ch-purple">💡</div><div><h3>Pro Tips</h3><p>From power users</p></div></div>
+        <ul class="tips-body">
+          <li class="tip-item"><div class="tip-dot">→</div>Start with a <strong>3-post cadence</strong> per week. Consistency beats volume every time when building an audience.</li>
+          <li class="tip-item"><div class="tip-dot">→</div>Mix content types: <strong>how-to</strong>, <strong>customer story</strong>, and <strong>offer</strong> — one of each per week drives the best engagement.</li>
+          <li class="tip-item"><div class="tip-dot">→</div>Use auto-respond for FAQs, but route sales inquiries to a human with a warm handoff message.</li>
+          <li class="tip-item"><div class="tip-dot">→</div>Check Insights monthly — low-performing post types reveal what to cut from your content mix.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
 
-        <div class="grid">
-          <article class="card" id="receptionist">
-          <h2>AI Receptionist (S4U-v3 voice concierge)</h2>
-          <p>
-            Launch a 24/7 voice concierge that books meetings, captures leads, and routes VIP callers while keeping
-            humans in the loop. S4U-v3 follows your policies, speaks in your brand voice, and logs every call.
-          </p>
-          <p class="subhead">Setup steps</p>
-          <ol class="steps">
-            <li>Connect Google or Outlook Calendar from Dashboard → Settings → Calendar.</li>
-            <li>Pick a voice and greeting in Dashboard → Agents → Voice &amp; Greeting.</li>
-            <li>Set escalation rules (when to hand off to humans) in Dashboard → Agents → Escalation.</li>
-            <li>Assign or buy a number in Dashboard → Numbers and test a live call.</li>
-            <li>Monitor transcripts in Dashboard → Calls; edit FAQs anytime.</li>
-          </ol>
-          <p class="subhead">Pro tips</p>
-          <p class="detail">
-            Start with a short greeting, then add 5–10 FAQs (hours, pricing, cancellation policy). Add VIP keywords
-            (e.g., “urgent”, “executive”, “legal”) to your escalation rules so sensitive calls route to a human.
-          </p>
-          <div class="screenshot">Screenshot: Dashboard → Agents → Voice &amp; Greeting</div>
-        </article>
+  <!-- CRM -->
+  <div class="tool-panel" id="panel-crm">
+    <div class="tool-strip ts-amber">
+      <div>
+        <div class="strip-tag">✦ Lead Intelligence</div>
+        <h2>CRM & Lead Manager</h2>
+        <p>Capture, score, and route leads automatically so sales always sees the best opportunities first. Define scoring rules by intent, budget, or channel and send VIPs to your top reps instantly.</p>
+      </div>
+      <div class="strip-icon-wrap"><span class="strip-big-icon">🎯</span><div class="strip-sub-label">Auto-Score</div></div>
+    </div>
+    <div class="two-col">
+      <div class="card">
+        <div class="card-head"><div class="ch-icon ch-amber">📋</div><div><h3>Setup Steps</h3><p>5 steps · ~9 minutes</p></div></div>
+        <ul class="steps-body">
+          <li class="step-item"><div class="step-num">01</div><div><div class="step-title">Connect CRM or Import</div><div class="step-desc">Link your existing CRM or upload a CSV to get started.</div><span class="step-path">Dashboard → CRM</span></div></li>
+          <li class="step-item"><div class="step-num">02</div><div><div class="step-title">Set Scoring Rules</div><div class="step-desc">Define scores by budget, intent signals, and source channel.</div><span class="step-path">CRM → Scoring</span></div></li>
+          <li class="step-item"><div class="step-num">03</div><div><div class="step-title">Auto-Assign & Set SLAs</div><div class="step-desc">Route leads by territory or vertical; define response time SLAs.</div><span class="step-path">CRM → Routing</span></div></li>
+          <li class="step-item"><div class="step-num">04</div><div><div class="step-title">Enable High-Intent Alerts</div><div class="step-desc">Get instant email or SMS notifications when a hot lead arrives.</div><span class="step-path">CRM → Notifications</span></div></li>
+          <li class="step-item"><div class="step-num">05</div><div><div class="step-title">Review Pipeline Health</div><div class="step-desc">Monitor conversion rates, response times, and source quality.</div><span class="step-path">CRM → Overview</span></div></li>
+        </ul>
+        <div class="card-foot"><span class="ss-tag">📸 CRM → Scoring & Routing</span></div>
+      </div>
+      <div class="card tips-card">
+        <div class="card-head"><div class="ch-icon ch-amber">💡</div><div><h3>Pro Tips</h3><p>From power users</p></div></div>
+        <ul class="tips-body">
+          <li class="tip-item"><div class="tip-dot">→</div>Set a <strong>hot lead threshold</strong> (e.g. score ≥ 80) to trigger instant SMS alerts to the assigned owner.</li>
+          <li class="tip-item"><div class="tip-dot">→</div>Log every call and email on the lead record — response time visibility keeps the whole team accountable.</li>
+          <li class="tip-item"><div class="tip-dot">→</div>Review low-scoring leads monthly — scoring rules need updating as your ideal customer profile evolves.</li>
+          <li class="tip-item"><div class="tip-dot">→</div>Use territory routing when you have reps in multiple regions to prevent ownership confusion on inbound leads.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
 
-          <article class="card" id="email-manager">
-          <h2>Email Manager</h2>
-          <p>
-            Automate triage and draft replies while keeping final approval in your hands. Use labels, SLAs, and
-            escalation rules to keep urgent threads prioritized.
-          </p>
-          <p class="subhead">Setup steps</p>
-          <ol class="steps">
-            <li>Connect Gmail/Outlook in Dashboard → Email → Connect.</li>
-            <li>Set labels or folders to watch; choose auto-draft vs manual review.</li>
-            <li>Define reply tone and escalation rules for sensitive threads.</li>
-            <li>Use “Suggest reply” in the inbox to approve and send.</li>
-            <li>Review analytics in Dashboard → Email → Insights.</li>
-          </ol>
-          <p class="subhead">Pro tips</p>
-          <p class="detail">
-            Turn on “manual review” for billing, legal, or refund keywords. Use canned templates for the top 5 requests,
-            then let S4U-v3 adapt them per customer.
-          </p>
-          <div class="screenshot">Screenshot: Email → Connect &amp; Rules</div>
-        </article>
+  <!-- TASKS -->
+  <div class="tool-panel" id="panel-tasks">
+    <div class="tool-strip ts-pink">
+      <div>
+        <div class="strip-tag">✦ Unified Workspace</div>
+        <h2>Task Manager</h2>
+        <p>Give your team one place to see AI-created tasks and human follow-ups. Tasks are generated automatically from calls, emails, and chats — with all context attached and ready to action.</p>
+      </div>
+      <div class="strip-icon-wrap"><span class="strip-big-icon">✅</span><div class="strip-sub-label">Auto-Create</div></div>
+    </div>
+    <div class="two-col">
+      <div class="card">
+        <div class="card-head"><div class="ch-icon ch-pink">📋</div><div><h3>Setup Steps</h3><p>5 steps · ~5 minutes</p></div></div>
+        <ul class="steps-body">
+          <li class="step-item"><div class="step-num">01</div><div><div class="step-title">Open Task Board</div><div class="step-desc">View AI-generated items from all channels in one board.</div><span class="step-path">Dashboard → Tasks</span></div></li>
+          <li class="step-item"><div class="step-num">02</div><div><div class="step-title">Assign Owners & Due Dates</div><div class="step-desc">Set owners, due dates, and priority levels on each task.</div><span class="step-path">Tasks → Task Detail</span></div></li>
+          <li class="step-item"><div class="step-num">03</div><div><div class="step-title">Use Filters</div><div class="step-desc">Track open, in-progress, and done items with saved filter views.</div><span class="step-path">Tasks → Filters</span></div></li>
+          <li class="step-item"><div class="step-num">04</div><div><div class="step-title">Link to Source</div><div class="step-desc">Connect tasks to the call or email they originated from for full context.</div><span class="step-path">Tasks → Linked Source</span></div></li>
+          <li class="step-item"><div class="step-num">05</div><div><div class="step-title">Export or Sync</div><div class="step-desc">Push tasks to your preferred PM tool if needed.</div><span class="step-path">Tasks → Export / Integrations</span></div></li>
+        </ul>
+        <div class="card-foot"><span class="ss-tag">📸 Tasks → Board view</span></div>
+      </div>
+      <div class="card tips-card">
+        <div class="card-head"><div class="ch-icon ch-pink">💡</div><div><h3>Pro Tips</h3><p>From power users</p></div></div>
+        <ul class="tips-body">
+          <li class="tip-item"><div class="tip-dot">→</div>Add SLAs like <strong>"follow up within 2 hours"</strong> to high-priority tasks so the whole team knows the expected window.</li>
+          <li class="tip-item"><div class="tip-dot">→</div>Filter by priority every morning — it takes 30 seconds and ensures nothing critical slips through.</li>
+          <li class="tip-item"><div class="tip-dot">→</div>Tag outcomes — <strong>won, lost, needs follow-up</strong> — on closed tasks to improve pipeline reporting accuracy.</li>
+          <li class="tip-item"><div class="tip-dot">→</div>Link tasks to source calls and emails. Attached context significantly cuts back-and-forth between teammates.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
 
-          <article class="card" id="social-manager">
-          <h2>AI Social Media Manager</h2>
-          <p>
-            Keep your calendar full with on-brand posts, scheduled and ready to publish. Drafts align with your tone,
-            highlight your services, and include calls-to-action that drive inquiries.
-          </p>
-          <p class="subhead">Setup steps</p>
-          <ol class="steps">
-            <li>Connect channels (Meta, LinkedIn) in Dashboard → Social → Connections.</li>
-            <li>Set your voice, topics, and posting cadence in Social → Strategy.</li>
-            <li>Generate a week of drafts and edit headlines/captions.</li>
-            <li>Schedule or publish; enable auto-respond for common DMs.</li>
-            <li>Track performance in Social → Insights.</li>
-          </ol>
-          <p class="subhead">Pro tips</p>
-          <p class="detail">
-            Start with a 3-post cadence. Mix “how-to”, “customer story”, and “offer” content. Use auto-respond for
-            FAQs and route sales inquiries to a human with a warm handoff.
-          </p>
-          <div class="screenshot">Screenshot: Social → Drafts &amp; Schedule</div>
-        </article>
+  <!-- BEST PRACTICES -->
+  <div class="tool-panel" id="panel-best">
+    <div class="tool-strip ts-green">
+      <div>
+        <div class="strip-tag">✦ Quality Framework</div>
+        <h2>Best Practices</h2>
+        <p>Keep control while letting automation work for you. These habits keep quality high and response times low — field-tested by top customers across thousands of setups.</p>
+      </div>
+      <div class="strip-icon-wrap"><span class="strip-big-icon">🏆</span><div class="strip-sub-label">Pro Moves</div></div>
+    </div>
 
-          <article class="card" id="crm-lead">
-          <h2>CRM &amp; Lead Manager</h2>
-          <p>
-            Capture, score, and route leads automatically so sales sees the best first. Define scoring rules by intent,
-            budget, or channel and route VIPs to your top reps.
-          </p>
-          <p class="subhead">Setup steps</p>
-          <ol class="steps">
-            <li>Connect your CRM (or export CSV) in Dashboard → CRM.</li>
-            <li>Set lead sources and scoring rules (budget, intent, channel).</li>
-            <li>Auto-assign owners by territory/vertical; configure SLAs.</li>
-            <li>Enable notifications for high-intent leads via email/SMS.</li>
-            <li>Review pipeline health in CRM → Overview.</li>
-          </ol>
-          <p class="subhead">Pro tips</p>
-          <p class="detail">
-            Use a “hot lead” threshold (e.g., score ≥ 80). Send immediate alerts to the owner and log the call/email
-            activity so response times are visible.
-          </p>
-          <div class="screenshot">Screenshot: CRM → Scoring &amp; Routing</div>
-        </article>
+    <div class="bp-card">
+      <div class="card-head" style="padding:24px 28px 18px">
+        <div class="ch-icon ch-green">🔄</div>
+        <div><h3>Recommended Workflow</h3><p>The order that actually works in practice</p></div>
+      </div>
+      <div class="bp-grid">
+        <div class="bp-cell"><div class="bp-num">STEP 01</div><h4>Start in Review Mode</h4><p>Use manual review for email and DM replies first. Graduate to auto-send only after 2 weeks of trusting the output quality.</p></div>
+        <div class="bp-cell"><div class="bp-num">STEP 02</div><h4>Keep Knowledge Current</h4><p>Update FAQs, pricing, and policies regularly. Stale knowledge means wrong answers. A 5-minute weekly refresh is all it takes.</p></div>
+        <div class="bp-cell"><div class="bp-num">STEP 03</div><h4>Use Smart Escalation</h4><p>Route VIPs and compliance keywords to humans every time. Automation handles volume; people handle the sensitive stuff.</p></div>
+        <div class="bp-cell"><div class="bp-num">STEP 04</div><h4>Schedule Weekly Checks</h4><p>Spend 15 minutes in Calls and Email Insights. Fine-tune prompts, update your voice, and catch edge cases before they become patterns.</p></div>
+        <div class="bp-cell" style="border-right:none"><div class="bp-num">STEP 05</div><h4>Test Before Going Live</h4><p>Run end-to-end with a teammate first. Check tone, handoff timing, and that the right person gets the right task with full context.</p></div>
+      </div>
+    </div>
 
-          <article class="card" id="task-manager">
-          <h2>Task Manager</h2>
-          <p>
-            Give your team one place to see AI-created tasks and human follow-ups. Tasks are created automatically from
-            calls, emails, and chats, with all context attached.
-          </p>
-          <p class="subhead">Setup steps</p>
-          <ol class="steps">
-            <li>Open Dashboard → Tasks to see AI-created items.</li>
-            <li>Assign owners and due dates; set priority.</li>
-            <li>Use filters to track open, in-progress, and done items.</li>
-            <li>Link tasks to calls/emails for context.</li>
-            <li>Export or sync to your PM tool if needed.</li>
-          </ol>
-          <p class="subhead">Pro tips</p>
-          <p class="detail">
-            Add SLAs (e.g., “follow up within 2 hours”) and filter by priority daily. Close the loop by tagging
-            outcomes (won, lost, needs follow-up) to improve reporting.
-          </p>
-          <div class="screenshot">Screenshot: Tasks → Board view</div>
-        </article>
-
-          <article class="card" id="best-practices">
-          <h2>Best practices</h2>
-          <p>Keep control while letting automation work for you. These habits keep quality high and response times low.</p>
-          <p class="subhead">Recommended workflow</p>
-          <ol class="steps">
-            <li>Start in “review” mode for email/DM replies; graduate to auto-send later.</li>
-            <li>Keep your knowledge base current (FAQs, pricing, policies) so answers stay accurate.</li>
-            <li>Use escalation rules: VIPs → human, compliance keywords → manual review.</li>
-            <li>Schedule weekly checks in Calls/Email to fine-tune prompts and voice.</li>
-            <li>Test end-to-end with a teammate before going live to customers.</li>
-          </ol>
-          <p class="subhead">Quality checklist</p>
-          <p class="detail">
-            Review the top 10 conversations weekly. Update FAQs, add new objections, and make sure the handoff process
-            routes to the correct owner with all details captured.
-          </p>
-          <div class="screenshot">Screenshot: Settings → Escalation &amp; Review</div>
-        </article>
+    <div class="bp-card" style="margin-top:20px">
+      <div class="cklist-wrap">
+        <h3>✦ Weekly Quality Checklist</h3>
+        <p class="cklist-sub">Click items to check them off — run this every Monday morning for best results.</p>
+        <ul class="cklist">
+          <li class="ci" onclick="toggleCheck(this)"><div class="cbox"></div>Review the top 10 conversations from the past week.</li>
+          <li class="ci" onclick="toggleCheck(this)"><div class="cbox"></div>Update FAQs with new questions that came up in calls or emails.</li>
+          <li class="ci" onclick="toggleCheck(this)"><div class="cbox"></div>Add new objections or edge cases to escalation rules.</li>
+          <li class="ci" onclick="toggleCheck(this)"><div class="cbox"></div>Confirm the handoff process routes to the correct owner with full context.</li>
+          <li class="ci" onclick="toggleCheck(this)"><div class="cbox"></div>Check SLA compliance — are follow-ups happening within the target window?</li>
+          <li class="ci" onclick="toggleCheck(this)"><div class="cbox"></div>Tag outcomes on closed tasks — won, lost, or needs follow-up — for accurate reporting.</li>
+        </ul>
+        <div class="hbox">
+          <p>💡 <strong style="color:var(--text)">Pro move:</strong> Assign one team member to own the weekly checklist. Accountability plus a 15-minute timebox keeps it from being skipped when things get busy.</p>
         </div>
-      </section>
-    </main>
-    <script>
-      const links = Array.from(document.querySelectorAll(".sidebar-link"));
-      const sections = links
-        .map((link) => document.querySelector(link.getAttribute("href")))
-        .filter(Boolean);
+        <div style="margin-top:16px"><span class="ss-tag">📸 Settings → Escalation & Review</span></div>
+      </div>
+    </div>
+  </div>
 
-      const setActive = (targetId) => {
-        links.forEach((link) => {
-          const isActive = link.getAttribute("href") === `#${targetId}`;
-          link.classList.toggle("active", isActive);
-        });
-      };
+</div>
 
-      links.forEach((link) => {
-        link.addEventListener("click", () => {
-          const target = link.getAttribute("href")?.replace("#", "");
-          if (target) {
-            setActive(target);
-          }
-        });
-      });
+<!-- FOOTER -->
+<footer class="guide-footer">
+  <div class="footer-logo"><div class="footer-dot"></div>SmartConnect4u</div>
+  <div class="footer-links">
+    <a href="/privacy.html">Privacy Policy</a>
+    <a href="/contact.html">Support</a>
+    <a href="/contact.html">Contact</a>
+  </div>
+  <span>© 2026 SmartConnect4u. All rights reserved.</span>
+</footer>
 
-      const observer = new IntersectionObserver(
-        (entries) => {
-          entries.forEach((entry) => {
-            if (entry.isIntersecting) {
-              setActive(entry.target.id);
-            }
-          });
-        },
-        { rootMargin: "-30% 0px -60% 0px", threshold: [0.1, 0.3, 0.6] }
-      );
-
-      sections.forEach((section) => observer.observe(section));
-      if (sections[0]) {
-        setActive(sections[0].id);
-      }
-
-      const liveChatHeaderBtn = document.querySelector(".live-chat-launcher");
-      liveChatHeaderBtn?.addEventListener("click", () => {
-        const launcher = document.querySelector(".chat-launcher");
-        if (launcher) {
-          launcher.dispatchEvent(new Event("click", { bubbles: true }));
-        } else {
-          window.location.href = "/";
-        }
-      });
-    </script>
-  </body>
+<script>
+  function switchTab(id) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tool-panel').forEach(p => p.classList.remove('active'));
+    document.querySelector('[data-tab="'+id+'"]').classList.add('active');
+    document.getElementById('panel-'+id).classList.add('active');
+    document.querySelector('.tabs-wrap').scrollIntoView({behavior:'smooth',block:'start'});
+  }
+  function toggleCheck(el) {
+    el.classList.toggle('checked');
+    el.querySelector('.cbox').textContent = el.classList.contains('checked') ? '✓' : '';
+  }
+</script>
+</body>
 </html>

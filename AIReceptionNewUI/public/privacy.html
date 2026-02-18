@@ -1,473 +1,853 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>SmartConnect4u Privacy Policy</title>
-    <style>
-      @import url("https://fonts.cdnfonts.com/css/product-sans");
-      :root {
-        color-scheme: dark;
-      }
-      .screen-panel {
-        max-width: 1200px;
-        margin: 0 auto;
-        padding: 0 16px;
-        width: 100%;
-      }
-      .nav-card {
-        display: grid;
-        align-items: center;
-        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-        gap: 20px;
-        background: rgba(0, 0, 0, 0.4);
-        border: 1px solid rgba(255, 255, 255, 0.06);
-        border-radius: 0;
-        padding: 14px clamp(16px, 4vw, 48px);
-        box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
-        backdrop-filter: blur(10px);
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        transform: translateY(0);
-        width: auto;
-        max-width: none;
-        margin: 0;
-        z-index: 20;
-        transition: transform 200ms ease, opacity 200ms ease;
-        font-family: "Product Sans", "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI",
-          Roboto, "Helvetica Neue", Arial, sans-serif;
-      }
-      .nav-brand {
-        display: flex;
-        align-items: center;
-        justify-self: start;
-      }
-      .brand {
-        display: inline-flex;
-        align-items: center;
-        gap: 10px;
-        padding: 0;
-        background: transparent;
-        border: none;
-        color: #dbe7ff;
-        font-weight: 700;
-        letter-spacing: 0.04em;
-        cursor: pointer;
-        text-decoration: none;
-        font-family: inherit;
-      }
-      .brand-logo {
-        max-width: 170px;
-        max-height: 50px;
-        width: auto;
-        height: auto;
-        object-fit: contain;
-        border-radius: 0;
-      }
-      .nav-links {
-        display: flex;
-        gap: 28px;
-        flex-wrap: nowrap;
-        align-items: center;
-        justify-self: center;
-      }
-      .nav-link {
-        background: transparent;
-        color: #e6ebff;
-        font-weight: 600;
-        font-size: 14px;
-        border: none;
-        padding: 4px 0;
-        cursor: pointer;
-        transition: color 160ms ease, text-shadow 180ms ease;
-        text-decoration: none;
-      }
-      .nav-link:hover {
-        color: #ffffff;
-        text-shadow: 0 0 12px rgba(123, 198, 255, 0.7), 0 0 28px rgba(123, 198, 255, 0.32);
-      }
-      .nav-actions {
-        display: flex;
-        gap: 10px;
-        justify-self: end;
-      }
-      .nav-item-with-sub {
-        position: relative;
-        display: inline-flex;
-        flex-direction: column;
-        padding-bottom: 0;
-        align-items: stretch;
-      }
-      .nav-submenu {
-        position: absolute;
-        top: 100%;
-        left: 50%;
-        transform: translateX(-50%);
-        display: none;
-        gap: 6px;
-        background:
-          radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.04), transparent 30%),
-          radial-gradient(circle at 80% 0%, rgba(123, 156, 255, 0.14), transparent 32%),
-          linear-gradient(180deg, #050915, #050814 55%, #040712);
-        border: 1px solid rgba(123, 198, 255, 0.38);
-        border-radius: 8px;
-        padding: 12px;
-        min-width: 240px;
-        margin-top: 10px;
-        box-shadow: 0 18px 36px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.05);
-        backdrop-filter: blur(14px);
-        z-index: 20;
-        color: #e6ecff;
-      }
-      .nav-submenu::before {
-        content: "";
-        position: absolute;
-        inset: 0;
-        pointer-events: none;
-        background: linear-gradient(90deg, rgba(255, 255, 255, 0.03), transparent 35%, rgba(255, 255, 255, 0.02));
-        border-radius: 8px;
-        mix-blend-mode: screen;
-      }
-      .nav-item-with-sub:hover .nav-submenu,
-      .nav-item-with-sub:focus-within .nav-submenu {
-        display: grid;
-      }
-      .nav-subitem {
-        background: transparent;
-        color: #f8fbff;
-        border: 1px solid rgba(255, 255, 255, 0.14);
-        border-radius: 0;
-        padding: 8px 10px;
-        text-align: left;
-        cursor: pointer;
-        transition: background 140ms ease, transform 120ms ease, border-color 160ms ease;
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-        text-shadow: 0 1px 6px rgba(0, 0, 0, 0.4);
-        text-decoration: none;
-      }
-      .nav-subitem:hover {
-        background: rgba(123, 198, 255, 0.2);
-        border-color: rgba(123, 198, 255, 0.68);
-        transform: translateY(-1px);
-      }
-      .login-cta {
-        display: inline-flex;
-        align-items: center;
-        gap: 10px;
-        background: #4338ff;
-        color: #f7f7ff;
-        padding: 10px 14px;
-        border: 1px solid #4338ff;
-        border-radius: 0;
-        font-weight: 400;
-        letter-spacing: 0.02em;
-        cursor: pointer;
-        box-shadow: 0 10px 22px rgba(67, 56, 255, 0.22);
-        transition: transform 140ms ease, box-shadow 160ms ease, background 160ms ease;
-        width: auto;
-        justify-content: center;
-        text-decoration: none;
-      }
-      .login-cta:hover {
-        transform: translateY(-1px);
-        background: #ffffff;
-        color: #4338ff;
-        border: 1px solid #4338ff;
-        box-shadow: 0 12px 28px rgba(67, 56, 255, 0.25);
-      }
-      body {
-        margin: 0;
-        font-family: "Product Sans", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
-        font-weight: 400;
-        font-synthesis: none;
-        background: radial-gradient(circle at 10% 10%, rgba(88, 79, 255, 0.12), transparent 40%),
-          radial-gradient(circle at 90% 0%, rgba(239, 68, 68, 0.12), transparent 40%),
-          #0b0f1f;
-        color: #e4e8f4;
-      }
-      strong,
-      b {
-        font-family: "Product Sans", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
-        font-weight: 700;
-      }
-      .wrapper {
-        margin: 0 auto;
-        padding: 32px 48px 64px;
-        padding-top: 140px;
-      }
-      .privacy-layout {
-        display: grid;
-        grid-template-columns: 220px 1fr;
-        gap: 20px;
-        align-items: start;
-      }
-      .privacy-nav {
-        position: sticky;
-        top: 32px;
-        align-self: start;
-      }
-      .privacy-nav-card {
-        border-radius: 16px;
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        background: rgba(12, 18, 36, 0.75);
-        padding: 16px;
-      }
-      .privacy-nav-title {
-        font-size: 12px;
-        letter-spacing: 0.18em;
-        text-transform: uppercase;
-        color: #94a3b8;
-        margin-bottom: 10px;
-      }
-      .privacy-nav a {
-        display: block;
-        color: #cbd5f5;
-        text-decoration: none;
-        font-size: 13px;
-        padding: 6px 0;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-      }
-      .privacy-nav a:last-child {
-        border-bottom: none;
-      }
-      .privacy-nav a:hover {
-        color: #ffffff;
-      }
-      .card {
-        border-radius: 18px;
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        background: rgba(12, 18, 36, 0.85);
-        padding: 28px;
-        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
-      }
-      h1 {
-        margin: 0 0 8px;
-        font-size: 30px;
-      }
-      h2 {
-        margin: 28px 0 10px;
-        font-size: 18px;
-      }
-      p {
-        margin: 0 0 12px;
-        line-height: 1.6;
-        color: #cbd5f5;
-      }
-      ul {
-        margin: 0 0 16px 18px;
-        color: #cbd5f5;
-      }
-      li {
-        margin-bottom: 8px;
-      }
-      .muted {
-        color: #94a3b8;
-        font-size: 12px;
-      }
-      a {
-        color: #9db7ff;
-      }
-      @media (max-width: 900px) {
-        .wrapper {
-          padding: 36px 20px 52px;
-        }
-        .privacy-layout {
-          grid-template-columns: 1fr;
-        }
-        .privacy-nav {
-          position: static;
-        }
-      }
-    </style>
-  </head>
-  <body>
-    <header class="nav-card screen-panel">
-      <div class="nav-brand">
-        <a class="brand" href="/">
-          <img class="brand-logo" src="/media/sc_logo_main.png" alt="SmartConnect4u logo" />
-        </a>
-      </div>
-      <div class="nav-links">
-        <a class="nav-link" href="/#capabilities">Our purpose</a>
-        <a class="nav-link" href="/#performance">What we do</a>
-        <div class="nav-item-with-sub">
-          <button class="nav-link" type="button">Services</button>
-          <div class="nav-submenu">
-            <a class="nav-subitem" href="/#capabilities">AI Receptionist</a>
-            <a class="nav-subitem" href="/#capabilities">AI Social Media Manager</a>
-            <a class="nav-subitem" href="/#capabilities">Email Manager</a>
-            <a class="nav-subitem" href="/#capabilities">CRM &amp; Lead Manager</a>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Privacy Policy — SmartConnect4u</title>
+<style>
+  @import url("https://fonts.cdnfonts.com/css/product-sans");
+
+  :root {
+    --bg: #060912;
+    --bg2: #0c1220;
+    --surface: #111827;
+    --surface2: #1a2438;
+    --border: rgba(99, 179, 237, 0.12);
+    --accent: #3b9eff;
+    --accent2: #00e5c0;
+    --accent3: #a78bfa;
+    --text: #e8edf5;
+    --muted: #7a8ba8;
+    --dim: #3d4f6a;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Product Sans", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.7;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(59, 158, 255, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(59, 158, 255, 0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .glow-orb {
+    position: fixed;
+    border-radius: 50%;
+    filter: blur(120px);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .glow-orb.top {
+    width: 600px;
+    height: 400px;
+    top: -100px;
+    left: -100px;
+    background: radial-gradient(ellipse, rgba(59, 158, 255, 0.12), transparent 70%);
+  }
+
+  .glow-orb.mid {
+    width: 500px;
+    height: 500px;
+    top: 40%;
+    right: -150px;
+    background: radial-gradient(ellipse, rgba(0, 229, 192, 0.08), transparent 70%);
+  }
+
+  .glow-orb.bot {
+    width: 400px;
+    height: 400px;
+    bottom: 0;
+    left: 30%;
+    background: radial-gradient(ellipse, rgba(167, 139, 250, 0.08), transparent 70%);
+  }
+
+  .page-wrap {
+    position: relative;
+    z-index: 1;
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 120px 24px 80px;
+  }
+
+  .site-header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px clamp(16px, 4vw, 48px);
+    background: rgba(0, 0, 0, 0.4);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(10px);
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    text-decoration: none;
+  }
+
+  .logo img {
+    max-width: 170px;
+    max-height: 50px;
+    width: auto;
+    height: auto;
+    display: block;
+    object-fit: contain;
+  }
+
+  .badge {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 7px 14px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 999px;
+    color: #e6ebff;
+    background: rgba(255, 255, 255, 0.06);
+    letter-spacing: 0.01em;
+  }
+
+  .hero {
+    padding: 64px 0 48px;
+    position: relative;
+  }
+
+  .hero-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--accent2);
+    margin-bottom: 20px;
+  }
+
+  .hero-tag::before {
+    content: "";
+    display: block;
+    width: 20px;
+    height: 2px;
+    background: var(--accent2);
+    border-radius: 2px;
+  }
+
+  .hero h1 {
+    font-weight: 700;
+    font-size: clamp(36px, 5vw, 58px);
+    line-height: 1.08;
+    letter-spacing: -1.5px;
+    color: var(--text);
+    max-width: 660px;
+    margin-bottom: 20px;
+  }
+
+  .hero h1 span {
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .hero-meta {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    color: var(--muted);
+    font-size: 13.5px;
+    flex-wrap: wrap;
+  }
+
+  .hero-meta .sep {
+    width: 4px;
+    height: 4px;
+    background: var(--dim);
+    border-radius: 50%;
+  }
+
+  .hero-divider {
+    width: 100%;
+    height: 1px;
+    background: linear-gradient(90deg, var(--accent), rgba(59, 158, 255, 0.05));
+    margin: 44px 0 0;
+    opacity: 0.5;
+  }
+
+  .content-layout {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 60px;
+    align-items: start;
+    margin-top: 56px;
+  }
+
+  .toc-sticky {
+    position: sticky;
+    top: 32px;
+  }
+
+  .toc-label {
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--dim);
+    font-weight: 600;
+    margin-bottom: 14px;
+  }
+
+  .toc-list { list-style: none; }
+  .toc-list li { margin-bottom: 2px; }
+
+  .toc-list a {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+    color: var(--muted);
+    font-size: 13px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    border-left: 2px solid transparent;
+    transition: all 0.2s ease;
+    line-height: 1.4;
+  }
+
+  .toc-list a:hover {
+    color: var(--accent);
+    background: rgba(59, 158, 255, 0.07);
+    border-left-color: var(--accent);
+  }
+
+  .toc-num {
+    font-size: 10px;
+    color: var(--dim);
+    min-width: 18px;
+    font-weight: 700;
+  }
+
+  .section {
+    margin-bottom: 48px;
+    opacity: 0;
+    transform: translateY(24px);
+    animation: fadeUp 0.5s ease forwards;
+  }
+
+  .section:nth-child(1) { animation-delay: 0.05s; }
+  .section:nth-child(2) { animation-delay: 0.1s; }
+  .section:nth-child(3) { animation-delay: 0.15s; }
+  .section:nth-child(4) { animation-delay: 0.2s; }
+  .section:nth-child(5) { animation-delay: 0.25s; }
+  .section:nth-child(6) { animation-delay: 0.3s; }
+  .section:nth-child(7) { animation-delay: 0.35s; }
+  .section:nth-child(8) { animation-delay: 0.4s; }
+  .section:nth-child(9) { animation-delay: 0.45s; }
+  .section:nth-child(10) { animation-delay: 0.5s; }
+  .section:nth-child(11) { animation-delay: 0.55s; }
+  .section:nth-child(12) { animation-delay: 0.6s; }
+  .section:nth-child(13) { animation-delay: 0.65s; }
+  .section:nth-child(14) { animation-delay: 0.7s; }
+
+  @keyframes fadeUp {
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .section-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 18px;
+  }
+
+  .section-num-box {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    border-radius: 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 12px;
+    color: var(--accent);
+    margin-top: 3px;
+  }
+
+  .section h2 {
+    font-weight: 700;
+    font-size: 18px;
+    letter-spacing: -0.3px;
+    color: var(--text);
+    line-height: 1.3;
+  }
+
+  .section-body { padding-left: 52px; }
+
+  .section-body p {
+    color: var(--muted);
+    font-size: 15px;
+    line-height: 1.75;
+  }
+
+  .data-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 10px;
+    margin-top: 16px;
+  }
+
+  .data-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    transition: border-color 0.2s, background 0.2s;
+  }
+
+  .data-card:hover {
+    border-color: rgba(59, 158, 255, 0.3);
+    background: var(--surface2);
+  }
+
+  .data-card-icon {
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, rgba(59, 158, 255, 0.15), rgba(0, 229, 192, 0.08));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+  }
+
+  .data-card-text {
+    font-size: 13px;
+    color: var(--text);
+    font-weight: 400;
+    line-height: 1.4;
+  }
+
+  .highlight-block {
+    background: linear-gradient(135deg, rgba(59, 158, 255, 0.07), rgba(0, 229, 192, 0.04));
+    border: 1px solid rgba(59, 158, 255, 0.2);
+    border-radius: 14px;
+    padding: 20px 22px;
+    margin-top: 16px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .highlight-block::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: linear-gradient(180deg, var(--accent), var(--accent2));
+    border-radius: 3px 0 0 3px;
+  }
+
+  .highlight-block p {
+    color: #a8c4e0;
+    font-size: 14px;
+    line-height: 1.7;
+  }
+
+  .google-features {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 16px;
+  }
+
+  .google-feature-row {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 18px;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 14px;
+    align-items: start;
+    transition: border-color 0.2s;
+  }
+
+  .google-feature-row:hover { border-color: rgba(0, 229, 192, 0.3); }
+
+  .gfr-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: rgba(0, 229, 192, 0.12);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    margin-top: 1px;
+  }
+
+  .gfr-text strong {
+    font-size: 13.5px;
+    color: var(--text);
+    font-weight: 700;
+    display: block;
+    margin-bottom: 3px;
+  }
+
+  .gfr-text span { font-size: 13px; color: var(--muted); }
+
+  .rights-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 16px;
+  }
+
+  .right-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface);
+    font-size: 13px;
+    color: var(--text);
+    transition: all 0.2s;
+  }
+
+  .right-chip:hover {
+    border-color: var(--accent3);
+    color: var(--accent3);
+    background: rgba(167, 139, 250, 0.08);
+  }
+
+  .right-chip-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent3);
+  }
+
+  .notice-strip {
+    background: rgba(167, 139, 250, 0.08);
+    border: 1px solid rgba(167, 139, 250, 0.2);
+    border-radius: 12px;
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 16px;
+    font-size: 13.5px;
+    color: #c4b5fd;
+  }
+
+  .notice-strip-icon { font-size: 18px; }
+
+  .contact-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px 26px;
+    margin-top: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+
+  .contact-card-left p {
+    font-size: 14px;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+
+  .contact-card-left strong {
+    font-size: 16px;
+    font-weight: 700;
+  }
+
+  .contact-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 22px;
+    background: linear-gradient(135deg, var(--accent), #1a7fd4);
+    color: #fff;
+    text-decoration: none;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 500;
+    transition: opacity 0.2s, transform 0.2s;
+    box-shadow: 0 4px 20px rgba(59, 158, 255, 0.3);
+  }
+
+  .contact-btn:hover { opacity: 0.88; transform: translateY(-1px); }
+
+  .page-footer {
+    position: relative;
+    z-index: 1;
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 24px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    font-size: 12.5px;
+    color: var(--dim);
+  }
+
+  .footer-right a { color: var(--accent); text-decoration: none; }
+  .footer-right a:hover { text-decoration: underline; }
+
+  .sec-divider {
+    width: 100%;
+    height: 1px;
+    background: var(--border);
+    margin-bottom: 48px;
+  }
+
+  @media (max-width: 768px) {
+    .site-header {
+      padding: 12px 14px;
+    }
+
+    .logo img {
+      max-width: 150px;
+      max-height: 42px;
+    }
+
+    .badge {
+      font-size: 11px;
+      padding: 6px 10px;
+    }
+
+    .page-wrap {
+      padding-top: 100px;
+    }
+
+    .content-layout { grid-template-columns: 1fr; }
+    .toc-sticky { display: none; }
+    .section-body { padding-left: 0; }
+  }
+</style>
+</head>
+<body>
+
+<div class="glow-orb top"></div>
+<div class="glow-orb mid"></div>
+<div class="glow-orb bot"></div>
+
+<header class="site-header">
+  <a href="/" class="logo">
+    <img src="/media/sc_logo_main.png" alt="SmartConnect4u logo" />
+  </a>
+  <span class="badge">Privacy Policy</span>
+</header>
+
+<main class="page-wrap">
+  <div class="hero">
+    <div class="hero-tag">Legal Documentation</div>
+    <h1>Your Privacy,<br><span>Our Commitment</span></h1>
+    <div class="hero-meta">
+      <span>Last updated: January 31, 2025</span>
+      <div class="sep"></div>
+      <span>14 sections</span>
+      <div class="sep"></div>
+      <span>~5 min read</span>
+    </div>
+    <div class="hero-divider"></div>
+  </div>
+
+  <div class="content-layout">
+    <nav class="toc-sticky" aria-label="Table of contents">
+      <p class="toc-label">Contents</p>
+      <ul class="toc-list">
+        <li><a href="#s1"><span class="toc-num">01</span>Data We Collect</a></li>
+        <li><a href="#s2"><span class="toc-num">02</span>How We Use Data</a></li>
+        <li><a href="#s3"><span class="toc-num">03</span>Legal Basis</a></li>
+        <li><a href="#s4"><span class="toc-num">04</span>Sharing of Data</a></li>
+        <li><a href="#s5"><span class="toc-num">05</span>Google Data Use</a></li>
+        <li><a href="#s6"><span class="toc-num">06</span>Cookies &amp; Analytics</a></li>
+        <li><a href="#s7"><span class="toc-num">07</span>Data Retention</a></li>
+        <li><a href="#s8"><span class="toc-num">08</span>Security</a></li>
+        <li><a href="#s9"><span class="toc-num">09</span>International Transfers</a></li>
+        <li><a href="#s10"><span class="toc-num">10</span>Delete or Revoke</a></li>
+        <li><a href="#s11"><span class="toc-num">11</span>Your Rights</a></li>
+        <li><a href="#s12"><span class="toc-num">12</span>Children</a></li>
+        <li><a href="#s13"><span class="toc-num">13</span>Policy Changes</a></li>
+        <li><a href="#s14"><span class="toc-num">14</span>Contact</a></li>
+      </ul>
+    </nav>
+
+    <div class="sections">
+      <div class="section" id="s1">
+        <div class="section-header">
+          <div class="section-num-box">01</div>
+          <h2>Data We Collect</h2>
+        </div>
+        <div class="section-body">
+          <p>We collect information you provide and information generated through use of the Services. This includes data across the following categories:</p>
+          <div class="data-grid">
+            <div class="data-card"><div class="data-card-icon">👤</div><div class="data-card-text">Account data — name, email, company, role, billing details</div></div>
+            <div class="data-card"><div class="data-card-icon">⚙️</div><div class="data-card-text">Configuration data — business profile, hours, automation rules</div></div>
+            <div class="data-card"><div class="data-card-icon">💬</div><div class="data-card-text">Communication content — emails, social messages, calls, transcripts</div></div>
+            <div class="data-card"><div class="data-card-icon">📊</div><div class="data-card-text">Usage data — features used, device info, logs, performance metrics</div></div>
           </div>
         </div>
-        <div class="nav-item-with-sub">
-          <button class="nav-link" type="button">Legal</button>
-          <div class="nav-submenu">
-            <a class="nav-subitem" href="/terms.html">Terms &amp; Conditions</a>
-            <a class="nav-subitem" href="/privacy.html">Privacy Policy</a>
+      </div>
+
+      <div class="sec-divider"></div>
+
+      <div class="section" id="s2">
+        <div class="section-header">
+          <div class="section-num-box">02</div>
+          <h2>How We Use Data</h2>
+        </div>
+        <div class="section-body">
+          <p>We use your data to operate and improve the Services. Specifically, data is used to provide and operate the Services, generate AI outputs and automations you request, secure and monitor the platform, improve product performance and reliability, and communicate with you about updates, billing, and support.</p>
+        </div>
+      </div>
+
+      <div class="sec-divider"></div>
+
+      <div class="section" id="s3">
+        <div class="section-header">
+          <div class="section-num-box">03</div>
+          <h2>Legal Basis (EEA/UK)</h2>
+        </div>
+        <div class="section-body">
+          <p>Where applicable under GDPR or UK data law, we process your personal data based on one of the following legal grounds:</p>
+          <div class="data-grid" style="margin-top:16px">
+            <div class="data-card"><div class="data-card-icon">📄</div><div class="data-card-text">Contract performance</div></div>
+            <div class="data-card"><div class="data-card-icon">🔍</div><div class="data-card-text">Legitimate interests — security &amp; service improvement</div></div>
+            <div class="data-card"><div class="data-card-icon">✅</div><div class="data-card-text">Your consent</div></div>
+            <div class="data-card"><div class="data-card-icon">⚖️</div><div class="data-card-text">Legal obligations</div></div>
           </div>
         </div>
-        <a class="nav-link" href="/#testimonials">Testimonials</a>
-        <a class="nav-link" href="/contact.html">Contact</a>
-        <a class="nav-link" href="/blog.html">Blog</a>
       </div>
-      <div class="nav-actions">
-        <button class="login-cta live-chat-launcher" type="button">
-          <span aria-hidden>💬</span>
-          <span>Live Chat</span>
-        </button>
-        <a class="login-cta" href="/#login">
-          <span aria-hidden>→</span>
-          <span>Login</span>
-        </a>
-      </div>
-    </header>
-    <div class="wrapper">
-      <div class="privacy-layout">
-        <aside class="privacy-nav">
-          <div class="privacy-nav-card">
-            <div class="privacy-nav-title">On this page</div>
-            <a href="#intro">Intro</a>
-            <a href="#data-we-collect">Data we collect</a>
-            <a href="#how-we-use">How we use data</a>
-            <a href="#legal-basis">Legal basis</a>
-            <a href="#sharing">Sharing</a>
-            <a href="#google-data">Google data use</a>
-            <a href="#cookies">Cookies &amp; analytics</a>
-            <a href="#retention">Retention</a>
-            <a href="#security">Security</a>
-            <a href="#transfers">International transfers</a>
-            <a href="#delete-revoke">Delete or revoke</a>
-            <a href="#rights">Your rights</a>
-            <a href="#children">Children</a>
-            <a href="#changes">Changes</a>
-            <a href="#contact">Contact</a>
+
+      <div class="sec-divider"></div>
+
+      <div class="section" id="s4">
+        <div class="section-header">
+          <div class="section-num-box">04</div>
+          <h2>Sharing of Data</h2>
+        </div>
+        <div class="section-body">
+          <p>We share data only with trusted service providers — including hosting, analytics, communications, and payment processing partners — strictly to operate the Services.</p>
+          <div class="highlight-block">
+            <p>🔒 <strong style="color:var(--accent2)">We do not sell your personal data.</strong> We may share data if required by law, or to protect SmartConnect4u, our users, or the public.</p>
           </div>
-        </aside>
-        <main class="card">
-          <h1 id="intro">SmartConnect4u Privacy Policy</h1>
-          <p class="muted">Last updated: 2025-01-31</p>
-          <p>
-            This Privacy Policy explains how SmartConnect4u collects, uses, and protects information when you use our
-            products, including AI Receptionist, AI Social Media Manager, AI Email Manager, CRM &amp; Lead Manager, and
-            AI Chat Bots (collectively, the "Services").
-          </p>
+        </div>
+      </div>
 
-          <h2 id="data-we-collect">1. Data We Collect</h2>
-          <p>We collect information you provide and information generated through use of the Services, including:</p>
-          <ul>
-            <li>Account data (name, email, company, role, billing details).</li>
-            <li>Configuration data (business profile, hours, service details, automation rules).</li>
-            <li>Communication content (emails, social messages, calls, transcripts) you choose to connect.</li>
-            <li>Usage data (feature usage, device info, log data, performance metrics).</li>
-          </ul>
+      <div class="sec-divider"></div>
 
-          <h2 id="how-we-use">2. How We Use Data</h2>
-          <p>We use data to:</p>
-          <ul>
-            <li>Provide and operate the Services.</li>
-            <li>Generate AI outputs and automations you request.</li>
-            <li>Secure and monitor the platform.</li>
-            <li>Improve product performance and reliability.</li>
-            <li>Communicate with you about updates, billing, and support.</li>
-          </ul>
+      <div class="section" id="s5">
+        <div class="section-header">
+          <div class="section-num-box">05</div>
+          <h2>Google Data Use</h2>
+        </div>
+        <div class="section-body">
+          <p>When you connect Google services (Gmail, Calendar, or Contacts), we access only what's needed to deliver the features you enable:</p>
+          <div class="google-features">
+            <div class="google-feature-row">
+              <div class="gfr-icon">📅</div>
+              <div class="gfr-text">
+                <strong>Calendar</strong>
+                <span>Used to schedule, reschedule, and remind participants about bookings you request.</span>
+              </div>
+            </div>
+            <div class="google-feature-row">
+              <div class="gfr-icon">✉️</div>
+              <div class="gfr-text">
+                <strong>Email</strong>
+                <span>Metadata and content used to triage inboxes, draft responses you approve, and send messages you choose.</span>
+              </div>
+            </div>
+            <div class="google-feature-row">
+              <div class="gfr-icon">👥</div>
+              <div class="gfr-text">
+                <strong>Contacts</strong>
+                <span>Synced to keep your directory updated for routing, suggestions, and replies.</span>
+              </div>
+            </div>
+          </div>
+          <div class="highlight-block" style="margin-top:14px">
+            <p>We follow the <strong style="color:var(--accent)">Google API Services User Data Policy (Limited Use)</strong>. We do not use Google data for ads or sell it. Human access is limited to resolving support issues you request, or where required by law. You can disconnect Google access at any time.</p>
+          </div>
+        </div>
+      </div>
 
-          <h2 id="legal-basis">3. Legal Basis (EEA/UK)</h2>
-          <p>
-            Where applicable, we process data based on contract performance, legitimate interests (such as service
-            improvement and security), your consent, or compliance with legal obligations.
-          </p>
+      <div class="sec-divider"></div>
 
-          <h2 id="sharing">4. Sharing of Data</h2>
-          <p>
-            We share data with trusted service providers (hosting, analytics, communications, payment processing) only
-            to operate the Services. We do not sell your personal data. We may share data if required by law or to
-            protect SmartConnect4u, our users, or the public.
-          </p>
+      <div class="section" id="s6">
+        <div class="section-header">
+          <div class="section-num-box">06</div>
+          <h2>Cookies &amp; Analytics</h2>
+        </div>
+        <div class="section-body">
+          <p>We use cookies and similar technologies for authentication, preferences, and analytics. You can adjust your browser settings to manage cookies, though some features may not function properly without them.</p>
+        </div>
+      </div>
 
-          <h2 id="google-data">5. Google data use</h2>
-          <p>
-            When you connect Google (such as Gmail, Calendar, or Contacts), we access and process that data only to
-            deliver the features you enable:
-          </p>
-          <ul>
-            <li>Calendar events to schedule, reschedule, and remind participants about bookings you request.</li>
-            <li>Email metadata and content to triage inboxes, draft responses you approve, and send messages you choose.</li>
-            <li>Contacts to keep your directory in sync for routing, suggestions, and replies.</li>
-          </ul>
-          <p>
-            We follow the Google API Services User Data Policy (including Limited Use). We do not use Google data for ads
-            or sell it. Human access is limited to resolving support issues you request or where required to comply with
-            law or protect safety. You can disconnect Google access at any time.
-          </p>
+      <div class="sec-divider"></div>
 
-          <h2 id="cookies">6. Cookies &amp; Analytics</h2>
-          <p>
-            We use cookies and similar technologies for authentication, preferences, and analytics. You can adjust
-            browser settings to manage cookies, but some features may not function properly.
-          </p>
+      <div class="section" id="s7">
+        <div class="section-header">
+          <div class="section-num-box">07</div>
+          <h2>Data Retention</h2>
+        </div>
+        <div class="section-body">
+          <p>We retain your data for as long as your account is active or as needed to provide the Services. Certain information may be retained for legal, security, or operational purposes even after account closure.</p>
+        </div>
+      </div>
 
-          <h2 id="retention">7. Data Retention</h2>
-          <p>
-            We retain data as long as your account is active or as needed to provide the Services. We may retain certain
-            information for legal, security, or operational purposes.
-          </p>
+      <div class="sec-divider"></div>
 
-          <h2 id="security">8. Security</h2>
-          <p>
-            We implement industry-standard security measures to protect data. No system is completely secure, and we
-            cannot guarantee absolute protection.
-          </p>
+      <div class="section" id="s8">
+        <div class="section-header">
+          <div class="section-num-box">08</div>
+          <h2>Security</h2>
+        </div>
+        <div class="section-body">
+          <p>We implement industry-standard security measures to protect your data. However, no system is completely secure and we cannot guarantee absolute protection against all threats.</p>
+        </div>
+      </div>
 
-          <h2 id="transfers">9. International Transfers</h2>
-          <p>
-            If you access the Services from outside our primary operating region, your data may be processed in
-            jurisdictions with different data protection laws. We take steps to protect data in transit and at rest.
-          </p>
+      <div class="sec-divider"></div>
 
-          <h2 id="delete-revoke">10. Delete or revoke</h2>
-          <p>
-            You can disconnect Google access inside the app or by visiting Google Account &rarr; Security &rarr;
-            Third-party access and removing SmartConnect4u. To delete your account and associated data, contact
-            <a href="mailto:support@smartconnect4u.com"> support@smartconnect4u.com</a>; we will confirm and remove
-            application data (subject to legal retention requirements).
-          </p>
+      <div class="section" id="s9">
+        <div class="section-header">
+          <div class="section-num-box">09</div>
+          <h2>International Transfers</h2>
+        </div>
+        <div class="section-body">
+          <p>If you access the Services from outside our primary operating region, your data may be processed in jurisdictions with different data protection laws. We take appropriate steps to protect data in transit and at rest.</p>
+        </div>
+      </div>
 
-          <h2 id="rights">11. Your Rights</h2>
-          <p>
-            Depending on your location, you may have rights to access, correct, delete, or export your data, and to
-            object to certain processing. Contact us to exercise these rights.
-          </p>
+      <div class="sec-divider"></div>
 
-          <h2 id="children">12. Children</h2>
-          <p>
-            The Services are not directed to children under 16, and we do not knowingly collect data from children.
-          </p>
+      <div class="section" id="s10">
+        <div class="section-header">
+          <div class="section-num-box">10</div>
+          <h2>Delete or Revoke</h2>
+        </div>
+        <div class="section-body">
+          <p>You can disconnect Google access inside the app, or via <strong style="color:var(--text)">Google Account → Security → Third-party access</strong> and removing SmartConnect4u.</p>
+          <p style="margin-top:10px">To delete your account and associated data, contact <a href="mailto:support@smartconnect4u.com" style="color:var(--accent);text-decoration:none">support@smartconnect4u.com</a>. We'll confirm and remove application data, subject to legal retention requirements.</p>
+        </div>
+      </div>
 
-          <h2 id="changes">13. Changes to This Policy</h2>
-          <p>
-            We may update this policy from time to time. Continued use of the Services after changes means you accept
-            the updated policy.
-          </p>
+      <div class="sec-divider"></div>
 
-          <h2 id="contact">14. Contact</h2>
-          <p>
-            Questions? Contact us at <a href="mailto:support@smartconnect4u.com">support@smartconnect4u.com</a>.
-          </p>
-        </main>
+      <div class="section" id="s11">
+        <div class="section-header">
+          <div class="section-num-box">11</div>
+          <h2>Your Rights</h2>
+        </div>
+        <div class="section-body">
+          <p>Depending on your location, you may have the following rights regarding your personal data:</p>
+          <div class="rights-grid">
+            <div class="right-chip"><div class="right-chip-dot"></div>Access</div>
+            <div class="right-chip"><div class="right-chip-dot"></div>Correct</div>
+            <div class="right-chip"><div class="right-chip-dot"></div>Delete</div>
+            <div class="right-chip"><div class="right-chip-dot"></div>Export</div>
+            <div class="right-chip"><div class="right-chip-dot"></div>Object to Processing</div>
+          </div>
+          <p style="margin-top:14px">Contact us to exercise any of these rights.</p>
+        </div>
+      </div>
+
+      <div class="sec-divider"></div>
+
+      <div class="section" id="s12">
+        <div class="section-header">
+          <div class="section-num-box">12</div>
+          <h2>Children</h2>
+        </div>
+        <div class="section-body">
+          <div class="notice-strip">
+            <span class="notice-strip-icon">🔞</span>
+            <span>The Services are not directed to children under 16. We do not knowingly collect data from children.</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="sec-divider"></div>
+
+      <div class="section" id="s13">
+        <div class="section-header">
+          <div class="section-num-box">13</div>
+          <h2>Changes to This Policy</h2>
+        </div>
+        <div class="section-body">
+          <p>We may update this policy from time to time. Continued use of the Services after changes are posted means you accept the updated policy. We'll note the revision date at the top of this page.</p>
+        </div>
+      </div>
+
+      <div class="sec-divider"></div>
+
+      <div class="section" id="s14">
+        <div class="section-header">
+          <div class="section-num-box">14</div>
+          <h2>Contact</h2>
+        </div>
+        <div class="section-body">
+          <p>Have questions or concerns about this policy? We're here to help.</p>
+          <div class="contact-card">
+            <div class="contact-card-left">
+              <strong>SmartConnect4u Support</strong>
+              <p>We typically respond within 1–2 business days.</p>
+            </div>
+            <a href="mailto:support@smartconnect4u.com" class="contact-btn">✉️ Email Support</a>
+          </div>
+        </div>
       </div>
     </div>
-  </body>
-  <script>
-    const liveChatHeaderBtn = document.querySelector(".live-chat-launcher");
-    liveChatHeaderBtn?.addEventListener("click", () => {
-      const launcher = document.querySelector(".chat-launcher");
-      if (launcher) {
-        launcher.dispatchEvent(new Event("click", { bubbles: true }));
-      } else {
-        window.location.href = "/";
-      }
-    });
-  </script>
+  </div>
+</main>
+
+<footer class="page-footer">
+  <span>© 2026 SmartConnect4u. All rights reserved.</span>
+  <span class="footer-right">
+    Questions? <a href="mailto:support@smartconnect4u.com">support@smartconnect4u.com</a>
+  </span>
+</footer>
+
+</body>
 </html>
