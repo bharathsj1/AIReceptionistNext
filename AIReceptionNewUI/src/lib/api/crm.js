@@ -1,10 +1,27 @@
 import { API_URLS } from "../../config/urls";
 
-const defaultHeaders = (email) => {
+const STORAGE_KEY = "ai-reception-app-state";
+
+const readStoredAuthToken = () => {
+  if (typeof window === "undefined") return "";
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return "";
+    const parsed = JSON.parse(raw);
+    const token = parsed?.user?.auth_token || parsed?.user?.authToken || "";
+    return typeof token === "string" ? token.trim() : "";
+  } catch {
+    return "";
+  }
+};
+
+const defaultHeaders = (email, authToken) => {
   const headers = {
     "Content-Type": "application/json",
   };
   if (email) headers["x-user-email"] = email;
+  const token = String(authToken || readStoredAuthToken() || "").trim();
+  if (token) headers.Authorization = `Bearer ${token}`;
   return headers;
 };
 
@@ -27,11 +44,11 @@ const parsePayload = async (res) => {
   }
 };
 
-const request = async (url, { method = "GET", email, query, body } = {}) => {
+const request = async (url, { method = "GET", email, authToken, query, body } = {}) => {
   const fullUrl = query ? withQuery(url, query) : url;
   const res = await fetch(fullUrl, {
     method,
-    headers: defaultHeaders(email),
+    headers: defaultHeaders(email, authToken),
     body: body ? JSON.stringify(body) : undefined,
   });
   const payload = await parsePayload(res);
@@ -41,11 +58,11 @@ const request = async (url, { method = "GET", email, query, body } = {}) => {
   return payload;
 };
 
-const requestFile = async (url, { email, query } = {}) => {
+const requestFile = async (url, { email, authToken, query } = {}) => {
   const fullUrl = query ? withQuery(url, query) : url;
   const res = await fetch(fullUrl, {
     method: "GET",
-    headers: defaultHeaders(email),
+    headers: defaultHeaders(email, authToken),
   });
   if (!res.ok) {
     const payload = await parsePayload(res);

@@ -799,6 +799,10 @@ export default function DashboardScreen({
   const [sideNavPinned, setSideNavPinned] = useState(false);
   const [sideNavContentVisible, setSideNavContentVisible] = useState(false);
   const [sideNavHidden, setSideNavHidden] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.matchMedia("(max-width: 900px)").matches;
+  });
   const [voiceSamplePlaying, setVoiceSamplePlaying] = useState(false);
   const [showHolidayCalendars, setShowHolidayCalendars] = useState(true);
   const [showBirthdayEvents, setShowBirthdayEvents] = useState(true);
@@ -992,6 +996,27 @@ export default function DashboardScreen({
   }, [sideNavOpen, sideNavHidden]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const mediaQuery = window.matchMedia("(max-width: 900px)");
+    const apply = () => {
+      const mobile = Boolean(mediaQuery.matches);
+      setIsMobileViewport(mobile);
+      if (mobile) {
+        setSideNavOpen(false);
+        setSideNavContentVisible(false);
+        setSideNavPinned(false);
+      }
+    };
+    apply();
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", apply);
+      return () => mediaQuery.removeEventListener("change", apply);
+    }
+    mediaQuery.addListener(apply);
+    return () => mediaQuery.removeListener(apply);
+  }, []);
+
+  useEffect(() => {
     return () => {
       if (sideNavCloseTimerRef.current) {
         clearTimeout(sideNavCloseTimerRef.current);
@@ -1012,6 +1037,11 @@ export default function DashboardScreen({
   }, []);
 
   const openSideNav = () => {
+    if (isMobileViewport) {
+      setSideNavOpen(false);
+      setSideNavContentVisible(false);
+      return;
+    }
     if (sideNavCloseTimerRef.current) {
       clearTimeout(sideNavCloseTimerRef.current);
     }
@@ -1023,6 +1053,11 @@ export default function DashboardScreen({
   };
 
   const closeSideNav = () => {
+    if (isMobileViewport) {
+      setSideNavOpen(false);
+      setSideNavContentVisible(false);
+      return;
+    }
     if (sideNavCloseTimerRef.current) {
       clearTimeout(sideNavCloseTimerRef.current);
     }
@@ -4561,8 +4596,8 @@ export default function DashboardScreen({
   const sideNavWidthClass = sideNavHidden
     ? "w-0 min-w-0 max-w-0"
     : sideNavOpen
-      ? "w-[240px]"
-      : "w-14";
+      ? "w-[208px]"
+      : "w-12";
   const aiReceptionistDashboardPanel = (
     <>
       <section className="grid gap-4 md:grid-cols-4">
@@ -4772,47 +4807,57 @@ export default function DashboardScreen({
             />
           </div>
         )}
-        <div className={`flex h-screen overflow-hidden ${sideNavHidden ? "gap-0" : "gap-1"}`}>
+        <div className={`flex h-screen overflow-hidden ${sideNavHidden ? "gap-0" : "gap-0 sm:gap-1"}`}>
           <aside
             aria-hidden={sideNavHidden}
             inert={sideNavHidden ? "" : undefined}
-            onMouseEnter={openSideNav}
-            onMouseLeave={() => {
-              if (!sideNavPinned) closeSideNav();
-            }}
-            className={`dashboard-sidenav sticky top-0 flex h-screen flex-none flex-col gap-3 overflow-hidden p-2 transition-[width] duration-200 ${sideNavWidthClass} ${
+            onMouseEnter={isMobileViewport ? undefined : openSideNav}
+            onMouseLeave={
+              isMobileViewport
+                ? undefined
+                : () => {
+                    if (!sideNavPinned) closeSideNav();
+                  }
+            }
+            className={`dashboard-sidenav sticky top-0 flex h-screen flex-none flex-col gap-3 overflow-hidden p-0 sm:p-2 transition-[width] duration-200 ${sideNavWidthClass} ${
               sideNavHidden
                 ? "pointer-events-none overflow-hidden p-0 opacity-0"
                 : ""
             } ${lightThemeActive ? "bg-slate-50/90" : ""}`}
           >
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center">
+            <div className={`flex items-center gap-2 ${sideNavContentVisible ? "justify-between" : "justify-center"}`}>
+              <div className={`flex items-center ${sideNavContentVisible ? "" : "w-full justify-center"}`}>
                 <button
                   type="button"
                   onClick={() => window.location.reload()}
-                  className="flex h-[40px] w-[180px] flex-none shrink-0 items-center justify-center rounded-xl bg-transparent pl-[5px]"
+                  className={`flex h-[40px] flex-none shrink-0 items-center justify-center rounded-xl bg-transparent ${
+                    sideNavContentVisible ? "w-[160px] pl-[5px]" : "w-12 px-0"
+                  }`}
                   aria-label="SmartConnect4u"
                 >
                   <img
-                    src={lightThemeActive ? "/media/SC_logo_light1.png" : "/media/SC_logo_dark1.png"}
+                    src={
+                      sideNavContentVisible
+                        ? (lightThemeActive ? "/media/SC_logo_light1.png" : "/media/SC_logo_dark1.png")
+                        : "/media/SC_logo.png"
+                    }
                     alt="SmartConnect4u"
-                    className="h-full w-full shrink-0 object-contain"
+                    className={`shrink-0 ${sideNavContentVisible ? "h-full w-full object-contain" : "h-10 w-10 object-cover"}`}
                   />
                 </button>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setSideNavPinned((prev) => !prev);
-                  if (!sideNavPinned) openSideNav();
-                }}
-                className={`flex h-8 w-8 flex-none shrink-0 items-center justify-center rounded-full text-xs transition ${
-                  sideNavPinned
-                    ? "bg-white/10 text-indigo-100"
-                    : "text-slate-300 hover:bg-white/10 hover:text-white"
-                } ${sideNavContentVisible ? "opacity-100" : "pointer-events-none opacity-0"}`}
-                aria-label={sideNavPinned ? "Unpin menu" : "Pin menu"}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSideNavPinned((prev) => !prev);
+                    if (!sideNavPinned) openSideNav();
+                  }}
+                  className={`${sideNavContentVisible ? "hidden sm:flex" : "hidden"} h-8 w-8 flex-none shrink-0 items-center justify-center rounded-full text-xs transition ${
+                    sideNavPinned
+                      ? "bg-white/10 text-indigo-100"
+                      : "text-slate-300 hover:bg-white/10 hover:text-white"
+                  } ${sideNavContentVisible ? "opacity-100" : "pointer-events-none opacity-0"}`}
+                  aria-label={sideNavPinned ? "Unpin menu" : "Pin menu"}
               >
                 {sideNavPinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
               </button>

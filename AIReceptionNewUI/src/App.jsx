@@ -617,7 +617,9 @@ export default function App() {
         name: displayName,
         client_id: data?.client_id ?? null,
         role: data?.role || null,
-        scope: data?.scope || null
+        scope: data?.scope || null,
+        auth_token: data?.auth_token || null,
+        auth_token_expires_at: data?.auth_token_expires_at || null
       });
       setEmail(userEmail || "");
       setSignupEmail(userEmail || "");
@@ -894,6 +896,18 @@ export default function App() {
       setSignupName(name);
       setSignupEmail(email);
       setSignupPassword(password);
+      setUser({
+        id: data?.user_id || null,
+        email,
+        name: name || (email.includes("@") ? email.split("@")[0] : email),
+        client_id: data?.client_id ?? null,
+        role: data?.role || "admin",
+        scope: data?.scope || "primary_user",
+        auth_token: data?.auth_token || null,
+        auth_token_expires_at: data?.auth_token_expires_at || null
+      });
+      setEmail(email);
+      setIsLoggedIn(true);
       goToBusinessDetails();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Signup failed. Please try again.";
@@ -1311,7 +1325,7 @@ export default function App() {
   const isLandingStage = stage === STAGES.LANDING;
   const isDashboardStage = stage === STAGES.DASHBOARD;
   const showHeader = stage !== STAGES.DASHBOARD;
-  const pageClassName = `page${isLandingStage ? " page-landing" : ""}`;
+  const pageClassName = `page${isLandingStage ? " page-landing" : ""}${isDashboardStage ? " page-dashboard" : ""}`;
   const pageContentClassName = `page-content${isLandingStage ? " page-content-landing" : ""}${
     showHeader ? " page-content-with-header" : ""
   }`;
@@ -2314,7 +2328,9 @@ export default function App() {
       setUser({
         id: payload?.user_id,
         email: payload?.email,
-        name: payload?.profile?.name || payload?.email
+        name: payload?.profile?.name || payload?.email,
+        auth_token: payload?.auth_token || null,
+        auth_token_expires_at: payload?.auth_token_expires_at || null
       });
       setIsLoggedIn(true);
 
@@ -2995,7 +3011,11 @@ export default function App() {
           <header className="nav-card screen-panel">
             <div className="nav-brand">
               <button type="button" className="brand brand-main" onClick={handleGoHome} aria-label="Go to home">
-                <img src="/media/sc_logo_main.png" alt="SmartConnect4u logo" className="brand-logo brand-logo-main" />
+                <img
+                  src={isMobile ? "/media/SC_logo.png" : "/media/sc_logo_main.png"}
+                  alt="SmartConnect4u logo"
+                  className="brand-logo brand-logo-main"
+                />
               </button>
             </div>
             <div className="nav-links">
