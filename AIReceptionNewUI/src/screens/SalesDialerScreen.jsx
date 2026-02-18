@@ -4,6 +4,18 @@ import { API_URLS } from "../config/urls";
 const NOTES_KEY = "appointment_dialer_notes_v1";
 const DIAL_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "+", "0", "#"];
 const E164_REGEX = /^\+[1-9]\d{7,14}$/;
+const DESTINATION_CALLER_PREFIX_RULES = [
+  { destination: ["+1"], caller: ["+1"] },
+  { destination: ["+44"], caller: ["+44"] },
+  { destination: ["+61"], caller: ["+61"] },
+  { destination: ["+64"], caller: ["+64"] },
+  { destination: ["+353"], caller: ["+353"] },
+  { destination: ["+91"], caller: ["+91"] },
+  { destination: ["+33"], caller: ["+33"] },
+  { destination: ["+49"], caller: ["+49"] },
+  { destination: ["+34"], caller: ["+34"] },
+  { destination: ["+39"], caller: ["+39"] }
+];
 
 const TWILIO_SDK_URL = "https://unpkg.com/@twilio/voice-sdk@2.18.0/dist/twilio.min.js";
 
@@ -487,6 +499,46 @@ const normalizePhone = (raw) => {
   return trimmed.replace(/[^\d+#*+]/g, "");
 };
 
+const chooseCallerNumberForDestination = (destination, selectedFrom, activeCallerNumbers) => {
+  const to = String(destination || "").trim();
+  const current = String(selectedFrom || "").trim();
+  const candidates = Array.isArray(activeCallerNumbers)
+    ? activeCallerNumbers
+        .map((item) => String(item?.phone_number || "").trim())
+        .filter((num) => E164_REGEX.test(num))
+    : [];
+
+  if (!candidates.length) return current;
+
+  const rule = DESTINATION_CALLER_PREFIX_RULES.find((entry) =>
+    entry.destination.some((prefix) => to.startsWith(prefix))
+  );
+  if (!rule) return current || candidates[0];
+
+  if (current && rule.caller.some((prefix) => current.startsWith(prefix))) {
+    return current;
+  }
+
+  const matched = candidates.find((num) => rule.caller.some((prefix) => num.startsWith(prefix)));
+  return matched || current || candidates[0];
+};
+
+const inferCountryFromDestination = (destination, fallback = "") => {
+  const to = String(destination || "").trim();
+  if (to.startsWith("+1")) return "CA";
+  if (to.startsWith("+44")) return "GB";
+  if (to.startsWith("+61")) return "AU";
+  if (to.startsWith("+64")) return "NZ";
+  if (to.startsWith("+353")) return "IE";
+  if (to.startsWith("+91")) return "IN";
+  if (to.startsWith("+33")) return "FR";
+  if (to.startsWith("+49")) return "DE";
+  if (to.startsWith("+34")) return "ES";
+  if (to.startsWith("+39")) return "IT";
+  const fb = String(fallback || "").trim().toUpperCase();
+  return fb.length === 2 ? fb : "";
+};
+
 const loadTwilioSdk = () =>
   new Promise((resolve, reject) => {
     if (typeof window === "undefined") {
@@ -775,7 +827,14 @@ export default function SalesDialerScreen({ geoCountryCode = "" }) {
       setOutput({ error: "Enter a valid E.164 destination number." });
       return;
     }
-    if (!selectedFromNumber || !E164_REGEX.test(selectedFromNumber)) {
+    let effectiveFromNumber = selectedFromNumber;
+    const recommendedFrom = chooseCallerNumberForDestination(to, selectedFromNumber, activeCallerNumbers);
+    if (recommendedFrom && recommendedFrom !== selectedFromNumber) {
+      effectiveFromNumber = recommendedFrom;
+      setSelectedFromNumber(recommendedFrom);
+    }
+
+    if (!effectiveFromNumber || !E164_REGEX.test(effectiveFromNumber)) {
       setOutput({ error: "Select a valid active caller number before dialing." });
       return;
     }
@@ -785,8 +844,8 @@ export default function SalesDialerScreen({ geoCountryCode = "" }) {
     setStatusText("Dialing...");
 
     try {
-      const callParams = { To: to, FromNumber: selectedFromNumber };
-      const country = String(geoCountryCode || "").trim().toUpperCase();
+      const callParams = { To: to, FromNumber: effectiveFromNumber };
+      const country = inferCountryFromDestination(to, geoCountryCode);
       if (country.length === 2) {
         callParams.Country = country;
       }
@@ -811,7 +870,11 @@ export default function SalesDialerScreen({ geoCountryCode = "" }) {
       activeCall.on("reject", () => finishCall("Call rejected"));
       activeCall.on("cancel", () => finishCall("Call canceled"));
       activeCall.on("error", (error) => {
-        setOutput({ error: error.message, code: error.code });
+        const hint =
+          Number(error?.code) === 31005
+            ? "Twilio rejected this call. Ensure the selected caller number is voice-capable and outbound dialing permissions for Canada are enabled in Twilio."
+            : "";
+        setOutput({ error: error.message, code: error.code, hint, from: effectiveFromNumber, to });
         finishCall("Call error");
       });
     } catch (error) {
@@ -821,7 +884,7 @@ export default function SalesDialerScreen({ geoCountryCode = "" }) {
       setStatusText("Dial failed");
       setOutput({ error: String(error) });
     }
-  }, [fetchHistory, geoCountryCode, phoneInput, selectedFromNumber, setOutput, startCallTimer, stopCallTimer]);
+  }, [activeCallerNumbers, fetchHistory, geoCountryCode, phoneInput, selectedFromNumber, setOutput, startCallTimer, stopCallTimer]);
 
   const hangUp = useCallback(() => {
     if (activeCallRef.current) {

@@ -201,6 +201,13 @@ def _list_active_numbers(client: Client, default_from: str = "") -> list[dict]:
 
     try:
         for item in client.incoming_phone_numbers.list(limit=200):
+            capabilities = getattr(item, "capabilities", None)
+            if capabilities is None:
+                properties = getattr(item, "_properties", None)
+                if isinstance(properties, dict):
+                    capabilities = properties.get("capabilities")
+            if isinstance(capabilities, dict) and not capabilities.get("voice", False):
+                continue
             add(getattr(item, "phone_number", ""), getattr(item, "friendly_name", ""))
     except TwilioRestException:
         pass
