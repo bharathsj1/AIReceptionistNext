@@ -69,7 +69,6 @@ const TOOL_ID_ALIASES = {
   "social-media-manager": "social_media_manager"
 };
 const DASHBOARD_REQUEST_TIMEOUT_MS = 10000;
-const OPTIONAL_REQUEST_TIMEOUT_MS = 6000;
 const SUBSCRIPTION_REQUEST_TIMEOUT_MS = 4000;
 const FALLBACK_API_BASE = (
   import.meta.env.VITE_FALLBACK_API_BASE || "https://aireceptionist-func.azurewebsites.net/api"
@@ -745,39 +744,42 @@ export default function App() {
       setSignupEmail(userEmail || "");
       setSignupName(displayName || "");
 
-      // Fetch user profile and client profile to decide where to resume.
+      // Fetch dashboard/subscription context to decide where to resume.
       let userProfile = null;
       let clientProfile = null;
+      let dashboardPayload = null;
       let hasActive = false;
       let subscriptionCheckSucceeded = false;
       try {
-        const userRes = await fetch(
-          `${API_URLS.authUserByEmail}?email=${encodeURIComponent(userEmail)}`
-        );
-        if (userRes.ok) {
-          userProfile = await userRes.json().catch(() => null);
-        }
-        const clientRes = await fetch(
-          `${API_URLS.clientsByEmail}?email=${encodeURIComponent(userEmail)}`
-        );
-        if (clientRes.ok) {
-          clientProfile = await clientRes.json().catch(() => null);
-        }
-        const subsRes = await fetch(
-          `${API_URLS.subscriptionsStatus}?email=${encodeURIComponent(userEmail)}`
-        );
-        if (subsRes.ok) {
-          subscriptionCheckSucceeded = true;
-          const subsJson = await subsRes.json().catch(() => ({}));
-          const normalizedSubs = normalizeToolSubscriptions(subsJson?.subscriptions ?? subsJson);
-          setToolSubscriptions(normalizedSubs);
-          if (typeof subsJson?.active === "boolean") {
-            hasActive = subsJson.active;
-          } else {
+        const dashRes = await fetch(`${API_URLS.dashboard}?email=${encodeURIComponent(userEmail)}`);
+        if (dashRes.ok) {
+          dashboardPayload = await dashRes.json().catch(() => ({}));
+          userProfile = dashboardPayload?.user || null;
+          clientProfile = dashboardPayload?.client || null;
+          if (Array.isArray(dashboardPayload?.subscriptions)) {
+            const normalizedSubs = normalizeToolSubscriptions(dashboardPayload.subscriptions);
+            setToolSubscriptions(normalizedSubs);
             hasActive = Object.values(normalizedSubs).some((entry) => entry?.active);
           }
-        } else {
-          setToolSubscriptions({});
+        }
+
+        if (!hasActive) {
+          const subsRes = await fetch(
+            `${API_URLS.subscriptionsStatus}?email=${encodeURIComponent(userEmail)}`
+          );
+          if (subsRes.ok) {
+            subscriptionCheckSucceeded = true;
+            const subsJson = await subsRes.json().catch(() => ({}));
+            const normalizedSubs = normalizeToolSubscriptions(subsJson?.subscriptions ?? subsJson);
+            setToolSubscriptions(normalizedSubs);
+            if (typeof subsJson?.active === "boolean") {
+              hasActive = subsJson.active;
+            } else {
+              hasActive = Object.values(normalizedSubs).some((entry) => entry?.active);
+            }
+          } else if (!dashboardPayload?.subscriptions) {
+            setToolSubscriptions({});
+          }
         }
       } catch (profileErr) {
         console.warn("Login profile/subscription checks failed", profileErr);
@@ -805,7 +807,7 @@ export default function App() {
         !businessNameFromProfile.trim() || !businessPhoneFromProfile.trim();
       const missingWebsite =
         !websiteUrlFromProfile || !String(websiteUrlFromProfile).trim() || websiteUrlFromProfile === "pending";
-      const hasExistingProfile = Boolean(userProfile || clientProfile);
+      const hasExistingProfile = Boolean(userProfile || clientProfile || dashboardPayload?.client);
 
       setIsLoggedIn(true);
       setActiveTab("agents");
@@ -1460,7 +1462,11 @@ export default function App() {
   const handlePaymentSubmit = async (info) => {
     setPaymentInfo(info || null);
     setStatus("success");
-    setResponseMessage("Payment successful.");
+    if (info?.skipPayment) {
+      setResponseMessage("Active subscription found. Skipping payment.");
+    } else {
+      setResponseMessage("Payment successful.");
+    }
     setStage(STAGES.PAYMENT_SUCCESS);
   };
 
@@ -1929,16 +1935,6 @@ export default function App() {
           {},
           DASHBOARD_REQUEST_TIMEOUT_MS
         );
-        const clientPromise = fetchJsonWithFallbackAndTimeout(
-          `${API_URLS.clientsByEmail}?email=${encodeURIComponent(targetEmail)}`,
-          {},
-          OPTIONAL_REQUEST_TIMEOUT_MS
-        ).catch(() => null);
-        const userPromise = fetchJsonWithFallbackAndTimeout(
-          `${API_URLS.authUserByEmail}?email=${encodeURIComponent(targetEmail)}`,
-          {},
-          OPTIONAL_REQUEST_TIMEOUT_MS
-        ).catch(() => null);
         const subsPromise = fetchJsonWithFallbackAndTimeout(
           `${API_URLS.subscriptionsStatus}?email=${encodeURIComponent(targetEmail)}`,
           {},
@@ -1955,11 +1951,6 @@ export default function App() {
           throw new Error("Dashboard API returned HTML instead of JSON. Check /api routing.");
         }
 
-        const [clientRes, userRes] = await Promise.all([clientPromise, userPromise]);
-        const clientDetails =
-          clientRes?.res?.ok && !looksLikeHtml(clientRes?.data?.raw) ? clientRes.data : null;
-        const userDetails =
-          userRes?.res?.ok && !looksLikeHtml(userRes?.data?.raw) ? userRes.data : null;
         let subscriptionPayload = dashData?.subscriptions;
 
         const applySubscriptionPayload = (payload) => {
@@ -1990,12 +1981,12 @@ export default function App() {
           setSubscriptionsLoading(false);
         }
 
-        setClientData(dashData?.client || clientDetails?.client || clientDetails || null);
-        setUserProfile(userDetails || null);
-        if (userDetails) {
+        setClientData(dashData?.client || null);
+        setUserProfile(dashData?.user || null);
+        if (dashData?.user) {
           setUser((prev) => ({
             ...(prev || {}),
-            ...userDetails
+            ...dashData.user
           }));
         }
 
@@ -2004,17 +1995,14 @@ export default function App() {
         setBookingSettings((prev) => ({
           booking_enabled: Boolean(
             (dashData?.client && dashData?.client?.booking_enabled) ||
-              clientDetails?.booking_enabled ||
               prev.booking_enabled
           ),
           booking_duration_minutes:
             dashData?.client?.booking_duration_minutes ??
-            clientDetails?.booking_duration_minutes ??
             prev.booking_duration_minutes ??
             30,
           booking_buffer_minutes:
             dashData?.client?.booking_buffer_minutes ??
-            clientDetails?.booking_buffer_minutes ??
             prev.booking_buffer_minutes ??
             5
         }));
@@ -2041,14 +2029,10 @@ export default function App() {
         const callTemplate =
           dashData?.ultravox_agent?.callTemplate || dashData?.agent?.callTemplate || {};
         const derivedBusinessName =
-          clientDetails?.business_name ||
-          clientDetails?.client?.business_name ||
           dashData?.client?.business_name ||
           dashData?.client?.name ||
           businessName;
         const derivedBusinessPhone =
-          clientDetails?.business_phone ||
-          clientDetails?.client?.business_phone ||
           dashData?.client?.business_phone ||
           businessPhone;
         if (derivedBusinessName) setBusinessName(derivedBusinessName);

@@ -44,6 +44,7 @@ PLAN_AMOUNTS_BY_TOOL = {
     "social_media_manager": PLAN_AMOUNTS,
 }
 SUPPORTED_CUSTOM_CURRENCIES = {"usd", "cad", "gbp"}
+ACTIVE_SUBSCRIPTION_STATUSES = {"active", "trialing", "past_due", "unpaid"}
 
 
 def _normalize_email(value: str | None) -> str:
@@ -98,6 +99,269 @@ def _resolve_subscription_lookup_context(db: Session, email: str) -> tuple[list[
 def _resolve_subscription_lookup_emails(db: Session, email: str) -> list[str]:
     emails, _ = _resolve_subscription_lookup_context(db, email)
     return emails
+
+
+def _is_active_subscription_status(status: str | None) -> bool:
+    return str(status or "").strip().lower() in ACTIVE_SUBSCRIPTION_STATUSES
+
+
+def _obj_get(obj, field: str, default=None):
+    if isinstance(obj, dict):
+        return obj.get(field, default)
+    return getattr(obj, field, default)
+
+
+def _db_subscription_supports_tool(sub: Subscription, tool_id: str) -> bool:
+    requested_tool = (tool_id or DEFAULT_TOOL).lower()
+    primary_tool = (sub.tool or getattr(sub.tool_rel, "slug", None) or DEFAULT_TOOL).lower()
+    allowed_tools = _tools_for_plan(sub.plan_id, primary_tool)
+    return requested_tool in allowed_tools
+
+
+def _stripe_subscription_supports_tool(stripe_subscription, tool_id: str) -> bool:
+    requested_tool = (tool_id or DEFAULT_TOOL).lower()
+    metadata = _obj_get(stripe_subscription, "metadata", {}) or {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+    meta_tool = str(metadata.get("toolId") or metadata.get("tool") or DEFAULT_TOOL).lower()
+    meta_plan = str(metadata.get("planId") or "").lower()
+    if meta_plan:
+        return requested_tool in _tools_for_plan(meta_plan, meta_tool)
+    return requested_tool in {meta_tool, DEFAULT_TOOL}
+
+
+def _stripe_subscription_is_current(stripe_subscription) -> bool:
+    status = str(_obj_get(stripe_subscription, "status", "") or "").lower()
+    if not _is_active_subscription_status(status):
+        return False
+    current_period_end = _obj_get(stripe_subscription, "current_period_end")
+    if current_period_end:
+        period_end = _convert_timestamp_to_datetime(int(current_period_end))
+        if period_end and period_end < datetime.utcnow():
+            return False
+    return True
+
+
+def _extract_price_snapshot(stripe_subscription) -> tuple[str, int, str]:
+    items = _obj_get(stripe_subscription, "items")
+    entries = []
+    if items is not None:
+        entries = _obj_get(items, "data", []) or []
+    if not entries:
+        return "", 0, "usd"
+    first = entries[0]
+    price = _obj_get(first, "price")
+    if not price:
+        return "", 0, "usd"
+    price_id = str(_obj_get(price, "id", "") or "")
+    amount = int(_obj_get(price, "unit_amount", 0) or 0)
+    currency = str(_obj_get(price, "currency", "usd") or "usd").lower()
+    return price_id, amount, currency
+
+
+def _upsert_subscription_from_stripe(
+    db: Session,
+    stripe_subscription,
+    *,
+    email: str,
+    requested_tool: str,
+) -> None:
+    subscription_id = str(_obj_get(stripe_subscription, "id", "") or "")
+    if not subscription_id:
+        return
+
+    existing = (
+        db.query(Subscription)
+        .filter(Subscription.stripe_subscription_id == subscription_id)
+        .order_by(Subscription.updated_at.desc())
+        .first()
+    )
+    metadata = _obj_get(stripe_subscription, "metadata", {}) or {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+    tool_id = str(
+        metadata.get("toolId")
+        or metadata.get("tool")
+        or (existing.tool if existing else "")
+        or requested_tool
+        or DEFAULT_TOOL
+    ).lower()
+    plan_id = str(
+        metadata.get("planId")
+        or (existing.plan_id if existing else "")
+        or "gold"
+    ).lower()
+    customer_id = _obj_get(stripe_subscription, "customer")
+    if not isinstance(customer_id, str):
+        customer_id = str(_obj_get(customer_id, "id", "") or "")
+    status = str(_obj_get(stripe_subscription, "status", "") or "")
+    current_period_end = int(_obj_get(stripe_subscription, "current_period_end", 0) or 0)
+
+    latest_invoice = _obj_get(stripe_subscription, "latest_invoice")
+    invoice_id = str(_obj_get(latest_invoice, "id", "") or "") or None
+    payment_intent = _obj_get(latest_invoice, "payment_intent")
+    if isinstance(payment_intent, str):
+        payment_intent_id = payment_intent
+    else:
+        payment_intent_id = str(_obj_get(payment_intent, "id", "") or "") or None
+
+    price_id, amount, currency = _extract_price_snapshot(stripe_subscription)
+
+    _upsert_subscription_record(
+        db,
+        email=email,
+        tool=tool_id,
+        plan_id=plan_id,
+        stripe_customer_id=customer_id or "",
+        stripe_subscription_id=subscription_id,
+        price_id=price_id,
+        status=status,
+        current_period_end=current_period_end,
+        invoice_id=invoice_id,
+        payment_intent_id=payment_intent_id,
+        amount=amount,
+        currency=currency,
+    )
+
+
+def _find_active_stripe_subscription_for_customer(stripe_client, customer_id: str, tool_id: str):
+    if not customer_id:
+        return None
+    try:
+        subscriptions = stripe_client.Subscription.list(
+            customer=customer_id,
+            status="all",
+            limit=25,
+            expand=["data.latest_invoice.payment_intent", "data.items.data.price"],
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.warning("Failed to list Stripe subscriptions for customer %s: %s", customer_id, exc)
+        return None
+
+    for item in getattr(subscriptions, "data", []) or []:
+        if not _stripe_subscription_is_current(item):
+            continue
+        if not _stripe_subscription_supports_tool(item, tool_id):
+            continue
+        return item
+    return None
+
+
+def _find_existing_customer_id(stripe_client, email: str) -> str | None:
+    target = _normalize_email(email)
+    if not target:
+        return None
+    try:
+        existing = stripe_client.Customer.search(query=f"email:'{target}'", limit=1)
+        if existing and getattr(existing, "data", None):
+            return existing.data[0].id
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        existing = stripe_client.Customer.list(email=target, limit=1)
+        if existing and getattr(existing, "data", None):
+            return existing.data[0].id
+    except Exception:  # noqa: BLE001
+        return None
+    return None
+
+
+def _resolve_existing_active_subscription(db: Session, stripe_client, email: str, tool_id: str) -> dict | None:
+    normalized_email = _normalize_email(email)
+    lookup_emails = _resolve_subscription_lookup_emails(db, normalized_email)
+    if not lookup_emails:
+        lookup_emails = [normalized_email]
+
+    now = datetime.utcnow()
+    db_subscriptions = (
+        db.query(Subscription)
+        .filter(sa_func.lower(sa_func.trim(Subscription.email)).in_(lookup_emails))
+        .order_by(Subscription.updated_at.desc())
+        .all()
+    )
+
+    for sub in db_subscriptions:
+        if not _db_subscription_supports_tool(sub, tool_id):
+            continue
+        if not _is_active_subscription_status(sub.status):
+            continue
+        if sub.current_period_end and sub.current_period_end < now:
+            continue
+        if sub.stripe_subscription_id:
+            try:
+                stripe_sub = stripe_client.Subscription.retrieve(
+                    sub.stripe_subscription_id,
+                    expand=["latest_invoice.payment_intent", "items.data.price"],
+                )
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.warning(
+                    "Failed to verify Stripe subscription %s for %s: %s",
+                    sub.stripe_subscription_id,
+                    normalized_email,
+                    exc,
+                )
+                return {
+                    "skipPayment": True,
+                    "existingSubscription": True,
+                    "subscriptionId": sub.stripe_subscription_id,
+                    "status": sub.status,
+                    "planId": sub.plan_id,
+                    "toolId": tool_id,
+                    "source": "db",
+                }
+
+            if _stripe_subscription_is_current(stripe_sub) and _stripe_subscription_supports_tool(
+                stripe_sub, tool_id
+            ):
+                _upsert_subscription_from_stripe(
+                    db,
+                    stripe_sub,
+                    email=normalized_email,
+                    requested_tool=tool_id,
+                )
+                return {
+                    "skipPayment": True,
+                    "existingSubscription": True,
+                    "subscriptionId": str(_obj_get(stripe_sub, "id", "") or sub.stripe_subscription_id),
+                    "status": str(_obj_get(stripe_sub, "status", "") or sub.status or "active"),
+                    "planId": str(
+                        (_obj_get(_obj_get(stripe_sub, "metadata", {}), "planId", None) or sub.plan_id or "")
+                    ),
+                    "toolId": tool_id,
+                    "source": "db+stripe",
+                }
+            continue
+
+        return {
+            "skipPayment": True,
+            "existingSubscription": True,
+            "subscriptionId": "",
+            "status": sub.status,
+            "planId": sub.plan_id,
+            "toolId": tool_id,
+            "source": "db",
+        }
+
+    customer_id = _find_existing_customer_id(stripe_client, normalized_email)
+    stripe_sub = _find_active_stripe_subscription_for_customer(stripe_client, customer_id or "", tool_id)
+    if not stripe_sub:
+        return None
+
+    _upsert_subscription_from_stripe(
+        db,
+        stripe_sub,
+        email=normalized_email,
+        requested_tool=tool_id,
+    )
+    return {
+        "skipPayment": True,
+        "existingSubscription": True,
+        "subscriptionId": str(_obj_get(stripe_sub, "id", "") or ""),
+        "status": str(_obj_get(stripe_sub, "status", "") or "active"),
+        "planId": str(_obj_get(_obj_get(stripe_sub, "metadata", {}), "planId", "") or ""),
+        "toolId": tool_id,
+        "source": "stripe",
+    }
 
 
 def _get_stripe_client() -> stripe.StripeClient:
@@ -634,9 +898,48 @@ def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
             headers=cors,
         )
 
+    db = SessionLocal()
     try:
         client = _get_stripe_client()
+
+        existing_active = _resolve_existing_active_subscription(db, client, email, tool_id)
+        if existing_active:
+            return func.HttpResponse(
+                json.dumps(existing_active),
+                status_code=200,
+                mimetype="application/json",
+                headers=cors,
+            )
+
         customer_id = _get_or_create_customer(client, email)
+        stripe_existing = _find_active_stripe_subscription_for_customer(client, customer_id, tool_id)
+        if stripe_existing:
+            _upsert_subscription_from_stripe(
+                db,
+                stripe_existing,
+                email=email,
+                requested_tool=tool_id,
+            )
+            return func.HttpResponse(
+                json.dumps(
+                    {
+                        "skipPayment": True,
+                        "existingSubscription": True,
+                        "subscriptionId": str(_obj_get(stripe_existing, "id", "") or ""),
+                        "status": str(_obj_get(stripe_existing, "status", "") or "active"),
+                        "planId": str(
+                            _obj_get(_obj_get(stripe_existing, "metadata", {}), "planId", "") or ""
+                        ),
+                        "toolId": tool_id,
+                        "customerId": customer_id,
+                        "source": "stripe-customer",
+                    }
+                ),
+                status_code=200,
+                mimetype="application/json",
+                headers=cors,
+            )
+
         price_id = _get_or_create_price(
             client,
             plan_id,
@@ -690,25 +993,21 @@ def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
         current_period_end_val = getattr(subscription, "current_period_end", None) or 0
 
         # Persist pending subscription record
-        try:
-            db = SessionLocal()
-            _upsert_subscription_record(
-                db,
-                email=email,
-                tool=tool_id,
-                plan_id=plan_id,
-                stripe_customer_id=customer_id,
-                stripe_subscription_id=subscription.id,
-                price_id=price_id,
-                status=subscription.status,
-                current_period_end=current_period_end_val,
-                invoice_id=invoice_id,
-                payment_intent_id=payment_intent_id,
-                amount=amount,
-                currency=custom_amount_currency if custom_amount_cents is not None else "usd",
-            )
-        finally:
-            db.close()
+        _upsert_subscription_record(
+            db,
+            email=email,
+            tool=tool_id,
+            plan_id=plan_id,
+            stripe_customer_id=customer_id,
+            stripe_subscription_id=subscription.id,
+            price_id=price_id,
+            status=subscription.status,
+            current_period_end=current_period_end_val,
+            invoice_id=invoice_id,
+            payment_intent_id=payment_intent_id,
+            amount=amount,
+            currency=custom_amount_currency if custom_amount_cents is not None else "usd",
+        )
 
     except Exception as exc:  # pylint: disable=broad-except
         logger.exception("Failed to create subscription: %s", exc)
@@ -718,6 +1017,8 @@ def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
             mimetype="application/json",
             headers=cors,
         )
+    finally:
+        db.close()
 
     return func.HttpResponse(
             json.dumps(
@@ -1022,6 +1323,45 @@ def get_subscription_status(req: func.HttpRequest) -> func.HttpResponse:
                     }
                 )
         active_any = any(item["active"] for item in subscriptions_payload)
+        if not active_any:
+            try:
+                stripe_client = _get_stripe_client()
+                # Validate against Stripe when DB misses an active record.
+                _resolve_existing_active_subscription(
+                    db,
+                    stripe_client,
+                    email,
+                    tool_param or DEFAULT_TOOL,
+                )
+                subs = (
+                    db.query(Subscription)
+                    .filter(sa_func.lower(sa_func.trim(Subscription.email)).in_(lookup_emails))
+                    .order_by(Subscription.updated_at.desc())
+                    .all()
+                )
+                subscriptions_payload = []
+                for sub in subs:
+                    primary_tool = (
+                        sub.tool
+                        or getattr(sub.tool_rel, "slug", None)
+                        or DEFAULT_TOOL
+                    ).lower()
+                    tools = _tools_for_plan(sub.plan_id, primary_tool)
+                    for tool_value in tools:
+                        if tool_param and tool_param != tool_value:
+                            continue
+                        subscriptions_payload.append(
+                            {
+                                "tool": tool_value,
+                                "active": (sub.status or "").lower() in {"active", "trialing"},
+                                "status": sub.status,
+                                "planId": sub.plan_id,
+                                "currentPeriodEnd": sub.current_period_end.isoformat() if sub.current_period_end else None,
+                            }
+                        )
+                active_any = any(item["active"] for item in subscriptions_payload)
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.warning("Stripe status sync failed for %s: %s", email, exc)
         primary = subscriptions_payload[0] if subscriptions_payload else None
         body = {
             "active": primary["active"] if tool_param else active_any,

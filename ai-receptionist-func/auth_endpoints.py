@@ -1069,6 +1069,12 @@ def auth_login(req: func.HttpRequest) -> func.HttpResponse:
         if trimmed_password and trimmed_password != password:
             password_candidates.append(trimmed_password)
 
+        client_user_any = (
+            db.query(ClientUser)
+            .filter(sa_func.lower(sa_func.trim(ClientUser.email)) == email)
+            .order_by(ClientUser.id.asc())
+            .first()
+        )
         candidate_client_users = (
             db.query(ClientUser)
             .filter(sa_func.lower(sa_func.trim(ClientUser.email)) == email)
@@ -1112,6 +1118,26 @@ def auth_login(req: func.HttpRequest) -> func.HttpResponse:
                     }
                 ),
                 status_code=200,
+                mimetype="application/json",
+                headers=cors,
+            )
+
+        # If this email belongs to a client user, do not allow fallback login via legacy users table.
+        if client_user_any:
+            is_disabled = bool(
+                client_user_any.is_active is False
+                or str(client_user_any.status or "").strip().lower() == "disabled"
+            )
+            if is_disabled:
+                return func.HttpResponse(
+                    json.dumps({"error": "This account is disabled. Contact your administrator."}),
+                    status_code=403,
+                    mimetype="application/json",
+                    headers=cors,
+                )
+            return func.HttpResponse(
+                json.dumps({"error": "Invalid credentials"}),
+                status_code=401,
                 mimetype="application/json",
                 headers=cors,
             )
@@ -1367,15 +1393,6 @@ def client_users_create(req: func.HttpRequest) -> func.HttpResponse:
         )
         db.add(user_obj)
 
-        # Backward compatibility: create a legacy user row for this newly added client user.
-        db.add(
-            User(
-                email=email,
-                password_hash=user_obj.password_hash,
-                is_admin=(role == "admin"),
-            )
-        )
-
         db.commit()
         db.refresh(user_obj)
         return func.HttpResponse(
@@ -1457,7 +1474,19 @@ def client_users_delete(req: func.HttpRequest) -> func.HttpResponse:
                 headers=cors,
             )
 
+        user_email = _normalize_email(user_obj.email)
         db.delete(user_obj)
+        # Clean up legacy user row for added users when it is not the primary client owner.
+        legacy_user = (
+            db.query(User)
+            .filter(sa_func.lower(sa_func.trim(User.email)) == user_email)
+            .order_by(User.id.asc())
+            .first()
+        )
+        if legacy_user:
+            owner_client = db.query(Client).filter(Client.user_id == legacy_user.id).first()
+            if not owner_client:
+                db.delete(legacy_user)
         db.commit()
         return func.HttpResponse("", status_code=204, headers=cors)
     except Exception as exc:  # pylint: disable=broad-except
@@ -1569,6 +1598,21 @@ def client_users_update(req: func.HttpRequest) -> func.HttpResponse:
                 user_obj.status = "active"
             if not new_active and user_obj.status == "active":
                 user_obj.status = "disabled"
+
+        # Keep legacy user row in sync only if it is not a primary owner account.
+        legacy_user = (
+            db.query(User)
+            .filter(sa_func.lower(sa_func.trim(User.email)) == _normalize_email(user_obj.email))
+            .order_by(User.id.asc())
+            .first()
+        )
+        if legacy_user:
+            owner_client = db.query(Client).filter(Client.user_id == legacy_user.id).first()
+            if not owner_client:
+                if new_role:
+                    legacy_user.is_admin = str(user_obj.role or "admin").lower() == "admin"
+                if new_password is not None:
+                    legacy_user.password_hash = user_obj.password_hash
 
         db.commit()
         db.refresh(user_obj)

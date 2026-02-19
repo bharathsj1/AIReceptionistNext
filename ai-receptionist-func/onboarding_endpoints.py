@@ -12,6 +12,7 @@ from urllib.parse import parse_qs, urlparse
 
 import azure.functions as func
 import httpx
+from sqlalchemy import func as sa_func
 from twilio.base.exceptions import TwilioRestException
 from twilio.rest import Client as TwilioClient
 from function_app import app
@@ -31,7 +32,7 @@ from services.receptionist_usage_service import (
     collect_subscription_emails_for_client,
 )
 from shared.config import get_public_api_base, get_required_setting, get_setting, get_smtp_settings
-from shared.db import Client, PhoneNumber, SessionLocal, Subscription, User, init_db
+from shared.db import Client, ClientUser, PhoneNumber, SessionLocal, Subscription, User, init_db
 from services.prompt_registry_service import resolve_prompt_for_call
 from utils.cors import build_cors_headers
 
@@ -101,6 +102,61 @@ def _build_summary_from_client(client: Client, user: User | None) -> Tuple[str, 
 def _dynamic_prompts_enabled() -> bool:
     flag = str(get_setting("ENABLE_DYNAMIC_PROMPTS", "") or "").strip().lower()
     return flag in {"1", "true", "yes", "on"}
+
+
+def _normalize_email(value: str | None) -> str:
+    return str(value or "").strip().lower()
+
+
+def _find_client_and_user(db, email: str | None) -> tuple[Optional[Client], Optional[User]]:
+    normalized = _normalize_email(email)
+    if not normalized:
+        return None, None
+
+    user = (
+        db.query(User)
+        .filter(sa_func.lower(sa_func.trim(User.email)) == normalized)
+        .order_by(User.id.asc())
+        .first()
+    )
+    client = (
+        db.query(Client)
+        .filter(sa_func.lower(sa_func.trim(Client.email)) == normalized)
+        .order_by(Client.id.asc())
+        .first()
+    )
+    client_user = (
+        db.query(ClientUser)
+        .filter(sa_func.lower(sa_func.trim(ClientUser.email)) == normalized)
+        .order_by(ClientUser.id.asc())
+        .first()
+    )
+
+    if not client and client_user:
+        client = db.query(Client).filter_by(id=client_user.client_id).one_or_none()
+    if not client and user:
+        client = db.query(Client).filter_by(user_id=user.id).order_by(Client.id.asc()).first()
+    if client and not user and client.user_id:
+        user = db.query(User).filter_by(id=client.user_id).one_or_none()
+    return client, user
+
+
+def _collect_subscription_emails(db, email: str | None) -> list[str]:
+    normalized = _normalize_email(email)
+    if not normalized:
+        return []
+    emails = {normalized}
+    client, user = _find_client_and_user(db, normalized)
+    if client and client.email:
+        emails.add(_normalize_email(client.email))
+    if user and user.email:
+        emails.add(_normalize_email(user.email))
+    if client:
+        for row in db.query(ClientUser.email).filter(ClientUser.client_id == client.id).all():
+            member_email = _normalize_email(row[0] if row else "")
+            if member_email:
+                emails.add(member_email)
+    return [item for item in emails if item]
 
 
 def _normalize_ip(raw: str | None) -> Optional[str]:
@@ -206,9 +262,12 @@ def _resolve_country_info(req: func.HttpRequest, body: dict | None) -> tuple[str
 def _has_active_receptionist_subscription(db, email: str) -> bool:
     now = datetime.utcnow()
     active_statuses = {"active", "trialing"}
+    lookup_emails = _collect_subscription_emails(db, email)
+    if not lookup_emails:
+        return False
     subscription = (
         db.query(Subscription)
-        .filter(Subscription.email == email)
+        .filter(sa_func.lower(sa_func.trim(Subscription.email)).in_(lookup_emails))
         .filter(Subscription.status.in_(active_statuses))
         .order_by(Subscription.updated_at.desc())
         .first()
@@ -373,7 +432,8 @@ def twilio_available_numbers(req: func.HttpRequest) -> func.HttpResponse:
     if req.method == "OPTIONS":
         return func.HttpResponse("", status_code=204, headers=cors)
 
-    email = req.params.get("email")
+    email = _normalize_email(req.params.get("email"))
+    email = _normalize_email(email)
     if not email:
         return func.HttpResponse(
             json.dumps({"error": "Missing required field: email"}),
@@ -392,7 +452,7 @@ def twilio_available_numbers(req: func.HttpRequest) -> func.HttpResponse:
                 headers=cors,
             )
 
-        client_record: Client | None = db.query(Client).filter_by(email=email).one_or_none()
+        client_record, _ = _find_client_and_user(db, email)
         assigned_number = None
         if client_record:
             phone_record = (
@@ -457,14 +517,20 @@ def _ensure_user_with_temp_password(db, email: str) -> Tuple[User, str | None]:
     Always issue a fresh temporary password and update the hash,
     so it can be shared with the user for login.
     """
-    user = db.query(User).filter_by(email=email).one_or_none()
+    normalized = _normalize_email(email)
+    user = (
+        db.query(User)
+        .filter(sa_func.lower(sa_func.trim(User.email)) == normalized)
+        .order_by(User.id.asc())
+        .first()
+    )
     temp_password = secrets.token_urlsafe(10)
     hashed = _hash_password(temp_password)
     if user:
         user.password_hash = hashed
         return user, temp_password
     # New user
-    user = User(email=email, password_hash=hashed)
+    user = User(email=normalized, password_hash=hashed)
     db.add(user)
     db.flush()
     return user, temp_password
@@ -649,7 +715,7 @@ def clients_provision(req: func.HttpRequest) -> func.HttpResponse:
 
     db = SessionLocal()
     try:
-        client_record: Client = db.query(Client).filter_by(email=email).one_or_none()
+        client_record, user = _find_client_and_user(db, email)
         if client_record:
             client_record.website_url = website_url
             if name_guess:
@@ -659,8 +725,7 @@ def clients_provision(req: func.HttpRequest) -> func.HttpResponse:
             db.add(client_record)
             db.flush()
 
-        # Link to an existing user if present; do not create new accounts here.
-        user = db.query(User).filter_by(email=email).one_or_none()
+        # Link to an existing owner user if present; do not create new accounts here.
         client_record.user_id = user.id if user else client_record.user_id
 
         if not client_record.ultravox_agent_id:
@@ -807,6 +872,7 @@ def clients_assign_number(req: func.HttpRequest) -> func.HttpResponse:
             or body.get("twilio_number")
             or body.get("twilioNumber")
         )
+    email = _normalize_email(email)
     if not email:
         return func.HttpResponse(
             json.dumps({"error": "Missing required field: email"}),
@@ -817,7 +883,7 @@ def clients_assign_number(req: func.HttpRequest) -> func.HttpResponse:
 
     db = SessionLocal()
     try:
-        client_record: Client = db.query(Client).filter_by(email=email).one_or_none()
+        client_record, user = _find_client_and_user(db, email)
         if not client_record:
             return func.HttpResponse(
                 json.dumps({"error": "Client not found"}),
@@ -826,7 +892,6 @@ def clients_assign_number(req: func.HttpRequest) -> func.HttpResponse:
                 headers=cors,
             )
 
-        user = db.query(User).filter_by(email=email).one_or_none()
         client_record.user_id = user.id if user else client_record.user_id
 
         if not client_record.ultravox_agent_id:
