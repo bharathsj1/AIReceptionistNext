@@ -1066,8 +1066,8 @@ export default function LandingScreen({ onTry, onLogin, onSelectPlan, onShowServ
       <section className="pricsec" id="pric">
         <div className="container">
           <div className="sr2" style={{ textAlign: "center" }}>
-            <div className="slabel"><span className="sldot" />Pricing</div>
-            <h2 className="sh">Simple pricing. <span className="gt">Scale as you grow.</span></h2>
+            <div className="slabel"><span className="sldot" />Plans</div>
+            <h2 className="sh">Simple plans. <span className="gt">Scale as you grow.</span></h2>
             <p className="ssub" style={{ textAlign: "center", margin: "12px auto 0" }}>Start free. No contracts. Cancel anytime.</p>
           </div>
           <div className="pric-packages sr2">
@@ -1146,7 +1146,7 @@ export default function LandingScreen({ onTry, onLogin, onSelectPlan, onShowServ
           </div>
           <ul className="ftnav">
             <li><a href="#feat">Product</a></li>
-            <li><a href="#pric">Pricing</a></li>
+            <li><a href="#pric">Plans</a></li>
             <li><a href="#int">Integrations</a></li>
             <li><a href="/careers.html">Careers</a></li>
             <li><a href="/blog.html">Blogs</a></li>
