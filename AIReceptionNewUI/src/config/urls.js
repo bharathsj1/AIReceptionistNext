@@ -59,6 +59,7 @@ export const API_URLS = {
   provisionClient: apiUrl("clients/provision"),
   authSignup: apiUrl("auth/signup"),
   authLogin: apiUrl("auth/login"),
+  authEmailExists: apiUrl("auth/email-exists"),
   authForgotPassword: apiUrl("auth/forgot-password"),
   authResetPassword: apiUrl("auth/reset-password"),
   authUserByEmail: apiUrl("auth/user-by-email"),

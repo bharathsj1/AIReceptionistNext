@@ -71,6 +71,9 @@ const TOOL_ID_ALIASES = {
 const DASHBOARD_REQUEST_TIMEOUT_MS = 10000;
 const OPTIONAL_REQUEST_TIMEOUT_MS = 6000;
 const SUBSCRIPTION_REQUEST_TIMEOUT_MS = 4000;
+const FALLBACK_API_BASE = (
+  import.meta.env.VITE_FALLBACK_API_BASE || "https://aireceptionist-func.azurewebsites.net/api"
+).replace(/\/$/, "");
 
 const fetchWithTimeout = async (resource, options = {}, timeoutMs = 8000) => {
   const controller = new AbortController();
@@ -90,6 +93,34 @@ const readResponseBody = async (response) => {
   } catch {
     return { raw: text };
   }
+};
+
+const looksLikeHtml = (value) =>
+  typeof value === "string" && /<!doctype|<html/i.test(value.slice(0, 200));
+
+const buildFallbackUrl = (url) => {
+  if (typeof url !== "string") return null;
+  if (/^https?:\/\//i.test(url)) return null;
+  if (!url.startsWith("/api/")) return null;
+  return `${FALLBACK_API_BASE}${url.slice(4)}`;
+};
+
+const fetchJsonWithFallback = async (url, options = {}) => {
+  const requestOptions = {
+    ...options,
+    headers: { Accept: "application/json", ...(options.headers || {}) }
+  };
+  const res = await fetch(url, requestOptions);
+  const data = await readResponseBody(res);
+  const fallbackUrl = buildFallbackUrl(url);
+
+  if (fallbackUrl && looksLikeHtml(data?.raw)) {
+    const retryRes = await fetch(fallbackUrl, requestOptions);
+    const retryData = await readResponseBody(retryRes);
+    return { res: retryRes, data: retryData };
+  }
+
+  return { res, data };
 };
 
 const normalizeWebsiteUrl = (value) => {
@@ -467,7 +498,7 @@ export default function App() {
     setStage(STAGES.LOADING);
 
     try {
-      const res = await fetch(API_URLS.crawlKnowledgeBase, {
+      const { res, data } = await fetchJsonWithFallback(API_URLS.crawlKnowledgeBase, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -477,17 +508,18 @@ export default function App() {
       });
 
       if (!res.ok) {
-        const errorBody = await readResponseBody(res);
         const errorText =
-          errorBody?.error ||
-          errorBody?.message ||
-          errorBody?.details ||
-          errorBody?.raw ||
+          data?.error ||
+          data?.message ||
+          data?.details ||
+          data?.raw ||
           "Request failed";
         throw new Error(errorText);
       }
 
-      const data = await readResponseBody(res);
+      if (!Array.isArray(data?.pages) && looksLikeHtml(data?.raw)) {
+        throw new Error("Crawl API returned HTML instead of JSON. Please check /api routing.");
+      }
 
       setCrawlData(data);
       setResponseMessage("All website data loaded fine.");
@@ -496,7 +528,7 @@ export default function App() {
       const fallbackBusiness = businessName || data?.business_name || "Pending business";
       const fallbackPhone = businessPhone || "+10000000000";
       const payload = {
-        email: signupEmail || email || "",
+        email: signupEmail || email || loginEmail || user?.email || "",
         businessName: fallbackBusiness,
         businessPhone: fallbackPhone,
         websiteUrl,
@@ -513,7 +545,7 @@ export default function App() {
       }
       let profile = null;
       try {
-        const profileRes = await fetch(API_URLS.businessProfile, {
+        const { res: profileRes, data: profileJson } = await fetchJsonWithFallback(API_URLS.businessProfile, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           mode: "cors",
@@ -523,7 +555,6 @@ export default function App() {
             pages: data?.pages || data?.data || data?.raw || []
           })
         });
-        const profileJson = await profileRes.json().catch(() => ({}));
         if (profileRes.ok) {
           profile = profileJson?.profile || null;
         } else {
@@ -649,6 +680,27 @@ export default function App() {
       }
 
       if (!res.ok) {
+        const isInvalidCredentials =
+          res.status === 401 ||
+          String(data?.error || "").toLowerCase().includes("invalid credentials");
+        if (isInvalidCredentials && normalizedLoginEmail) {
+          try {
+            const existsRes = await fetch(
+              `${API_URLS.authEmailExists}?email=${encodeURIComponent(normalizedLoginEmail)}`
+            );
+            const existsData = await existsRes.json().catch(() => ({}));
+            if (existsRes.ok && existsData?.exists === false) {
+              throw new Error("This account is not available, please sign up.");
+            }
+          } catch (existErr) {
+            if (
+              existErr instanceof Error &&
+              existErr.message === "This account is not available, please sign up."
+            ) {
+              throw existErr;
+            }
+          }
+        }
         throw new Error(data?.error || data?.details || "Login failed");
       }
 
