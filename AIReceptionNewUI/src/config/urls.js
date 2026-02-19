@@ -64,6 +64,7 @@ export const API_URLS = {
   authUserByEmail: apiUrl("auth/user-by-email"),
   clientsByEmail: apiUrl("clients/by-email"),
   clientsBusinessDetails: apiUrl("clients/business-details"),
+  paymentsPublicConfig: apiUrl("payments/public-config"),
   paymentsCreateSubscription: apiUrl("payments/create-subscription"),
   paymentsConfirmSubscription: apiUrl("payments/confirm-subscription"),
   ultravoxVoices: apiUrl("ultravox-voices"),
