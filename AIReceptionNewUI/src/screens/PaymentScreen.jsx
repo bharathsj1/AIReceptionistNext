@@ -50,6 +50,14 @@ const fetchJsonWithFallback = async (url, options = {}) => {
   return { res, data };
 };
 
+const parseCustomAmountUsd = (value) => {
+  const normalized = String(value ?? "").trim().replace(/,/g, "");
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed) || parsed < 1) return null;
+  return parsed;
+};
+
 const plans = {
   bronze: {
     name: "Bronze",
@@ -127,6 +135,8 @@ export default function PaymentScreen({
   const [email, setEmail] = useState(initialEmail);
   const [processing, setProcessing] = useState(false);
   const [billingMonths, setBillingMonths] = useState(3);
+  const [billingMode, setBillingMode] = useState("standard");
+  const [customAmountUsd, setCustomAmountUsd] = useState("");
   const [postalCode, setPostalCode] = useState("");
 
   const currencyForCountry = (code) => {
@@ -169,16 +179,29 @@ export default function PaymentScreen({
       currency
     };
   }, [planId, geoCountryCode, fxRates]);
+  const localCurrency = useMemo(
+    () => currencyForCountry(geoCountryCode || "US"),
+    [geoCountryCode]
+  );
+
+  const parsedCustomAmountUsd = useMemo(
+    () => parseCustomAmountUsd(customAmountUsd),
+    [customAmountUsd]
+  );
+  const usingCustomAmount = billingMode === "custom";
+  const effectiveUnitAmount = usingCustomAmount ? parsedCustomAmountUsd : plan.unitAmount;
+  const effectiveCurrency = usingCustomAmount ? localCurrency : (plan.currency || "USD");
 
   const totalDue = useMemo(() => {
-    if (!plan.unitAmount) return plan.price;
-    return formatPrice(plan.unitAmount * billingMonths, plan.currency || "USD");
-  }, [plan.unitAmount, plan.currency, billingMonths, plan.price]);
+    if (!effectiveUnitAmount) return usingCustomAmount ? "Enter custom amount" : plan.price;
+    return formatPrice(effectiveUnitAmount * billingMonths, effectiveCurrency);
+  }, [effectiveUnitAmount, effectiveCurrency, billingMonths, plan.price, usingCustomAmount]);
   const toolLabel = TOOL_LABELS[toolId] || "AI workspace";
 
-  const stripePromise = loadStripe(
-    import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY ||
-      "pk_test_51SccVdGX99jB26LURq7OeFpXSa0qTSlzEf0bbSrznJgK0Z0lgJDltaJ6iVErFEvUEcABDPYm6F42V8QfVdpF0P1200htKKQ7Oo"
+  const publishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY?.trim() || "";
+  const stripePromise = useMemo(
+    () => (publishableKey ? loadStripe(publishableKey) : null),
+    [publishableKey]
   );
 
   useEffect(() => {
@@ -188,8 +211,19 @@ export default function PaymentScreen({
   }, [initialEmail]);
 
   useEffect(() => {
+    if (!publishableKey) {
+      setClientSecret("");
+      setIntentLoading(false);
+      setIntentError("Missing Stripe publishable key. Set VITE_STRIPE_PUBLISHABLE_KEY.");
+      return;
+    }
     if (!email) {
       setClientSecret("");
+      return;
+    }
+    if (usingCustomAmount && !parsedCustomAmountUsd) {
+      setIntentLoading(false);
+      setIntentError("Enter a custom amount of at least 1.");
       return;
     }
     const controller = new AbortController();
@@ -200,7 +234,14 @@ export default function PaymentScreen({
         const { res, data } = await fetchJsonWithFallback(API_URLS.paymentsCreateSubscription, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ planId: planId || "gold", toolId, email, billingMonths }),
+          body: JSON.stringify({
+            planId: planId || "gold",
+            toolId,
+            email,
+            billingMonths,
+            customAmount: usingCustomAmount ? parsedCustomAmountUsd : null,
+            customAmountCurrency: usingCustomAmount ? effectiveCurrency : null
+          }),
           signal: controller.signal
         });
         if (!res.ok || !data?.clientSecret) {
@@ -230,7 +271,16 @@ export default function PaymentScreen({
     };
     createSubscription();
     return () => controller.abort();
-  }, [planId, email, toolId]);
+  }, [
+    planId,
+    email,
+    toolId,
+    publishableKey,
+    billingMonths,
+    usingCustomAmount,
+    parsedCustomAmountUsd,
+    effectiveCurrency
+  ]);
 
   return (
     <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-6 shadow-[0_20px_90px_rgba(15,23,42,0.35)] backdrop-blur md:p-10 screen-panel">
@@ -291,7 +341,7 @@ export default function PaymentScreen({
           </div>
         </div>
 
-        {clientSecret ? (
+        {clientSecret && stripePromise ? (
           <Elements
             stripe={stripePromise}
             options={{
@@ -316,8 +366,14 @@ export default function PaymentScreen({
         intentType={intentType}
         billingMonths={billingMonths}
         setBillingMonths={setBillingMonths}
-        planCurrency={plan.currency}
-        planUnitAmount={plan.unitAmount}
+        billingMode={billingMode}
+        setBillingMode={setBillingMode}
+        customAmountUsd={customAmountUsd}
+        setCustomAmountUsd={setCustomAmountUsd}
+        parsedCustomAmountUsd={parsedCustomAmountUsd}
+        customAmountCurrency={effectiveCurrency}
+        planCurrency={effectiveCurrency}
+        planUnitAmount={effectiveUnitAmount}
         totalDue={totalDue}
         clientSecret={clientSecret}
         postalCode={postalCode}
@@ -352,7 +408,11 @@ export default function PaymentScreen({
                 />
               </label>
             </div>
-            {intentError && <p className="mt-3 text-sm text-red-600">{intentError}</p>}
+            {(intentError || !publishableKey) && (
+              <p className="mt-3 text-sm text-red-600">
+                {intentError || "Missing Stripe publishable key. Set VITE_STRIPE_PUBLISHABLE_KEY."}
+              </p>
+            )}
             <div className="mt-3 text-xs text-slate-500">
               {intentLoading ? "Connecting to Stripe..." : "We’ll start checkout once email is provided."}
             </div>
@@ -379,6 +439,12 @@ function PaymentForm({
   intentType,
   billingMonths,
   setBillingMonths,
+  billingMode,
+  setBillingMode,
+  customAmountUsd,
+  setCustomAmountUsd,
+  parsedCustomAmountUsd,
+  customAmountCurrency,
   planCurrency,
   planUnitAmount,
   totalDue,
@@ -394,6 +460,10 @@ function PaymentForm({
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (!stripe || !elements || !acceptedTerms) return;
+    if (billingMode === "custom" && !parsedCustomAmountUsd) {
+      setError("Please enter a custom amount of at least 1.");
+      return;
+    }
     if (!postalCode.trim()) {
       setError("Please enter your ZIP / Postal code.");
       return;
@@ -456,7 +526,9 @@ function PaymentForm({
             toolId,
             customerId,
             billingMonths,
-            postalCode
+            postalCode,
+            customAmount: billingMode === "custom" ? parsedCustomAmountUsd : null,
+            customAmountCurrency: billingMode === "custom" ? customAmountCurrency : null
           })
         });
         receiptUrl = confirmData?.receipt_url || confirmData?.invoice_pdf || null;
@@ -475,6 +547,9 @@ function PaymentForm({
         cardName,
         subscriptionId,
         customerId,
+        billingMonths,
+        customAmount: billingMode === "custom" ? parsedCustomAmountUsd : null,
+        customAmountCurrency: billingMode === "custom" ? customAmountCurrency : null,
         receiptUrl,
         invoiceUrl
       });
@@ -501,16 +576,41 @@ function PaymentForm({
         <label className="text-sm font-semibold text-slate-800">
           Billing period (pay upfront)
           <select
-            value={billingMonths}
-            onChange={(e) => setBillingMonths(Number(e.target.value))}
+            value={billingMode === "custom" ? "custom" : String(billingMonths)}
+            onChange={(e) => {
+              const nextValue = e.target.value;
+              if (nextValue === "custom") {
+                setBillingMode("custom");
+                setBillingMonths(1);
+                return;
+              }
+              setBillingMode("standard");
+              setBillingMonths(Number(nextValue));
+            }}
             className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200"
           >
             <option value={2}>2 months upfront</option>
             <option value={3}>3 months upfront</option>
             <option value={6}>6 months upfront</option>
             <option value={12}>1 year upfront</option>
+            <option value="custom">Custom amount</option>
           </select>
         </label>
+
+        {billingMode === "custom" ? (
+          <label className="text-sm font-semibold text-slate-800">
+            Custom amount ({customAmountCurrency || "USD"})
+            <input
+              type="text"
+              value={customAmountUsd}
+              onChange={(e) => setCustomAmountUsd(e.target.value)}
+              disabled={!acceptedTerms}
+              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200"
+              placeholder="Enter amount (minimum 1)"
+              inputMode="decimal"
+            />
+          </label>
+        ) : null}
 
         <label className="text-sm font-semibold text-slate-800">
           Email for receipt

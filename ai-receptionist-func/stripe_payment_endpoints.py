@@ -3,6 +3,7 @@ import logging
 import smtplib
 import ssl
 from datetime import datetime
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
@@ -42,6 +43,7 @@ PLAN_AMOUNTS_BY_TOOL = {
     "email_manager": PLAN_AMOUNTS,
     "social_media_manager": PLAN_AMOUNTS,
 }
+SUPPORTED_CUSTOM_CURRENCIES = {"usd", "cad", "gbp"}
 
 
 def _normalize_email(value: str | None) -> str:
@@ -136,6 +138,31 @@ def _get_or_create_customer(stripe_client, email: str) -> str:
     return customer.id
 
 
+def _normalize_custom_currency(value) -> str:
+    currency = str(value or "usd").strip().lower()
+    if currency in SUPPORTED_CUSTOM_CURRENCIES:
+        return currency
+    return "usd"
+
+
+def _parse_custom_amount_to_cents(value) -> int | None:
+    if value is None:
+        return None
+    normalized = str(value).strip().replace(",", "")
+    if not normalized:
+        return None
+    try:
+        amount = Decimal(normalized)
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+    if amount < Decimal("1"):
+        return None
+    cents = int((amount * Decimal("100")).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    if cents < 100:
+        return None
+    return cents
+
+
 def _get_or_create_tool(db: Session, tool_slug: str) -> AITool:
     slug = (tool_slug or DEFAULT_TOOL).lower()
     tool = db.query(AITool).filter(AITool.slug == slug).one_or_none()
@@ -147,12 +174,23 @@ def _get_or_create_tool(db: Session, tool_slug: str) -> AITool:
     return tool
 
 
-def _get_or_create_price(stripe_client, plan_id: str, amount: int, tool: str) -> str:
+def _get_or_create_price(
+    stripe_client,
+    plan_id: str,
+    amount: int,
+    tool: str,
+    custom_amount_cents: int | None = None,
+    currency: str = "usd",
+) -> str:
     """
     Find or create a monthly price for the plan using lookup_key.
     """
     tool_key = (tool or DEFAULT_TOOL).lower()
-    lookup_key = f"{tool_key}_{plan_id}_monthly"
+    currency_key = _normalize_custom_currency(currency)
+    if custom_amount_cents is not None:
+        lookup_key = f"{tool_key}_{plan_id}_custom_{custom_amount_cents}_{currency_key}_monthly"
+    else:
+        lookup_key = f"{tool_key}_{plan_id}_monthly"
     try:
         prices = stripe_client.Price.list(lookup_keys=[lookup_key], active=True, limit=1)
         if prices and prices.data:
@@ -161,10 +199,17 @@ def _get_or_create_price(stripe_client, plan_id: str, amount: int, tool: str) ->
         # fallback to create
         pass
 
-    product = stripe_client.Product.create(name=f"{tool_key.replace('_', ' ').title()} {plan_id.title()}")
+    if custom_amount_cents is not None:
+        product_name = (
+            f"{tool_key.replace('_', ' ').title()} {plan_id.title()} Custom "
+            f"({custom_amount_cents / 100:.2f} {currency_key.upper()})"
+        )
+    else:
+        product_name = f"{tool_key.replace('_', ' ').title()} {plan_id.title()}"
+    product = stripe_client.Product.create(name=product_name)
     price = stripe_client.Price.create(
         unit_amount=amount,
-        currency="usd",
+        currency=currency_key,
         recurring={"interval": "month"},
         product=product.id,
         lookup_key=lookup_key,
@@ -524,7 +569,9 @@ def _upsert_subscription_record(
 def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
     """
     Create a Stripe Subscription for the selected plan and return the client secret for payment confirmation.
-    Expects JSON body: { "planId": "bronze" | "silver" | "gold", "toolId": "<tool>", "email": "required" }
+    Expects JSON body:
+      { "planId": "bronze" | "silver" | "gold", "toolId": "<tool>", "email": "required",
+        "customAmount": "optional >= 1", "customAmountCurrency": "optional (usd/cad/gbp)" }
     """
     cors = build_cors_headers(req, ["POST", "OPTIONS"])
     if req.method == "OPTIONS":
@@ -538,8 +585,20 @@ def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
     plan_id = (data.get("planId") or "").lower()
     tool_id = (data.get("toolId") or data.get("tool") or DEFAULT_TOOL).lower()
     email = data.get("email") if isinstance(data.get("email"), str) else None
+    custom_amount_raw = data.get("customAmount")
+    if custom_amount_raw in (None, ""):
+        custom_amount_raw = data.get("customAmountUsd")
+    custom_amount_currency = _normalize_custom_currency(data.get("customAmountCurrency"))
+    custom_amount_cents = _parse_custom_amount_to_cents(custom_amount_raw)
+    if custom_amount_raw not in (None, "") and custom_amount_cents is None:
+        return func.HttpResponse(
+            json.dumps({"error": "customAmount must be a number greater than or equal to 1"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
 
-    amount = _get_plan_amount(plan_id, tool_id)
+    amount = custom_amount_cents or _get_plan_amount(plan_id, tool_id)
     if not amount or not email:
         return func.HttpResponse(
             json.dumps({"error": "Invalid or missing planId/toolId/email"}),
@@ -551,7 +610,18 @@ def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
     try:
         client = _get_stripe_client()
         customer_id = _get_or_create_customer(client, email)
-        price_id = _get_or_create_price(client, plan_id, amount, tool_id)
+        price_id = _get_or_create_price(
+            client,
+            plan_id,
+            amount,
+            tool_id,
+            custom_amount_cents=custom_amount_cents,
+            currency=custom_amount_currency if custom_amount_cents is not None else "usd",
+        )
+        metadata = {"planId": plan_id, "toolId": tool_id, "email": email}
+        if custom_amount_cents is not None:
+            metadata["customAmount"] = f"{custom_amount_cents / 100:.2f}"
+            metadata["customAmountCurrency"] = custom_amount_currency
         subscription = client.Subscription.create(
             customer=customer_id,
             items=[{"price": price_id}],
@@ -559,7 +629,7 @@ def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
             payment_settings={"save_default_payment_method": "on_subscription"},
             billing_mode={"type": "flexible"},
             expand=["latest_invoice.confirmation_secret", "pending_setup_intent"],
-            metadata={"planId": plan_id, "toolId": tool_id, "email": email},
+            metadata=metadata,
         )
 
         # Determine which client secret to return based on Stripe's basil pattern.
@@ -608,7 +678,7 @@ def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
                 invoice_id=invoice_id,
                 payment_intent_id=payment_intent_id,
                 amount=amount,
-                currency="usd",
+                currency=custom_amount_currency if custom_amount_cents is not None else "usd",
             )
         finally:
             db.close()
@@ -631,6 +701,7 @@ def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
                 "toolId": tool_id,
                 "customerId": customer_id,
                 "status": subscription.status,
+                "currency": custom_amount_currency if custom_amount_cents is not None else "usd",
             }
         ),
         status_code=200,
@@ -644,7 +715,8 @@ def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
 def confirm_subscription(req: func.HttpRequest) -> func.HttpResponse:
     """
     Confirm subscription status after payment on the client.
-    Body: { "subscriptionId": "<stripe_subscription_id>", "email": "<email>", "planId": "<plan>", "toolId": "<tool>" }
+    Body: { "subscriptionId": "<stripe_subscription_id>", "email": "<email>", "planId": "<plan>",
+      "toolId": "<tool>", "customAmount": "optional", "customAmountCurrency": "optional" }
     """
     cors = build_cors_headers(req, ["POST", "OPTIONS"])
     if req.method == "OPTIONS":
@@ -659,6 +731,18 @@ def confirm_subscription(req: func.HttpRequest) -> func.HttpResponse:
     email = data.get("email")
     plan_id = (data.get("planId") or "").lower()
     tool_id = (data.get("toolId") or data.get("tool") or DEFAULT_TOOL).lower()
+    custom_amount_raw = data.get("customAmount")
+    if custom_amount_raw in (None, ""):
+        custom_amount_raw = data.get("customAmountUsd")
+    custom_amount_currency = _normalize_custom_currency(data.get("customAmountCurrency"))
+    custom_amount_cents = _parse_custom_amount_to_cents(custom_amount_raw)
+    if custom_amount_raw not in (None, "") and custom_amount_cents is None:
+        return func.HttpResponse(
+            json.dumps({"error": "customAmount must be a number greater than or equal to 1"}),
+            status_code=400,
+            mimetype="application/json",
+            headers=cors,
+        )
 
     if not subscription_id or not email or not plan_id:
         return func.HttpResponse(
@@ -687,13 +771,20 @@ def confirm_subscription(req: func.HttpRequest) -> func.HttpResponse:
             tool_id = (meta_tool or tool_id).lower()
         if not plan_id and metadata.get("planId"):
             plan_id = metadata.get("planId")
+        if custom_amount_cents is None:
+            custom_amount_cents = _parse_custom_amount_to_cents(
+                metadata.get("customAmount") or metadata.get("customAmountUsd")
+            )
+        if custom_amount_currency == "usd":
+            custom_amount_currency = _normalize_custom_currency(metadata.get("customAmountCurrency"))
 
     status = subscription.status
     customer_id = subscription.customer if isinstance(subscription.customer, str) else getattr(subscription.customer, "id", None)
     latest_invoice = subscription.latest_invoice
     invoice_id = None
     payment_intent_id = None
-    amount = _get_plan_amount(plan_id, tool_id) or PLAN_AMOUNTS.get(plan_id, 0)
+    payment_currency = custom_amount_currency if custom_amount_cents is not None else "usd"
+    amount = custom_amount_cents or _get_plan_amount(plan_id, tool_id) or PLAN_AMOUNTS.get(plan_id, 0)
     price_id = None
     current_period_end_val = getattr(subscription, "current_period_end", None) or 0
 
@@ -714,6 +805,14 @@ def confirm_subscription(req: func.HttpRequest) -> func.HttpResponse:
                 amount = payment_intent.amount
             elif isinstance(payment_intent, dict) and payment_intent.get("amount"):
                 amount = payment_intent["amount"]
+            if getattr(payment_intent, "currency", None):
+                payment_currency = str(payment_intent.currency).lower()
+            elif isinstance(payment_intent, dict) and payment_intent.get("currency"):
+                payment_currency = str(payment_intent["currency"]).lower()
+
+        invoice_currency = _get_invoice_field(invoice_obj, "currency")
+        if invoice_currency and not payment_intent_id:
+            payment_currency = str(invoice_currency).lower()
 
         lines = None
         if hasattr(invoice_obj, "lines"):
@@ -748,7 +847,7 @@ def confirm_subscription(req: func.HttpRequest) -> func.HttpResponse:
             invoice_id=invoice_id,
             payment_intent_id=payment_intent_id,
             amount=amount,
-            currency="usd",
+            currency=payment_currency,
         )
         _maybe_send_invoice_email(
             db,
