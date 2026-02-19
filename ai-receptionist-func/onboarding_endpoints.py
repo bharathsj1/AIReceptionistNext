@@ -359,18 +359,32 @@ def _lookup_country_from_ip(ip_address: str) -> Optional[str]:
             return None
     except ValueError:
         return None
-    url_template = get_setting("IP_GEOLOCATION_URL") or "https://ipapi.co/{ip}/json/"
-    url = url_template.format(ip=ip_address)
-    try:
-        resp = httpx.get(url, timeout=2.5)
-        if resp.status_code >= 300:
-            return None
-        payload = resp.json() if resp.text else {}
-        code = (payload.get("country_code") or payload.get("country") or "").strip().upper()
-        if len(code) == 2:
-            return code
-    except Exception:  # pylint: disable=broad-except
-        return None
+    urls = []
+    configured = get_setting("IP_GEOLOCATION_URL")
+    if configured:
+        urls.append(configured)
+    # Primary provider + fallback provider to reduce country resolution failures.
+    urls.extend([
+        "https://ipapi.co/{ip}/json/",
+        "https://ipwho.is/{ip}",
+    ])
+    for template in urls:
+        url = template.format(ip=ip_address)
+        try:
+            resp = httpx.get(url, timeout=2.5)
+            if resp.status_code >= 300:
+                continue
+            payload = resp.json() if resp.text else {}
+            code = (
+                payload.get("country_code")
+                or payload.get("countryCode")
+                or payload.get("country")
+                or ""
+            ).strip().upper()
+            if len(code) == 2:
+                return code
+        except Exception:  # pylint: disable=broad-except
+            continue
     return None
 
 
@@ -618,8 +632,17 @@ def twilio_available_numbers(req: func.HttpRequest) -> func.HttpResponse:
             if phone_record:
                 assigned_number = phone_record.twilio_phone_number
 
-        country, source, ip_addr = _resolve_country_info(req, None)
-        if source == "default":
+        explicit_country = (
+            req.params.get("country")
+            or req.params.get("country_code")
+            or req.params.get("countryCode")
+            or req.headers.get("x-country-code")
+            or req.headers.get("x-country")
+        )
+        explicit_body = {"country": explicit_country} if explicit_country else None
+        country, source, ip_addr = _resolve_country_info(req, explicit_body)
+        strict_geo = (get_setting("TWILIO_STRICT_COUNTRY_IP") or "").strip().lower() in {"1", "true", "yes", "on"}
+        if source == "default" and strict_geo:
             return func.HttpResponse(
                 json.dumps(
                     {
@@ -632,6 +655,11 @@ def twilio_available_numbers(req: func.HttpRequest) -> func.HttpResponse:
                 mimetype="application/json",
                 headers=cors,
             )
+        response_warning = None
+        if source == "default":
+            response_warning = (
+                "Unable to resolve requester country from IP; using configured default country."
+            )
         twilio_client = get_twilio_client()
         numbers = _list_available_twilio_numbers(twilio_client, country, sample_size=5)
         return func.HttpResponse(
@@ -642,6 +670,7 @@ def twilio_available_numbers(req: func.HttpRequest) -> func.HttpResponse:
                     "numbers": numbers,
                     "country_source": source,
                     "detected_ip": ip_addr,
+                    **({"warning": response_warning} if response_warning else {}),
                 }
             ),
             status_code=200,

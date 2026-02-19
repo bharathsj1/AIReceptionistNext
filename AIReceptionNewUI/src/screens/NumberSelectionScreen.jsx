@@ -51,12 +51,13 @@ export default function NumberSelectionScreen({
   const hasAssignedNumber = Boolean(assignedNumber);
   const activeSelectedNumber = selectedNumber || assignedNumber || "";
   const isSelectable = filteredNumbers.some((item) => item?.phone_number === activeSelectedNumber);
-  const canContinue = Boolean(hasAssignedNumber || isSelectable);
+  const canContinue = Boolean(hasAssignedNumber || (!numbersError && isSelectable));
   const countryLabel = numbersCountry ? numbersCountry.toUpperCase() : "your region";
   const selectionLabel = useMemo(() => {
+    if (numbersError && !hasAssignedNumber) return "Refresh numbers to continue setup.";
     if (!activeSelectedNumber) return "Select a number to continue setup.";
     return `Selected number: ${activeSelectedNumber}`;
-  }, [activeSelectedNumber]);
+  }, [activeSelectedNumber, hasAssignedNumber, numbersError]);
 
   return (
     <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-6 shadow-[0_20px_90px_rgba(15,23,42,0.35)] backdrop-blur md:p-10 screen-panel">

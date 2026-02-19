@@ -2418,9 +2418,17 @@ export default function App() {
     setTwilioNumbersLoading(true);
     setTwilioNumbersError("");
     try {
+      const requestCountry = normalizeTwilioCountry(countryCode || "GB");
       const params = new URLSearchParams({ email: emailAddress });
+      if (requestCountry) {
+        params.set("country", requestCountry);
+        params.set("country_code", requestCountry);
+      }
       const { res, data } = await fetchJsonWithFallback(
-        `${API_URLS.twilioAvailableNumbers}?${params.toString()}`
+        `${API_URLS.twilioAvailableNumbers}?${params.toString()}`,
+        {
+          headers: requestCountry ? { "X-Country-Code": requestCountry } : {}
+        }
       );
       if (!res.ok) {
         throw new Error(data?.error || data?.details || data?.raw || "Unable to fetch numbers");
@@ -2442,10 +2450,12 @@ export default function App() {
     } catch (error) {
       setTwilioNumbersError(error?.message || "Unable to fetch numbers");
       setTwilioAvailableNumbers([]);
+      setTwilioAssignedNumber("");
+      setSelectedTwilioNumber("");
     } finally {
       setTwilioNumbersLoading(false);
     }
-  }, [email, loginEmail, paymentInfo?.email, signupEmail]);
+  }, [countryCode, email, loginEmail, paymentInfo?.email, signupEmail]);
 
   const loadCallTranscript = useCallback(
     async (callSid) => {
