@@ -21,6 +21,15 @@ OUTPUT_PATH: Path = Path(__file__).resolve().parent / "data" / "website_knowledg
 USER_AGENT = "AIReceptionistCrawler/1.0"
 
 
+def _normalize_start_url(value: str) -> str:
+    raw = (value or "").strip()
+    if not raw:
+        return raw
+    if not raw.startswith(("http://", "https://")):
+        raw = f"https://{raw}"
+    return raw
+
+
 # ---------------------------------------------------------------------------
 # Core crawling utilities
 # ---------------------------------------------------------------------------
@@ -224,6 +233,8 @@ def crawl_kb_api(req: func.HttpRequest) -> func.HttpResponse:
     url = body.get("url")
     max_pages_raw = body.get("max_pages")
     # client_email is ignored now that we return data directly
+
+    url = _normalize_start_url(url) if isinstance(url, str) else url
 
     # --- validate url ---
     if not url or not isinstance(url, str) or not url.startswith(("http://", "https://")):
