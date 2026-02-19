@@ -1,5 +1,3 @@
-import { headers } from "next/headers";
-
 type CardData = {
   fullName?: string;
   jobTitle?: string;
@@ -22,17 +20,12 @@ type PageProps = {
 };
 
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{20,32}$/;
+const FUNCTION_API_BASE = "https://aireceptionist-func.azurewebsites.net/api";
 
 const resolveFunctionApiBase = () => {
   const explicitHost = process.env.NEXT_PUBLIC_FUNCTION_HOST || process.env.VITE_FUNCTION_HOST;
   if (explicitHost) return `${explicitHost.replace(/\/$/, "")}/api`;
-
-  const h = headers();
-  const host = h.get("x-forwarded-host") || h.get("host");
-  const protocol = h.get("x-forwarded-proto") || "https";
-  if (host) return `${protocol}://${host.replace(/\/$/, "")}/api`;
-
-  return "https://smartconnect4u.com/api";
+  return FUNCTION_API_BASE;
 };
 
 const digitsOnly = (value: string | undefined) => (value || "").replace(/\D+/g, "");
@@ -96,7 +89,7 @@ export default async function PrivateCardPage({ params, searchParams }: PageProp
   const whatsappTarget = digitsOnly(card.whatsappPhone || card.mobilePhone);
   const email = (card.email || "").trim();
   const queryString = buildQuery(token, key);
-  const saveContactUrl = `/api/private-vcard?${queryString}`;
+  const saveContactUrl = `${resolveFunctionApiBase()}/private-vcard?${queryString}`;
   const hasPhone = Boolean(primaryPhone);
   const hasWhatsApp = Boolean(whatsappTarget);
   const hasEmail = Boolean(email);

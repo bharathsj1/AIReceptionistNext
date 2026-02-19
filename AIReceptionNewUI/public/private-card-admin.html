@@ -156,7 +156,7 @@
           <div class="grid">
             <div class="field">
               <label for="apiBase">API Base</label>
-              <input id="apiBase" value="http://localhost:7071/api" required />
+              <input id="apiBase" value="https://aireceptionist-func.azurewebsites.net/api" required />
             </div>
             <div class="field">
               <label for="adminEmail">Admin Email (required)</label>
@@ -369,7 +369,7 @@
 
       $("clearBtn").addEventListener("click", () => {
         form.reset();
-        $("apiBase").value = "http://localhost:7071/api";
+        $("apiBase").value = "https://aireceptionist-func.azurewebsites.net/api";
         $("companyName").value = "SmartConnect4u";
         $("website").value = "https://smartconnect4u.com";
         resultEl.style.display = "none";

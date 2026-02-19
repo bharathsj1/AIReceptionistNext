@@ -1,46 +1,20 @@
 // Central place for API URLs and future endpoints.
-// Use environment variables to override defaults when needed.
-
-const rawApiBase = import.meta.env.VITE_API_PROXY_BASE;
-const forceCrossOriginApi = String(import.meta.env.VITE_FORCE_CROSS_ORIGIN_API || "").toLowerCase() === "true";
-const devHost = (import.meta.env.VITE_FUNCTION_HOST || "http://localhost:7071").replace(
-  /\/$/,
-  ""
-);
-const devApiBase = `${devHost}/api`;
-const isAzureHost =
-  typeof rawApiBase === "string" &&
-  rawApiBase.toLowerCase().includes("azurewebsites.net");
+// Force all API calls to the Azure Functions host.
+const PRIMARY_FUNCTION_BASE = "https://aireceptionist-func.azurewebsites.net";
+const PRIMARY_API_BASE = `${PRIMARY_FUNCTION_BASE}/api`;
 
 // Dedicated Jitsi/meetings function app base
 const rawJitsiBase =
   import.meta.env.VITE_JITSI_API_BASE || import.meta.env.NEXT_PUBLIC_JITSI_API_BASE;
-const devJitsiHost = (import.meta.env.VITE_JITSI_FUNCTION_HOST || "http://localhost:7072").replace(
-  /\/$/,
-  ""
-);
-const devJitsiApiBase = `${devJitsiHost}/api`;
-const prodJitsiDefault = "https://smartconnect4u-jitsi-eugahzaha5hcdefa.westeurope-01.azurewebsites.net/api";
-const JITSI_API_BASE = import.meta.env.DEV
-  ? rawJitsiBase || devJitsiApiBase
-  : rawJitsiBase || prodJitsiDefault;
+const normalizedJitsiBase =
+  typeof rawJitsiBase === "string" ? rawJitsiBase.replace(/\/$/, "") : "";
+const JITSI_API_BASE = normalizedJitsiBase || PRIMARY_API_BASE;
 
 export { JITSI_API_BASE };
 export const jitsiApiUrl = (path) =>
   `${JITSI_API_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
 
-const normalizedRawApiBase = typeof rawApiBase === "string" ? rawApiBase.replace(/\/$/, "") : "";
-const isBrowserRuntime =
-  typeof window !== "undefined" &&
-  Boolean(window.location?.protocol) &&
-  (window.location.protocol === "https:" || window.location.protocol === "http:");
-const prodApiBase = !forceCrossOriginApi && isBrowserRuntime ? "/api" : normalizedRawApiBase || "/api";
-
-export const API_PROXY_BASE = import.meta.env.DEV
-  ? normalizedRawApiBase && !isAzureHost
-    ? normalizedRawApiBase
-    : devApiBase
-  : prodApiBase;
+export const API_PROXY_BASE = PRIMARY_API_BASE;
 export const apiUrl = (path) =>
   `${API_PROXY_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
 

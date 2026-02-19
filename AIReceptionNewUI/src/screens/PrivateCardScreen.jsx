@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { apiUrl } from "../config/urls.js";
 
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{20,32}$/;
 
@@ -66,7 +67,7 @@ export default function PrivateCardScreen({ token, accessKey }) {
     const params = new URLSearchParams({ token: safeToken });
     if (accessKey) params.set("k", String(accessKey).trim());
 
-    fetch(`/api/private-card?${params.toString()}`, {
+    fetch(`${apiUrl("private-card")}?${params.toString()}`, {
       method: "GET",
       headers: { Accept: "application/json" }
     })
@@ -101,7 +102,7 @@ export default function PrivateCardScreen({ token, accessKey }) {
 
     const params = new URLSearchParams({ token: String(token || "").trim() });
     if (accessKey) params.set("k", String(accessKey).trim());
-    const saveContactUrl = `/api/private-vcard?${params.toString()}`;
+    const saveContactUrl = `${apiUrl("private-vcard")}?${params.toString()}`;
     const exchangeHref = hasWhatsApp
       ? `https://wa.me/${whatsappTarget}`
       : hasEmail
