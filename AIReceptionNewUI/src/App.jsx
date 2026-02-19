@@ -81,6 +81,16 @@ const fetchWithTimeout = async (resource, options = {}, timeoutMs = 8000) => {
     clearTimeout(timeoutId);
   }
 };
+
+const readResponseBody = async (response) => {
+  const text = await response.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { raw: text };
+  }
+};
 const PLAN_PRICING = {
   bronze: { name: "Bronze", baseAmount: 500, baseCurrency: "CAD" },
   silver: { name: "Silver", baseAmount: 600, baseCurrency: "CAD" },
@@ -452,9 +462,7 @@ export default function App() {
         throw new Error(errorText || "Request failed");
       }
 
-      const data = await res
-        .json()
-        .catch(async () => ({ raw: await res.text() }));
+      const data = await readResponseBody(res);
 
       setCrawlData(data);
       setResponseMessage("All website data loaded fine.");
@@ -1560,9 +1568,7 @@ export default function App() {
         throw new Error(promptText || "Failed to generate S4U-v3 prompt");
       }
 
-      const promptData = await promptRes
-        .json()
-        .catch(async () => ({ prompt: await promptRes.text() }));
+      const promptData = await readResponseBody(promptRes);
       const derivedPrompt =
         promptData?.system_prompt ||
         promptData?.prompt ||
@@ -1615,9 +1621,7 @@ export default function App() {
         throw err;
       }
 
-      const provData = await provisionRes
-        .json()
-        .catch(async () => ({ raw: await provisionRes.text() }));
+      const provData = await readResponseBody(provisionRes);
 
       setProvisionData(provData);
       // Attempt to persist agent + number info
