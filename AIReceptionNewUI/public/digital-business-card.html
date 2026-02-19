@@ -275,6 +275,23 @@ body {
     }
   }
 
+  function normalizePayload(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    return {
+      fullName: raw.fullName ?? raw.n ?? '',
+      jobTitle: raw.jobTitle ?? raw.r ?? '',
+      company: raw.company ?? raw.c ?? '',
+      email: raw.email ?? raw.e ?? '',
+      phone: raw.phone ?? raw.p ?? '',
+      location: raw.location ?? raw.l ?? '',
+      website: raw.website ?? raw.w ?? '',
+      linkedin: raw.linkedin ?? raw.i ?? '',
+      twitter: raw.twitter ?? raw.x ?? '',
+      theme: raw.theme ?? raw.t ?? 't-carbon',
+      photo: raw.photo ?? raw.h ?? ''
+    };
+  }
+
   function normalizeWeb(value) {
     if (!value) return '';
     if (/^https?:\/\//i.test(value)) return value;
@@ -333,7 +350,7 @@ body {
   }
 
   const app = document.getElementById('app');
-  const p = parsePayload();
+  const p = normalizePayload(parsePayload());
 
   if (!p) {
     app.innerHTML = '<div class="error">Invalid or missing SmartConnect4u card data. Please regenerate the QR code from the generator.</div>';
