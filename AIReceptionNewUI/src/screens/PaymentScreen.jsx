@@ -289,6 +289,27 @@ export default function PaymentScreen({
           }),
           signal: controller.signal
         });
+        if (res.ok && data?.skipPayment) {
+          setClientSecret("");
+          setSubscriptionId(data?.subscriptionId || "");
+          setCustomerId(data?.customerId || "");
+          setIntentError(null);
+          setIntentLoading(false);
+          if (typeof onSubmit === "function") {
+            onSubmit({
+              planId: planId || "gold",
+              toolId,
+              email,
+              subscriptionId: data?.subscriptionId || "",
+              customerId: data?.customerId || "",
+              skipPayment: true,
+              existingSubscription: true,
+              subscriptionStatus: data?.status || "active",
+              subscriptionSource: data?.source || "existing"
+            });
+          }
+          return;
+        }
         if (!res.ok || !data?.clientSecret) {
           const message =
             data?.error ||
