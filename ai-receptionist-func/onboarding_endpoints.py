@@ -108,6 +108,11 @@ def _normalize_email(value: str | None) -> str:
     return str(value or "").strip().lower()
 
 
+def _normalize_phone_number(value: str | None) -> Optional[str]:
+    normalized = str(value or "").strip()
+    return normalized or None
+
+
 def _find_client_and_user(db, email: str | None) -> tuple[Optional[Client], Optional[User]]:
     normalized = _normalize_email(email)
     if not normalized:
@@ -364,8 +369,7 @@ def purchase_twilio_number(
 ) -> Dict[str, str]:
     """
     Buy a Twilio number and configure its voice webhook.
-    On trial accounts (only one number allowed), reuses the existing number if purchase fails.
-    In development, reuse an existing number (matching country when possible) instead of buying.
+    Existing-number reuse only happens when TWILIO_REUSE_EXISTING_NUMBER is enabled.
     """
     webhook_url = _build_twilio_voice_webhook(webhook_base)
     if _reuse_existing_twilio_number():
@@ -392,15 +396,7 @@ def purchase_twilio_number(
         )
         return {"phone_number": purchased.phone_number, "sid": purchased.sid}
     except Exception as exc:  # pylint: disable=broad-except
-        error_text = str(exc)
-        # Trial restriction hit: try to reuse the existing active number.
-        existing_numbers = twilio_client.incoming_phone_numbers.list(limit=1)
-        if not existing_numbers:
-            raise RuntimeError("Twilio trial account has no existing number to reuse") from exc
-        existing = existing_numbers[0]
-        # Ensure webhook is configured to our function endpoint.
-        existing.update(voice_url=webhook_url, voice_method="POST")
-        return {"phone_number": existing.phone_number, "sid": existing.sid}
+        raise RuntimeError(f"Twilio purchase failed for {chosen_number}: {exc}") from exc
 
 
 def _build_twilio_voice_webhook(webhook_base: str) -> str:
@@ -670,14 +666,7 @@ def clients_provision(req: func.HttpRequest) -> func.HttpResponse:
     website_url = body.get("website_url") if isinstance(body, dict) else None
     system_prompt = body.get("system_prompt") if isinstance(body, dict) else None
     voice = body.get("voice") if isinstance(body, dict) else None
-    selected_twilio_number = None
-    if isinstance(body, dict):
-        selected_twilio_number = (
-            body.get("selected_twilio_number")
-            or body.get("selectedTwilioNumber")
-            or body.get("twilio_number")
-            or body.get("twilioNumber")
-        )
+    selected_twilio_number = _normalize_phone_number(selected_twilio_number)
     greeting = None
     if isinstance(body, dict):
         greeting = (
@@ -773,6 +762,15 @@ def clients_provision(req: func.HttpRequest) -> func.HttpResponse:
         phone_record: PhoneNumber = (
             db.query(PhoneNumber).filter_by(client_id=client_record.id, is_active=True).one_or_none()
         )
+        should_replace_active_number = bool(
+            selected_twilio_number
+            and phone_record
+            and phone_record.twilio_phone_number != selected_twilio_number
+        )
+        if should_replace_active_number and phone_record:
+            phone_record.is_active = False
+            phone_record = None
+
         if not phone_record:
             if not _has_active_receptionist_subscription(db, email):
                 return func.HttpResponse(
@@ -790,6 +788,7 @@ def clients_provision(req: func.HttpRequest) -> func.HttpResponse:
                 )
             except Exception as exc:  # pylint: disable=broad-except
                 logger.error("Twilio number purchase failed: %s", exc)
+                db.rollback()
                 return func.HttpResponse(
                     json.dumps(
                         {
@@ -872,6 +871,7 @@ def clients_assign_number(req: func.HttpRequest) -> func.HttpResponse:
             or body.get("twilio_number")
             or body.get("twilioNumber")
         )
+    selected_twilio_number = _normalize_phone_number(selected_twilio_number)
     email = _normalize_email(email)
     if not email:
         return func.HttpResponse(
@@ -921,6 +921,15 @@ def clients_assign_number(req: func.HttpRequest) -> func.HttpResponse:
         phone_record: PhoneNumber = (
             db.query(PhoneNumber).filter_by(client_id=client_record.id, is_active=True).one_or_none()
         )
+        should_replace_active_number = bool(
+            selected_twilio_number
+            and phone_record
+            and phone_record.twilio_phone_number != selected_twilio_number
+        )
+        if should_replace_active_number and phone_record:
+            phone_record.is_active = False
+            phone_record = None
+
         if not phone_record:
             if not _has_active_receptionist_subscription(db, email):
                 return func.HttpResponse(
@@ -938,6 +947,7 @@ def clients_assign_number(req: func.HttpRequest) -> func.HttpResponse:
                 )
             except Exception as exc:  # pylint: disable=broad-except
                 logger.error("Twilio number purchase failed: %s", exc)
+                db.rollback()
                 return func.HttpResponse(
                     json.dumps(
                         {
