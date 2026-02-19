@@ -104,11 +104,12 @@ body {
 
 .card-photo-ring {
   position: absolute;
-  bottom: -36px;
-  left: 24px;
-  width: 78px;
-  height: 78px;
-  border-radius: 50%;
+  bottom: -56px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 122px;
+  height: 122px;
+  border-radius: 20px;
   background: #fff;
   padding: 3px;
   box-shadow: 0 4px 18px rgba(0,0,0,0.18);
@@ -118,7 +119,7 @@ body {
 .card-photo-inner {
   width: 100%;
   height: 100%;
-  border-radius: 50%;
+  border-radius: 17px;
   overflow: hidden;
   background: var(--gray-100);
   display: flex;
@@ -141,7 +142,7 @@ body {
 }
 
 .card-body {
-  padding: 52px 28px 28px;
+  padding: 86px 28px 28px;
 }
 
 .card-fullname {
@@ -275,6 +276,23 @@ body {
     }
   }
 
+  function normalizePayload(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    return {
+      fullName: raw.fullName ?? raw.n ?? '',
+      jobTitle: raw.jobTitle ?? raw.r ?? '',
+      company: raw.company ?? raw.c ?? '',
+      email: raw.email ?? raw.e ?? '',
+      phone: raw.phone ?? raw.p ?? '',
+      location: raw.location ?? raw.l ?? '',
+      website: raw.website ?? raw.w ?? '',
+      linkedin: raw.linkedin ?? raw.i ?? '',
+      twitter: raw.twitter ?? raw.x ?? '',
+      theme: raw.theme ?? raw.t ?? 't-carbon',
+      photo: raw.photo ?? raw.h ?? ''
+    };
+  }
+
   function normalizeWeb(value) {
     if (!value) return '';
     if (/^https?:\/\//i.test(value)) return value;
@@ -333,7 +351,7 @@ body {
   }
 
   const app = document.getElementById('app');
-  const p = parsePayload();
+  const p = normalizePayload(parsePayload());
 
   if (!p) {
     app.innerHTML = '<div class="error">Invalid or missing SmartConnect4u card data. Please regenerate the QR code from the generator.</div>';

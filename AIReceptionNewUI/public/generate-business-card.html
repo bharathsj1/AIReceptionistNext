@@ -440,10 +440,11 @@ nav {
 
 .card-photo-ring {
   position: absolute;
-  bottom: -40px;
-  left: 28px;
-  width: 82px; height: 82px;
-  border-radius: 50%;
+  bottom: -56px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 122px; height: 122px;
+  border-radius: 20px;
   padding: 3px;
   background: white;
   box-shadow: 0 4px 20px rgba(0,0,0,0.15);
@@ -452,11 +453,11 @@ nav {
   transition: transform 0.2s;
 }
 
-.card-photo-ring:hover { transform: scale(1.04); }
+.card-photo-ring:hover { transform: translateX(-50%) scale(1.04); }
 
 .card-photo-inner {
   width: 100%; height: 100%;
-  border-radius: 50%;
+  border-radius: 17px;
   background: var(--gray-100);
   overflow: hidden;
   display: flex;
@@ -475,7 +476,7 @@ nav {
 }
 
 .card-body {
-  padding: 52px 28px 0;
+  padding: 86px 28px 0;
   background: white;
   position: relative;
   z-index: 1;
@@ -572,18 +573,18 @@ nav {
 .qr-box {
   background: white;
   border-radius: 12px;
-  padding: 8px;
+  padding: 10px;
   border: 1px solid var(--gray-200);
   flex-shrink: 0;
-  min-width: 112px;
-  min-height: 112px;
+  min-width: 180px;
+  min-height: 180px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .qr-empty {
-  width: 92px; height: 92px;
+  width: 160px; height: 160px;
   border-radius: 8px;
   background: var(--gray-100);
   display: flex;
@@ -956,6 +957,22 @@ nav {
     return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
   }
 
+  function toCompactQrPayload(p) {
+    return {
+      n: p.fullName || '',
+      r: p.jobTitle || '',
+      c: p.company || '',
+      e: p.email || '',
+      p: p.phone || '',
+      l: p.location || '',
+      w: p.website || '',
+      i: p.linkedin || '',
+      x: p.twitter || '',
+      t: p.theme || 't-carbon',
+      h: p.photo || ''
+    };
+  }
+
   function computeShareData() {
     const p = payload();
     const hasAny = Boolean(p.fullName || p.email || p.phone || p.website || p.linkedin || p.twitter);
@@ -966,17 +983,39 @@ nav {
     const fullLink = `${window.location.origin}/digital-business-card.html?d=${fullEncoded}`;
     const photoIncluded = Boolean(fullPayload.photo);
 
-    let qrPayload = { ...fullPayload };
-    let qrEncoded = fullEncoded;
-    let qrLink = fullLink;
+    let qrPayload = toCompactQrPayload(fullPayload);
+    let qrEncoded = toBase64Url(JSON.stringify(qrPayload));
+    let qrLink = `${window.location.origin}/digital-business-card.html?d=${qrEncoded}`;
     let qrPhotoIncluded = photoIncluded;
 
-    // QR code capacity is limited. Keep a conservative URL size so rendering stays reliable.
-    if (qrLink.length > 2100 && qrPayload.photo) {
-      qrPayload = { ...qrPayload, photo: '' };
+    // QR payload must stay small for reliable camera scans.
+    if (qrLink.length > 1100 && qrPayload.h) {
+      qrPayload = { ...qrPayload, h: '' };
       qrEncoded = toBase64Url(JSON.stringify(qrPayload));
       qrLink = `${window.location.origin}/digital-business-card.html?d=${qrEncoded}`;
       qrPhotoIncluded = false;
+    }
+
+    // If still too dense, remove social links from QR-only payload.
+    if (qrLink.length > 1100 && (qrPayload.i || qrPayload.x)) {
+      qrPayload = { ...qrPayload, i: '', x: '' };
+      qrEncoded = toBase64Url(JSON.stringify(qrPayload));
+      qrLink = `${window.location.origin}/digital-business-card.html?d=${qrEncoded}`;
+    }
+
+    // Final fallback for scannability: keep core business card fields only.
+    if (qrLink.length > 1100) {
+      qrPayload = {
+        n: qrPayload.n || '',
+        r: qrPayload.r || '',
+        c: qrPayload.c || '',
+        e: qrPayload.e || '',
+        p: qrPayload.p || '',
+        l: qrPayload.l || '',
+        t: qrPayload.t || 't-carbon'
+      };
+      qrEncoded = toBase64Url(JSON.stringify(qrPayload));
+      qrLink = `${window.location.origin}/digital-business-card.html?d=${qrEncoded}`;
     }
 
     return { link: fullLink, qrLink, photoIncluded, qrPhotoIncluded };
@@ -1059,16 +1098,17 @@ nav {
     qrcodeEl.style.display = 'flex';
     qrEmpty.style.display = 'none';
 
+    const qrSize = 160;
     let rendered = false;
     if (window.QRCode) {
       try {
         new QRCode(qrcodeEl, {
           text: link,
-          width: 92,
-          height: 92,
+          width: qrSize,
+          height: qrSize,
           colorDark: '#1c1c1e',
           colorLight: '#ffffff',
-          correctLevel: QRCode.CorrectLevel.M
+          correctLevel: QRCode.CorrectLevel.L
         });
         rendered = true;
       } catch (err) {
@@ -1080,13 +1120,13 @@ nav {
       const encoded = encodeURIComponent(link);
       const img = document.createElement('img');
       img.alt = 'QR code';
-      img.width = 92;
-      img.height = 92;
+      img.width = qrSize;
+      img.height = qrSize;
       img.style.display = 'block';
       img.referrerPolicy = 'no-referrer';
 
-      const primary = `https://api.qrserver.com/v1/create-qr-code/?size=92x92&ecc=M&data=${encoded}`;
-      const fallback = `https://chart.googleapis.com/chart?cht=qr&chs=92x92&chld=M|0&chl=${encoded}`;
+      const primary = `https://api.qrserver.com/v1/create-qr-code/?size=${qrSize}x${qrSize}&ecc=L&data=${encoded}`;
+      const fallback = `https://chart.googleapis.com/chart?cht=qr&chs=${qrSize}x${qrSize}&chld=L|0&chl=${encoded}`;
       img.onerror = () => {
         if (!img.dataset.fallback) {
           img.dataset.fallback = '1';
@@ -1119,8 +1159,8 @@ nav {
       img.onload = () => {
         const sourceW = img.width || 1;
         const sourceH = img.height || 1;
-        const maxSides = [112, 96, 80, 64, 52, 44, 36, 28];
-        const qualities = [0.62, 0.5, 0.38, 0.28, 0.2, 0.14, 0.1, 0.08];
+        const maxSides = [180, 160, 144, 128, 112, 96, 80];
+        const qualities = [0.82, 0.74, 0.66, 0.58, 0.5, 0.42, 0.34];
         let smallest = '';
 
         for (const maxSide of maxSides) {
@@ -1141,7 +1181,8 @@ nav {
             if (!smallest || compressed.length < smallest.length) {
               smallest = compressed;
             }
-            if (compressed.length <= 900) {
+            // Prefer clearer photos in share links.
+            if (compressed.length <= 2200) {
               resolve(compressed);
               return;
             }
@@ -1149,7 +1190,7 @@ nav {
         }
 
         // Use the smallest variant if still acceptable; otherwise omit photo.
-        if (smallest && smallest.length <= 1200) {
+        if (smallest && smallest.length <= 3200) {
           resolve(smallest);
           return;
         }
