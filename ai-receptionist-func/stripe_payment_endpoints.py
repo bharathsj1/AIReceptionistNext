@@ -247,23 +247,63 @@ def _find_active_stripe_subscription_for_customer(stripe_client, customer_id: st
     return None
 
 
-def _find_existing_customer_id(stripe_client, email: str) -> str | None:
+def _list_existing_customer_ids(stripe_client, email: str) -> list[str]:
     target = _normalize_email(email)
     if not target:
-        return None
+        return []
+    ids: list[str] = []
+    seen: set[str] = set()
+
+    def _add(customer_obj):
+        customer_id = str(_obj_get(customer_obj, "id", "") or "").strip()
+        if not customer_id or customer_id in seen:
+            return
+        seen.add(customer_id)
+        ids.append(customer_id)
+
     try:
-        existing = stripe_client.Customer.search(query=f"email:'{target}'", limit=1)
-        if existing and getattr(existing, "data", None):
-            return existing.data[0].id
+        existing = stripe_client.Customer.search(query=f"email:'{target}'", limit=20)
+        for customer in getattr(existing, "data", []) or []:
+            _add(customer)
     except Exception:  # noqa: BLE001
         pass
     try:
-        existing = stripe_client.Customer.list(email=target, limit=1)
-        if existing and getattr(existing, "data", None):
-            return existing.data[0].id
+        existing = stripe_client.Customer.list(email=target, limit=20)
+        for customer in getattr(existing, "data", []) or []:
+            _add(customer)
     except Exception:  # noqa: BLE001
-        return None
+        pass
+    return ids
+
+
+def _find_existing_customer_id(stripe_client, email: str) -> str | None:
+    ids = _list_existing_customer_ids(stripe_client, email)
+    return ids[0] if ids else None
+
+
+def _customer_current_subscription_currencies(stripe_client, customer_id: str) -> set[str]:
+    stripe_sub = _find_active_stripe_subscription_for_customer(stripe_client, customer_id, DEFAULT_TOOL)
+    if not stripe_sub:
+        return set()
+    _, _, currency = _extract_price_snapshot(stripe_sub)
+    normalized = str(currency or "").strip().lower()
+    return {normalized} if normalized else set()
+
+
+def _select_customer_for_currency(stripe_client, email: str, desired_currency: str) -> str | None:
+    normalized_currency = _normalize_custom_currency(desired_currency)
+    for customer_id in _list_existing_customer_ids(stripe_client, email):
+        currencies = _customer_current_subscription_currencies(stripe_client, customer_id)
+        if not currencies:
+            return customer_id
+        if currencies == {normalized_currency}:
+            return customer_id
     return None
+
+
+def _is_currency_conflict_error(exc: Exception) -> bool:
+    text = str(exc or "").lower()
+    return "cannot combine currencies on a single customer" in text
 
 
 def _resolve_existing_active_subscription(db: Session, stripe_client, email: str, tool_id: str) -> dict | None:
@@ -342,26 +382,26 @@ def _resolve_existing_active_subscription(db: Session, stripe_client, email: str
             "source": "db",
         }
 
-    customer_id = _find_existing_customer_id(stripe_client, normalized_email)
-    stripe_sub = _find_active_stripe_subscription_for_customer(stripe_client, customer_id or "", tool_id)
-    if not stripe_sub:
-        return None
-
-    _upsert_subscription_from_stripe(
-        db,
-        stripe_sub,
-        email=normalized_email,
-        requested_tool=tool_id,
-    )
-    return {
-        "skipPayment": True,
-        "existingSubscription": True,
-        "subscriptionId": str(_obj_get(stripe_sub, "id", "") or ""),
-        "status": str(_obj_get(stripe_sub, "status", "") or "active"),
-        "planId": str(_obj_get(_obj_get(stripe_sub, "metadata", {}), "planId", "") or ""),
-        "toolId": tool_id,
-        "source": "stripe",
-    }
+    for customer_id in _list_existing_customer_ids(stripe_client, normalized_email):
+        stripe_sub = _find_active_stripe_subscription_for_customer(stripe_client, customer_id, tool_id)
+        if not stripe_sub:
+            continue
+        _upsert_subscription_from_stripe(
+            db,
+            stripe_sub,
+            email=normalized_email,
+            requested_tool=tool_id,
+        )
+        return {
+            "skipPayment": True,
+            "existingSubscription": True,
+            "subscriptionId": str(_obj_get(stripe_sub, "id", "") or ""),
+            "status": str(_obj_get(stripe_sub, "status", "") or "active"),
+            "planId": str(_obj_get(_obj_get(stripe_sub, "metadata", {}), "planId", "") or ""),
+            "toolId": tool_id,
+            "source": "stripe",
+        }
+    return None
 
 
 def _get_stripe_client() -> stripe.StripeClient:
@@ -388,16 +428,13 @@ def _tools_for_plan(plan_id: str, default_tool: str) -> list[str]:
     return [base_tool]
 
 
-def _get_or_create_customer(stripe_client, email: str) -> str:
-    """Find existing customer by email or create a new one."""
-    try:
-        existing = stripe_client.Customer.search(query=f"email:'{email}'", limit=1)
-        if existing and existing.data:
-            return existing.data[0].id
-    except Exception:  # noqa: BLE001
-        # If search not available in restricted keys, fall back to create
-        pass
-
+def _get_or_create_customer(stripe_client, email: str, desired_currency: str = "usd") -> str:
+    """
+    Find an existing customer that can support desired currency, or create a new one.
+    """
+    existing_id = _select_customer_for_currency(stripe_client, email, desired_currency)
+    if existing_id:
+        return existing_id
     customer = stripe_client.Customer.create(email=email)
     return customer.id
 
@@ -911,7 +948,8 @@ def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
                 headers=cors,
             )
 
-        customer_id = _get_or_create_customer(client, email)
+        effective_currency = custom_amount_currency if custom_amount_cents is not None else "usd"
+        customer_id = _get_or_create_customer(client, email, effective_currency)
         stripe_existing = _find_active_stripe_subscription_for_customer(client, customer_id, tool_id)
         if stripe_existing:
             _upsert_subscription_from_stripe(
@@ -946,21 +984,37 @@ def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
             amount,
             tool_id,
             custom_amount_cents=custom_amount_cents,
-            currency=custom_amount_currency if custom_amount_cents is not None else "usd",
+            currency=effective_currency,
         )
         metadata = {"planId": plan_id, "toolId": tool_id, "email": email}
         if custom_amount_cents is not None:
             metadata["customAmount"] = f"{custom_amount_cents / 100:.2f}"
             metadata["customAmountCurrency"] = custom_amount_currency
-        subscription = client.Subscription.create(
-            customer=customer_id,
-            items=[{"price": price_id}],
-            payment_behavior="default_incomplete",
-            payment_settings={"save_default_payment_method": "on_subscription"},
-            billing_mode={"type": "flexible"},
-            expand=["latest_invoice.confirmation_secret", "pending_setup_intent"],
-            metadata=metadata,
-        )
+        try:
+            subscription = client.Subscription.create(
+                customer=customer_id,
+                items=[{"price": price_id}],
+                payment_behavior="default_incomplete",
+                payment_settings={"save_default_payment_method": "on_subscription"},
+                billing_mode={"type": "flexible"},
+                expand=["latest_invoice.confirmation_secret", "pending_setup_intent"],
+                metadata=metadata,
+            )
+        except Exception as exc:  # pylint: disable=broad-except
+            if not _is_currency_conflict_error(exc):
+                raise
+            # Currency lock on selected customer: create isolated customer for this currency and retry once.
+            customer = client.Customer.create(email=email)
+            customer_id = customer.id
+            subscription = client.Subscription.create(
+                customer=customer_id,
+                items=[{"price": price_id}],
+                payment_behavior="default_incomplete",
+                payment_settings={"save_default_payment_method": "on_subscription"},
+                billing_mode={"type": "flexible"},
+                expand=["latest_invoice.confirmation_secret", "pending_setup_intent"],
+                metadata=metadata,
+            )
 
         # Determine which client secret to return based on Stripe's basil pattern.
         client_secret = None
@@ -1006,7 +1060,7 @@ def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
             invoice_id=invoice_id,
             payment_intent_id=payment_intent_id,
             amount=amount,
-            currency=custom_amount_currency if custom_amount_cents is not None else "usd",
+            currency=effective_currency,
         )
 
     except Exception as exc:  # pylint: disable=broad-except
@@ -1029,7 +1083,7 @@ def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
                 "toolId": tool_id,
                 "customerId": customer_id,
                 "status": subscription.status,
-                "currency": custom_amount_currency if custom_amount_cents is not None else "usd",
+                "currency": effective_currency,
             }
         ),
         status_code=200,
