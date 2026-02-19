@@ -123,6 +123,29 @@ const fetchJsonWithFallback = async (url, options = {}) => {
   return { res, data };
 };
 
+const fetchJsonWithFallbackAndTimeout = async (url, options = {}, timeoutMs = null) => {
+  const requestOptions = {
+    ...options,
+    headers: { Accept: "application/json", ...(options.headers || {}) }
+  };
+  const doFetch = (targetUrl) =>
+    timeoutMs
+      ? fetchWithTimeout(targetUrl, requestOptions, timeoutMs)
+      : fetch(targetUrl, requestOptions);
+
+  const res = await doFetch(url);
+  const data = await readResponseBody(res);
+  const fallbackUrl = buildFallbackUrl(url);
+
+  if (fallbackUrl && looksLikeHtml(data?.raw)) {
+    const retryRes = await doFetch(fallbackUrl);
+    const retryData = await readResponseBody(retryRes);
+    return { res: retryRes, data: retryData };
+  }
+
+  return { res, data };
+};
+
 const normalizeWebsiteUrl = (value) => {
   const input = String(value || "").trim();
   if (!input) return "";
@@ -329,7 +352,6 @@ export default function App() {
   const [twilioNumbersCountry, setTwilioNumbersCountry] = useState("");
   const [twilioAssignedNumber, setTwilioAssignedNumber] = useState("");
   const [selectedTwilioNumber, setSelectedTwilioNumber] = useState("");
-  const [detectedCountry, setDetectedCountry] = useState("");
   const [isMobile, setIsMobile] = useState(false);
   const [serviceSlug, setServiceSlug] = useState("receptionist");
   const validStages = useMemo(() => new Set(Object.values(STAGES)), []);
@@ -1823,18 +1845,11 @@ export default function App() {
         });
         if (range?.start) params.set("from", range.start);
         if (range?.end) params.set("to", range.end);
-        const res = await fetch(
+        const { res, data } = await fetchJsonWithFallback(
           `${API_URLS.calendarEvents}?${params.toString()}`
         );
         if (!res.ok) {
-          const text = await res.text();
-          let parsed = null;
-          try {
-            parsed = text ? JSON.parse(text) : null;
-          } catch {
-            parsed = null;
-          }
-          const detail = parsed?.error || parsed?.details || text || "Unable to fetch calendar events";
+          const detail = data?.error || data?.details || data?.raw || "Unable to fetch calendar events";
           const detailText = String(detail || "");
           const isDisconnected =
             res.status === 404 || detailText.includes("No Google account connected");
@@ -1854,7 +1869,9 @@ export default function App() {
           }
           throw new Error(detail);
         }
-        const data = await res.json();
+        if (looksLikeHtml(data?.raw)) {
+          throw new Error("Calendar API returned HTML instead of JSON. Check /api routing.");
+        }
         setCalendarEvents(data?.events || []);
         setCalendarStatus("Google");
         setCalendarAccountEmail(data?.account_email || data?.accountEmail || "");
@@ -1907,40 +1924,42 @@ export default function App() {
       setDashboardLoading(true);
       setSubscriptionsLoading(true);
       try {
-        const dashPromise = fetchWithTimeout(
+        const dashPromise = fetchJsonWithFallbackAndTimeout(
           `${API_URLS.dashboard}?email=${encodeURIComponent(targetEmail)}`,
           {},
           DASHBOARD_REQUEST_TIMEOUT_MS
         );
-        const clientPromise = fetchWithTimeout(
+        const clientPromise = fetchJsonWithFallbackAndTimeout(
           `${API_URLS.clientsByEmail}?email=${encodeURIComponent(targetEmail)}`,
           {},
           OPTIONAL_REQUEST_TIMEOUT_MS
         ).catch(() => null);
-        const userPromise = fetchWithTimeout(
+        const userPromise = fetchJsonWithFallbackAndTimeout(
           `${API_URLS.authUserByEmail}?email=${encodeURIComponent(targetEmail)}`,
           {},
           OPTIONAL_REQUEST_TIMEOUT_MS
         ).catch(() => null);
-        const subsPromise = fetchWithTimeout(
+        const subsPromise = fetchJsonWithFallbackAndTimeout(
           `${API_URLS.subscriptionsStatus}?email=${encodeURIComponent(targetEmail)}`,
           {},
           SUBSCRIPTION_REQUEST_TIMEOUT_MS
         ).catch(() => null);
 
-        const dashRes = await dashPromise;
+        const { res: dashRes, data: dashData } = await dashPromise;
 
         if (!dashRes.ok) {
-          const text = await dashRes.text();
-          throw new Error(text || "Unable to load dashboard");
+          const detail = dashData?.error || dashData?.details || dashData?.raw || "Unable to load dashboard";
+          throw new Error(detail);
+        }
+        if (looksLikeHtml(dashData?.raw)) {
+          throw new Error("Dashboard API returned HTML instead of JSON. Check /api routing.");
         }
 
-        const dashData = await dashRes.json();
         const [clientRes, userRes] = await Promise.all([clientPromise, userPromise]);
         const clientDetails =
-          clientRes && clientRes.ok ? await clientRes.json().catch(() => null) : null;
+          clientRes?.res?.ok && !looksLikeHtml(clientRes?.data?.raw) ? clientRes.data : null;
         const userDetails =
-          userRes && userRes.ok ? await userRes.json().catch(() => null) : null;
+          userRes?.res?.ok && !looksLikeHtml(userRes?.data?.raw) ? userRes.data : null;
         let subscriptionPayload = dashData?.subscriptions;
 
         const applySubscriptionPayload = (payload) => {
@@ -1961,8 +1980,8 @@ export default function App() {
           setSubscriptionsLoading(false);
         } else {
           const subsRes = await subsPromise;
-          if (subsRes && subsRes.ok) {
-            const subsJson = await subsRes.json().catch(() => null);
+          if (subsRes?.res?.ok && !looksLikeHtml(subsRes?.data?.raw)) {
+            const subsJson = subsRes.data || null;
             subscriptionPayload = subsJson?.subscriptions ?? subsJson;
             if (subscriptionPayload !== undefined) {
               applySubscriptionPayload(subscriptionPayload);
@@ -2299,14 +2318,15 @@ export default function App() {
     async (emailAddress = user?.email) => {
       if (!emailAddress) return;
       try {
-        const res = await fetch(
+        const { res, data } = await fetchJsonWithFallback(
           `${API_URLS.dashboardCalls}?email=${encodeURIComponent(emailAddress)}&limit=500`
         );
         if (!res.ok) {
-          const text = await res.text();
-          throw new Error(text || "Unable to fetch call logs");
+          throw new Error(data?.error || data?.details || data?.raw || "Unable to fetch call logs");
         }
-        const data = await res.json();
+        if (looksLikeHtml(data?.raw)) {
+          throw new Error("Calls API returned HTML instead of JSON. Check /api routing.");
+        }
         setAllCalls(data?.calls || []);
       } catch (error) {
         console.error("Failed to load all calls", error);
@@ -2320,11 +2340,10 @@ export default function App() {
     async (emailAddress = user?.email, daysOverride = null) => {
       if (!emailAddress) return;
       try {
-        const callsRes = await fetch(
+        const { res: callsRes, data: callsJson } = await fetchJsonWithFallback(
           `${API_URLS.calls}?email=${encodeURIComponent(emailAddress)}`
         );
-        if (callsRes.ok) {
-          const callsJson = await callsRes.json().catch(() => ({}));
+        if (callsRes.ok && !looksLikeHtml(callsJson?.raw)) {
           const calls = Array.isArray(callsJson?.calls) ? callsJson.calls : [];
           if (calls.length) {
             setRecentCalls(calls);
@@ -2334,14 +2353,15 @@ export default function App() {
         }
 
         const days = typeof daysOverride === "number" ? daysOverride : getSelectedDays();
-        const res = await fetch(
+        const { res, data } = await fetchJsonWithFallback(
           `${API_URLS.dashboardCalls}?email=${encodeURIComponent(emailAddress)}&days=${days}`
         );
         if (!res.ok) {
-          const text = await res.text();
-          throw new Error(text || "Unable to fetch call logs");
+          throw new Error(data?.error || data?.details || data?.raw || "Unable to fetch call logs");
         }
-        const data = await res.json();
+        if (looksLikeHtml(data?.raw)) {
+          throw new Error("Calls API returned HTML instead of JSON. Check /api routing.");
+        }
         setRecentCalls(data?.calls || []);
         setCallsPage(1);
       } catch (error) {
@@ -2361,12 +2381,13 @@ export default function App() {
   const loadUltravoxVoices = useCallback(async () => {
     setUltravoxVoicesLoading(true);
     try {
-      const res = await fetch(API_URLS.ultravoxVoices);
+      const { res, data } = await fetchJsonWithFallback(API_URLS.ultravoxVoices);
       if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || "Unable to fetch S4U-v3 voices");
+        throw new Error(data?.error || data?.details || data?.raw || "Unable to fetch S4U-v3 voices");
       }
-      const data = await res.json();
+      if (looksLikeHtml(data?.raw)) {
+        throw new Error("Voices API returned HTML instead of JSON. Check /api routing.");
+      }
       const voices = Array.isArray(data?.voices) ? data.voices : data;
       setUltravoxVoices(voices || []);
     } catch (error) {
@@ -2384,21 +2405,15 @@ export default function App() {
     setTwilioNumbersError("");
     try {
       const params = new URLSearchParams({ email: emailAddress });
-      if (detectedCountry) {
-        params.set("country", detectedCountry);
-      }
-      const res = await fetch(`${API_URLS.twilioAvailableNumbers}?${params.toString()}`);
+      const { res, data } = await fetchJsonWithFallback(
+        `${API_URLS.twilioAvailableNumbers}?${params.toString()}`
+      );
       if (!res.ok) {
-        const text = await res.text();
-        let parsed = null;
-        try {
-          parsed = text ? JSON.parse(text) : null;
-        } catch {
-          parsed = null;
-        }
-        throw new Error(parsed?.error || parsed?.details || text || "Unable to fetch numbers");
+        throw new Error(data?.error || data?.details || data?.raw || "Unable to fetch numbers");
       }
-      const data = await res.json().catch(() => ({}));
+      if (looksLikeHtml(data?.raw)) {
+        throw new Error("Numbers API returned HTML instead of JSON. Check /api routing.");
+      }
       const numbers = Array.isArray(data?.numbers) ? data.numbers : [];
       setTwilioAvailableNumbers(numbers);
       setTwilioNumbersCountry(data?.country || "");
@@ -2414,24 +2429,7 @@ export default function App() {
     } finally {
       setTwilioNumbersLoading(false);
     }
-  }, [detectedCountry, email, loginEmail, paymentInfo?.email, signupEmail]);
-
-  const detectCountryFromClient = useCallback(async () => {
-    if (detectedCountry) return detectedCountry;
-    try {
-      const res = await fetch("https://ipapi.co/json/");
-      if (!res.ok) return "";
-      const data = await res.json().catch(() => ({}));
-      const code = String(data?.country_code || "").trim().toUpperCase();
-      if (code && code.length === 2) {
-        setDetectedCountry(code);
-        return code;
-      }
-    } catch (error) {
-      console.warn("Failed to detect country from client", error);
-    }
-    return "";
-  }, [detectedCountry]);
+  }, [email, loginEmail, paymentInfo?.email, signupEmail]);
 
   const loadCallTranscript = useCallback(
     async (callSid) => {
@@ -2800,8 +2798,8 @@ export default function App() {
 
   useEffect(() => {
     if (stage !== STAGES.NUMBER_SELECT) return;
-    detectCountryFromClient().finally(loadTwilioAvailableNumbers);
-  }, [detectCountryFromClient, loadTwilioAvailableNumbers, stage]);
+    loadTwilioAvailableNumbers();
+  }, [loadTwilioAvailableNumbers, stage]);
 
   useEffect(() => {
     if (selectedVoiceId) return;
