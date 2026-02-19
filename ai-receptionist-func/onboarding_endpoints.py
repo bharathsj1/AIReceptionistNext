@@ -113,6 +113,109 @@ def _normalize_phone_number(value: str | None) -> Optional[str]:
     return normalized or None
 
 
+def _country_from_phone_prefix(phone_number: str | None) -> Optional[str]:
+    normalized = _normalize_phone_number(phone_number) or ""
+    if not normalized.startswith("+"):
+        return None
+    if normalized.startswith("+44"):
+        return "GB"
+    if normalized.startswith("+1"):
+        return "US"
+    if normalized.startswith("+61"):
+        return "AU"
+    if normalized.startswith("+64"):
+        return "NZ"
+    if normalized.startswith("+353"):
+        return "IE"
+    if normalized.startswith("+91"):
+        return "IN"
+    if normalized.startswith("+33"):
+        return "FR"
+    if normalized.startswith("+49"):
+        return "DE"
+    if normalized.startswith("+34"):
+        return "ES"
+    if normalized.startswith("+39"):
+        return "IT"
+    return None
+
+
+def _resolve_twilio_country_setting(
+    base_name: str,
+    country: str | None,
+    phone_number: str | None = None,
+) -> Optional[str]:
+    candidates = []
+    normalized_country = (country or "").strip().upper()
+    if normalized_country:
+        candidates.append(normalized_country)
+    inferred = _country_from_phone_prefix(phone_number)
+    if inferred and inferred not in candidates:
+        candidates.append(inferred)
+
+    for code in candidates:
+        value = str(get_setting(f"{base_name}_{code}", "") or "").strip()
+        if value:
+            return value
+
+    default_value = str(get_setting(base_name, "") or "").strip()
+    return default_value or None
+
+
+def _auto_select_twilio_address_sid(
+    twilio_client: TwilioClient,
+    country: str | None,
+) -> Optional[str]:
+    normalized_country = (country or "").strip().upper()
+    try:
+        addresses = twilio_client.addresses.list(limit=50) or []
+    except Exception:  # pylint: disable=broad-except
+        return None
+    if not addresses:
+        return None
+
+    if normalized_country:
+        for addr in addresses:
+            iso_country = (
+                str(getattr(addr, "iso_country", "") or getattr(addr, "country", "") or "")
+                .strip()
+                .upper()
+            )
+            if iso_country and iso_country == normalized_country:
+                return getattr(addr, "sid", None)
+    return None
+
+
+def _build_twilio_purchase_kwargs(
+    twilio_client: TwilioClient,
+    country: str,
+    phone_number: str | None = None,
+) -> dict:
+    kwargs = {}
+    address_sid = _resolve_twilio_country_setting("TWILIO_ADDRESS_SID", country, phone_number)
+    if not address_sid:
+        address_sid = _auto_select_twilio_address_sid(twilio_client, country)
+    if address_sid:
+        kwargs["address_sid"] = address_sid
+
+    # Optional regulatory fields for countries/carriers requiring approved bundles.
+    bundle_sid = _resolve_twilio_country_setting("TWILIO_BUNDLE_SID", country, phone_number)
+    if bundle_sid:
+        kwargs["bundle_sid"] = bundle_sid
+
+    identity_sid = _resolve_twilio_country_setting("TWILIO_IDENTITY_SID", country, phone_number)
+    if identity_sid:
+        kwargs["identity_sid"] = identity_sid
+
+    emergency_address_sid = _resolve_twilio_country_setting(
+        "TWILIO_EMERGENCY_ADDRESS_SID", country, phone_number
+    )
+    if emergency_address_sid:
+        kwargs["emergency_address_sid"] = emergency_address_sid
+
+    return kwargs
+
+
 def _find_client_and_user(db, email: str | None) -> tuple[Optional[Client], Optional[User]]:
     normalized = _normalize_email(email)
     if not normalized:
@@ -393,9 +496,17 @@ def purchase_twilio_number(
             phone_number=chosen_number,
             voice_url=webhook_url,
             voice_method="POST",
+            **_build_twilio_purchase_kwargs(twilio_client, country, chosen_number),
         )
         return {"phone_number": purchased.phone_number, "sid": purchased.sid}
     except Exception as exc:  # pylint: disable=broad-except
+        error_text = str(exc)
+        if "AddressSid" in error_text and "empty" in error_text:
+            raise RuntimeError(
+                "Twilio purchase failed: number requires an address. "
+                "Set TWILIO_ADDRESS_SID or TWILIO_ADDRESS_SID_<COUNTRY> (for example TWILIO_ADDRESS_SID_GB). "
+                f"Original error: {error_text}"
+            ) from exc
         raise RuntimeError(f"Twilio purchase failed for {chosen_number}: {exc}") from exc
 
 
