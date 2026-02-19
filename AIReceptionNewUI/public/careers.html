@@ -464,7 +464,8 @@
     </main>
 
     <script>
-      const APPLY_ENDPOINT = "/api/careers/apply";
+      const API_BASE = "https://aireceptionist-func.azurewebsites.net/api";
+      const APPLY_ENDPOINT = `${API_BASE}/careers/apply`;
       const MAX_FILE_BYTES = 8 * 1024 * 1024;
       const applyButtons = document.querySelectorAll(".apply-btn");
       const applySection = document.getElementById("apply-section");

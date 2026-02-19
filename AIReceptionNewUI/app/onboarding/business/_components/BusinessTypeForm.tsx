@@ -48,6 +48,7 @@ const defaultValues: BusinessProfileInput = {
   customType: "",
   businessName: "",
 };
+const API_BASE = "https://aireceptionist-func.azurewebsites.net/api";
 
 export const BusinessTypeForm = () => {
   const router = useRouter();
@@ -110,7 +111,7 @@ export const BusinessTypeForm = () => {
     };
 
     try {
-      const response = await fetch("/api/profile/business", {
+      const response = await fetch(`${API_BASE}/profile/business`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

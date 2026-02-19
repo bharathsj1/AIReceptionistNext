@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+const API_BASE = "https://aireceptionist-func.azurewebsites.net/api";
 
 type RoutingPayload = {
   selectedTwilioNumber?: string;
@@ -42,7 +43,7 @@ export default function PhoneRoutingSettingsPage() {
     setStatus("");
     try {
       const query = new URLSearchParams({ email: email.trim() });
-      const res = await fetch(`/api/phone/routing?${query.toString()}`);
+      const res = await fetch(`${API_BASE}/phone/routing?${query.toString()}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Failed to load routing settings");
       setPayload(data || {});
@@ -60,7 +61,7 @@ export default function PhoneRoutingSettingsPage() {
     setSaving(true);
     setStatus("");
     try {
-      const res = await fetch("/api/phone/routing", {
+      const res = await fetch(`${API_BASE}/phone/routing`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
