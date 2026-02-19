@@ -1,0 +1,1207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Digital Card - Professional</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --white: #ffffff;
+  --off-white: #f5f5f7;
+  --gray-50: #fbfbfd;
+  --gray-100: #f5f5f7;
+  --gray-200: #e8e8ed;
+  --gray-300: #d2d2d7;
+  --gray-400: #aeaeb2;
+  --gray-500: #8e8e93;
+  --gray-600: #636366;
+  --gray-700: #48484a;
+  --gray-800: #2c2c2e;
+  --gray-900: #1c1c1e;
+  --black: #000000;
+  --blue: #0071e3;
+  --blue-hover: #0077ed;
+  --blue-light: #e8f1fb;
+  --font: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --mono: 'JetBrains Mono', monospace;
+  --radius: 18px;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow: 0 4px 16px rgba(0,0,0,0.08), 0 1px 4px rgba(0,0,0,0.04);
+  --shadow-lg: 0 20px 60px rgba(0,0,0,0.12), 0 4px 16px rgba(0,0,0,0.06);
+  --shadow-xl: 0 40px 80px rgba(0,0,0,0.14), 0 8px 24px rgba(0,0,0,0.08);
+}
+
+html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+
+body {
+  background: var(--gray-100);
+  font-family: var(--font);
+  color: var(--gray-900);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+nav {
+  background: rgba(255,255,255,0.85);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+  padding: 0 48px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.nav-brand {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--gray-900);
+  letter-spacing: -0.025em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nav-brand-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--blue);
+}
+
+.nav-pill {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--gray-600);
+  background: var(--gray-100);
+  border: 1px solid var(--gray-200);
+  border-radius: 20px;
+  padding: 4px 12px;
+  letter-spacing: -0.01em;
+}
+
+.workspace {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 400px 1fr;
+  max-width: 1280px;
+  margin: 0 auto;
+  width: 100%;
+  padding: 40px 48px;
+  gap: 40px;
+  align-items: start;
+}
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.editor-section {
+  background: var(--white);
+  border-radius: var(--radius);
+  border: 1px solid var(--gray-200);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow 0.2s;
+}
+
+.editor-section:hover { box-shadow: var(--shadow); }
+
+.section-header {
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--gray-100);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.section-icon {
+  width: 28px; height: 28px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.section-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gray-900);
+  letter-spacing: -0.01em;
+}
+
+.section-body { padding: 16px 20px; }
+
+.photo-uploader {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.photo-avatar {
+  width: 64px; height: 64px;
+  border-radius: 50%;
+  border: 1.5px solid var(--gray-200);
+  background: var(--gray-100);
+  overflow: hidden;
+  flex-shrink: 0;
+  position: relative;
+  cursor: pointer;
+}
+
+.photo-avatar img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: none;
+}
+
+.avatar-placeholder {
+  width: 100%; height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--gray-400);
+}
+
+.photo-cta { flex: 1; }
+
+.btn-upload {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: var(--blue);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+  letter-spacing: -0.01em;
+}
+
+.btn-upload:hover { background: var(--blue-hover); }
+.btn-upload:active { transform: scale(0.98); }
+
+.photo-hint {
+  font-size: 11px;
+  color: var(--gray-400);
+  margin-top: 5px;
+  letter-spacing: -0.01em;
+}
+
+.field-stack { display: flex; flex-direction: column; gap: 10px; }
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+.field { display: flex; flex-direction: column; gap: 5px; }
+
+.field-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--gray-500);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.field-input {
+  width: 100%;
+  background: var(--gray-50);
+  border: 1px solid var(--gray-200);
+  border-radius: 10px;
+  padding: 9px 12px;
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--gray-900);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+  -webkit-font-smoothing: antialiased;
+}
+
+.field-input:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(0,113,227,0.12);
+  background: var(--white);
+}
+
+.field-input::placeholder { color: var(--gray-400); }
+
+.theme-list {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.theme-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px 7px 7px;
+  border: 1.5px solid var(--gray-200);
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--gray-700);
+  background: var(--white);
+  transition: all 0.15s;
+  letter-spacing: -0.01em;
+}
+
+.theme-chip:hover { border-color: var(--gray-400); }
+
+.theme-chip.active {
+  border-color: var(--blue);
+  background: var(--blue-light);
+  color: var(--blue);
+}
+
+.theme-dot {
+  width: 18px; height: 18px;
+  border-radius: 5px;
+}
+
+.action-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.btn-action {
+  flex: 1;
+  padding: 11px 16px;
+  border-radius: 10px;
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: none;
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.btn-cta {
+  background: var(--blue);
+  color: white;
+}
+
+.btn-cta:hover { background: var(--blue-hover); }
+.btn-cta:active { transform: scale(0.98); }
+
+.btn-ghost {
+  background: var(--white);
+  color: var(--gray-700);
+  border: 1px solid var(--gray-200);
+}
+
+.btn-ghost:hover { background: var(--gray-50); border-color: var(--gray-300); }
+
+.preview-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  position: sticky;
+  top: 92px;
+}
+
+.preview-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--gray-400);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  align-self: flex-start;
+}
+
+.card-scene { perspective: 1400px; }
+.card-scene:hover .vcard { transform: rotateY(-4deg) rotateX(2deg) translateZ(10px); }
+
+.vcard {
+  width: 520px;
+  border-radius: 28px;
+  overflow: hidden;
+  background: white;
+  box-shadow: var(--shadow-xl), 0 0 0 0.5px rgba(0,0,0,0.06);
+  transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.6s ease;
+  transform-style: preserve-3d;
+}
+
+.vcard:hover {
+  box-shadow: 0 60px 120px rgba(0,0,0,0.18), 0 8px 32px rgba(0,0,0,0.08), 0 0 0 0.5px rgba(0,0,0,0.06);
+}
+
+.card-banner {
+  height: 160px;
+  position: relative;
+  overflow: visible;
+  transition: background 0.5s ease;
+  background: linear-gradient(145deg, #1c1c1e 0%, #3a3a3c 100%);
+  z-index: 2;
+}
+
+.banner-mesh {
+  position: absolute;
+  inset: 0;
+  opacity: 0.4;
+  background-image:
+    radial-gradient(circle at 20% 50%, rgba(255,255,255,0.08) 0%, transparent 60%),
+    radial-gradient(circle at 80% 20%, rgba(255,255,255,0.06) 0%, transparent 50%);
+}
+
+.banner-grid {
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+.banner-wordmark {
+  position: absolute;
+  bottom: 16px;
+  right: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.2);
+  letter-spacing: -0.02em;
+  font-family: var(--font);
+}
+
+.banner-logo-wrap {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  z-index: 3;
+  height: 34px;
+  min-width: 120px;
+  padding: 5px 10px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.14);
+  border: 1px solid rgba(255,255,255,0.2);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.banner-logo-img {
+  max-width: 136px;
+  max-height: 24px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  display: block;
+}
+
+.banner-logo-fallback {
+  display: none;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: rgba(255,255,255,0.9);
+}
+
+.card-photo-ring {
+  position: absolute;
+  bottom: -40px;
+  left: 28px;
+  width: 82px; height: 82px;
+  border-radius: 50%;
+  padding: 3px;
+  background: white;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+  z-index: 2;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.card-photo-ring:hover { transform: scale(1.04); }
+
+.card-photo-inner {
+  width: 100%; height: 100%;
+  border-radius: 50%;
+  background: var(--gray-100);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--gray-400);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+}
+
+.card-photo-inner img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: none;
+}
+
+.card-body {
+  padding: 52px 28px 0;
+  background: white;
+  position: relative;
+  z-index: 1;
+}
+
+.card-identity { margin-bottom: 20px; }
+
+.card-fullname {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--gray-900);
+  letter-spacing: -0.04em;
+  line-height: 1.15;
+  margin-bottom: 4px;
+}
+
+.card-role {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--gray-500);
+  letter-spacing: -0.01em;
+  line-height: 1.4;
+}
+
+.card-role span { color: var(--blue); font-weight: 500; }
+
+.card-contacts {
+  border-top: 1px solid var(--gray-100);
+  display: flex;
+  flex-direction: column;
+}
+
+.card-contact-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--gray-100);
+  text-decoration: none;
+  transition: background 0.1s;
+  color: inherit;
+}
+
+.card-contact-row:last-child { border-bottom: none; }
+
+.cicon {
+  width: 34px; height: 34px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 15px;
+  background: var(--gray-100);
+}
+
+.ctext { flex: 1; overflow: hidden; }
+
+.clabel {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--gray-400);
+  margin-bottom: 1px;
+}
+
+.cvalue {
+  font-size: 13.5px;
+  font-weight: 400;
+  color: var(--gray-800);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: -0.01em;
+}
+
+.carr {
+  color: var(--gray-300);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.card-qr {
+  margin: 0 -28px;
+  border-top: 1px solid var(--gray-100);
+  padding: 20px 28px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  background: var(--gray-50);
+}
+
+.qr-box {
+  background: white;
+  border-radius: 12px;
+  padding: 8px;
+  border: 1px solid var(--gray-200);
+  flex-shrink: 0;
+  min-width: 112px;
+  min-height: 112px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.qr-empty {
+  width: 92px; height: 92px;
+  border-radius: 8px;
+  background: var(--gray-100);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--gray-400);
+}
+
+#qrcode { display: flex; align-items: center; justify-content: center; }
+#qrcode canvas { display: block; }
+
+.qr-info { flex: 1; }
+
+.qr-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gray-900);
+  letter-spacing: -0.02em;
+  margin-bottom: 4px;
+}
+
+.qr-desc {
+  font-size: 12px;
+  color: var(--gray-500);
+  line-height: 1.5;
+  letter-spacing: -0.01em;
+}
+
+.share-link {
+  font-size: 11px;
+  color: var(--gray-500);
+  margin-top: 6px;
+  display: inline-block;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 28px;
+  border-top: 1px solid var(--gray-100);
+}
+
+.footer-badge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--gray-400);
+  letter-spacing: -0.01em;
+  font-weight: 500;
+}
+
+.footer-dot { width: 5px; height: 5px; border-radius: 50%; background: #34c759; }
+
+.footer-social {
+  display: flex;
+  gap: 8px;
+}
+
+.social-icon {
+  width: 28px; height: 28px;
+  border-radius: 8px;
+  background: var(--gray-100);
+  border: 1px solid var(--gray-200);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-decoration: none;
+  color: var(--gray-600);
+}
+
+.social-icon:hover { background: var(--gray-200); color: var(--gray-900); }
+
+.card-banner.t-midnight { background: linear-gradient(145deg, #0a0a0f 0%, #1a1a2e 100%); }
+.card-banner.t-carbon  { background: linear-gradient(145deg, #1c1c1e 0%, #3a3a3c 100%); }
+.card-banner.t-ocean   { background: linear-gradient(145deg, #003d82 0%, #0066cc 100%); }
+.card-banner.t-forest  { background: linear-gradient(145deg, #1a2e1a 0%, #2d5a27 100%); }
+.card-banner.t-rose    { background: linear-gradient(145deg, #1a0a10 0%, #4a1528 100%); }
+
+@keyframes fadeIn { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+.editor { animation: fadeIn 0.5s ease both; }
+.vcard  { animation: fadeIn 0.5s 0.1s ease both; }
+
+@media (max-width: 900px) {
+  .workspace { grid-template-columns: 1fr; padding: 24px; gap: 32px; }
+  .preview-area { position: static; }
+  .vcard { width: 100%; max-width: 520px; }
+  nav { padding: 0 24px; }
+}
+</style>
+</head>
+<body>
+<nav>
+  <div class="nav-brand">
+    <div class="nav-brand-dot"></div>
+    SmartConnect4u CardStudio
+  </div>
+  <div class="nav-pill">Professional</div>
+</nav>
+
+<div class="workspace">
+  <div class="editor">
+    <div class="editor-section">
+      <div class="section-header">
+        <div class="section-icon" style="background:#f0f7ff">🪪</div>
+        <div class="section-name">Profile Photo</div>
+      </div>
+      <div class="section-body">
+        <div class="photo-uploader">
+          <div class="photo-avatar" id="avatar-thumb" onclick="document.getElementById('photo-file').click()">
+            <img id="thumb-img" alt="">
+            <div class="avatar-placeholder" id="avatar-ph">
+              <svg width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+              </svg>
+            </div>
+          </div>
+          <div class="photo-cta">
+            <label class="btn-upload" for="photo-file">Upload Photo</label>
+            <input type="file" id="photo-file" accept="image/*" style="display:none" onchange="handlePhoto(this)">
+            <div class="photo-hint">Recommended: 400x400px, JPG or PNG</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="editor-section">
+      <div class="section-header">
+        <div class="section-icon" style="background:#f5f0ff">👤</div>
+        <div class="section-name">Identity</div>
+      </div>
+      <div class="section-body">
+        <div class="field-stack">
+          <div class="field">
+            <div class="field-label">Full Name</div>
+            <input class="field-input" id="f-name" type="text" placeholder="Jonathan Mercer" oninput="sync()">
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <div class="field-label">Job Title</div>
+              <input class="field-input" id="f-title" type="text" placeholder="Product Designer" oninput="sync()">
+            </div>
+            <div class="field">
+              <div class="field-label">Company</div>
+              <input class="field-input" id="f-company" type="text" placeholder="Acme Corp" oninput="sync()">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="editor-section">
+      <div class="section-header">
+        <div class="section-icon" style="background:#f0fff4">📬</div>
+        <div class="section-name">Contact</div>
+      </div>
+      <div class="section-body">
+        <div class="field-stack">
+          <div class="field">
+            <div class="field-label">Email Address</div>
+            <input class="field-input" id="f-email" type="email" placeholder="jonathan@acme.com" oninput="sync()">
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <div class="field-label">Phone</div>
+              <input class="field-input" id="f-phone" type="tel" placeholder="+1 (555) 000-0000" oninput="sync()">
+            </div>
+            <div class="field">
+              <div class="field-label">Location</div>
+              <input class="field-input" id="f-loc" type="text" placeholder="New York, NY" oninput="sync()">
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-label">Website</div>
+            <input class="field-input" id="f-web" type="url" placeholder="https://acme.com" oninput="sync()">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="editor-section">
+      <div class="section-header">
+        <div class="section-icon" style="background:#fff5f0">🔗</div>
+        <div class="section-name">Social</div>
+      </div>
+      <div class="section-body">
+        <div class="field-row">
+          <div class="field">
+            <div class="field-label">LinkedIn</div>
+            <input class="field-input" id="f-li" type="text" placeholder="linkedin.com/in/..." oninput="sync()">
+          </div>
+          <div class="field">
+            <div class="field-label">X / Twitter</div>
+            <input class="field-input" id="f-tw" type="text" placeholder="@username" oninput="sync()">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="editor-section">
+      <div class="section-header">
+        <div class="section-icon" style="background:#f5f5f7">🎨</div>
+        <div class="section-name">Card Appearance</div>
+      </div>
+      <div class="section-body">
+        <div class="theme-list">
+          <div class="theme-chip active" onclick="setTheme('t-carbon','Carbon',this)">
+            <div class="theme-dot" style="background:linear-gradient(135deg,#1c1c1e,#3a3a3c)"></div>Carbon
+          </div>
+          <div class="theme-chip" onclick="setTheme('t-midnight','Midnight',this)">
+            <div class="theme-dot" style="background:linear-gradient(135deg,#0a0a0f,#1a1a2e)"></div>Midnight
+          </div>
+          <div class="theme-chip" onclick="setTheme('t-ocean','Ocean',this)">
+            <div class="theme-dot" style="background:linear-gradient(135deg,#003d82,#0066cc)"></div>Ocean
+          </div>
+          <div class="theme-chip" onclick="setTheme('t-forest','Forest',this)">
+            <div class="theme-dot" style="background:linear-gradient(135deg,#1a2e1a,#2d5a27)"></div>Forest
+          </div>
+          <div class="theme-chip" onclick="setTheme('t-rose','Rose',this)">
+            <div class="theme-dot" style="background:linear-gradient(135deg,#1a0a10,#4a1528)"></div>Rose
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="action-row">
+      <button class="btn-action btn-cta" onclick="downloadCard()">Download PNG</button>
+      <button class="btn-action btn-ghost" onclick="copyVCard()"><span id="vcopy-text">vCard</span></button>
+      <button class="btn-action btn-ghost" onclick="copyShareLink()">Link</button>
+    </div>
+  </div>
+
+  <div class="preview-area">
+    <div class="preview-label">Live Preview</div>
+    <div class="card-scene">
+      <div class="vcard" id="vcard">
+        <div class="card-banner t-carbon" id="c-banner">
+          <div class="banner-mesh"></div>
+          <div class="banner-grid"></div>
+          <div class="banner-logo-wrap">
+            <img
+              class="banner-logo-img"
+              src="/media/sc_logo_main.png"
+              alt="SmartConnect4u logo"
+              id="c-company-logo"
+              onerror="this.style.display='none';document.getElementById('c-company-logo-fallback').style.display='inline';"
+            >
+            <span class="banner-logo-fallback" id="c-company-logo-fallback">Smartconnect4u</span>
+          </div>
+          <div class="banner-wordmark" id="c-wordmark">Acme Corp</div>
+          <div class="card-photo-ring" onclick="document.getElementById('photo-file').click()">
+            <div class="card-photo-inner" id="c-photo-inner">
+              <img id="c-photo" src="" alt="">
+              <svg width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" id="c-photo-ph"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </div>
+          </div>
+        </div>
+
+        <div class="card-body">
+          <div class="card-identity">
+            <div class="card-fullname" id="c-name">Your Name</div>
+            <div class="card-role">
+              <span id="c-title">Job Title</span>
+              <span id="c-at" style="color:var(--gray-300)"> · </span>
+              <span id="c-company" style="color:var(--gray-500)">Company</span>
+            </div>
+          </div>
+
+          <div class="card-contacts">
+            <a class="card-contact-row" id="row-email" href="#">
+              <div class="cicon">✉️</div>
+              <div class="ctext"><div class="clabel">Email</div><div class="cvalue" id="cv-email">email@company.com</div></div>
+              <div class="carr">›</div>
+            </a>
+            <a class="card-contact-row" id="row-phone" href="#">
+              <div class="cicon">📱</div>
+              <div class="ctext"><div class="clabel">Phone</div><div class="cvalue" id="cv-phone">+1 (555) 000-0000</div></div>
+              <div class="carr">›</div>
+            </a>
+            <div class="card-contact-row" id="row-loc" style="display:none">
+              <div class="cicon">📍</div>
+              <div class="ctext"><div class="clabel">Location</div><div class="cvalue" id="cv-loc">City, Country</div></div>
+              <div class="carr">›</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card-qr">
+          <div class="qr-box" id="qr-box">
+            <div class="qr-empty" id="qr-empty">ADD LINK</div>
+            <div id="qrcode" style="display:none"></div>
+          </div>
+          <div class="qr-info">
+            <div class="qr-title">Scan to Open Card</div>
+            <div class="qr-desc" id="qr-desc">Add details to generate a shareable SmartConnect4u digital card.</div>
+            <a id="share-link" class="share-link" target="_blank" rel="noreferrer"></a>
+          </div>
+        </div>
+
+        <div class="card-footer">
+          <div class="footer-badge"><div class="footer-dot"></div>Digital Card</div>
+          <div class="footer-social">
+            <a class="social-icon" id="soc-li" title="LinkedIn" style="display:none">in</a>
+            <a class="social-icon" id="soc-tw" title="X / Twitter" style="display:none">𝕏</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="font-size:12px;color:var(--gray-400);letter-spacing:-0.01em;text-align:center">
+      Hover card to preview · QR opens a full digital card page
+    </div>
+  </div>
+</div>
+
+<script>
+  let photoURL = null;
+  let photoPayload = '';
+  let selectedTheme = 't-carbon';
+
+  function normalizeWeb(value) {
+    if (!value) return '';
+    if (/^https?:\/\//i.test(value)) return value;
+    return `https://${value}`;
+  }
+
+  function normalizeLinkedIn(value) {
+    if (!value) return '';
+    if (/^https?:\/\//i.test(value)) return value;
+    return `https://${value}`;
+  }
+
+  function normalizeTwitter(value) {
+    if (!value) return '';
+    if (/^https?:\/\//i.test(value)) return value;
+    const clean = value.replace(/^@/, '');
+    return `https://x.com/${clean}`;
+  }
+
+  function payload() {
+    return {
+      fullName: document.getElementById('f-name').value.trim(),
+      jobTitle: document.getElementById('f-title').value.trim(),
+      company: document.getElementById('f-company').value.trim(),
+      email: document.getElementById('f-email').value.trim(),
+      phone: document.getElementById('f-phone').value.trim(),
+      location: document.getElementById('f-loc').value.trim(),
+      website: normalizeWeb(document.getElementById('f-web').value.trim()),
+      linkedin: normalizeLinkedIn(document.getElementById('f-li').value.trim()),
+      twitter: document.getElementById('f-tw').value.trim(),
+      theme: selectedTheme,
+      photo: photoPayload
+    };
+  }
+
+  function toBase64Url(str) {
+    const bytes = new TextEncoder().encode(str);
+    let binary = '';
+    bytes.forEach((b) => { binary += String.fromCharCode(b); });
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+  }
+
+  function computeShareData() {
+    const p = payload();
+    const hasAny = Boolean(p.fullName || p.email || p.phone || p.website || p.linkedin || p.twitter);
+    if (!hasAny) return { link: '', photoIncluded: false };
+
+    let payloadCandidate = { ...p };
+    let encoded = toBase64Url(JSON.stringify(payloadCandidate));
+    let link = `${window.location.origin}/digital-business-card.html?d=${encoded}`;
+    let photoIncluded = Boolean(payloadCandidate.photo);
+
+    // Keep QR dense but scannable on phone screens. Drop photo from payload if URL gets too long.
+    if (link.length > 1800 && payloadCandidate.photo) {
+      payloadCandidate = { ...payloadCandidate, photo: '' };
+      encoded = toBase64Url(JSON.stringify(payloadCandidate));
+      link = `${window.location.origin}/digital-business-card.html?d=${encoded}`;
+      photoIncluded = false;
+    }
+
+    return { link, photoIncluded };
+  }
+
+  function setText(id, val, fallback) {
+    document.getElementById(id).textContent = val || fallback;
+  }
+
+  function toggleRow(rowId, valId, value) {
+    const row = document.getElementById(rowId);
+    if (value) {
+      document.getElementById(valId).textContent = value;
+      row.style.display = 'flex';
+    } else {
+      row.style.display = 'none';
+    }
+  }
+
+  function toggleSocial(id, value, href) {
+    const el = document.getElementById(id);
+    if (value) {
+      el.style.display = 'flex';
+      el.href = href;
+      el.target = '_blank';
+      el.rel = 'noreferrer';
+      el.title = value;
+    } else {
+      el.style.display = 'none';
+      el.removeAttribute('href');
+    }
+  }
+
+  function sync() {
+    const p = payload();
+
+    setText('c-name', p.fullName, 'Your Name');
+    setText('c-title', p.jobTitle, 'Job Title');
+    setText('c-company', p.company, 'Company');
+    setText('c-wordmark', p.company, '');
+    setText('cv-email', p.email, 'email@company.com');
+    setText('cv-phone', p.phone, '+1 (555) 000-0000');
+
+    document.getElementById('c-at').style.display = (p.jobTitle && p.company) ? 'inline' : 'none';
+
+    toggleRow('row-loc', 'cv-loc', p.location);
+
+    const rowEmail = document.getElementById('row-email');
+    rowEmail.href = p.email ? `mailto:${p.email}` : '#';
+
+    const rowPhone = document.getElementById('row-phone');
+    rowPhone.href = p.phone ? `tel:${p.phone}` : '#';
+
+    toggleSocial('soc-li', p.linkedin, p.linkedin);
+    toggleSocial('soc-tw', p.twitter, normalizeTwitter(p.twitter));
+
+    buildQR();
+  }
+
+  function buildQR() {
+    const qrcodeEl = document.getElementById('qrcode');
+    const qrEmpty = document.getElementById('qr-empty');
+    const qrDesc = document.getElementById('qr-desc');
+    const shareLink = document.getElementById('share-link');
+
+    const shareData = computeShareData();
+    const link = shareData.link;
+
+    if (!link) {
+      qrcodeEl.style.display = 'none';
+      qrcodeEl.innerHTML = '';
+      qrEmpty.style.display = 'flex';
+      qrDesc.textContent = 'Add details to generate a shareable SmartConnect4u digital card.';
+      shareLink.textContent = '';
+      shareLink.removeAttribute('href');
+      return;
+    }
+
+    qrcodeEl.innerHTML = '';
+    qrcodeEl.style.display = 'flex';
+    qrEmpty.style.display = 'none';
+
+    new QRCode(qrcodeEl, {
+      text: link,
+      width: 92,
+      height: 92,
+      colorDark: '#1c1c1e',
+      colorLight: '#ffffff',
+      correctLevel: QRCode.CorrectLevel.M
+    });
+
+    const shortDisplay = link.length > 58 ? `${link.slice(0, 58)}...` : link;
+    qrDesc.textContent = shareData.photoIncluded
+      ? 'Scan to open your full digital card page (with photo).'
+      : 'Scan to open your full digital card page.';
+    shareLink.href = link;
+    shareLink.textContent = shortDisplay;
+  }
+
+  function buildPhotoPayload(dataUrl) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const maxSide = 112;
+        const scale = Math.min(1, maxSide / Math.max(img.width || 1, img.height || 1));
+        const targetW = Math.max(1, Math.round((img.width || 1) * scale));
+        const targetH = Math.max(1, Math.round((img.height || 1) * scale));
+
+        const canvas = document.createElement('canvas');
+        canvas.width = targetW;
+        canvas.height = targetH;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve('');
+          return;
+        }
+        ctx.drawImage(img, 0, 0, targetW, targetH);
+
+        const qualities = [0.62, 0.5, 0.38];
+        let compressed = '';
+        for (const quality of qualities) {
+          compressed = canvas.toDataURL('image/jpeg', quality);
+          if (compressed.length <= 1400) break;
+        }
+
+        // If still too large, skip embedding photo to avoid unreadable QR.
+        if (compressed.length > 2200) {
+          resolve('');
+          return;
+        }
+        resolve(compressed);
+      };
+      img.onerror = () => resolve('');
+      img.src = dataUrl;
+    });
+  }
+
+  function handlePhoto(input) {
+    const file = input.files && input.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      photoURL = e.target.result;
+
+      const cp = document.getElementById('c-photo');
+      cp.src = photoURL;
+      cp.style.display = 'block';
+      document.getElementById('c-photo-ph').style.display = 'none';
+
+      const ti = document.getElementById('thumb-img');
+      ti.src = photoURL;
+      ti.style.display = 'block';
+      document.getElementById('avatar-ph').style.display = 'none';
+
+      photoPayload = await buildPhotoPayload(photoURL);
+      buildQR();
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function setTheme(cls, name, el) {
+    selectedTheme = cls;
+    const banner = document.getElementById('c-banner');
+    banner.className = `card-banner ${cls}`;
+    document.querySelectorAll('.theme-chip').forEach((chip) => chip.classList.remove('active'));
+    el.classList.add('active');
+    sync();
+  }
+
+  function copyVCard() {
+    const p = payload();
+    const vc = [
+      'BEGIN:VCARD',
+      'VERSION:3.0',
+      `FN:${p.fullName}`,
+      `TITLE:${p.jobTitle}`,
+      `ORG:${p.company}`,
+      `EMAIL:${p.email}`,
+      `TEL:${p.phone}`,
+      `URL:${p.website}`,
+      `ADR:;;${p.location};;;;`,
+      'END:VCARD'
+    ].join('\r\n');
+
+    navigator.clipboard.writeText(vc).then(() => {
+      const btn = document.getElementById('vcopy-text');
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = 'vCard'; }, 2200);
+    }).catch(() => {
+      alert('Clipboard access failed.');
+    });
+  }
+
+  function copyShareLink() {
+    const link = computeShareData().link;
+    if (!link) {
+      alert('Add at least one field first.');
+      return;
+    }
+    navigator.clipboard.writeText(link).catch(() => {
+      alert('Clipboard access failed.');
+    });
+  }
+
+  let loadingHtml2Canvas = null;
+  function ensureHtml2Canvas() {
+    if (window.html2canvas) return Promise.resolve(window.html2canvas);
+    if (loadingHtml2Canvas) return loadingHtml2Canvas;
+    loadingHtml2Canvas = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+      script.onload = () => resolve(window.html2canvas);
+      script.onerror = () => reject(new Error('Failed to load html2canvas'));
+      document.head.appendChild(script);
+    });
+    return loadingHtml2Canvas;
+  }
+
+  function downloadCard() {
+    ensureHtml2Canvas().then((html2canvas) => {
+      const card = document.getElementById('vcard');
+      const prevTransition = card.style.transition;
+      const prevTransform = card.style.transform;
+      card.style.transition = 'none';
+      card.style.transform = 'none';
+
+      return html2canvas(card, {
+        scale: 3,
+        useCORS: true,
+        backgroundColor: null,
+        logging: false
+      }).then((canvas) => {
+        card.style.transition = prevTransition;
+        card.style.transform = prevTransform;
+
+        const a = document.createElement('a');
+        a.download = 'digital-business-card.png';
+        a.href = canvas.toDataURL('image/png');
+        a.click();
+      });
+    }).catch(() => {
+      alert('Download failed.');
+    });
+  }
+
+  sync();
+</script>
+</body>
+</html>

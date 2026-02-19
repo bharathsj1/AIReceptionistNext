@@ -68,6 +68,19 @@ const TOOL_ID_ALIASES = {
   "social media manager": "social_media_manager",
   "social-media-manager": "social_media_manager"
 };
+const DASHBOARD_REQUEST_TIMEOUT_MS = 10000;
+const OPTIONAL_REQUEST_TIMEOUT_MS = 6000;
+const SUBSCRIPTION_REQUEST_TIMEOUT_MS = 4000;
+
+const fetchWithTimeout = async (resource, options = {}, timeoutMs = 8000) => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(resource, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
 const PLAN_PRICING = {
   bronze: { name: "Bronze", baseAmount: 500, baseCurrency: "CAD" },
   silver: { name: "Silver", baseAmount: 600, baseCurrency: "CAD" },
@@ -1783,18 +1796,28 @@ export default function App() {
       setDashboardLoading(true);
       setSubscriptionsLoading(true);
       try {
-        const [dashRes, clientRes, userRes, subsRes] = await Promise.all([
-          fetch(`${API_URLS.dashboard}?email=${encodeURIComponent(targetEmail)}`),
-          fetch(`${API_URLS.clientsByEmail}?email=${encodeURIComponent(targetEmail)}`).catch(
-            () => null
-          ),
-          fetch(`${API_URLS.authUserByEmail}?email=${encodeURIComponent(targetEmail)}`).catch(
-            () => null
-          ),
-          fetch(`${API_URLS.subscriptionsStatus}?email=${encodeURIComponent(targetEmail)}`).catch(
-            () => null
-          )
-        ]);
+        const dashPromise = fetchWithTimeout(
+          `${API_URLS.dashboard}?email=${encodeURIComponent(targetEmail)}`,
+          {},
+          DASHBOARD_REQUEST_TIMEOUT_MS
+        );
+        const clientPromise = fetchWithTimeout(
+          `${API_URLS.clientsByEmail}?email=${encodeURIComponent(targetEmail)}`,
+          {},
+          OPTIONAL_REQUEST_TIMEOUT_MS
+        ).catch(() => null);
+        const userPromise = fetchWithTimeout(
+          `${API_URLS.authUserByEmail}?email=${encodeURIComponent(targetEmail)}`,
+          {},
+          OPTIONAL_REQUEST_TIMEOUT_MS
+        ).catch(() => null);
+        const subsPromise = fetchWithTimeout(
+          `${API_URLS.subscriptionsStatus}?email=${encodeURIComponent(targetEmail)}`,
+          {},
+          SUBSCRIPTION_REQUEST_TIMEOUT_MS
+        ).catch(() => null);
+
+        const dashRes = await dashPromise;
 
         if (!dashRes.ok) {
           const text = await dashRes.text();
@@ -1802,14 +1825,39 @@ export default function App() {
         }
 
         const dashData = await dashRes.json();
+        const [clientRes, userRes] = await Promise.all([clientPromise, userPromise]);
         const clientDetails =
           clientRes && clientRes.ok ? await clientRes.json().catch(() => null) : null;
         const userDetails =
           userRes && userRes.ok ? await userRes.json().catch(() => null) : null;
         let subscriptionPayload = dashData?.subscriptions;
-        if (!subscriptionPayload && subsRes && subsRes.ok) {
-          const subsJson = await subsRes.json().catch(() => null);
-          subscriptionPayload = subsJson?.subscriptions || subsJson;
+
+        const applySubscriptionPayload = (payload) => {
+          const normalizedSubs = normalizeToolSubscriptions(payload);
+          setToolSubscriptions(normalizedSubs);
+          const firstActiveTool =
+            Object.entries(normalizedSubs).find(([, entry]) => entry?.active)?.[0] ||
+            null;
+          setActiveTool((prev) => {
+            if (prev && normalizedSubs[prev]?.active) return prev;
+            if (firstActiveTool) return firstActiveTool;
+            return prev || DEFAULT_TOOL_ID;
+          });
+        };
+
+        if (subscriptionPayload !== undefined) {
+          applySubscriptionPayload(subscriptionPayload);
+          setSubscriptionsLoading(false);
+        } else {
+          const subsRes = await subsPromise;
+          if (subsRes && subsRes.ok) {
+            const subsJson = await subsRes.json().catch(() => null);
+            subscriptionPayload = subsJson?.subscriptions ?? subsJson;
+            if (subscriptionPayload !== undefined) {
+              applySubscriptionPayload(subscriptionPayload);
+            }
+          }
+          setSubscriptionsLoading(false);
         }
 
         setClientData(dashData?.client || clientDetails?.client || clientDetails || null);
@@ -1821,18 +1869,6 @@ export default function App() {
           }));
         }
 
-        if (subscriptionPayload !== undefined) {
-          const normalizedSubs = normalizeToolSubscriptions(subscriptionPayload);
-          setToolSubscriptions(normalizedSubs);
-          const firstActiveTool =
-            Object.entries(normalizedSubs).find(([, entry]) => entry?.active)?.[0] ||
-            null;
-          setActiveTool((prev) => {
-            if (prev && normalizedSubs[prev]?.active) return prev;
-            if (firstActiveTool) return firstActiveTool;
-            return prev || DEFAULT_TOOL_ID;
-          });
-        }
         setReceptionistUsage(dashData?.receptionist_usage || dashData?.receptionistUsage || null);
 
         setBookingSettings((prev) => ({

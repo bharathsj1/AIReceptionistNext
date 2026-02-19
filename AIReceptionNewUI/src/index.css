@@ -37,6 +37,12 @@ html {
   scroll-behavior: smooth;
 }
 
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
 .lenis {
   height: auto;
 }
@@ -51,8 +57,24 @@ html {
   overflow: hidden;
 }
 
+[data-lenis-wrapper] {
+  overscroll-behavior: none;
+}
+
 [data-lenis-content] {
   min-height: 100%;
+}
+
+.scroll-smooth-native,
+[data-lenis-prevent],
+.transcript-scroll,
+.dashboard-theme .dashboard-main,
+.calendar-shell .fc .fc-scroller,
+.calendar-shell .fc .fc-scroller-harness,
+.task-manager-calendar .fc .fc-scroller,
+.task-manager-calendar .fc .fc-scroller-harness {
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
 }
 
 @media (max-width: 768px) {
@@ -64,6 +86,23 @@ html {
     position: static;
     overflow: auto;
     height: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .scroll-smooth-native,
+  [data-lenis-prevent],
+  .transcript-scroll,
+  .dashboard-theme .dashboard-main,
+  .calendar-shell .fc .fc-scroller,
+  .calendar-shell .fc .fc-scroller-harness,
+  .task-manager-calendar .fc .fc-scroller,
+  .task-manager-calendar .fc .fc-scroller-harness {
+    scroll-behavior: auto;
   }
 }
 

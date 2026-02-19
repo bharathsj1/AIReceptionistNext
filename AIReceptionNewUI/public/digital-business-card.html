@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SmartConnect4u Digital Business Card</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --white: #ffffff;
+  --gray-50: #fbfbfd;
+  --gray-100: #f5f5f7;
+  --gray-200: #e8e8ed;
+  --gray-300: #d2d2d7;
+  --gray-400: #aeaeb2;
+  --gray-500: #8e8e93;
+  --gray-700: #48484a;
+  --gray-800: #2c2c2e;
+  --gray-900: #1c1c1e;
+  --blue: #0071e3;
+  --font: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+body {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: var(--gray-100);
+  color: var(--gray-900);
+  font-family: var(--font);
+  padding: 20px;
+}
+
+.card {
+  width: min(100%, 680px);
+  border-radius: 28px;
+  overflow: hidden;
+  background: white;
+  box-shadow: 0 40px 80px rgba(0,0,0,0.14), 0 8px 24px rgba(0,0,0,0.08);
+}
+
+.card-banner {
+  height: 160px;
+  position: relative;
+  overflow: visible;
+  background: linear-gradient(145deg, #1c1c1e 0%, #3a3a3c 100%);
+}
+
+.banner-mesh {
+  position: absolute;
+  inset: 0;
+  opacity: 0.4;
+  background-image:
+    radial-gradient(circle at 20% 50%, rgba(255,255,255,0.08) 0%, transparent 60%),
+    radial-gradient(circle at 80% 20%, rgba(255,255,255,0.06) 0%, transparent 50%);
+}
+
+.banner-grid {
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+.banner-wordmark {
+  position: absolute;
+  bottom: 16px;
+  right: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.2);
+}
+
+.banner-logo-wrap {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  z-index: 3;
+  height: 34px;
+  min-width: 120px;
+  padding: 5px 10px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.14);
+  border: 1px solid rgba(255,255,255,0.2);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.banner-logo-img {
+  max-width: 136px;
+  max-height: 24px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  display: block;
+}
+
+.card-photo-ring {
+  position: absolute;
+  bottom: -36px;
+  left: 24px;
+  width: 78px;
+  height: 78px;
+  border-radius: 50%;
+  background: #fff;
+  padding: 3px;
+  box-shadow: 0 4px 18px rgba(0,0,0,0.18);
+  z-index: 4;
+}
+
+.card-photo-inner {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--gray-100);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card-photo-inner img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.photo-fallback {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--gray-400);
+}
+
+.card-body {
+  padding: 52px 28px 28px;
+}
+
+.card-fullname {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--gray-900);
+  letter-spacing: -0.04em;
+  line-height: 1.15;
+  margin-bottom: 4px;
+}
+
+.card-role {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--gray-500);
+  line-height: 1.4;
+}
+
+.card-role span { color: var(--blue); font-weight: 500; }
+
+.card-contacts {
+  border-top: 1px solid var(--gray-100);
+  display: flex;
+  flex-direction: column;
+  margin-top: 18px;
+}
+
+.card-contact-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--gray-100);
+  text-decoration: none;
+  color: inherit;
+}
+
+.cicon {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: var(--gray-100);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+.clabel {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--gray-400);
+}
+
+.cvalue {
+  font-size: 13.5px;
+  font-weight: 400;
+  color: var(--gray-800);
+}
+
+.card-actions {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.btn {
+  border: none;
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  background: #0071e3;
+  color: #fff;
+}
+
+.btn.secondary {
+  background: #ffffff;
+  color: var(--gray-700);
+  border: 1px solid var(--gray-200);
+}
+
+.error {
+  width: min(100%, 560px);
+  border: 1px solid #ffd7d7;
+  background: #fff5f5;
+  color: #7c1f1f;
+  border-radius: 12px;
+  padding: 14px;
+  line-height: 1.45;
+}
+
+.card-banner.t-midnight { background: linear-gradient(145deg, #0a0a0f 0%, #1a1a2e 100%); }
+.card-banner.t-carbon  { background: linear-gradient(145deg, #1c1c1e 0%, #3a3a3c 100%); }
+.card-banner.t-ocean   { background: linear-gradient(145deg, #003d82 0%, #0066cc 100%); }
+.card-banner.t-forest  { background: linear-gradient(145deg, #1a2e1a 0%, #2d5a27 100%); }
+.card-banner.t-rose    { background: linear-gradient(145deg, #1a0a10 0%, #4a1528 100%); }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+  function fromBase64Url(value) {
+    const normalized = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
+    const pad = '='.repeat((4 - (normalized.length % 4)) % 4);
+    const binary = atob(normalized + pad);
+    const bytes = Uint8Array.from(binary, (ch) => ch.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  }
+
+  function parsePayload() {
+    const encoded = new URLSearchParams(window.location.search).get('d');
+    if (!encoded) return null;
+    try {
+      const decoded = fromBase64Url(encoded);
+      const payload = JSON.parse(decoded);
+      if (!payload || typeof payload !== 'object') return null;
+      return payload;
+    } catch {
+      return null;
+    }
+  }
+
+  function normalizeWeb(value) {
+    if (!value) return '';
+    if (/^https?:\/\//i.test(value)) return value;
+    return `https://${value}`;
+  }
+
+  function normalizeLinkedIn(value) {
+    if (!value) return '';
+    if (/^https?:\/\//i.test(value)) return value;
+    return `https://${value}`;
+  }
+
+  function normalizeTwitter(value) {
+    if (!value) return '';
+    if (/^https?:\/\//i.test(value)) return value;
+    return `https://x.com/${String(value).replace(/^@/, '')}`;
+  }
+
+  function safeImageSrc(value) {
+    const text = String(value || '').trim();
+    if (!text) return '';
+    if (/^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(text)) return text;
+    if (/^https?:\/\//i.test(text)) return text;
+    return '';
+  }
+
+  function initialsFromName(name) {
+    const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return 'SC';
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  }
+
+  function toVCard(p) {
+    return [
+      'BEGIN:VCARD',
+      'VERSION:3.0',
+      `FN:${p.fullName || ''}`,
+      `TITLE:${p.jobTitle || ''}`,
+      `ORG:${p.company || ''}`,
+      `EMAIL:${p.email || ''}`,
+      `TEL:${p.phone || ''}`,
+      `URL:${normalizeWeb(p.website || '')}`,
+      `ADR:;;${p.location || ''};;;;`,
+      'END:VCARD'
+    ].join('\r\n');
+  }
+
+  function escapeHtml(value) {
+    return String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  const app = document.getElementById('app');
+  const p = parsePayload();
+
+  if (!p) {
+    app.innerHTML = '<div class="error">Invalid or missing SmartConnect4u card data. Please regenerate the QR code from the generator.</div>';
+  } else {
+    const fullNameRaw = p.fullName || 'Your Name';
+    const fullName = escapeHtml(fullNameRaw);
+    const title = escapeHtml(p.jobTitle || 'Job Title');
+    const company = escapeHtml(p.company || 'Company');
+    const email = escapeHtml(p.email || '');
+    const phone = escapeHtml(p.phone || '');
+    const location = escapeHtml(p.location || '');
+    const website = escapeHtml(normalizeWeb(p.website || ''));
+    const linkedin = escapeHtml(normalizeLinkedIn(p.linkedin || ''));
+    const twitterLabel = escapeHtml(p.twitter || '');
+    const twitter = escapeHtml(normalizeTwitter(p.twitter || ''));
+    const theme = /^t-(carbon|midnight|ocean|forest|rose)$/.test(String(p.theme || '')) ? p.theme : 't-carbon';
+    const photoSrc = safeImageSrc(p.photo);
+    const avatarMarkup = photoSrc
+      ? `<img src="${escapeHtml(photoSrc)}" alt="${fullName}" />`
+      : `<span class="photo-fallback">${escapeHtml(initialsFromName(fullNameRaw))}</span>`;
+
+    const rows = [];
+    if (email) rows.push(`<a class="card-contact-row" href="mailto:${email}"><div class="cicon">✉️</div><div><div class="clabel">Email</div><div class="cvalue">${email}</div></div></a>`);
+    if (phone) rows.push(`<a class="card-contact-row" href="tel:${phone}"><div class="cicon">📱</div><div><div class="clabel">Phone</div><div class="cvalue">${phone}</div></div></a>`);
+    if (location) rows.push(`<div class="card-contact-row"><div class="cicon">📍</div><div><div class="clabel">Location</div><div class="cvalue">${location}</div></div></div>`);
+    if (website) rows.push(`<a class="card-contact-row" target="_blank" rel="noreferrer" href="${website}"><div class="cicon">🌐</div><div><div class="clabel">Website</div><div class="cvalue">${website}</div></div></a>`);
+    if (linkedin) rows.push(`<a class="card-contact-row" target="_blank" rel="noreferrer" href="${linkedin}"><div class="cicon">in</div><div><div class="clabel">LinkedIn</div><div class="cvalue">${linkedin}</div></div></a>`);
+    if (twitterLabel) rows.push(`<a class="card-contact-row" target="_blank" rel="noreferrer" href="${twitter}"><div class="cicon">𝕏</div><div><div class="clabel">X / Twitter</div><div class="cvalue">${twitterLabel}</div></div></a>`);
+
+    app.innerHTML = `
+      <section class="card">
+        <div class="card-banner ${theme}">
+          <div class="banner-mesh"></div>
+          <div class="banner-grid"></div>
+          <div class="banner-logo-wrap">
+            <img class="banner-logo-img" src="/media/sc_logo_main.png" alt="SmartConnect4u logo" />
+          </div>
+          <div class="banner-wordmark">${company}</div>
+          <div class="card-photo-ring">
+            <div class="card-photo-inner">${avatarMarkup}</div>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="card-fullname">${fullName}</div>
+          <div class="card-role"><span>${title}</span> <span style="color: var(--gray-300);">·</span> <span style="color: var(--gray-500);">${company}</span></div>
+          <div class="card-contacts">${rows.join('')}</div>
+          <div class="card-actions">
+            <button class="btn" id="save-vcard">Save Contact (vCard)</button>
+            <a class="btn secondary" id="open-generator" href="/generate-business-card.html">Open Generator</a>
+          </div>
+        </div>
+      </section>
+    `;
+
+    document.getElementById('save-vcard').addEventListener('click', () => {
+      const vCard = toVCard(p);
+      const blob = new Blob([vCard], { type: 'text/vcard;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const safeName = (p.fullName || 'smartconnect4u-contact').toString().trim().replace(/\s+/g, '-').toLowerCase();
+      a.href = url;
+      a.download = `${safeName}.vcf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+  }
+</script>
+</body>
+</html>

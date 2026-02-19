@@ -36,6 +36,13 @@
         color: #9bb0d4;
         font-size: 14px;
       }
+      .sub a {
+        color: #7fd0ff;
+        margin-left: 8px;
+      }
+      .sub a:hover {
+        color: #a8e0ff;
+      }
       .grid {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -140,7 +147,10 @@
     <div class="wrap">
       <div class="panel">
         <h1>SmartConnect4u Private Card Admin</h1>
-        <p class="sub">Internal use only. Not linked from client UI.</p>
+        <p class="sub">
+          Internal use only. Not linked from client UI.
+          <a href="/generate-business-card.html" target="_blank" rel="noreferrer">Open Digital Card Generator</a>
+        </p>
 
         <form id="cardForm">
           <div class="grid">
