@@ -14,8 +14,8 @@ const STYLE_BLOCK = `
 html{scroll-behavior:smooth}
 body{background:var(--bg);color:var(--white);font-family:'DM Sans',sans-serif;overflow-x:hidden;cursor:none}
 
-#cdot{position:fixed;width:8px;height:8px;background:var(--cyan);border-radius:50%;pointer-events:none;z-index:10000;transform:translate(-50%,-50%);box-shadow:0 0 12px var(--cyan),0 0 24px var(--cyan);transition:width .25s,height .25s,background .25s}
-#cring{position:fixed;width:40px;height:40px;border:1.5px solid rgba(0,229,255,.45);border-radius:50%;pointer-events:none;z-index:9999;transform:translate(-50%,-50%);transition:left .12s ease,top .12s ease,width .3s,height .3s,border-color .3s}
+#cdot{position:fixed;left:0;top:0;width:8px;height:8px;background:var(--cyan);border-radius:50% !important;pointer-events:none;z-index:10000;transform:translate(-50%,-50%);box-shadow:0 0 12px var(--cyan),0 0 24px var(--cyan);transition:width .25s,height .25s,background .25s}
+#cring{position:fixed;left:0;top:0;width:40px;height:40px;border:1.5px solid rgba(0,229,255,.45);border-radius:50% !important;pointer-events:none;z-index:9999;transform:translate(-50%,-50%);transition:width .3s,height .3s,border-color .3s}
 #cdot.h{width:14px;height:14px;background:var(--violet2)}
 #cring.h{width:60px;height:60px;border-color:rgba(110,58,255,.5)}
 
@@ -366,26 +366,38 @@ export default function LandingScreen({ onTry, onLogin, onSelectPlan, onShowServ
 
     const cdot = document.getElementById("cdot");
     const cring = document.getElementById("cring");
-    let mx = 0;
-    let my = 0;
+    let mouseX = 0;
+    let mouseY = 0;
+    let ringX = 0;
+    let ringY = 0;
+    let cursorRaf = 0;
+    const ringLerp = 0.22;
 
-    const onMove = (e) => {
-      mx = e.clientX;
-      my = e.clientY;
-      if (cdot) {
-        cdot.style.left = `${mx}px`;
-        cdot.style.top = `${my}px`;
+    const updateRing = () => {
+      ringX += (mouseX - ringX) * ringLerp;
+      ringY += (mouseY - ringY) * ringLerp;
+      if (cring) {
+        cring.style.left = `${ringX}px`;
+        cring.style.top = `${ringY}px`;
       }
-      window.setTimeout(() => {
-        if (cring) {
-          cring.style.left = `${mx}px`;
-          cring.style.top = `${my}px`;
-        }
-      }, 80);
+      cursorRaf = requestAnimationFrame(updateRing);
     };
 
-    document.addEventListener("mousemove", onMove);
-    cleanups.push(() => document.removeEventListener("mousemove", onMove));
+    const onMove = (e) => {
+      mouseX = e.clientX;
+      mouseY = e.clientY;
+      if (cdot) {
+        cdot.style.left = `${mouseX}px`;
+        cdot.style.top = `${mouseY}px`;
+      }
+    };
+
+    document.addEventListener("pointermove", onMove, { passive: true });
+    cursorRaf = requestAnimationFrame(updateRing);
+    cleanups.push(() => {
+      document.removeEventListener("pointermove", onMove);
+      cancelAnimationFrame(cursorRaf);
+    });
 
     const hoverTargets = Array.from(document.querySelectorAll("a,button,.faqq"));
     const onHoverIn = () => {
