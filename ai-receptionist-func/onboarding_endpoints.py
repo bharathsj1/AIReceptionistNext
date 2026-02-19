@@ -113,6 +113,34 @@ def _normalize_phone_number(value: str | None) -> Optional[str]:
     return normalized or None
 
 
+def _normalize_twilio_country(country: str | None) -> str:
+    normalized = str(country or "").strip().upper()
+    if normalized == "UK":
+        return "GB"
+    return normalized or "US"
+
+
+def _allowed_twilio_number_types(country: str | None) -> tuple[str, ...]:
+    normalized_country = _normalize_twilio_country(country)
+    if normalized_country == "GB":
+        return ("mobile",)
+    if normalized_country == "CA":
+        return ("local",)
+    return ("local", "mobile", "national", "toll_free")
+
+
+def _validate_selected_twilio_number(country: str | None, phone_number: str | None) -> Optional[str]:
+    normalized_number = _normalize_phone_number(phone_number)
+    if not normalized_number:
+        return None
+    normalized_country = _normalize_twilio_country(country)
+    if normalized_country == "GB":
+        # Enforce UK mobile ranges only (Twilio E.164 format typically starts with +447).
+        if not normalized_number.startswith("+447"):
+            return "For UK, only mobile numbers are supported. Select a UK mobile number (+447...)."
+    return None
+
+
 def _country_from_phone_prefix(phone_number: str | None) -> Optional[str]:
     normalized = _normalize_phone_number(phone_number) or ""
     if not normalized.startswith("+"):
@@ -397,12 +425,12 @@ def _sample_twilio_numbers(items: list, sample_size: int) -> list:
 def _list_available_twilio_numbers(
     twilio_client: TwilioClient, country: str, sample_size: int = 5
 ) -> list[dict]:
-    api = twilio_client.available_phone_numbers(country)
+    normalized_country = _normalize_twilio_country(country)
+    api = twilio_client.available_phone_numbers(normalized_country)
     seen_numbers: set[str] = set()
     available = []
 
-    # Keep country strict (no cross-country fallback), but include purchasable number types.
-    for number_type in ("local", "mobile", "national", "toll_free"):
+    for number_type in _allowed_twilio_number_types(normalized_country):
         try:
             namespace = getattr(api, number_type, None)
             if namespace is None:
@@ -418,14 +446,14 @@ def _list_available_twilio_numbers(
             if not phone or phone in seen_numbers:
                 continue
             seen_numbers.add(phone)
-            available.append(item)
+            available.append((item, number_type))
 
     if not available:
         return []
 
     chosen = _sample_twilio_numbers(available, sample_size)
     payload = []
-    for number in chosen:
+    for number, number_type in chosen:
         payload.append(
             {
                 "phone_number": getattr(number, "phone_number", None),
@@ -434,6 +462,7 @@ def _list_available_twilio_numbers(
                 "region": getattr(number, "region", None),
                 "iso_country": getattr(number, "iso_country", None),
                 "lata": getattr(number, "lata", None),
+                "number_type": number_type,
             }
         )
     return payload
@@ -456,7 +485,7 @@ def _select_existing_twilio_number(
         for number in existing_numbers:
             if getattr(number, "phone_number", None) == phone_number:
                 return number
-    normalized_country = (country or "").upper()
+    normalized_country = _normalize_twilio_country(country)
     for number in existing_numbers:
         iso_country = (getattr(number, "iso_country", "") or "").upper()
         if iso_country and iso_country == normalized_country:
@@ -474,9 +503,14 @@ def purchase_twilio_number(
     Buy a Twilio number and configure its voice webhook.
     Existing-number reuse only happens when TWILIO_REUSE_EXISTING_NUMBER is enabled.
     """
+    normalized_country = _normalize_twilio_country(country)
+    validation_error = _validate_selected_twilio_number(normalized_country, phone_number)
+    if validation_error:
+        raise RuntimeError(validation_error)
+
     webhook_url = _build_twilio_voice_webhook(webhook_base)
     if _reuse_existing_twilio_number():
-        existing = _select_existing_twilio_number(twilio_client, country, phone_number)
+        existing = _select_existing_twilio_number(twilio_client, normalized_country, phone_number)
         if not existing:
             raise RuntimeError(
                 "TWILIO_REUSE_EXISTING_NUMBER is enabled but no existing Twilio numbers were found"
@@ -486,17 +520,31 @@ def purchase_twilio_number(
 
     chosen_number = phone_number
     if not chosen_number:
-        available = twilio_client.available_phone_numbers(country).local.list(voice_enabled=True, limit=1)
-        if not available:
-            raise RuntimeError(f"No Twilio numbers available for purchase in {country}")
-        chosen_number = available[0].phone_number
+        api = twilio_client.available_phone_numbers(normalized_country)
+        chosen_number = None
+        for number_type in _allowed_twilio_number_types(normalized_country):
+            try:
+                namespace = getattr(api, number_type, None)
+                if namespace is None:
+                    continue
+                available = namespace.list(voice_enabled=True, limit=1) or []
+            except Exception:  # pylint: disable=broad-except
+                continue
+            if available:
+                chosen_number = available[0].phone_number
+                break
+        if not chosen_number:
+            allowed = ", ".join(_allowed_twilio_number_types(normalized_country))
+            raise RuntimeError(
+                f"No Twilio numbers available for purchase in {normalized_country} for allowed types: {allowed}"
+            )
 
     try:
         purchased = twilio_client.incoming_phone_numbers.create(
             phone_number=chosen_number,
             voice_url=webhook_url,
             voice_method="POST",
-            **_build_twilio_purchase_kwargs(twilio_client, country, chosen_number),
+            **_build_twilio_purchase_kwargs(twilio_client, normalized_country, chosen_number),
         )
         return {"phone_number": purchased.phone_number, "sid": purchased.sid}
     except Exception as exc:  # pylint: disable=broad-except

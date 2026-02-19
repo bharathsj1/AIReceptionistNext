@@ -1,5 +1,35 @@
 import { useMemo } from "react";
 
+const normalizeTwilioCountry = (code) => {
+  const upper = String(code || "").trim().toUpperCase();
+  if (upper === "UK") return "GB";
+  return upper;
+};
+
+const filterTwilioNumbersForCountry = (numbers, countryCode) => {
+  const safeNumbers = Array.isArray(numbers) ? numbers : [];
+  const country = normalizeTwilioCountry(countryCode);
+
+  if (country === "GB") {
+    return safeNumbers.filter((item) => {
+      const type = String(item?.number_type || "").toLowerCase();
+      const phone = String(item?.phone_number || "");
+      if (type) return type === "mobile";
+      return phone.startsWith("+447");
+    });
+  }
+
+  if (country === "CA") {
+    return safeNumbers.filter((item) => {
+      const type = String(item?.number_type || "").toLowerCase();
+      if (!type) return true;
+      return type === "local";
+    });
+  }
+
+  return safeNumbers;
+};
+
 export default function NumberSelectionScreen({
   paymentInfo,
   availableNumbers,
@@ -14,9 +44,14 @@ export default function NumberSelectionScreen({
 }) {
   const email = paymentInfo?.email || "your email";
   const safeNumbers = Array.isArray(availableNumbers) ? availableNumbers : [];
+  const filteredNumbers = useMemo(
+    () => filterTwilioNumbersForCountry(safeNumbers, numbersCountry),
+    [safeNumbers, numbersCountry]
+  );
   const hasAssignedNumber = Boolean(assignedNumber);
   const activeSelectedNumber = selectedNumber || assignedNumber || "";
-  const canContinue = Boolean(activeSelectedNumber);
+  const isSelectable = filteredNumbers.some((item) => item?.phone_number === activeSelectedNumber);
+  const canContinue = Boolean(hasAssignedNumber || isSelectable);
   const countryLabel = numbersCountry ? numbersCountry.toUpperCase() : "your region";
   const selectionLabel = useMemo(() => {
     if (!activeSelectedNumber) return "Select a number to continue setup.";
@@ -45,7 +80,7 @@ export default function NumberSelectionScreen({
           <div>
             <p className="text-sm font-semibold text-white">Available numbers</p>
             <p className="mt-1 text-xs text-slate-200/80">
-              Showing 5 numbers near {countryLabel}. Refresh to see a new set.
+              Showing {filteredNumbers.length} supported numbers near {countryLabel}. Refresh to see a new set.
             </p>
           </div>
           <button
@@ -71,9 +106,9 @@ export default function NumberSelectionScreen({
           <div className="mt-4 rounded-xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
             {numbersError}
           </div>
-        ) : safeNumbers.length ? (
+        ) : filteredNumbers.length ? (
           <div className="mt-4 grid gap-3 md:grid-cols-2">
-            {safeNumbers.map((number) => {
+            {filteredNumbers.map((number) => {
               const phone = number?.phone_number || "";
               const isSelected = phone && phone === activeSelectedNumber;
               const meta = [number?.locality, number?.region].filter(Boolean).join(", ");
@@ -95,6 +130,7 @@ export default function NumberSelectionScreen({
                       </p>
                       <p className="mt-1 text-xs text-slate-300">
                         {meta || "Local number"} {number?.iso_country ? `• ${number.iso_country}` : ""}
+                        {number?.number_type ? ` • ${String(number.number_type).toUpperCase()}` : ""}
                       </p>
                     </div>
                     <span

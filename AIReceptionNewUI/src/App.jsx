@@ -172,6 +172,36 @@ const currencyForCountry = (code) => {
   return "USD";
 };
 
+const normalizeTwilioCountry = (code) => {
+  const upper = String(code || "").trim().toUpperCase();
+  if (upper === "UK") return "GB";
+  return upper;
+};
+
+const filterTwilioNumbersForCountry = (numbers, countryCode) => {
+  const safeNumbers = Array.isArray(numbers) ? numbers : [];
+  const country = normalizeTwilioCountry(countryCode);
+
+  if (country === "GB") {
+    return safeNumbers.filter((item) => {
+      const type = String(item?.number_type || "").toLowerCase();
+      const phone = String(item?.phone_number || "");
+      if (type) return type === "mobile";
+      return phone.startsWith("+447");
+    });
+  }
+
+  if (country === "CA") {
+    return safeNumbers.filter((item) => {
+      const type = String(item?.number_type || "").toLowerCase();
+      if (!type) return true;
+      return type === "local";
+    });
+  }
+
+  return safeNumbers;
+};
+
 const convertAmount = (amount, fromCurrency, toCurrency, fxRates) => {
   if (!amount) return amount;
   if (fromCurrency === toCurrency) return amount;
@@ -2398,14 +2428,16 @@ export default function App() {
       if (looksLikeHtml(data?.raw)) {
         throw new Error("Numbers API returned HTML instead of JSON. Check /api routing.");
       }
+      const country = data?.country || "";
       const numbers = Array.isArray(data?.numbers) ? data.numbers : [];
-      setTwilioAvailableNumbers(numbers);
-      setTwilioNumbersCountry(data?.country || "");
+      const filteredNumbers = filterTwilioNumbersForCountry(numbers, country);
+      setTwilioAvailableNumbers(filteredNumbers);
+      setTwilioNumbersCountry(country);
       setTwilioAssignedNumber(data?.assigned_number || "");
       setSelectedTwilioNumber((prev) => {
-        if (prev) return prev;
+        if (prev && filteredNumbers.some((item) => item?.phone_number === prev)) return prev;
         if (data?.assigned_number) return data.assigned_number;
-        return numbers?.[0]?.phone_number || "";
+        return filteredNumbers?.[0]?.phone_number || "";
       });
     } catch (error) {
       setTwilioNumbersError(error?.message || "Unable to fetch numbers");
