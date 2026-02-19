@@ -91,6 +91,19 @@ const readResponseBody = async (response) => {
     return { raw: text };
   }
 };
+
+const normalizeWebsiteUrl = (value) => {
+  const input = String(value || "").trim();
+  if (!input) return "";
+  const candidate = /^https?:\/\//i.test(input) ? input : `https://${input}`;
+  try {
+    const parsed = new URL(candidate);
+    if (!parsed.hostname) return "";
+    return parsed.toString();
+  } catch {
+    return "";
+  }
+};
 const PLAN_PRICING = {
   bronze: { name: "Bronze", baseAmount: 500, baseCurrency: "CAD" },
   silver: { name: "Silver", baseAmount: 600, baseCurrency: "CAD" },
@@ -433,9 +446,15 @@ export default function App() {
   const handleSubmit = async (event) => {
     event.preventDefault();
     const trimmed = url.trim();
+    const normalizedUrl = normalizeWebsiteUrl(trimmed);
 
     if (!trimmed) {
       setResponseMessage("Please enter a website address first.");
+      setResponseLink(null);
+      return;
+    }
+    if (!normalizedUrl) {
+      setResponseMessage("Please enter a valid website URL.");
       setResponseLink(null);
       return;
     }
@@ -454,12 +473,18 @@ export default function App() {
           "Content-Type": "application/json"
         },
         mode: "cors",
-        body: JSON.stringify({ url: trimmed })
+        body: JSON.stringify({ url: normalizedUrl })
       });
 
       if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error(errorText || "Request failed");
+        const errorBody = await readResponseBody(res);
+        const errorText =
+          errorBody?.error ||
+          errorBody?.message ||
+          errorBody?.details ||
+          errorBody?.raw ||
+          "Request failed";
+        throw new Error(errorText);
       }
 
       const data = await readResponseBody(res);
@@ -467,7 +492,7 @@ export default function App() {
       setCrawlData(data);
       setResponseMessage("All website data loaded fine.");
       // Persist website URL to clients table (best-effort)
-      const websiteUrl = trimmed;
+      const websiteUrl = normalizedUrl;
       const fallbackBusiness = businessName || data?.business_name || "Pending business";
       const fallbackPhone = businessPhone || "+10000000000";
       const payload = {
@@ -649,6 +674,8 @@ export default function App() {
       // Fetch user profile and client profile to decide where to resume.
       let userProfile = null;
       let clientProfile = null;
+      let hasActive = false;
+      let subscriptionCheckSucceeded = false;
       try {
         const userRes = await fetch(
           `${API_URLS.authUserByEmail}?email=${encodeURIComponent(userEmail)}`
@@ -662,8 +689,25 @@ export default function App() {
         if (clientRes.ok) {
           clientProfile = await clientRes.json().catch(() => null);
         }
-      } catch {
-        clientProfile = null;
+        const subsRes = await fetch(
+          `${API_URLS.subscriptionsStatus}?email=${encodeURIComponent(userEmail)}`
+        );
+        if (subsRes.ok) {
+          subscriptionCheckSucceeded = true;
+          const subsJson = await subsRes.json().catch(() => ({}));
+          const normalizedSubs = normalizeToolSubscriptions(subsJson?.subscriptions ?? subsJson);
+          setToolSubscriptions(normalizedSubs);
+          if (typeof subsJson?.active === "boolean") {
+            hasActive = subsJson.active;
+          } else {
+            hasActive = Object.values(normalizedSubs).some((entry) => entry?.active);
+          }
+        } else {
+          setToolSubscriptions({});
+        }
+      } catch (profileErr) {
+        console.warn("Login profile/subscription checks failed", profileErr);
+        setToolSubscriptions({});
       }
 
       if (clientProfile) {
@@ -687,11 +731,22 @@ export default function App() {
         !businessNameFromProfile.trim() || !businessPhoneFromProfile.trim();
       const missingWebsite =
         !websiteUrlFromProfile || !String(websiteUrlFromProfile).trim() || websiteUrlFromProfile === "pending";
+      const hasExistingProfile = Boolean(userProfile || clientProfile);
 
       setIsLoggedIn(true);
       setActiveTab("agents");
       setActiveTool(DEFAULT_TOOL_ID);
-      if (missingBiz) {
+      if (hasActive) {
+        setUrl(websiteUrlFromProfile || "");
+        setStage(STAGES.DASHBOARD);
+        setStatus("success");
+        setResponseMessage("Logged in successfully.");
+      } else if (hasExistingProfile && !subscriptionCheckSucceeded) {
+        setUrl(websiteUrlFromProfile || "");
+        setStage(STAGES.DASHBOARD);
+        setStatus("success");
+        setResponseMessage("Logged in successfully.");
+      } else if (missingBiz) {
         setStage(STAGES.BUSINESS_DETAILS);
         setStatus("idle");
         setResponseMessage("");
