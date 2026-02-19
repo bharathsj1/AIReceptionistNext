@@ -12,6 +12,7 @@ from urllib.parse import parse_qs, urlparse
 
 import azure.functions as func
 import httpx
+from twilio.base.exceptions import TwilioRestException
 from twilio.rest import Client as TwilioClient
 from function_app import app
 
@@ -229,9 +230,32 @@ def _sample_twilio_numbers(items: list, sample_size: int) -> list:
 def _list_available_twilio_numbers(
     twilio_client: TwilioClient, country: str, sample_size: int = 5
 ) -> list[dict]:
-    available = twilio_client.available_phone_numbers(country).local.list(voice_enabled=True, limit=25)
+    api = twilio_client.available_phone_numbers(country)
+    seen_numbers: set[str] = set()
+    available = []
+
+    # Keep country strict (no cross-country fallback), but include purchasable number types.
+    for number_type in ("local", "mobile", "national", "toll_free"):
+        try:
+            namespace = getattr(api, number_type, None)
+            if namespace is None:
+                continue
+            listed = namespace.list(voice_enabled=True, limit=25) or []
+        except TwilioRestException:
+            continue
+        except Exception:
+            continue
+
+        for item in listed:
+            phone = getattr(item, "phone_number", None)
+            if not phone or phone in seen_numbers:
+                continue
+            seen_numbers.add(phone)
+            available.append(item)
+
     if not available:
         return []
+
     chosen = _sample_twilio_numbers(available, sample_size)
     payload = []
     for number in chosen:
@@ -350,7 +374,6 @@ def twilio_available_numbers(req: func.HttpRequest) -> func.HttpResponse:
         return func.HttpResponse("", status_code=204, headers=cors)
 
     email = req.params.get("email")
-    country_param = req.params.get("country")
     if not email:
         return func.HttpResponse(
             json.dumps({"error": "Missing required field: email"}),
@@ -380,10 +403,20 @@ def twilio_available_numbers(req: func.HttpRequest) -> func.HttpResponse:
             if phone_record:
                 assigned_number = phone_record.twilio_phone_number
 
-        payload = {"email": email}
-        if country_param:
-            payload["country"] = country_param
-        country, source, ip_addr = _resolve_country_info(req, payload)
+        country, source, ip_addr = _resolve_country_info(req, None)
+        if source == "default":
+            return func.HttpResponse(
+                json.dumps(
+                    {
+                        "error": "Unable to resolve country from requester IP. Please retry from your target network.",
+                        "country_source": source,
+                        "detected_ip": ip_addr,
+                    }
+                ),
+                status_code=400,
+                mimetype="application/json",
+                headers=cors,
+            )
         twilio_client = get_twilio_client()
         numbers = _list_available_twilio_numbers(twilio_client, country, sample_size=5)
         return func.HttpResponse(
