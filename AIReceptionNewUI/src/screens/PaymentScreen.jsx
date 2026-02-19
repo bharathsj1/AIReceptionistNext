@@ -138,6 +138,8 @@ export default function PaymentScreen({
   const [billingMode, setBillingMode] = useState("standard");
   const [customAmountUsd, setCustomAmountUsd] = useState("");
   const [postalCode, setPostalCode] = useState("");
+  const [publishableKey, setPublishableKey] = useState("");
+  const [publishableKeyLoading, setPublishableKeyLoading] = useState(true);
 
   const currencyForCountry = (code) => {
     if (!code) return "USD";
@@ -198,7 +200,6 @@ export default function PaymentScreen({
   }, [effectiveUnitAmount, effectiveCurrency, billingMonths, plan.price, usingCustomAmount]);
   const toolLabel = TOOL_LABELS[toolId] || "AI workspace";
 
-  const publishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY?.trim() || "";
   const stripePromise = useMemo(
     () => (publishableKey ? loadStripe(publishableKey) : null),
     [publishableKey]
@@ -211,10 +212,54 @@ export default function PaymentScreen({
   }, [initialEmail]);
 
   useEffect(() => {
+    const controller = new AbortController();
+    const loadCheckoutConfig = async () => {
+      setPublishableKeyLoading(true);
+      try {
+        const { res, data } = await fetchJsonWithFallback(API_URLS.paymentsPublicConfig, {
+          method: "GET",
+          signal: controller.signal
+        });
+        const key = typeof data?.publishableKey === "string" ? data.publishableKey.trim() : "";
+        if (!res.ok || !key) {
+          const message =
+            data?.error ||
+            data?.message ||
+            (looksLikeHtml(data?.raw)
+              ? "Payments API returned an HTML page instead of JSON. Check /api routing."
+              : null) ||
+            "Stripe publishable key is not configured on API.";
+          throw new Error(message);
+        }
+        setPublishableKey(key);
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        setPublishableKey("");
+        setIntentError(
+          err instanceof Error
+            ? err.message
+            : "Could not load Stripe checkout configuration from API."
+        );
+      } finally {
+        if (!controller.signal.aborted) {
+          setPublishableKeyLoading(false);
+        }
+      }
+    };
+    loadCheckoutConfig();
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    if (publishableKeyLoading) {
+      setClientSecret("");
+      setIntentLoading(false);
+      return;
+    }
     if (!publishableKey) {
       setClientSecret("");
       setIntentLoading(false);
-      setIntentError("Missing Stripe publishable key. Set VITE_STRIPE_PUBLISHABLE_KEY.");
+      setIntentError((current) => current || "Stripe publishable key is not configured on API.");
       return;
     }
     if (!email) {
@@ -276,6 +321,7 @@ export default function PaymentScreen({
     email,
     toolId,
     publishableKey,
+    publishableKeyLoading,
     billingMonths,
     usingCustomAmount,
     parsedCustomAmountUsd,
@@ -408,13 +454,17 @@ export default function PaymentScreen({
                 />
               </label>
             </div>
-            {(intentError || !publishableKey) && (
+            {intentError && (
               <p className="mt-3 text-sm text-red-600">
-                {intentError || "Missing Stripe publishable key. Set VITE_STRIPE_PUBLISHABLE_KEY."}
+                {intentError}
               </p>
             )}
             <div className="mt-3 text-xs text-slate-500">
-              {intentLoading ? "Connecting to Stripe..." : "We’ll start checkout once email is provided."}
+              {publishableKeyLoading
+                ? "Loading checkout configuration..."
+                : intentLoading
+                  ? "Connecting to Stripe..."
+                  : "We’ll start checkout once email is provided."}
             </div>
           </div>
         )}

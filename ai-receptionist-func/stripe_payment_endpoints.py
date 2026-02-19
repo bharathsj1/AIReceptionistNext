@@ -564,6 +564,33 @@ def _upsert_subscription_record(
     db.commit()
 
 
+@app.function_name(name="PaymentsPublicConfig")
+@app.route(route="payments/public-config", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def payments_public_config(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Returns non-secret Stripe config needed by frontend checkout.
+    """
+    cors = build_cors_headers(req, ["GET", "OPTIONS"])
+    if req.method == "OPTIONS":
+        return func.HttpResponse("", status_code=204, headers=cors)
+
+    publishable_key = (get_setting("STRIPE_PUBLISHABLE_KEY") or "").strip()
+    if not publishable_key:
+        return func.HttpResponse(
+            json.dumps({"error": "STRIPE_PUBLISHABLE_KEY is not configured on API."}),
+            status_code=500,
+            mimetype="application/json",
+            headers=cors,
+        )
+
+    return func.HttpResponse(
+        json.dumps({"publishableKey": publishable_key}),
+        status_code=200,
+        mimetype="application/json",
+        headers=cors,
+    )
+
+
 @app.function_name(name="CreateSubscription")
 @app.route(route="payments/create-subscription", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
