@@ -2,6 +2,7 @@
 // Use environment variables to override defaults when needed.
 
 const rawApiBase = import.meta.env.VITE_API_PROXY_BASE;
+const forceCrossOriginApi = String(import.meta.env.VITE_FORCE_CROSS_ORIGIN_API || "").toLowerCase() === "true";
 const devHost = (import.meta.env.VITE_FUNCTION_HOST || "http://localhost:7071").replace(
   /\/$/,
   ""
@@ -28,11 +29,18 @@ export { JITSI_API_BASE };
 export const jitsiApiUrl = (path) =>
   `${JITSI_API_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
 
+const normalizedRawApiBase = typeof rawApiBase === "string" ? rawApiBase.replace(/\/$/, "") : "";
+const isBrowserRuntime =
+  typeof window !== "undefined" &&
+  Boolean(window.location?.protocol) &&
+  (window.location.protocol === "https:" || window.location.protocol === "http:");
+const prodApiBase = !forceCrossOriginApi && isBrowserRuntime ? "/api" : normalizedRawApiBase || "/api";
+
 export const API_PROXY_BASE = import.meta.env.DEV
-  ? rawApiBase && !isAzureHost
-    ? rawApiBase
+  ? normalizedRawApiBase && !isAzureHost
+    ? normalizedRawApiBase
     : devApiBase
-  : rawApiBase ?? "/api";
+  : prodApiBase;
 export const apiUrl = (path) =>
   `${API_PROXY_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
 
