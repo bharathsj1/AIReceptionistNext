@@ -349,6 +349,23 @@ nav {
   box-shadow: 0 60px 120px rgba(0,0,0,0.18), 0 8px 32px rgba(0,0,0,0.08), 0 0 0 0.5px rgba(0,0,0,0.06);
 }
 
+/* Stabilize DOM snapshot for html2canvas export */
+.vcard.is-exporting,
+.vcard.is-exporting * {
+  animation: none !important;
+  transition: none !important;
+}
+
+.vcard.is-exporting {
+  transform: none !important;
+  transform-style: flat !important;
+}
+
+.vcard.is-exporting .banner-logo-wrap {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
 .card-banner {
   height: 160px;
   position: relative;
@@ -942,22 +959,27 @@ nav {
   function computeShareData() {
     const p = payload();
     const hasAny = Boolean(p.fullName || p.email || p.phone || p.website || p.linkedin || p.twitter);
-    if (!hasAny) return { link: '', photoIncluded: false };
+    if (!hasAny) return { link: '', qrLink: '', photoIncluded: false, qrPhotoIncluded: false };
 
-    let payloadCandidate = { ...p };
-    let encoded = toBase64Url(JSON.stringify(payloadCandidate));
-    let link = `${window.location.origin}/digital-business-card.html?d=${encoded}`;
-    let photoIncluded = Boolean(payloadCandidate.photo);
+    const fullPayload = { ...p };
+    const fullEncoded = toBase64Url(JSON.stringify(fullPayload));
+    const fullLink = `${window.location.origin}/digital-business-card.html?d=${fullEncoded}`;
+    const photoIncluded = Boolean(fullPayload.photo);
 
-    // Keep QR dense but scannable on phone screens. Drop photo from payload if URL gets too long.
-    if (link.length > 1800 && payloadCandidate.photo) {
-      payloadCandidate = { ...payloadCandidate, photo: '' };
-      encoded = toBase64Url(JSON.stringify(payloadCandidate));
-      link = `${window.location.origin}/digital-business-card.html?d=${encoded}`;
-      photoIncluded = false;
+    let qrPayload = { ...fullPayload };
+    let qrEncoded = fullEncoded;
+    let qrLink = fullLink;
+    let qrPhotoIncluded = photoIncluded;
+
+    // QR code capacity is limited. Keep a conservative URL size so rendering stays reliable.
+    if (qrLink.length > 2100 && qrPayload.photo) {
+      qrPayload = { ...qrPayload, photo: '' };
+      qrEncoded = toBase64Url(JSON.stringify(qrPayload));
+      qrLink = `${window.location.origin}/digital-business-card.html?d=${qrEncoded}`;
+      qrPhotoIncluded = false;
     }
 
-    return { link, photoIncluded };
+    return { link: fullLink, qrLink, photoIncluded, qrPhotoIncluded };
   }
 
   function setText(id, val, fallback) {
@@ -1021,9 +1043,9 @@ nav {
     const shareLink = document.getElementById('share-link');
 
     const shareData = computeShareData();
-    const link = shareData.link;
+    const link = shareData.qrLink;
 
-    if (!link) {
+    if (!shareData.link) {
       qrcodeEl.style.display = 'none';
       qrcodeEl.innerHTML = '';
       qrEmpty.style.display = 'flex';
@@ -1037,20 +1059,57 @@ nav {
     qrcodeEl.style.display = 'flex';
     qrEmpty.style.display = 'none';
 
-    new QRCode(qrcodeEl, {
-      text: link,
-      width: 92,
-      height: 92,
-      colorDark: '#1c1c1e',
-      colorLight: '#ffffff',
-      correctLevel: QRCode.CorrectLevel.M
-    });
+    let rendered = false;
+    if (window.QRCode) {
+      try {
+        new QRCode(qrcodeEl, {
+          text: link,
+          width: 92,
+          height: 92,
+          colorDark: '#1c1c1e',
+          colorLight: '#ffffff',
+          correctLevel: QRCode.CorrectLevel.M
+        });
+        rendered = true;
+      } catch (err) {
+        rendered = false;
+      }
+    }
 
-    const shortDisplay = link.length > 58 ? `${link.slice(0, 58)}...` : link;
-    qrDesc.textContent = shareData.photoIncluded
-      ? 'Scan to open your full digital card page (with photo).'
-      : 'Scan to open your full digital card page.';
-    shareLink.href = link;
+    if (!rendered) {
+      const encoded = encodeURIComponent(link);
+      const img = document.createElement('img');
+      img.alt = 'QR code';
+      img.width = 92;
+      img.height = 92;
+      img.style.display = 'block';
+      img.referrerPolicy = 'no-referrer';
+
+      const primary = `https://api.qrserver.com/v1/create-qr-code/?size=92x92&ecc=M&data=${encoded}`;
+      const fallback = `https://chart.googleapis.com/chart?cht=qr&chs=92x92&chld=M|0&chl=${encoded}`;
+      img.onerror = () => {
+        if (!img.dataset.fallback) {
+          img.dataset.fallback = '1';
+          img.src = fallback;
+          return;
+        }
+        qrcodeEl.style.display = 'none';
+        qrEmpty.style.display = 'flex';
+        qrDesc.textContent = 'QR preview failed, but the share link below is ready.';
+      };
+      img.src = primary;
+      qrcodeEl.appendChild(img);
+    }
+
+    const shortDisplay = shareData.link.length > 58 ? `${shareData.link.slice(0, 58)}...` : shareData.link;
+    if (shareData.qrPhotoIncluded) {
+      qrDesc.textContent = 'Scan to open your full digital card page (with photo).';
+    } else if (shareData.photoIncluded) {
+      qrDesc.textContent = 'Scan opens card without photo for reliability. Use the link below for photo.';
+    } else {
+      qrDesc.textContent = 'Scan to open your full digital card page.';
+    }
+    shareLink.href = shareData.link;
     shareLink.textContent = shortDisplay;
   }
 
@@ -1058,34 +1117,43 @@ nav {
     return new Promise((resolve) => {
       const img = new Image();
       img.onload = () => {
-        const maxSide = 112;
-        const scale = Math.min(1, maxSide / Math.max(img.width || 1, img.height || 1));
-        const targetW = Math.max(1, Math.round((img.width || 1) * scale));
-        const targetH = Math.max(1, Math.round((img.height || 1) * scale));
+        const sourceW = img.width || 1;
+        const sourceH = img.height || 1;
+        const maxSides = [112, 96, 80, 64, 52, 44, 36, 28];
+        const qualities = [0.62, 0.5, 0.38, 0.28, 0.2, 0.14, 0.1, 0.08];
+        let smallest = '';
 
-        const canvas = document.createElement('canvas');
-        canvas.width = targetW;
-        canvas.height = targetH;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          resolve('');
+        for (const maxSide of maxSides) {
+          const scale = Math.min(1, maxSide / Math.max(sourceW, sourceH));
+          const targetW = Math.max(1, Math.round(sourceW * scale));
+          const targetH = Math.max(1, Math.round(sourceH * scale));
+
+          const canvas = document.createElement('canvas');
+          canvas.width = targetW;
+          canvas.height = targetH;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) continue;
+
+          ctx.drawImage(img, 0, 0, targetW, targetH);
+
+          for (const quality of qualities) {
+            const compressed = canvas.toDataURL('image/jpeg', quality);
+            if (!smallest || compressed.length < smallest.length) {
+              smallest = compressed;
+            }
+            if (compressed.length <= 900) {
+              resolve(compressed);
+              return;
+            }
+          }
+        }
+
+        // Use the smallest variant if still acceptable; otherwise omit photo.
+        if (smallest && smallest.length <= 1200) {
+          resolve(smallest);
           return;
         }
-        ctx.drawImage(img, 0, 0, targetW, targetH);
-
-        const qualities = [0.62, 0.5, 0.38];
-        let compressed = '';
-        for (const quality of qualities) {
-          compressed = canvas.toDataURL('image/jpeg', quality);
-          if (compressed.length <= 1400) break;
-        }
-
-        // If still too large, skip embedding photo to avoid unreadable QR.
-        if (compressed.length > 2200) {
-          resolve('');
-          return;
-        }
-        resolve(compressed);
+        resolve('');
       };
       img.onerror = () => resolve('');
       img.src = dataUrl;
@@ -1175,29 +1243,43 @@ nav {
   }
 
   function downloadCard() {
-    ensureHtml2Canvas().then((html2canvas) => {
+    ensureHtml2Canvas().then(async (html2canvas) => {
       const card = document.getElementById('vcard');
-      const prevTransition = card.style.transition;
-      const prevTransform = card.style.transform;
-      card.style.transition = 'none';
-      card.style.transform = 'none';
+      card.classList.add('is-exporting');
 
-      return html2canvas(card, {
-        scale: 3,
-        useCORS: true,
-        backgroundColor: null,
-        logging: false
-      }).then((canvas) => {
-        card.style.transition = prevTransition;
-        card.style.transform = prevTransform;
+      try {
+        if (document.fonts && document.fonts.ready) {
+          await document.fonts.ready;
+        }
+
+        const images = Array.from(card.querySelectorAll('img'));
+        await Promise.all(images.map((img) => {
+          if (img.complete) return Promise.resolve();
+          return new Promise((resolve) => {
+            img.onload = resolve;
+            img.onerror = resolve;
+          });
+        }));
+
+        const canvas = await html2canvas(card, {
+          scale: Math.min(2, window.devicePixelRatio || 1),
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: '#ffffff',
+          logging: false
+        });
 
         const a = document.createElement('a');
         a.download = 'digital-business-card.png';
         a.href = canvas.toDataURL('image/png');
+        document.body.appendChild(a);
         a.click();
-      });
+        a.remove();
+      } finally {
+        card.classList.remove('is-exporting');
+      }
     }).catch(() => {
-      alert('Download failed.');
+      alert('Download failed. Please try again.');
     });
   }
 

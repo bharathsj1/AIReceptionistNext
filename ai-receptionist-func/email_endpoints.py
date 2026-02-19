@@ -13,6 +13,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Optional, Tuple
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 import azure.functions as func
 import httpx
@@ -925,8 +926,13 @@ def _queue_email_job(
         updated_at=datetime.utcnow(),
     )
     db.add(job)
-    db.commit()
-    return True
+    try:
+        db.commit()
+        return True
+    except IntegrityError:
+        # Concurrent poll/queue can race on uq_email_ai_job_user_message.
+        db.rollback()
+        return False
 
 
 def _upsert_email_classification(
@@ -970,8 +976,25 @@ def _upsert_email_classification(
         updated_at=now,
     )
     db.add(record)
-    db.commit()
-    return record
+    try:
+        db.commit()
+        return record
+    except IntegrityError:
+        # Concurrent workers can race on uq_email_ai_class_user_message.
+        db.rollback()
+        existing = db.query(EmailAIClassification).filter_by(user_id=user_id, message_id=message_id).one_or_none()
+        if not existing:
+            raise
+        existing.thread_id = thread_id
+        existing.tags_json = tags
+        existing.priority_label = priority_label
+        existing.priority_score = priority_score
+        existing.sentiment = sentiment
+        existing.confidence = confidence
+        existing.reasoning_short = reasoning_short
+        existing.updated_at = now
+        db.commit()
+        return existing
 
 
 def _classification_payload(record: EmailAIClassification) -> dict:
@@ -1934,6 +1957,7 @@ def email_autotag_worker(timer: func.TimerRequest) -> None:
             .all()
         )
         for job in jobs:
+            job_id = job.id
             if job.attempts > EMAIL_AUTOTAG_MAX_ATTEMPTS:
                 job.status = "failed"
                 job.updated_at = now
@@ -1948,9 +1972,15 @@ def email_autotag_worker(timer: func.TimerRequest) -> None:
             try:
                 _process_email_job(db, job)
             except Exception as exc:  # pylint: disable=broad-except
-                _schedule_job_retry(job, str(exc))
+                db.rollback()
+                retry_job = db.query(EmailAIJob).filter_by(id=job_id).one_or_none()
+                if not retry_job:
+                    logger.error("Auto-tag worker could not reload job %s after failure: %s", job_id, exc)
+                    continue
+                _schedule_job_retry(retry_job, str(exc))
                 db.commit()
     except Exception as exc:  # pylint: disable=broad-except
+        db.rollback()
         logger.error("Auto-tag worker failed: %s", exc)
     finally:
         db.close()

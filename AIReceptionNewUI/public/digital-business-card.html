@@ -34,7 +34,8 @@ body {
 }
 
 .card {
-  width: min(100%, 680px);
+  width: 400px;
+  max-width: 100%;
   border-radius: 28px;
   overflow: hidden;
   background: white;
@@ -219,6 +220,11 @@ body {
   cursor: pointer;
   background: #0071e3;
   color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  text-decoration: none;
 }
 
 .btn.secondary {
@@ -376,7 +382,6 @@ body {
           <div class="card-contacts">${rows.join('')}</div>
           <div class="card-actions">
             <button class="btn" id="save-vcard">Save Contact (vCard)</button>
-            <a class="btn secondary" id="open-generator" href="/generate-business-card.html">Open Generator</a>
           </div>
         </div>
       </section>
