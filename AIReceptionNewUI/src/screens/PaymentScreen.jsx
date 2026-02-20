@@ -58,6 +58,33 @@ const parseCustomAmountUsd = (value) => {
   return parsed;
 };
 
+const CANADA_COUNTRY_CODE = "CA";
+const CANADA_HST_RATE = 0.13;
+
+const normalizeCountryCode = (value) => {
+  const normalized = String(value || "").trim().toUpperCase();
+  if (!normalized) return "";
+  if (normalized === "CAN") return CANADA_COUNTRY_CODE;
+  return normalized.slice(0, 2);
+};
+
+const taxRateForCountry = (countryCode) =>
+  normalizeCountryCode(countryCode) === CANADA_COUNTRY_CODE ? CANADA_HST_RATE : 0;
+
+const toCents = (majorAmount) => {
+  const amount = Number(majorAmount);
+  if (!Number.isFinite(amount) || amount <= 0) return 0;
+  return Math.round(amount * 100);
+};
+
+const formatMoney = (amount, currency, minimumFractionDigits = 2) =>
+  new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency,
+    minimumFractionDigits,
+    maximumFractionDigits: minimumFractionDigits
+  }).format(amount);
+
 const plans = {
   bronze: {
     name: "Bronze",
@@ -140,6 +167,7 @@ export default function PaymentScreen({
   const [postalCode, setPostalCode] = useState("");
   const [publishableKey, setPublishableKey] = useState("");
   const [publishableKeyLoading, setPublishableKeyLoading] = useState(true);
+  const [pricingBreakdown, setPricingBreakdown] = useState(null);
 
   const currencyForCountry = (code) => {
     if (!code) return "USD";
@@ -196,6 +224,10 @@ export default function PaymentScreen({
     () => parseCustomAmountUsd(customAmountUsd),
     [customAmountUsd]
   );
+  const billingCountryCode = useMemo(
+    () => normalizeCountryCode(geoCountryCode || ""),
+    [geoCountryCode]
+  );
   const usingCustomAmount = billingMode === "custom";
   const freeMonths = useMemo(
     () => (usingCustomAmount ? 0 : freeMonthsForTerm(billingMonths)),
@@ -207,11 +239,36 @@ export default function PaymentScreen({
   );
   const effectiveUnitAmount = usingCustomAmount ? parsedCustomAmountUsd : plan.unitAmount;
   const effectiveCurrency = usingCustomAmount ? localCurrency : (plan.currency || "USD");
+  const localPricingBreakdown = useMemo(() => {
+    if (!effectiveUnitAmount) return null;
+    const subtotalAmount = toCents(effectiveUnitAmount * chargeableMonths);
+    const taxRate = taxRateForCountry(billingCountryCode);
+    const taxAmount = Math.round(subtotalAmount * taxRate);
+    return {
+      billingCountryCode,
+      subtotalAmount,
+      taxAmount,
+      taxRate,
+      taxLabel: taxAmount > 0 ? "HST" : null,
+      totalAmount: subtotalAmount + taxAmount
+    };
+  }, [billingCountryCode, chargeableMonths, effectiveUnitAmount]);
+  const appliedPricingBreakdown = pricingBreakdown || localPricingBreakdown;
 
   const totalDue = useMemo(() => {
     if (!effectiveUnitAmount) return usingCustomAmount ? "Enter custom amount" : plan.price;
-    return formatPrice(effectiveUnitAmount * chargeableMonths, effectiveCurrency);
-  }, [chargeableMonths, effectiveCurrency, effectiveUnitAmount, plan.price, usingCustomAmount]);
+    if (appliedPricingBreakdown?.totalAmount) {
+      return formatMoney(appliedPricingBreakdown.totalAmount / 100, effectiveCurrency);
+    }
+    return formatMoney(effectiveUnitAmount * chargeableMonths, effectiveCurrency);
+  }, [
+    appliedPricingBreakdown,
+    chargeableMonths,
+    effectiveCurrency,
+    effectiveUnitAmount,
+    plan.price,
+    usingCustomAmount
+  ]);
   const toolLabel = TOOL_LABELS[toolId] || "AI workspace";
 
   const stripePromise = useMemo(
@@ -278,11 +335,13 @@ export default function PaymentScreen({
     }
     if (!email) {
       setClientSecret("");
+      setPricingBreakdown(localPricingBreakdown);
       return;
     }
     if (usingCustomAmount && !parsedCustomAmountUsd) {
       setIntentLoading(false);
       setIntentError("Enter a custom amount of at least 1.");
+      setPricingBreakdown(null);
       return;
     }
     const controller = new AbortController();
@@ -299,12 +358,35 @@ export default function PaymentScreen({
             email,
             billingMonths,
             billingCurrency: effectiveCurrency,
+            billingCountryCode,
             planUnitAmount: usingCustomAmount ? null : effectiveUnitAmount,
             customAmount: usingCustomAmount ? parsedCustomAmountUsd : null,
             customAmountCurrency: usingCustomAmount ? effectiveCurrency : null
           }),
           signal: controller.signal
         });
+        const nextBreakdown = {
+          billingCountryCode:
+            normalizeCountryCode(data?.billingCountryCode) || billingCountryCode,
+          subtotalAmount:
+            Number.isFinite(Number(data?.subtotalAmount))
+              ? Number(data?.subtotalAmount)
+              : localPricingBreakdown?.subtotalAmount || 0,
+          taxAmount:
+            Number.isFinite(Number(data?.taxAmount))
+              ? Number(data?.taxAmount)
+              : localPricingBreakdown?.taxAmount || 0,
+          taxRate:
+            Number.isFinite(Number(data?.taxRate))
+              ? Number(data?.taxRate)
+              : localPricingBreakdown?.taxRate || 0,
+          taxLabel: data?.taxLabel || localPricingBreakdown?.taxLabel || null,
+          totalAmount:
+            Number.isFinite(Number(data?.totalAmount))
+              ? Number(data?.totalAmount)
+              : localPricingBreakdown?.totalAmount || 0
+        };
+        setPricingBreakdown(nextBreakdown);
         if (res.ok && data?.skipPayment) {
           setClientSecret("");
           setSubscriptionId(data?.subscriptionId || "");
@@ -320,11 +402,17 @@ export default function PaymentScreen({
               customerId: data?.customerId || "",
               billingMonths,
               billingCurrency: effectiveCurrency,
+              billingCountryCode,
               planUnitAmount: usingCustomAmount ? null : effectiveUnitAmount,
               skipPayment: true,
               existingSubscription: true,
               subscriptionStatus: data?.status || "active",
-              subscriptionSource: data?.source || "existing"
+              subscriptionSource: data?.source || "existing",
+              subtotalAmount: nextBreakdown.subtotalAmount,
+              taxAmount: nextBreakdown.taxAmount,
+              taxRate: nextBreakdown.taxRate,
+              taxLabel: nextBreakdown.taxLabel,
+              totalAmount: nextBreakdown.totalAmount
             });
           }
           return;
@@ -342,9 +430,10 @@ export default function PaymentScreen({
         setClientSecret(data.clientSecret);
         setSubscriptionId(data.subscriptionId);
         setCustomerId(data.customerId);
-        setIntentType(data.intentType || "payment");
+        setIntentType(data.intentType || data.type || "payment");
       } catch (err) {
         if (controller.signal.aborted) return;
+        setPricingBreakdown(localPricingBreakdown);
         setIntentError(
           err instanceof Error ? err.message : "Could not start payment. Please try again."
         );
@@ -366,7 +455,9 @@ export default function PaymentScreen({
     effectiveUnitAmount,
     usingCustomAmount,
     parsedCustomAmountUsd,
-    effectiveCurrency
+    effectiveCurrency,
+    billingCountryCode,
+    localPricingBreakdown
   ]);
 
   return (
@@ -462,7 +553,9 @@ export default function PaymentScreen({
         parsedCustomAmountUsd={parsedCustomAmountUsd}
         customAmountCurrency={effectiveCurrency}
         planCurrency={effectiveCurrency}
+        billingCountryCode={billingCountryCode}
         planUnitAmount={effectiveUnitAmount}
+        pricingBreakdown={appliedPricingBreakdown}
         totalDue={totalDue}
         clientSecret={clientSecret}
         postalCode={postalCode}
@@ -541,7 +634,9 @@ function PaymentForm({
   parsedCustomAmountUsd,
   customAmountCurrency,
   planCurrency,
+  billingCountryCode,
   planUnitAmount,
+  pricingBreakdown,
   totalDue,
   clientSecret,
   postalCode,
@@ -622,6 +717,7 @@ function PaymentForm({
             customerId,
             billingMonths,
             billingCurrency: planCurrency,
+            billingCountryCode,
             planUnitAmount: billingMode === "custom" ? null : planUnitAmount,
             postalCode,
             customAmount: billingMode === "custom" ? parsedCustomAmountUsd : null,
@@ -646,9 +742,15 @@ function PaymentForm({
         customerId,
         billingMonths,
         billingCurrency: planCurrency,
+        billingCountryCode,
         planUnitAmount: billingMode === "custom" ? null : planUnitAmount,
         customAmount: billingMode === "custom" ? parsedCustomAmountUsd : null,
         customAmountCurrency: billingMode === "custom" ? customAmountCurrency : null,
+        subtotalAmount: pricingBreakdown?.subtotalAmount || null,
+        taxAmount: pricingBreakdown?.taxAmount || null,
+        taxRate: pricingBreakdown?.taxRate || null,
+        taxLabel: pricingBreakdown?.taxLabel || null,
+        totalAmount: pricingBreakdown?.totalAmount || null,
         receiptUrl,
         invoiceUrl
       });
@@ -802,9 +904,27 @@ function PaymentForm({
       {intentError && <p className="mt-3 text-sm text-red-600">{intentError}</p>}
       {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
       {planUnitAmount ? (
-        <p className="mt-2 text-sm font-semibold text-slate-800">
-          Due today: <span className="text-indigo-700">{totalDue}</span>
-        </p>
+        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
+          <div className="flex items-center justify-between">
+            <span>Subtotal</span>
+            <span>{formatMoney((pricingBreakdown?.subtotalAmount || 0) / 100, planCurrency)}</span>
+          </div>
+          {(pricingBreakdown?.taxAmount || 0) > 0 ? (
+            <div className="mt-1 flex items-center justify-between">
+              <span>
+                {pricingBreakdown?.taxLabel || "Tax"} ({Math.round((pricingBreakdown?.taxRate || 0) * 100)}%)
+              </span>
+              <span>{formatMoney((pricingBreakdown?.taxAmount || 0) / 100, planCurrency)}</span>
+            </div>
+          ) : null}
+          <div className="mt-1 flex items-center justify-between border-t border-slate-200 pt-1 font-semibold">
+            <span>Due today</span>
+            <span className="text-indigo-700">{totalDue}</span>
+          </div>
+          {normalizeCountryCode(billingCountryCode) === CANADA_COUNTRY_CODE ? (
+            <p className="mt-1 text-xs text-slate-600">Canada payments include 13% HST.</p>
+          ) : null}
+        </div>
       ) : null}
 
       <button

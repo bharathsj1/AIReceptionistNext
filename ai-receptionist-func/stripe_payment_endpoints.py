@@ -45,6 +45,8 @@ PLAN_AMOUNTS_BY_TOOL = {
 }
 SUPPORTED_CUSTOM_CURRENCIES = {"usd", "cad", "gbp"}
 ACTIVE_SUBSCRIPTION_STATUSES = {"active", "trialing", "past_due", "unpaid"}
+CANADA_COUNTRY_CODE = "CA"
+CANADA_HST_RATE = Decimal("0.13")
 
 
 def _normalize_email(value: str | None) -> str:
@@ -446,6 +448,40 @@ def _normalize_custom_currency(value) -> str:
     return "usd"
 
 
+def _normalize_country_code(value) -> str:
+    country = str(value or "").strip().upper()
+    if not country:
+        return ""
+    if country == "CAN":
+        return CANADA_COUNTRY_CODE
+    if len(country) == 2:
+        return country
+    return country[:2]
+
+
+def _tax_rate_for_country(country_code: str) -> Decimal:
+    normalized = _normalize_country_code(country_code)
+    if normalized == CANADA_COUNTRY_CODE:
+        return CANADA_HST_RATE
+    return Decimal("0")
+
+
+def _build_payment_breakdown(subtotal_cents: int, billing_country_code: str) -> dict:
+    safe_subtotal = max(0, int(subtotal_cents or 0))
+    normalized_country = _normalize_country_code(billing_country_code)
+    tax_rate = _tax_rate_for_country(normalized_country)
+    tax_amount = int((Decimal(safe_subtotal) * tax_rate).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    total_amount = safe_subtotal + tax_amount
+    return {
+        "billingCountryCode": normalized_country,
+        "subtotalAmount": safe_subtotal,
+        "taxAmount": tax_amount,
+        "taxRate": float(tax_rate),
+        "taxLabel": "HST" if tax_amount > 0 else None,
+        "totalAmount": total_amount,
+    }
+
+
 def _parse_custom_amount_to_cents(value) -> int | None:
     if value is None:
         return None
@@ -531,7 +567,7 @@ def _get_or_create_price(
     safe_interval_count = max(1, int(interval_count or 1))
     if custom_amount_cents is not None:
         lookup_key = (
-            f"{tool_key}_{plan_id}_custom_{custom_amount_cents}_{currency_key}_{safe_interval_count}m"
+            f"{tool_key}_{plan_id}_custom_{custom_amount_cents}_{amount}_{currency_key}_{safe_interval_count}m"
         )
     else:
         lookup_key = f"{tool_key}_{plan_id}_{amount}_{currency_key}_{safe_interval_count}m"
@@ -944,6 +980,7 @@ def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
       { "planId": "bronze" | "silver" | "gold", "toolId": "<tool>", "email": "required",
         "customAmount": "optional >= 1", "customAmountCurrency": "optional (usd/cad/gbp)",
         "billingMonths": "optional (1/2/3/6/12)", "billingCurrency": "optional (usd/cad/gbp)",
+        "billingCountryCode": "optional ISO country code used for tax",
         "planUnitAmount": "optional displayed monthly amount from frontend" }
     """
     cors = build_cors_headers(req, ["POST", "OPTIONS"])
@@ -963,6 +1000,7 @@ def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
         custom_amount_raw = data.get("customAmountUsd")
     custom_amount_currency = _normalize_custom_currency(data.get("customAmountCurrency"))
     billing_currency = _normalize_custom_currency(data.get("billingCurrency") or data.get("currency"))
+    billing_country_code = _normalize_country_code(data.get("billingCountryCode") or data.get("countryCode"))
     billing_months = _parse_billing_months(data.get("billingMonths"))
     free_months = _free_months_for_term(billing_months)
     chargeable_months = max(1, billing_months - free_months)
@@ -982,14 +1020,16 @@ def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
         chargeable_months = 1
 
     monthly_amount_cents = custom_amount_cents or plan_unit_amount_cents or _get_plan_amount(plan_id, tool_id)
-    amount = monthly_amount_cents * chargeable_months if monthly_amount_cents else None
-    if not amount or not email:
+    subtotal_amount = monthly_amount_cents * chargeable_months if monthly_amount_cents else None
+    if not subtotal_amount or not email:
         return func.HttpResponse(
             json.dumps({"error": "Invalid or missing planId/toolId/email"}),
             status_code=400,
             mimetype="application/json",
             headers=cors,
         )
+    payment_breakdown = _build_payment_breakdown(subtotal_amount, billing_country_code)
+    amount = payment_breakdown["totalAmount"]
 
     db = SessionLocal()
     try:
@@ -1051,6 +1091,9 @@ def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
             "chargeableMonths": str(chargeable_months),
             "freeMonths": str(free_months),
             "billingCurrency": effective_currency,
+            "billingCountryCode": billing_country_code,
+            "taxRate": str(payment_breakdown["taxRate"]),
+            "taxAmount": str(payment_breakdown["taxAmount"]),
         }
         if custom_amount_cents is not None:
             metadata["customAmount"] = f"{custom_amount_cents / 100:.2f}"
@@ -1152,6 +1195,12 @@ def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
                 "billingMonths": billing_months,
                 "chargeableMonths": chargeable_months,
                 "freeMonths": free_months,
+                "billingCountryCode": billing_country_code,
+                "subtotalAmount": payment_breakdown["subtotalAmount"],
+                "taxAmount": payment_breakdown["taxAmount"],
+                "taxRate": payment_breakdown["taxRate"],
+                "taxLabel": payment_breakdown["taxLabel"],
+                "totalAmount": payment_breakdown["totalAmount"],
             }
         ),
         status_code=200,
@@ -1185,6 +1234,10 @@ def confirm_subscription(req: func.HttpRequest) -> func.HttpResponse:
     if custom_amount_raw in (None, ""):
         custom_amount_raw = data.get("customAmountUsd")
     custom_amount_currency = _normalize_custom_currency(data.get("customAmountCurrency"))
+    billing_country_code = _normalize_country_code(data.get("billingCountryCode") or data.get("countryCode"))
+    billing_months = _parse_billing_months(data.get("billingMonths"))
+    free_months = _free_months_for_term(billing_months)
+    chargeable_months = max(1, billing_months - free_months)
     custom_amount_cents = _parse_custom_amount_to_cents(custom_amount_raw)
     if custom_amount_raw not in (None, "") and custom_amount_cents is None:
         return func.HttpResponse(
@@ -1219,6 +1272,8 @@ def confirm_subscription(req: func.HttpRequest) -> func.HttpResponse:
         meta_tool = metadata.get("toolId") or metadata.get("tool")
         if meta_tool:
             tool_id = (meta_tool or tool_id).lower()
+        if not billing_country_code:
+            billing_country_code = _normalize_country_code(metadata.get("billingCountryCode"))
         if not plan_id and metadata.get("planId"):
             plan_id = metadata.get("planId")
         if custom_amount_cents is None:
@@ -1227,6 +1282,14 @@ def confirm_subscription(req: func.HttpRequest) -> func.HttpResponse:
             )
         if custom_amount_currency == "usd":
             custom_amount_currency = _normalize_custom_currency(metadata.get("customAmountCurrency"))
+        try:
+            chargeable_months = max(1, int(metadata.get("chargeableMonths") or chargeable_months))
+        except (TypeError, ValueError):
+            pass
+
+    if custom_amount_cents is not None:
+        billing_months = 1
+        chargeable_months = 1
 
     status = subscription.status
     customer_id = subscription.customer if isinstance(subscription.customer, str) else getattr(subscription.customer, "id", None)
@@ -1234,7 +1297,10 @@ def confirm_subscription(req: func.HttpRequest) -> func.HttpResponse:
     invoice_id = None
     payment_intent_id = None
     payment_currency = custom_amount_currency if custom_amount_cents is not None else "usd"
-    amount = custom_amount_cents or _get_plan_amount(plan_id, tool_id) or PLAN_AMOUNTS.get(plan_id, 0)
+    monthly_amount_cents = custom_amount_cents or _get_plan_amount(plan_id, tool_id) or PLAN_AMOUNTS.get(plan_id, 0)
+    subtotal_amount = monthly_amount_cents * chargeable_months if monthly_amount_cents else 0
+    payment_breakdown = _build_payment_breakdown(subtotal_amount, billing_country_code)
+    amount = payment_breakdown["totalAmount"]
     price_id = None
     current_period_end_val = getattr(subscription, "current_period_end", None) or 0
 
@@ -1310,7 +1376,19 @@ def confirm_subscription(req: func.HttpRequest) -> func.HttpResponse:
         db.close()
 
     return func.HttpResponse(
-        json.dumps({"status": status}),
+        json.dumps(
+            {
+                "status": status,
+                "billingCountryCode": billing_country_code,
+                "subtotalAmount": payment_breakdown["subtotalAmount"],
+                "taxAmount": payment_breakdown["taxAmount"],
+                "taxRate": payment_breakdown["taxRate"],
+                "taxLabel": payment_breakdown["taxLabel"],
+                "totalAmount": payment_breakdown["totalAmount"],
+                "chargedAmount": amount,
+                "chargedCurrency": payment_currency,
+            }
+        ),
         status_code=200,
         mimetype="application/json",
         headers=cors,
