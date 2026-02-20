@@ -3021,9 +3021,13 @@ export default function DashboardScreen({
       }
       const data = await res.json().catch(() => ({}));
       const items = Array.isArray(data?.conversations) ? data.conversations : [];
+      const warnings = Array.isArray(data?.warnings) ? data.warnings.filter(Boolean) : [];
       setSocialConversations(items);
       if (items.length && !socialSelectedConversation) {
         setSocialSelectedConversation(items[0]);
+      }
+      if (!items.length && warnings.length) {
+        setSocialInboxError(`No messages synced yet. ${warnings[0]}`);
       }
     } catch (err) {
       setSocialInboxError(err?.message || "Unable to load conversations.");

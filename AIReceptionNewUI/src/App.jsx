@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Lenis from "lenis";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
-import API_URLS from "./config/urls.js";
+import API_URLS, { API_PROXY_BASE } from "./config/urls.js";
 import Aurora from "./components/Aurora";
 import Orb from "./components/Orb";
 import LandingScreen from "./screens/LandingScreen";
@@ -71,7 +71,7 @@ const TOOL_ID_ALIASES = {
 const DASHBOARD_REQUEST_TIMEOUT_MS = 10000;
 const SUBSCRIPTION_REQUEST_TIMEOUT_MS = 4000;
 const FALLBACK_API_BASE = (
-  import.meta.env.VITE_FALLBACK_API_BASE || "https://aireceptionist-func.azurewebsites.net/api"
+  import.meta.env.VITE_FALLBACK_API_BASE || API_PROXY_BASE
 ).replace(/\/$/, "");
 
 const fetchWithTimeout = async (resource, options = {}, timeoutMs = 8000) => {

@@ -6,10 +6,10 @@ import {
   useStripe
 } from "@stripe/react-stripe-js";
 import { loadStripe } from "@stripe/stripe-js";
-import API_URLS from "../config/urls.js";
+import API_URLS, { API_PROXY_BASE } from "../config/urls.js";
 
 const FALLBACK_API_BASE = (
-  import.meta.env.VITE_FALLBACK_API_BASE || "https://aireceptionist-func.azurewebsites.net/api"
+  import.meta.env.VITE_FALLBACK_API_BASE || API_PROXY_BASE
 ).replace(/\/$/, "");
 
 const parseResponseBody = async (res) => {
@@ -148,6 +148,12 @@ export default function PaymentScreen({
     if (upper === "GB" || upper === "UK") return "GBP";
     return "USD";
   };
+  const freeMonthsForTerm = (months) => {
+    if (months >= 12) return 2;
+    if (months >= 6) return 1;
+    return 0;
+  };
+  const chargeableMonthsForTerm = (months) => Math.max(1, months - freeMonthsForTerm(months));
 
   const convertAmount = (amount, fromCurrency, toCurrency) => {
     if (!amount) return amount;
@@ -191,13 +197,21 @@ export default function PaymentScreen({
     [customAmountUsd]
   );
   const usingCustomAmount = billingMode === "custom";
+  const freeMonths = useMemo(
+    () => (usingCustomAmount ? 0 : freeMonthsForTerm(billingMonths)),
+    [billingMonths, usingCustomAmount]
+  );
+  const chargeableMonths = useMemo(
+    () => (usingCustomAmount ? billingMonths : chargeableMonthsForTerm(billingMonths)),
+    [billingMonths, usingCustomAmount]
+  );
   const effectiveUnitAmount = usingCustomAmount ? parsedCustomAmountUsd : plan.unitAmount;
   const effectiveCurrency = usingCustomAmount ? localCurrency : (plan.currency || "USD");
 
   const totalDue = useMemo(() => {
     if (!effectiveUnitAmount) return usingCustomAmount ? "Enter custom amount" : plan.price;
-    return formatPrice(effectiveUnitAmount * billingMonths, effectiveCurrency);
-  }, [effectiveUnitAmount, effectiveCurrency, billingMonths, plan.price, usingCustomAmount]);
+    return formatPrice(effectiveUnitAmount * chargeableMonths, effectiveCurrency);
+  }, [chargeableMonths, effectiveCurrency, effectiveUnitAmount, plan.price, usingCustomAmount]);
   const toolLabel = TOOL_LABELS[toolId] || "AI workspace";
 
   const stripePromise = useMemo(
@@ -284,6 +298,8 @@ export default function PaymentScreen({
             toolId,
             email,
             billingMonths,
+            billingCurrency: effectiveCurrency,
+            planUnitAmount: usingCustomAmount ? null : effectiveUnitAmount,
             customAmount: usingCustomAmount ? parsedCustomAmountUsd : null,
             customAmountCurrency: usingCustomAmount ? effectiveCurrency : null
           }),
@@ -302,6 +318,9 @@ export default function PaymentScreen({
               email,
               subscriptionId: data?.subscriptionId || "",
               customerId: data?.customerId || "",
+              billingMonths,
+              billingCurrency: effectiveCurrency,
+              planUnitAmount: usingCustomAmount ? null : effectiveUnitAmount,
               skipPayment: true,
               existingSubscription: true,
               subscriptionStatus: data?.status || "active",
@@ -344,6 +363,7 @@ export default function PaymentScreen({
     publishableKey,
     publishableKeyLoading,
     billingMonths,
+    effectiveUnitAmount,
     usingCustomAmount,
     parsedCustomAmountUsd,
     effectiveCurrency
@@ -432,6 +452,8 @@ export default function PaymentScreen({
         customerId={customerId}
         intentType={intentType}
         billingMonths={billingMonths}
+        chargeableMonths={chargeableMonths}
+        freeMonths={freeMonths}
         setBillingMonths={setBillingMonths}
         billingMode={billingMode}
         setBillingMode={setBillingMode}
@@ -509,6 +531,8 @@ function PaymentForm({
   customerId,
   intentType,
   billingMonths,
+  chargeableMonths,
+  freeMonths,
   setBillingMonths,
   billingMode,
   setBillingMode,
@@ -597,6 +621,8 @@ function PaymentForm({
             toolId,
             customerId,
             billingMonths,
+            billingCurrency: planCurrency,
+            planUnitAmount: billingMode === "custom" ? null : planUnitAmount,
             postalCode,
             customAmount: billingMode === "custom" ? parsedCustomAmountUsd : null,
             customAmountCurrency: billingMode === "custom" ? customAmountCurrency : null
@@ -619,6 +645,8 @@ function PaymentForm({
         subscriptionId,
         customerId,
         billingMonths,
+        billingCurrency: planCurrency,
+        planUnitAmount: billingMode === "custom" ? null : planUnitAmount,
         customAmount: billingMode === "custom" ? parsedCustomAmountUsd : null,
         customAmountCurrency: billingMode === "custom" ? customAmountCurrency : null,
         receiptUrl,
@@ -662,11 +690,16 @@ function PaymentForm({
           >
             <option value={2}>2 months upfront</option>
             <option value={3}>3 months upfront</option>
-            <option value={6}>6 months upfront</option>
-            <option value={12}>1 year upfront</option>
+            <option value={6}>6 months upfront (1 month free)</option>
+            <option value={12}>1 year upfront (2 months free)</option>
             <option value="custom">Custom amount</option>
           </select>
         </label>
+        {billingMode !== "custom" && freeMonths > 0 ? (
+          <p className="text-xs font-medium text-emerald-700">
+            Offer applied: {freeMonths} month{freeMonths > 1 ? "s" : ""} free. You pay for {chargeableMonths} of {billingMonths} months.
+          </p>
+        ) : null}
 
         {billingMode === "custom" ? (
           <label className="text-sm font-semibold text-slate-800">
@@ -783,7 +816,9 @@ function PaymentForm({
       </button>
 
       <p className="mt-3 text-xs text-slate-500">
-        Monthly billing, no commitments. Cancel anytime.
+        {billingMode === "custom"
+          ? "Monthly billing, no commitments. Cancel anytime."
+          : `Renews every ${billingMonths} month${billingMonths > 1 ? "s" : ""}. Cancel anytime.`}
       </p>
     </form>
   );
