@@ -416,6 +416,221 @@ def _fetch_conversations(db, business_id: int, limit: int, cursor: Optional[date
     )
 
 
+def _pick_meta_participant(raw_conversation: dict, account_id: str) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    participants = ((raw_conversation or {}).get("participants") or {}).get("data") or []
+    selected = None
+    for person in participants:
+        person_id = str(person.get("id") or "")
+        if person_id and person_id != str(account_id):
+            selected = person
+            break
+    if not selected and participants:
+        selected = participants[0]
+    participant_id = str((selected or {}).get("id") or "") or None
+    participant_name = (selected or {}).get("name") or None
+    participant_handle = (selected or {}).get("username") or participant_name or participant_id
+    if selected and (participant_id or participant_handle or participant_name):
+        return participant_id, participant_handle, participant_name
+
+    # Fallback for payloads where participants are omitted.
+    messages = ((raw_conversation or {}).get("messages") or {}).get("data") or []
+    for message in messages:
+        sender = message.get("from") or {}
+        sender_id = str(sender.get("id") or "")
+        if sender_id and sender_id != str(account_id):
+            sender_name = sender.get("name") or None
+            return sender_id, sender_name or sender_id, sender_name
+    return participant_id, participant_handle, participant_name
+
+
+def _sync_meta_connection_inbox(db, connection: SocialConnection, limit: int) -> tuple[int, Optional[str]]:
+    try:
+        access_token = _get_connection_token(connection)
+    except Exception as exc:  # pylint: disable=broad-except
+        return 0, f"token_error: {exc}"
+
+    conversations, fetch_error = meta_adapter.list_conversations(
+        connection.external_account_id,
+        access_token,
+        limit=limit,
+    )
+    if fetch_error:
+        return 0, fetch_error
+
+    platform = _normalize_meta_channel(connection)
+    synced = 0
+    account_id = str(connection.external_account_id)
+    for raw_conversation in conversations:
+        convo_payload = dict(raw_conversation or {})
+        external_id = str(convo_payload.get("id") or "")
+        participant_id, participant_handle, participant_name = _pick_meta_participant(
+            convo_payload, account_id
+        )
+        external_conversation_id = participant_id or external_id
+        if not external_conversation_id:
+            continue
+
+        messages = ((convo_payload.get("messages") or {}).get("data") or [])
+        needs_detail = not messages or (participant_id is None and external_id)
+        if needs_detail and external_id:
+            detail, detail_error = meta_adapter.get_conversation_detail(
+                external_id,
+                access_token,
+                message_limit=10,
+            )
+            if detail:
+                convo_payload = detail
+                messages = ((convo_payload.get("messages") or {}).get("data") or [])
+                participant_id, participant_handle, participant_name = _pick_meta_participant(
+                    convo_payload, account_id
+                )
+                external_conversation_id = participant_id or external_id
+            elif detail_error:
+                logger.info(
+                    "Meta conversation detail fetch failed (connection_id=%s, conversation_id=%s): %s",
+                    connection.id,
+                    external_id,
+                    detail_error,
+                )
+
+        latest_ts = _parse_timestamp(convo_payload.get("updated_time"))
+        latest_text = None
+        for message in messages:
+            msg_ts = _parse_timestamp(message.get("created_time") or message.get("timestamp"))
+            if msg_ts and (latest_ts is None or msg_ts > latest_ts):
+                latest_ts = msg_ts
+            if latest_text is None and (message.get("message") or message.get("text")):
+                latest_text = message.get("message") or message.get("text")
+
+        conversation = _upsert_conversation(
+            db,
+            business_id=connection.business_id,
+            platform=platform,
+            connection_id=connection.id,
+            external_conversation_id=str(external_conversation_id),
+            participant_handle=participant_handle,
+            participant_name=participant_name,
+            last_message_text=latest_text,
+            last_message_at=latest_ts,
+        )
+        db.flush()
+        for message in messages:
+            message_id = str(message.get("id") or "")
+            if not message_id:
+                continue
+            sender = message.get("from") or {}
+            sender_id = str(sender.get("id") or "")
+            direction = "outbound" if sender_id and sender_id == account_id else "inbound"
+            sender_type = "business" if direction == "outbound" else "customer"
+            _store_message(
+                db,
+                conversation_id=conversation.id,
+                platform=platform,
+                external_message_id=message_id,
+                direction=direction,
+                sender_type=sender_type,
+                text=message.get("message") or message.get("text"),
+                attachments=None,
+                message_ts=_parse_timestamp(message.get("created_time") or message.get("timestamp")),
+            )
+        synced += 1
+    return synced, None
+
+
+def _ensure_instagram_connections_from_pages(db, business_id: int) -> int:
+    created = 0
+    connections = (
+        db.query(SocialConnection)
+        .filter_by(business_id=business_id, platform=PLATFORM_META, status="connected")
+        .all()
+    )
+    existing_ids = {str(conn.external_account_id) for conn in connections}
+    for conn in connections:
+        metadata = _safe_metadata(conn.metadata_json)
+        if metadata.get("meta_type") != "facebook_page":
+            continue
+        try:
+            token = _get_connection_token(conn)
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.warning(
+                "Unable to derive instagram shadow connection token (business_id=%s, page_id=%s): %s",
+                business_id,
+                conn.external_account_id,
+                exc,
+            )
+            continue
+        ig_user_id = str(metadata.get("ig_user_id") or "").strip()
+        if not ig_user_id:
+            fallback_ig, fallback_error = meta_adapter.get_page_instagram_business_account(
+                str(conn.external_account_id),
+                token,
+            )
+            if fallback_ig and fallback_ig.get("id"):
+                ig_user_id = str(fallback_ig.get("id"))
+                metadata["ig_user_id"] = ig_user_id
+                metadata["ig_username"] = fallback_ig.get("username")
+                conn.metadata_json = metadata
+                conn.updated_at = _utcnow()
+            elif fallback_error:
+                logger.info(
+                    "No instagram account discovered for page_id=%s (business_id=%s): %s",
+                    conn.external_account_id,
+                    business_id,
+                    fallback_error,
+                )
+        if not ig_user_id or ig_user_id in existing_ids:
+            continue
+        ig_metadata = {
+            "meta_type": "instagram_business",
+            "page_id": conn.external_account_id,
+            "ig_username": metadata.get("ig_username"),
+        }
+        _upsert_connection(
+            db,
+            business_id=business_id,
+            platform=PLATFORM_META,
+            external_account_id=ig_user_id,
+            display_name=metadata.get("ig_username") or f"Instagram {ig_user_id}",
+            access_token=token,
+            scopes=conn.scopes,
+            token_expires_at=conn.token_expires_at,
+            metadata=ig_metadata,
+        )
+        existing_ids.add(ig_user_id)
+        created += 1
+    return created
+
+
+def _sync_meta_inbox(db, business_id: int, limit: int) -> list[str]:
+    warnings: list[str] = []
+    try:
+        created = _ensure_instagram_connections_from_pages(db, business_id)
+        if created:
+            logger.info("Created %s instagram shadow connection(s) for business_id=%s", created, business_id)
+    except Exception as exc:  # pylint: disable=broad-except
+        warnings.append(f"instagram_link_discovery_failed: {exc}")
+
+    connections = (
+        db.query(SocialConnection)
+        .filter_by(business_id=business_id, platform=PLATFORM_META, status="connected")
+        .all()
+    )
+    for connection in connections:
+        synced, sync_error = _sync_meta_connection_inbox(db, connection, limit)
+        if sync_error:
+            label = connection.display_name or connection.external_account_id
+            warnings.append(f"{label}: {sync_error}")
+            continue
+        if synced:
+            logger.info(
+                "Meta inbox sync: business_id=%s connection_id=%s synced=%s",
+                business_id,
+                connection.id,
+                synced,
+            )
+    return warnings
+
+
 @app.function_name(name="MetaAuthUrl")
 @app.route(route="social/meta/auth-url", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def meta_auth_url(req: func.HttpRequest) -> func.HttpResponse:
@@ -441,8 +656,11 @@ def meta_auth_url(req: func.HttpRequest) -> func.HttpResponse:
         scopes = [
             "pages_show_list",
             "pages_messaging",
+            "pages_manage_metadata",
+            "pages_read_engagement",
             "instagram_basic",
             "instagram_manage_messages",
+            "instagram_manage_comments",
         ]
         state = _encode_state(
             {
@@ -579,6 +797,21 @@ def meta_auth_callback(req: func.HttpRequest) -> func.HttpResponse:
             ig_account = page.get("instagram_business_account") or {}
             ig_id = ig_account.get("id")
             ig_username = ig_account.get("username")
+            if not ig_id:
+                fallback_ig, fallback_error = meta_adapter.get_page_instagram_business_account(
+                    page_id,
+                    page_token,
+                )
+                if fallback_ig:
+                    ig_id = fallback_ig.get("id")
+                    ig_username = fallback_ig.get("username")
+                elif fallback_error:
+                    logger.info(
+                        "No instagram_business_account for page_id=%s (business_id=%s): %s",
+                        page_id,
+                        business_id,
+                        fallback_error,
+                    )
             if ig_id:
                 metadata["ig_user_id"] = ig_id
                 metadata["ig_username"] = ig_username
@@ -594,6 +827,14 @@ def meta_auth_callback(req: func.HttpRequest) -> func.HttpResponse:
                 metadata=metadata,
             )
             connected += 1
+            subscribe_error = meta_adapter.subscribe_app(page_id, page_token)
+            if subscribe_error:
+                logger.warning(
+                    "Meta page subscription failed (business_id=%s, page_id=%s): %s",
+                    business_id,
+                    page_id,
+                    subscribe_error,
+                )
             if ig_id:
                 ig_metadata = {
                     "meta_type": "instagram_business",
@@ -611,6 +852,18 @@ def meta_auth_callback(req: func.HttpRequest) -> func.HttpResponse:
                     token_expires_at=token_expires_at,
                     metadata=ig_metadata,
                 )
+                ig_subscribe_error = meta_adapter.subscribe_app(
+                    str(ig_id),
+                    page_token,
+                    subscribed_fields=["messages", "mentions", "comments"],
+                )
+                if ig_subscribe_error:
+                    logger.warning(
+                        "Meta instagram subscription failed (business_id=%s, ig_id=%s): %s",
+                        business_id,
+                        ig_id,
+                        ig_subscribe_error,
+                    )
                 ig_connected += 1
 
         db.commit()
@@ -1415,6 +1668,7 @@ def meta_webhook(req: func.HttpRequest) -> func.HttpResponse:
     if not payload:
         return func.HttpResponse("Invalid payload", status_code=400, headers=cors)
 
+    payload_object = str(payload.get("object") or "").strip().lower()
     db = SessionLocal()
     try:
         for entry in payload.get("entry", []):
@@ -1426,10 +1680,25 @@ def meta_webhook(req: func.HttpRequest) -> func.HttpResponse:
                 .filter_by(platform=PLATFORM_META, external_account_id=entry_id)
                 .one_or_none()
             )
+            if not connection and payload_object == "instagram":
+                # Some IG webhook payloads carry a page-scoped id; fallback via stored metadata links.
+                candidates = (
+                    db.query(SocialConnection)
+                    .filter_by(platform=PLATFORM_META, status="connected")
+                    .all()
+                )
+                for candidate in candidates:
+                    metadata = _safe_metadata(candidate.metadata_json)
+                    ig_user_id = str(metadata.get("ig_user_id") or "")
+                    page_id = str(metadata.get("page_id") or "")
+                    if entry_id and (entry_id == ig_user_id or entry_id == page_id):
+                        connection = candidate
+                        break
             if not connection:
                 continue
-            platform = _normalize_meta_channel(connection)
+            platform = CHANNEL_INSTAGRAM if payload_object == "instagram" else _normalize_meta_channel(connection)
             business_id = connection.business_id
+            account_id = str(connection.external_account_id)
 
             for messaging in entry.get("messaging", []) or []:
                 sender_id = messaging.get("sender", {}).get("id")
@@ -1470,6 +1739,101 @@ def meta_webhook(req: func.HttpRequest) -> func.HttpResponse:
             for change in entry.get("changes", []) or []:
                 value = change.get("value") or {}
                 field = change.get("field") or ""
+                if field == "messages":
+                    def _coerce_actor(raw_actor: Any) -> dict:
+                        if isinstance(raw_actor, dict):
+                            return raw_actor
+                        if isinstance(raw_actor, str) and raw_actor:
+                            return {"id": raw_actor}
+                        return {}
+
+                    def _ingest_message_event(message_obj: dict, sender_info: dict, recipient_info: dict, event_value: dict):
+                        if not isinstance(message_obj, dict):
+                            return
+                        sender_id = str(sender_info.get("id") or "")
+                        recipient_id = str(recipient_info.get("id") or "")
+                        msg_id = (
+                            message_obj.get("mid")
+                            or message_obj.get("id")
+                            or event_value.get("mid")
+                            or event_value.get("id")
+                        )
+                        message_text = (
+                            message_obj.get("text")
+                            or message_obj.get("message")
+                            or event_value.get("text")
+                        )
+                        timestamp = _parse_timestamp(
+                            event_value.get("timestamp")
+                            or message_obj.get("timestamp")
+                            or event_value.get("created_time")
+                            or message_obj.get("created_time")
+                        )
+                        is_echo = bool(message_obj.get("is_echo"))
+                        direction = "outbound" if is_echo or (sender_id and sender_id == account_id) else "inbound"
+                        sender_type = "business" if direction == "outbound" else "customer"
+
+                        conversation_info = event_value.get("conversation") or {}
+                        conversation_id = str(conversation_info.get("id") or "")
+                        participant_id = recipient_id if direction == "outbound" else sender_id
+                        if not participant_id:
+                            participant_id = sender_id or recipient_id
+                        external_conv_id = conversation_id or participant_id
+                        if not external_conv_id or not msg_id:
+                            return
+
+                        participant_name = (
+                            sender_info.get("name")
+                            if direction == "inbound"
+                            else recipient_info.get("name")
+                        )
+                        conversation = _upsert_conversation(
+                            db,
+                            business_id=business_id,
+                            platform=platform,
+                            connection_id=connection.id,
+                            external_conversation_id=str(external_conv_id),
+                            participant_handle=str(participant_id) if participant_id else None,
+                            participant_name=participant_name,
+                            last_message_text=message_text,
+                            last_message_at=timestamp,
+                        )
+                        db.flush()
+                        _store_message(
+                            db,
+                            conversation_id=conversation.id,
+                            platform=platform,
+                            external_message_id=str(msg_id),
+                            direction=direction,
+                            sender_type=sender_type,
+                            text=message_text,
+                            attachments=(
+                                {"raw": message_obj.get("attachments")}
+                                if isinstance(message_obj.get("attachments"), list)
+                                else None
+                            ),
+                            message_ts=timestamp,
+                        )
+
+                    sender_info = _coerce_actor(value.get("sender") or value.get("from"))
+                    recipient_info = _coerce_actor(value.get("recipient") or value.get("to"))
+                    if isinstance(value.get("messages"), list):
+                        for item in value.get("messages") or []:
+                            message_obj = item if isinstance(item, dict) else {}
+                            item_sender = _coerce_actor(
+                                message_obj.get("from") or message_obj.get("sender") or sender_info
+                            )
+                            item_recipient = _coerce_actor(
+                                message_obj.get("to") or message_obj.get("recipient") or recipient_info
+                            )
+                            _ingest_message_event(message_obj, item_sender, item_recipient, value)
+                    else:
+                        message_obj = value.get("message") or {}
+                        if isinstance(message_obj, str):
+                            message_obj = {"text": message_obj}
+                        _ingest_message_event(message_obj, sender_info, recipient_info, value)
+                    continue
+
                 comment_id = value.get("comment_id") or value.get("id")
                 message_text = value.get("message") or value.get("text")
                 if not comment_id or not message_text:
@@ -1635,6 +1999,17 @@ def social_inbox_conversations(req: func.HttpRequest) -> func.HttpResponse:
                 mimetype="application/json",
                 headers=cors,
             )
+        sync_warnings: list[str] = []
+        # First page load should backfill Meta inbox even before webhook events arrive.
+        if not cursor:
+            try:
+                sync_warnings = _sync_meta_inbox(db, client.id, min(limit, 50))
+                db.commit()
+            except Exception as sync_exc:  # pylint: disable=broad-except
+                db.rollback()
+                logger.warning("Meta inbox sync failed for business_id=%s: %s", client.id, sync_exc)
+                sync_warnings = [str(sync_exc)]
+
         cursor_dt = _parse_timestamp(cursor) if cursor else None
         conversations = _fetch_conversations(db, client.id, limit, cursor_dt)
         connection_ids = {conv.connection_id for conv in conversations}
@@ -1665,7 +2040,13 @@ def social_inbox_conversations(req: func.HttpRequest) -> func.HttpResponse:
             )
         next_cursor = _dt_to_iso(conversations[-1].last_message_at) if conversations else None
         return func.HttpResponse(
-            json.dumps({"conversations": payload, "next_cursor": next_cursor}),
+            json.dumps(
+                {
+                    "conversations": payload,
+                    "next_cursor": next_cursor,
+                    "warnings": sync_warnings,
+                }
+            ),
             status_code=200,
             mimetype="application/json",
             headers=cors,
