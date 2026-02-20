@@ -1,7 +1,25 @@
 // Central place for API URLs and future endpoints.
-// Force all API calls to the Azure Functions host.
-const PRIMARY_FUNCTION_BASE = "https://aireceptionist-func.azurewebsites.net";
-const PRIMARY_API_BASE = `${PRIMARY_FUNCTION_BASE}/api`;
+// Local dev (localhost) automatically points to local Functions runtime.
+const PROD_FUNCTION_BASE = "https://aireceptionist-func.azurewebsites.net";
+const LOCAL_FUNCTION_BASE = "http://localhost:7071";
+
+const normalizeBase = (value) => String(value || "").trim().replace(/\/$/, "");
+
+const isLocalHost = () => {
+  if (typeof window === "undefined") return false;
+  const host = String(window.location.hostname || "").toLowerCase();
+  return host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0";
+};
+
+const explicitBase =
+  import.meta.env.VITE_API_BASE ||
+  import.meta.env.VITE_FUNCTION_BASE ||
+  import.meta.env.NEXT_PUBLIC_API_BASE;
+
+const PRIMARY_FUNCTION_BASE = normalizeBase(explicitBase || (isLocalHost() ? LOCAL_FUNCTION_BASE : PROD_FUNCTION_BASE));
+const PRIMARY_API_BASE = PRIMARY_FUNCTION_BASE.endsWith("/api")
+  ? PRIMARY_FUNCTION_BASE
+  : `${PRIMARY_FUNCTION_BASE}/api`;
 
 // Dedicated Jitsi/meetings function app base
 const rawJitsiBase =

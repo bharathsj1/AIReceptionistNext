@@ -464,6 +464,45 @@ def _parse_custom_amount_to_cents(value) -> int | None:
     return cents
 
 
+def _parse_billing_months(value) -> int:
+    try:
+        months = int(value)
+    except (TypeError, ValueError):
+        return 3
+    if months not in {1, 2, 3, 6, 12}:
+        return 3
+    return months
+
+
+def _free_months_for_term(months: int) -> int:
+    if months >= 12:
+        return 2
+    if months >= 6:
+        return 1
+    return 0
+
+
+def _parse_major_amount_to_cents(value) -> int | None:
+    """
+    Parse a major-unit amount (e.g. 378.45) into minor units (cents).
+    """
+    if value is None:
+        return None
+    normalized = str(value).strip().replace(",", "")
+    if not normalized:
+        return None
+    try:
+        amount = Decimal(normalized)
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+    if amount <= Decimal("0"):
+        return None
+    cents = int((amount * Decimal("100")).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    if cents <= 0:
+        return None
+    return cents
+
+
 def _get_or_create_tool(db: Session, tool_slug: str) -> AITool:
     slug = (tool_slug or DEFAULT_TOOL).lower()
     tool = db.query(AITool).filter(AITool.slug == slug).one_or_none()
@@ -482,16 +521,20 @@ def _get_or_create_price(
     tool: str,
     custom_amount_cents: int | None = None,
     currency: str = "usd",
+    interval_count: int = 1,
 ) -> str:
     """
-    Find or create a monthly price for the plan using lookup_key.
+    Find or create a recurring price for the requested interval using lookup_key.
     """
     tool_key = (tool or DEFAULT_TOOL).lower()
     currency_key = _normalize_custom_currency(currency)
+    safe_interval_count = max(1, int(interval_count or 1))
     if custom_amount_cents is not None:
-        lookup_key = f"{tool_key}_{plan_id}_custom_{custom_amount_cents}_{currency_key}_monthly"
+        lookup_key = (
+            f"{tool_key}_{plan_id}_custom_{custom_amount_cents}_{currency_key}_{safe_interval_count}m"
+        )
     else:
-        lookup_key = f"{tool_key}_{plan_id}_monthly"
+        lookup_key = f"{tool_key}_{plan_id}_{amount}_{currency_key}_{safe_interval_count}m"
     try:
         prices = stripe_client.Price.list(lookup_keys=[lookup_key], active=True, limit=1)
         if prices and prices.data:
@@ -511,7 +554,7 @@ def _get_or_create_price(
     price = stripe_client.Price.create(
         unit_amount=amount,
         currency=currency_key,
-        recurring={"interval": "month"},
+        recurring={"interval": "month", "interval_count": safe_interval_count},
         product=product.id,
         lookup_key=lookup_key,
     )
@@ -899,7 +942,9 @@ def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
     Create a Stripe Subscription for the selected plan and return the client secret for payment confirmation.
     Expects JSON body:
       { "planId": "bronze" | "silver" | "gold", "toolId": "<tool>", "email": "required",
-        "customAmount": "optional >= 1", "customAmountCurrency": "optional (usd/cad/gbp)" }
+        "customAmount": "optional >= 1", "customAmountCurrency": "optional (usd/cad/gbp)",
+        "billingMonths": "optional (1/2/3/6/12)", "billingCurrency": "optional (usd/cad/gbp)",
+        "planUnitAmount": "optional displayed monthly amount from frontend" }
     """
     cors = build_cors_headers(req, ["POST", "OPTIONS"])
     if req.method == "OPTIONS":
@@ -917,6 +962,11 @@ def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
     if custom_amount_raw in (None, ""):
         custom_amount_raw = data.get("customAmountUsd")
     custom_amount_currency = _normalize_custom_currency(data.get("customAmountCurrency"))
+    billing_currency = _normalize_custom_currency(data.get("billingCurrency") or data.get("currency"))
+    billing_months = _parse_billing_months(data.get("billingMonths"))
+    free_months = _free_months_for_term(billing_months)
+    chargeable_months = max(1, billing_months - free_months)
+    plan_unit_amount_cents = _parse_major_amount_to_cents(data.get("planUnitAmount"))
     custom_amount_cents = _parse_custom_amount_to_cents(custom_amount_raw)
     if custom_amount_raw not in (None, "") and custom_amount_cents is None:
         return func.HttpResponse(
@@ -925,8 +975,14 @@ def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
             mimetype="application/json",
             headers=cors,
         )
+    # Custom amount mode is always treated as a monthly amount.
+    if custom_amount_cents is not None:
+        billing_months = 1
+        free_months = 0
+        chargeable_months = 1
 
-    amount = custom_amount_cents or _get_plan_amount(plan_id, tool_id)
+    monthly_amount_cents = custom_amount_cents or plan_unit_amount_cents or _get_plan_amount(plan_id, tool_id)
+    amount = monthly_amount_cents * chargeable_months if monthly_amount_cents else None
     if not amount or not email:
         return func.HttpResponse(
             json.dumps({"error": "Invalid or missing planId/toolId/email"}),
@@ -948,7 +1004,7 @@ def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
                 headers=cors,
             )
 
-        effective_currency = custom_amount_currency if custom_amount_cents is not None else "usd"
+        effective_currency = custom_amount_currency if custom_amount_cents is not None else billing_currency
         customer_id = _get_or_create_customer(client, email, effective_currency)
         stripe_existing = _find_active_stripe_subscription_for_customer(client, customer_id, tool_id)
         if stripe_existing:
@@ -985,8 +1041,17 @@ def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
             tool_id,
             custom_amount_cents=custom_amount_cents,
             currency=effective_currency,
+            interval_count=billing_months,
         )
-        metadata = {"planId": plan_id, "toolId": tool_id, "email": email}
+        metadata = {
+            "planId": plan_id,
+            "toolId": tool_id,
+            "email": email,
+            "billingMonths": str(billing_months),
+            "chargeableMonths": str(chargeable_months),
+            "freeMonths": str(free_months),
+            "billingCurrency": effective_currency,
+        }
         if custom_amount_cents is not None:
             metadata["customAmount"] = f"{custom_amount_cents / 100:.2f}"
             metadata["customAmountCurrency"] = custom_amount_currency
@@ -1084,6 +1149,9 @@ def create_subscription(req: func.HttpRequest) -> func.HttpResponse:
                 "customerId": customer_id,
                 "status": subscription.status,
                 "currency": effective_currency,
+                "billingMonths": billing_months,
+                "chargeableMonths": chargeable_months,
+                "freeMonths": free_months,
             }
         ),
         status_code=200,
