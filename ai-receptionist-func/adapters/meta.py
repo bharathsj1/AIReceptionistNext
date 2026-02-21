@@ -210,7 +210,6 @@ def subscribe_app(
             "message_reads",
             "feed",
             "mention",
-            "comments",
         ]
         resp = requests.post(
             f"{GRAPH_BASE}/{account_id}/subscribed_apps",

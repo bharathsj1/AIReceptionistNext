@@ -313,8 +313,58 @@ const sentimentStyles = {
 const socialPlatformStyles = {
   facebook: "bg-blue-500/20 text-blue-200 border-blue-400/40",
   instagram: "bg-rose-500/20 text-rose-200 border-rose-400/40",
+  threads: "bg-slate-500/20 text-slate-100 border-slate-300/40",
   whatsapp_meta: "bg-emerald-500/20 text-emerald-200 border-emerald-400/40",
   x: "bg-slate-500/20 text-slate-200 border-slate-400/40"
+};
+
+const normalizeSocialConnectionPlatform = (connection) => {
+  const platform = String(connection?.platform || "").toLowerCase();
+  const metadata = connection?.metadata || {};
+  const metaType = String(metadata?.meta_type || "").toLowerCase();
+  const hasThreadsHint =
+    metaType.includes("thread") ||
+    Boolean(metadata?.threads_user_id) ||
+    Boolean(metadata?.threads_username) ||
+    metadata?.threads === true;
+
+  if (platform === "whatsapp_meta") return "whatsapp_meta";
+  if (platform === "x") return "x";
+  if (platform.includes("thread") || hasThreadsHint) return "threads";
+  if (metaType === "instagram_business" || platform === "instagram") return "instagram";
+  if (platform === "meta" || platform === "facebook") return "facebook";
+  return platform || "facebook";
+};
+
+const normalizeSocialConversationPlatform = (conversation) => {
+  const platform = String(conversation?.platform || "").toLowerCase();
+  if (platform.includes("thread")) return "threads";
+  if (platform === "whatsapp_meta") return "whatsapp_meta";
+  if (platform === "instagram") return "instagram";
+  if (platform === "meta" || platform === "facebook") return "facebook";
+
+  const fallback = String(conversation?.connection_platform || "").toLowerCase();
+  if (fallback.includes("thread")) return "threads";
+  if (fallback === "whatsapp_meta") return "whatsapp_meta";
+  if (fallback === "instagram") return "instagram";
+  if (fallback === "meta" || fallback === "facebook") return "facebook";
+  const metadata = conversation?.connection_metadata || {};
+  const metaType = String(metadata?.meta_type || "").toLowerCase();
+  const hasThreadsHint =
+    metaType.includes("thread") ||
+    Boolean(metadata?.threads_user_id) ||
+    Boolean(metadata?.threads_username) ||
+    metadata?.threads === true;
+  if (hasThreadsHint) return "threads";
+  return platform || "facebook";
+};
+
+const socialPlatformLabel = (platformKey) => {
+  if (platformKey === "whatsapp_meta") return "WhatsApp";
+  if (platformKey === "instagram") return "Instagram";
+  if (platformKey === "threads") return "Threads";
+  if (platformKey === "x") return "X";
+  return "Facebook";
 };
 
 const formatSocialTimestamp = (value) => {
@@ -331,6 +381,14 @@ const formatSocialTimestamp = (value) => {
   } catch {
     return value;
   }
+};
+
+const isSocialCommentConversation = (conversation) => {
+  if (!conversation) return false;
+  const type = String(conversation?.conversation_type || "").toLowerCase();
+  if (type === "comment") return true;
+  const externalConversationId = String(conversation?.external_conversation_id || "").toLowerCase();
+  return externalConversationId.startsWith("comment:");
 };
 
 const trimText = (value, max = 2000) => {
@@ -786,7 +844,8 @@ export default function DashboardScreen({
   const [socialUploadStatus, setSocialUploadStatus] = useState({ status: "idle", message: "" });
   const [socialTargets, setSocialTargets] = useState({
     facebook_page_id: "",
-    instagram_user_id: ""
+    instagram_user_id: "",
+    threads_user_id: ""
   });
   const [socialPublishStatus, setSocialPublishStatus] = useState({ status: "idle", message: "" });
   const [socialScheduleStatus, setSocialScheduleStatus] = useState({ status: "idle", message: "" });
@@ -3023,9 +3082,6 @@ export default function DashboardScreen({
       const items = Array.isArray(data?.conversations) ? data.conversations : [];
       const warnings = Array.isArray(data?.warnings) ? data.warnings.filter(Boolean) : [];
       setSocialConversations(items);
-      if (items.length && !socialSelectedConversation) {
-        setSocialSelectedConversation(items[0]);
-      }
       if (!items.length && warnings.length) {
         setSocialInboxError(`No messages synced yet. ${warnings[0]}`);
       }
@@ -3796,21 +3852,19 @@ export default function DashboardScreen({
   }, [emailClassifications, emailMessages, emailSort, emailTagFilter]);
 
   const facebookConnections = useMemo(
-    () =>
-      socialConnections.filter(
-        (conn) => conn.platform === "meta" && conn.metadata?.meta_type === "facebook_page"
-      ),
+    () => socialConnections.filter((conn) => normalizeSocialConnectionPlatform(conn) === "facebook"),
     [socialConnections]
   );
   const instagramConnections = useMemo(
-    () =>
-      socialConnections.filter(
-        (conn) => conn.platform === "meta" && conn.metadata?.meta_type === "instagram_business"
-      ),
+    () => socialConnections.filter((conn) => normalizeSocialConnectionPlatform(conn) === "instagram"),
+    [socialConnections]
+  );
+  const threadsConnections = useMemo(
+    () => socialConnections.filter((conn) => normalizeSocialConnectionPlatform(conn) === "threads"),
     [socialConnections]
   );
   const whatsappConnections = useMemo(
-    () => socialConnections.filter((conn) => conn.platform === "whatsapp_meta"),
+    () => socialConnections.filter((conn) => normalizeSocialConnectionPlatform(conn) === "whatsapp_meta"),
     [socialConnections]
   );
   const whatsappConnected = whatsappConnections.length > 0;
@@ -3821,7 +3875,7 @@ export default function DashboardScreen({
     );
   }, [whatsappConnections]);
   const filteredSocialConversations = useMemo(() => {
-    const base = [...socialConversations];
+    const base = socialConversations.filter((item) => !isSocialCommentConversation(item));
     const query = socialSearch.trim().toLowerCase();
     if (!query) return base;
     return base.filter((item) => {
@@ -4116,16 +4170,17 @@ export default function DashboardScreen({
   }, [activeToolLocked, currentTool, socialTab, user?.email, userForm.email]);
 
   useEffect(() => {
-    if (!socialConversations.length) {
+    const inboxConversations = socialConversations.filter((item) => !isSocialCommentConversation(item));
+    if (!inboxConversations.length) {
       setSocialSelectedConversation(null);
       setSocialMessages([]);
       return;
     }
     if (
       !socialSelectedConversation ||
-      !socialConversations.find((item) => item.id === socialSelectedConversation.id)
+      !inboxConversations.find((item) => item.id === socialSelectedConversation.id)
     ) {
-      setSocialSelectedConversation(socialConversations[0]);
+      setSocialSelectedConversation(inboxConversations[0]);
     }
   }, [socialConversations, socialSelectedConversation]);
 
@@ -8618,7 +8673,7 @@ export default function DashboardScreen({
                     <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Social command</p>
                     <h3 className="text-xl font-semibold text-white">Social Media Manager</h3>
                     <p className="text-sm text-slate-300">
-                      Connect Meta + WhatsApp, respond from a unified inbox, and schedule posts.
+                      Connect Facebook + Instagram + Threads + WhatsApp, respond from one inbox, and schedule posts.
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -8646,9 +8701,9 @@ export default function DashboardScreen({
                     <div className="flex items-start justify-between gap-4">
                       <div>
                         <p className="text-xs uppercase tracking-[0.2em] text-indigo-200">Meta OAuth</p>
-                        <h4 className="text-lg font-semibold text-white">Connect Facebook + Instagram</h4>
+                        <h4 className="text-lg font-semibold text-white">Connect Facebook + Instagram + Threads</h4>
                         <p className="text-sm text-slate-300">
-                          Grant access to your Facebook Pages and Instagram Business accounts.
+                          Grant access to your Meta channels including Facebook Pages, Instagram Business, and Threads.
                         </p>
                       </div>
                       <div className="rounded-full border border-white/10 bg-white/5 p-2">
@@ -8791,7 +8846,9 @@ export default function DashboardScreen({
                       </div>
                     ) : socialConnections.length ? (
                       <div className="mt-4 grid gap-3 md:grid-cols-2">
-                        {socialConnections.map((conn) => (
+                        {socialConnections.map((conn) => {
+                          const channelKey = normalizeSocialConnectionPlatform(conn);
+                          return (
                           <div
                             key={`connection-${conn.id}`}
                             className="rounded-2xl border border-white/10 bg-slate-900/50 p-4"
@@ -8805,20 +8862,10 @@ export default function DashboardScreen({
                                 <div className="mt-2 inline-flex items-center gap-2 text-xs text-slate-200">
                                   <span
                                     className={`rounded-full border px-2 py-0.5 ${
-                                      socialPlatformStyles[
-                                        conn.metadata?.meta_type === "instagram_business"
-                                          ? "instagram"
-                                          : conn.platform === "meta"
-                                            ? "facebook"
-                                            : conn.platform
-                                      ] || "border-white/10 text-slate-200"
+                                      socialPlatformStyles[channelKey] || "border-white/10 text-slate-200"
                                     }`}
                                   >
-                                    {conn.metadata?.meta_type === "instagram_business"
-                                      ? "Instagram"
-                                      : conn.platform === "whatsapp_meta"
-                                        ? "WhatsApp"
-                                        : "Facebook"}
+                                    {socialPlatformLabel(channelKey)}
                                   </span>
                                   <span className="text-slate-400">{conn.status}</span>
                                 </div>
@@ -8832,7 +8879,8 @@ export default function DashboardScreen({
                               </button>
                             </div>
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     ) : (
                       <p className="mt-4 text-sm text-slate-300">
@@ -8945,7 +8993,7 @@ export default function DashboardScreen({
                       ) : filteredSocialConversations.length ? (
                         filteredSocialConversations.map((conv) => {
                           const isActive = socialSelectedConversation?.id === conv.id;
-                          const platformKey = conv.platform || "facebook";
+                          const platformKey = normalizeSocialConversationPlatform(conv);
                           return (
                             <button
                               key={`conv-${conv.id}`}
@@ -8974,11 +9022,7 @@ export default function DashboardScreen({
                                     socialPlatformStyles[platformKey] || "border-white/10 text-slate-200"
                                   }`}
                                 >
-                                  {platformKey === "whatsapp_meta"
-                                    ? "WhatsApp"
-                                    : platformKey === "instagram"
-                                      ? "Instagram"
-                                      : "Facebook"}
+                                  {socialPlatformLabel(platformKey)}
                                 </span>
                                 <span className="text-[10px] text-slate-400">
                                   {conv.connection_name || conv.connection_platform || ""}
@@ -9007,15 +9051,15 @@ export default function DashboardScreen({
                           </div>
                           <span
                             className={`rounded-full border px-3 py-1 text-[11px] ${
-                              socialPlatformStyles[socialSelectedConversation.platform] ||
+                              socialPlatformStyles[
+                                normalizeSocialConversationPlatform(socialSelectedConversation)
+                              ] ||
                               "border-white/10 text-slate-200"
                             }`}
                           >
-                            {socialSelectedConversation.platform === "whatsapp_meta"
-                              ? "WhatsApp"
-                              : socialSelectedConversation.platform === "instagram"
-                                ? "Instagram"
-                                : "Facebook"}
+                            {socialPlatformLabel(
+                              normalizeSocialConversationPlatform(socialSelectedConversation)
+                            )}
                           </span>
                         </div>
 
@@ -9227,7 +9271,7 @@ export default function DashboardScreen({
                             Drag & drop image or video
                           </div>
                           <span className="text-[11px] text-slate-400">
-                            JPG, PNG, WebP, or video (MP4/ MOV). Instagram needs an image.
+                            JPG, PNG, WebP, or video (MP4/ MOV). Instagram and Threads image posts need media.
                           </span>
                           {socialUploadStatus.message ? (
                             <span
@@ -9245,7 +9289,7 @@ export default function DashboardScreen({
                         </div>
                       </div>
 
-                      <div className="grid gap-3 md:grid-cols-2">
+                      <div className="grid gap-3 md:grid-cols-3">
                         <div className="rounded-2xl border border-white/10 bg-slate-900/50 p-3">
                           <p className="text-xs font-semibold text-slate-200">Facebook Page</p>
                           <select
@@ -9275,6 +9319,23 @@ export default function DashboardScreen({
                             <option value="">Select account</option>
                             {instagramConnections.map((conn) => (
                               <option key={`ig-${conn.id}`} value={conn.external_account_id}>
+                                {conn.display_name || conn.external_account_id}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="rounded-2xl border border-white/10 bg-slate-900/50 p-3">
+                          <p className="text-xs font-semibold text-slate-200">Threads Profile</p>
+                          <select
+                            value={socialTargets.threads_user_id}
+                            onChange={(event) =>
+                              setSocialTargets((prev) => ({ ...prev, threads_user_id: event.target.value }))
+                            }
+                            className="mt-2 w-full rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-xs text-white"
+                          >
+                            <option value="">Select profile</option>
+                            {threadsConnections.map((conn) => (
+                              <option key={`threads-${conn.id}`} value={conn.external_account_id}>
                                 {conn.display_name || conn.external_account_id}
                               </option>
                             ))}
