@@ -1,6 +1,3 @@
-# Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
-# More GitHub Actions for Azure: https://github.com/Azure/actions
-
 name: Build and deploy Node.js app to Azure Web App - smartconect4uDev
 
 on:
@@ -9,23 +6,29 @@ on:
       - Feature/development
   workflow_dispatch:
 
+env:
+  APP_PATH: AIReceptionistNext   # <-- change this to the folder that has package.json
+
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: read #This is required for actions/checkout
+      contents: read
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Node.js version
-        uses: actions/setup-node@v3
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: '20.x'
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: ${{ env.APP_PATH }}/package-lock.json
 
-      - name: npm install, build, and test
+      - name: Install, build, test
+        working-directory: ${{ env.APP_PATH }}
         run: |
-          npm install
+          npm ci
           npm run build --if-present
           npm run test --if-present
 
@@ -33,21 +36,22 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: node-app
-          path: .
+          path: ${{ env.APP_PATH }}
 
   deploy:
     runs-on: ubuntu-latest
     needs: build
     permissions:
-      id-token: write #This is required for requesting the JWT
-      contents: read #This is required for actions/checkout
+      id-token: write
+      contents: read
 
     steps:
       - name: Download artifact from build job
         uses: actions/download-artifact@v4
         with:
           name: node-app
-      
+          path: .
+
       - name: Login to Azure
         uses: azure/login@v2
         with:
@@ -55,11 +59,9 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_F014F998B4874D71BEEC94CC6687C906 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_E59035935379438992E7CC691300302D }}
 
-      - name: 'Deploy to Azure Web App'
-        id: deploy-to-webapp
+      - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
-          app-name: 'smartconect4uDev'
-          slot-name: 'Production'
+          app-name: smartconect4uDev
+          slot-name: Production
           package: .
-          
