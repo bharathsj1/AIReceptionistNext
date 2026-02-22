@@ -67,9 +67,9 @@ jobs:
       - name: Login to Azure (OIDC)
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_849446DFDF2C4944A90651B419EDFA5C }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_EF95B52F2D2F4B36952956D297E5233E }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_F24EB9ABB1E84A2184141863E0FD347A }}
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_DA30D42855CC40E7AAD138BDF5DAE03D }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_62648CB98E964D838DCB5384C88DF10B }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_FD76B4D43EE44F29B640D6EFD2C903A8 }}
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
@@ -77,3 +77,4 @@ jobs:
           app-name: smartconnect4u
           slot-name: Production
           package: .
+
