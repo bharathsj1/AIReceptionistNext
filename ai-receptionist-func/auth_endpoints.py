@@ -2185,7 +2185,7 @@ def auth_google_url(req: func.HttpRequest) -> func.HttpResponse:  # pylint: disa
                     force_consent = True
         finally:
             db.close()
-    state_payload = {"nonce": secrets.token_urlsafe(16), "provider": "outlook"}
+    state_payload = {"nonce": secrets.token_urlsafe(16), "provider": "google"}
     if email:
         state_payload["email"] = email
     state = _encode_oauth_state(state_payload)

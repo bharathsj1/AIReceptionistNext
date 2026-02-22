@@ -656,11 +656,14 @@ def meta_auth_url(req: func.HttpRequest) -> func.HttpResponse:
         scopes = [
             "pages_show_list",
             "pages_messaging",
-            "pages_manage_metadata",
             "pages_read_engagement",
+            "pages_manage_posts",
+            "business_management",
             "instagram_basic",
+            "instagram_business_basic",
             "instagram_manage_messages",
-            "instagram_manage_comments",
+            "instagram_business_manage_messages",
+            "instagram_content_publish",
         ]
         state = _encode_state(
             {
@@ -855,7 +858,7 @@ def meta_auth_callback(req: func.HttpRequest) -> func.HttpResponse:
                 ig_subscribe_error = meta_adapter.subscribe_app(
                     str(ig_id),
                     page_token,
-                    subscribed_fields=["messages", "mentions", "comments"],
+                    subscribed_fields=["messages", "mentions"],
                 )
                 if ig_subscribe_error:
                     logger.warning(
@@ -922,7 +925,6 @@ def whatsapp_auth_url(req: func.HttpRequest) -> func.HttpResponse:
         redirect_base = get_setting("PUBLIC_APP_URL") or get_public_api_base()
         redirect_uri = f"{redirect_base.rstrip('/')}/api/social/whatsapp/callback"
         scopes = [
-            "whatsapp_business_management",
             "whatsapp_business_messaging",
             "business_management",
         ]
@@ -1834,40 +1836,8 @@ def meta_webhook(req: func.HttpRequest) -> func.HttpResponse:
                         _ingest_message_event(message_obj, sender_info, recipient_info, value)
                     continue
 
-                comment_id = value.get("comment_id") or value.get("id")
-                message_text = value.get("message") or value.get("text")
-                if not comment_id or not message_text:
-                    continue
-                if field not in {"comments", "feed", "instagram"}:
-                    continue
-                from_info = value.get("from") or {}
-                from_id = from_info.get("id") or value.get("from_id")
-                from_name = from_info.get("name") or value.get("from_name")
-                timestamp = _parse_timestamp(value.get("created_time") or value.get("timestamp"))
-                external_conv_id = f"comment:{comment_id}"
-                conversation = _upsert_conversation(
-                    db,
-                    business_id=business_id,
-                    platform=platform,
-                    connection_id=connection.id,
-                    external_conversation_id=external_conv_id,
-                    participant_handle=str(from_id) if from_id else None,
-                    participant_name=from_name,
-                    last_message_text=message_text,
-                    last_message_at=timestamp,
-                )
-                db.flush()
-                _store_message(
-                    db,
-                    conversation_id=conversation.id,
-                    platform=platform,
-                    external_message_id=str(comment_id),
-                    direction="inbound",
-                    sender_type="customer",
-                    text=message_text,
-                    attachments=None,
-                    message_ts=timestamp,
-                )
+                # Ignore non-message change events for now (comments/mentions/feed).
+                continue
 
         db.commit()
         return func.HttpResponse("OK", status_code=200, headers=cors)
@@ -2031,11 +2001,17 @@ def social_inbox_conversations(req: func.HttpRequest) -> func.HttpResponse:
                     "connection_id": conv.connection_id,
                     "connection_name": conn.display_name if conn else None,
                     "connection_platform": conn.platform if conn else None,
+                    "connection_metadata": _safe_metadata(conn.metadata_json) if conn else {},
                     "external_conversation_id": conv.external_conversation_id,
                     "participant_handle": conv.participant_handle,
                     "participant_name": conv.participant_name,
                     "last_message_text": conv.last_message_text,
                     "last_message_at": _dt_to_iso(conv.last_message_at),
+                    "conversation_type": (
+                        "comment"
+                        if str(conv.external_conversation_id or "").startswith("comment:")
+                        else "message"
+                    ),
                 }
             )
         next_cursor = _dt_to_iso(conversations[-1].last_message_at) if conversations else None
