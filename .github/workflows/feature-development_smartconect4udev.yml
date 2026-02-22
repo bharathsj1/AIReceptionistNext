@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 env:
-  APP_PATH: AIReceptionistNext   # <-- change this to the folder that has package.json
+  APP_PATH: AIReceptionNewUI
 
 jobs:
   build:
@@ -21,15 +21,15 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
           cache-dependency-path: ${{ env.APP_PATH }}/package-lock.json
 
       - name: Install, build, test
         working-directory: ${{ env.APP_PATH }}
         run: |
           npm ci
-          npm run build --if-present
+          npm run build
           npm run test --if-present
 
       - name: Upload artifact for deployment job
