@@ -22,6 +22,8 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: '20.x'
+          cache-dependency-path: AIReceptionNewUI/package-lock.json
+          cache: "npm"
 
       - name: npm install, build, and test
         run: |
@@ -62,4 +64,5 @@ jobs:
           app-name: 'smartconect4uDev'
           slot-name: 'Production'
           package: .
+
           
