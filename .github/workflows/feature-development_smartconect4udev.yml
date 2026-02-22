@@ -1,7 +1,10 @@
-name: Build and deploy (Web App) - smartconnect4uDev
+name: Build and deploy (Web App) - smartconnect4u
 
 on:
   push:
+    branches:
+      - Feature/development
+  pull_request:
     branches:
       - Feature/development
   workflow_dispatch:
@@ -25,6 +28,8 @@ jobs:
           cache: "npm"
           cache-dependency-path: AIReceptionNewUI/package-lock.json
 
+
+      # Borrowed from Static Web Apps workflow (these were used at build-time)
       - name: Build UI (Vite)
         working-directory: AIReceptionNewUI
         env:
@@ -34,44 +39,20 @@ jobs:
           npm ci
           npm run build
 
-      - name: Verify dist output
-        run: |
-          test -f AIReceptionNewUI/dist/index.html
-
-      # Create deploy folder with a Node startup + dist
-      - name: Prepare deploy package
-        run: |
-          rm -rf deploy
-          mkdir -p deploy/dist
-
-          # copy built UI into deploy/dist
-          cp -R AIReceptionNewUI/dist/* deploy/dist/
-
-          # copy your static server wrapper
-          cp -R webserver/* deploy/
-
-          # sanity check
-          ls -la deploy
-          ls -la deploy/dist | head -n 50
-          test -f deploy/dist/index.html
-          test -f deploy/package.json
-
-      - name: Zip deploy package
-        run: |
-          cd deploy
-          zip -r ../webapp-package.zip .
-          cd ..
-          ls -la webapp-package.zip
-
-      - name: Upload artifact
+      # Upload ONLY the static output as the deploy package
+      - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: webapp-package-zip
-          path: webapp-package.zip
+          name: webapp-package
+          path: AIReceptionNewUI/dist
 
   deploy:
     runs-on: ubuntu-latest
     needs: build
+
+    # Don't try to deploy on PRs (secrets/OIDC often unavailable for forks)
+    if: github.event_name != 'pull_request'
+
     permissions:
       id-token: write
       contents: read
@@ -80,7 +61,7 @@ jobs:
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
-          name: webapp-package-zip
+          name: webapp-package
           path: .
 
       - name: Login to Azure (OIDC)
@@ -90,9 +71,9 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_62648CB98E964D838DCB5384C88DF10B }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_FD76B4D43EE44F29B640D6EFD2C903A8 }}
 
-      - name: Deploy ZIP to App Service
+      - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
           app-name: smartconect4uDev
           slot-name: Production
-          package: webapp-package.zip
+          package: .
