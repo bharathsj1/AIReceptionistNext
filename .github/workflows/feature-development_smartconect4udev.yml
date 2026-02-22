@@ -43,7 +43,7 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: webapp-package
+          name: webapp-package1
           path: AIReceptionNewUI/dist
 
   deploy:
@@ -61,7 +61,7 @@ jobs:
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
-          name: webapp-package
+          name: webapp-package1
           path: .
 
       - name: Login to Azure (OIDC)
@@ -77,3 +77,4 @@ jobs:
           app-name: smartconect4uDev
           slot-name: Production
           package: .
+
