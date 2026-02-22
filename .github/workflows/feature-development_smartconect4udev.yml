@@ -58,7 +58,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: webapp-package
-          path: .
+          path: webapp-package
       
       - name: Login to Azure
         uses: azure/login@v2
@@ -73,7 +73,8 @@ jobs:
         with:
           app-name: 'smartconect4uDev'
           slot-name: 'Production'
-          package: .
+          package: webapp-package
 
           
+
 
