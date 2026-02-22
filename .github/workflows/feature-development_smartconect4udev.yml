@@ -1,4 +1,4 @@
-name: Build and deploy (Web App) - smartconect4uDev
+name: Build and deploy (Web App) - smartconnect4uDev
 
 on:
   push:
@@ -37,24 +37,27 @@ jobs:
           npm ci
           npm run build
 
-      # Optional but helpful: fail fast if dist is missing
       - name: Verify dist output
         run: |
           ls -la AIReceptionNewUI/dist
           test -f AIReceptionNewUI/dist/index.html
 
-      # Upload ONLY the static output as the deploy package
-      - name: Upload build artifact
+      - name: Create deploy zip (index.html at zip root)
+        run: |
+          cd AIReceptionNewUI/dist
+          zip -r ../../webapp-package.zip .
+          cd ../../
+          ls -la webapp-package.zip
+
+      - name: Upload build artifact (zip)
         uses: actions/upload-artifact@v4
         with:
-          name: webapp-package
-          path: AIReceptionNewUI/dist
+          name: webapp-package-zip
+          path: webapp-package.zip
 
   deploy:
     runs-on: ubuntu-latest
     needs: build
-
-    # Don't try to deploy on PRs (secrets/OIDC often unavailable for forks)
     if: github.event_name != 'pull_request'
 
     permissions:
@@ -62,16 +65,16 @@ jobs:
       contents: read
 
     steps:
-      - name: Download artifact
+      - name: Download artifact (zip)
         uses: actions/download-artifact@v4
         with:
-          name: webapp-package
-          path: webapp-package
+          name: webapp-package-zip
+          path: .
 
-      - name: Verify downloaded artifact
+      - name: Verify zip contents
         run: |
-          ls -la webapp-package
-          test -f webapp-package/index.html
+          test -f webapp-package.zip
+          unzip -l webapp-package.zip | head -n 50
 
       - name: Login to Azure (OIDC)
         uses: azure/login@v2
@@ -80,9 +83,28 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_62648CB98E964D838DCB5384C88DF10B }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_FD76B4D43EE44F29B640D6EFD2C903A8 }}
 
-      - name: Deploy to Azure Web App
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: smartconect4uDev
-          slot-name: Production
-          package: webapp-package
+      - name: Confirm target hostname (make sure you open THIS URL)
+        shell: bash
+        run: |
+          az webapp list --query "[?name=='smartconect4uDev'].{name:name,rg:resourceGroup,host:defaultHostName}" -o table
+
+      - name: Deploy ZIP to App Service (CLEAN overwrite)
+        shell: bash
+        run: |
+          # find resource group for the app
+          RG=$(az webapp list --query "[?name=='smartconect4uDev'].resourceGroup | [0]" -o tsv)
+          echo "Resource Group: $RG"
+
+          # Deploy and clean destination so default placeholder is removed
+          az webapp deploy \
+            --resource-group "$RG" \
+            --name "smartconect4uDev" \
+            --src-path "webapp-package.zip" \
+            --type zip \
+            --clean true
+
+      - name: Restart web app
+        shell: bash
+        run: |
+          RG=$(az webapp list --query "[?name=='smartconect4uDev'].resourceGroup | [0]" -o tsv)
+          az webapp restart --resource-group "$RG" --name "smartconect4uDev"
