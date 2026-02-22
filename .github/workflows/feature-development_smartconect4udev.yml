@@ -57,7 +57,8 @@ jobs:
       - name: Download artifact from build job
         uses: actions/download-artifact@v4
         with:
-          name: node-app
+          name: webapp-package
+          path: .
       
       - name: Login to Azure
         uses: azure/login@v2
@@ -75,3 +76,4 @@ jobs:
           package: .
 
           
+
