@@ -28,8 +28,8 @@ jobs:
       - name: npm install, build, and test
         working-directory: AIReceptionNewUI
         env:
-          VITE_API_PROXY_BASE: https://aireceptionist-func.azurewebsites.net/api
-          VITE_FUNCTION_HOST: https://aireceptionist-func.azurewebsites.net
+          VITE_API_PROXY_BASE: https://smartconnect4u-func.azurewebsites.net/api
+          VITE_FUNCTION_HOST: https://smartconnect4u-func.azurewebsites.net
         run: |
           npm ci
           npm run build --if-present
@@ -69,4 +69,5 @@ jobs:
           app-name: "smartconect4uDev"
           slot-name: "Production"
           package: AIReceptionNewUI
+
 
