@@ -583,7 +583,7 @@ const loadNotes = () => {
   }
 };
 
-export default function SalesDialerScreen({ geoCountryCode = "" }) {
+export default function SalesDialerScreen({ geoCountryCode = "", sessionEmail = "" }) {
   const tokenEndpoint = API_URLS.voiceTokenDialer || "http://localhost:7071/api/voice-token";
   const historyEndpoint = API_URLS.callHistory || "http://localhost:7071/api/call-history";
   const activePhoneNumbersEndpoint =
@@ -594,7 +594,7 @@ export default function SalesDialerScreen({ geoCountryCode = "" }) {
   const callTimerRef = useRef(null);
   const callStartAtRef = useRef(null);
 
-  const [phoneInput, setPhoneInput] = useState("+447495957010");
+  const [phoneInput, setPhoneInput] = useState("");
   const [statusText, setStatusText] = useState("Ready");
   const [timerText, setTimerText] = useState("00:00");
   const [responseText, setResponseText] = useState("Awaiting action...");
@@ -671,6 +671,10 @@ export default function SalesDialerScreen({ geoCountryCode = "" }) {
       if (country.length === 2) {
         params.set("country", country);
       }
+      const normalizedEmail = String(sessionEmail || "").trim().toLowerCase();
+      if (normalizedEmail) {
+        params.set("email", normalizedEmail);
+      }
       const url = params.toString()
         ? `${activePhoneNumbersEndpoint}?${params.toString()}`
         : activePhoneNumbersEndpoint;
@@ -695,7 +699,7 @@ export default function SalesDialerScreen({ geoCountryCode = "" }) {
     } finally {
       setLoadingCallerNumbers(false);
     }
-  }, [activePhoneNumbersEndpoint, geoCountryCode, setOutput]);
+  }, [activePhoneNumbersEndpoint, geoCountryCode, sessionEmail, setOutput]);
 
   const fetchHistory = useCallback(async () => {
     const period = metricPeriodFilter || "all";
@@ -845,6 +849,10 @@ export default function SalesDialerScreen({ geoCountryCode = "" }) {
 
     try {
       const callParams = { To: to, FromNumber: effectiveFromNumber };
+      const normalizedEmail = String(sessionEmail || "").trim().toLowerCase();
+      if (normalizedEmail) {
+        callParams.Email = normalizedEmail;
+      }
       const country = inferCountryFromDestination(to, geoCountryCode);
       if (country.length === 2) {
         callParams.Country = country;
@@ -884,7 +892,17 @@ export default function SalesDialerScreen({ geoCountryCode = "" }) {
       setStatusText("Dial failed");
       setOutput({ error: String(error) });
     }
-  }, [activeCallerNumbers, fetchHistory, geoCountryCode, phoneInput, selectedFromNumber, setOutput, startCallTimer, stopCallTimer]);
+  }, [
+    activeCallerNumbers,
+    fetchHistory,
+    geoCountryCode,
+    phoneInput,
+    selectedFromNumber,
+    sessionEmail,
+    setOutput,
+    startCallTimer,
+    stopCallTimer,
+  ]);
 
   const hangUp = useCallback(() => {
     if (activeCallRef.current) {

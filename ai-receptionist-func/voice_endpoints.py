@@ -6,6 +6,7 @@ from typing import Optional
 from urllib.parse import parse_qs
 
 import azure.functions as func
+from sqlalchemy import func as sa_func, or_
 from twilio.base.exceptions import TwilioRestException
 from twilio.jwt.access_token import AccessToken
 from twilio.jwt.access_token.grants import VoiceGrant
@@ -13,6 +14,7 @@ from twilio.rest import Client
 from twilio.twiml.voice_response import VoiceResponse
 
 from function_app import app
+from shared.db import CallerNumber, Client as ClientRecord, ClientUser, SessionLocal, User
 
 PHONE_PATTERN = re.compile(r"^\+[1-9]\d{7,14}$")
 IDENTITY_PATTERN = re.compile(r"^[A-Za-z0-9_]{1,121}$")
@@ -38,6 +40,10 @@ API_HEADERS = {
     "Access-Control-Allow-Headers": "Content-Type",
 }
 LOCAL_SETTINGS_PATH = os.path.join(os.path.dirname(__file__), "local.settings.json")
+DEFAULT_CLIENT_CALLER_NUMBERS = [
+    ("+16473702063", "(647) 370-2063"),
+    ("+16479311798", "(647) 931-1798"),
+]
 
 
 def _json_response(payload: dict, status_code: int = 200) -> func.HttpResponse:
@@ -107,12 +113,139 @@ def _normalize_e164(value: Optional[str]) -> str:
         return ""
     if raw.startswith("client:"):
         return raw
-    plus = raw.startswith("+")
     digits = re.sub(r"\D", "", raw)
     if not digits:
         return ""
-    candidate = f"+{digits}" if plus or digits else ""
+    if raw.startswith("+"):
+        candidate_digits = digits
+    else:
+        candidate_digits = digits
+        if candidate_digits.startswith("00") and len(candidate_digits) > 2:
+            candidate_digits = candidate_digits[2:]
+        elif candidate_digits.startswith("011") and len(candidate_digits) > 3:
+            candidate_digits = candidate_digits[3:]
+        candidate_digits = candidate_digits.lstrip("0")
+    candidate = f"+{candidate_digits}" if candidate_digits else ""
     return candidate if _is_e164(candidate) else ""
+
+
+def _normalize_email(value: Optional[str]) -> str:
+    return str(value or "").strip().lower()
+
+
+def _resolve_client_by_email(db, email: Optional[str]) -> Optional[ClientRecord]:
+    normalized = _normalize_email(email)
+    if not normalized:
+        return None
+
+    client = (
+        db.query(ClientRecord)
+        .filter(sa_func.lower(sa_func.trim(ClientRecord.email)) == normalized)
+        .order_by(ClientRecord.id.asc())
+        .first()
+    )
+    if client:
+        return client
+
+    client_user = (
+        db.query(ClientUser)
+        .filter(sa_func.lower(sa_func.trim(ClientUser.email)) == normalized)
+        .filter(
+            or_(
+                ClientUser.is_active.is_(True),
+                ClientUser.is_active.is_(None),
+            )
+        )
+        .filter(sa_func.lower(sa_func.coalesce(ClientUser.status, "active")) != "disabled")
+        .order_by(ClientUser.id.asc())
+        .first()
+    )
+    if client_user:
+        return db.query(ClientRecord).filter_by(id=client_user.client_id).one_or_none()
+
+    user = (
+        db.query(User)
+        .filter(sa_func.lower(sa_func.trim(User.email)) == normalized)
+        .order_by(User.id.asc())
+        .first()
+    )
+    if user:
+        return db.query(ClientRecord).filter_by(user_id=user.id).order_by(ClientRecord.id.asc()).first()
+    return None
+
+
+def _extract_request_email(req: func.HttpRequest) -> str:
+    query_email = (
+        req.params.get("email")
+        or req.params.get("userEmail")
+        or req.params.get("sessionEmail")
+        or ""
+    ).strip()
+    if query_email:
+        return _normalize_email(query_email)
+    form_email = (
+        _get_form_param(req, "Email")
+        or _get_form_param(req, "email")
+        or _get_form_param(req, "sessionEmail")
+        or ""
+    ).strip()
+    return _normalize_email(form_email)
+
+
+def _ensure_default_client_caller_numbers(db, client_id: int) -> None:
+    existing = {
+        _normalize_e164(row.phone_number)
+        for row in db.query(CallerNumber).filter(CallerNumber.client_id == client_id).all()
+    }
+    changed = False
+    for phone_number, friendly_name in DEFAULT_CLIENT_CALLER_NUMBERS:
+        normalized = _normalize_e164(phone_number)
+        if not normalized or normalized in existing:
+            continue
+        row = CallerNumber(
+            client_id=client_id,
+            phone_number=normalized,
+            friendly_name=friendly_name,
+            is_active=True,
+        )
+        db.add(row)
+        existing.add(normalized)
+        changed = True
+    if changed:
+        db.flush()
+
+
+def _list_client_caller_number_items(db, client_id: int) -> list[dict]:
+    rows = (
+        db.query(CallerNumber)
+        .filter(
+            CallerNumber.client_id == client_id,
+            or_(
+                CallerNumber.is_active.is_(True),
+                CallerNumber.is_active.is_(None),
+            ),
+        )
+        .order_by(CallerNumber.id.asc())
+        .all()
+    )
+    items: list[dict] = []
+    seen_numbers: set[str] = set()
+    for row in rows:
+        raw_number = str(row.phone_number or "").strip()
+        if not raw_number:
+            continue
+        normalized = _normalize_e164(raw_number)
+        value = normalized or raw_number
+        if value in seen_numbers:
+            continue
+        seen_numbers.add(value)
+        items.append(
+            {
+                "phone_number": value,
+                "friendly_name": (row.friendly_name or raw_number).strip(),
+            }
+        )
+    return items
 
 
 def _resolve_country_code(req: func.HttpRequest) -> str:
@@ -243,23 +376,51 @@ def _select_number_for_country(options: list[dict], country_code: str, fallback_
     return str(options[0].get("phone_number") or "") if options else ""
 
 
+def _list_allowed_numbers_for_request(
+    req: func.HttpRequest,
+    twilio_client: Client,
+    fallback_number: str,
+) -> list[dict]:
+    email = _extract_request_email(req)
+    if email:
+        db = SessionLocal()
+        try:
+            client = _resolve_client_by_email(db, email)
+            if client:
+                _ensure_default_client_caller_numbers(db, client.id)
+                db.commit()
+                items = _list_client_caller_number_items(db, client.id)
+                if items:
+                    return items
+        except Exception:
+            db.rollback()
+        finally:
+            db.close()
+    return _list_active_numbers(twilio_client, fallback_number)
+
+
 def _resolve_selected_from_number(req: func.HttpRequest, client: Client, fallback_number: str) -> tuple[str, Optional[str]]:
     requested = _get_form_param(req, "FromNumber") or _get_form_param(req, "callerId")
+    requested_raw = str(requested or "").strip()
     requested_e164 = _normalize_e164(requested)
-    options = _list_active_numbers(client, fallback_number)
-    allowed = {item["phone_number"] for item in options}
+    options = _list_allowed_numbers_for_request(req, client, fallback_number)
+    allowed_raw = {str(item.get("phone_number") or "").strip() for item in options if str(item.get("phone_number") or "").strip()}
+    allowed_e164 = {_normalize_e164(number) for number in allowed_raw}
+    allowed_e164 = {number for number in allowed_e164 if number}
 
-    if requested and not requested_e164:
-        return "", "Invalid caller number format. Use E.164."
-    if requested_e164 and requested_e164 not in allowed:
+    if requested_raw:
+        if requested_raw in allowed_raw:
+            return requested_e164 or requested_raw, None
+        if requested_e164 and requested_e164 in allowed_e164:
+            return requested_e164, None
         return "", "Selected caller number is not active on this Twilio account."
-    if requested_e164:
-        return requested_e164, None
 
     country_code = _resolve_country_code(req)
     selected = _select_number_for_country(options, country_code, fallback_number)
-    if selected:
-        return selected, None
+    selected_raw = str(selected or "").strip()
+    if selected_raw:
+        selected_e164 = _normalize_e164(selected_raw)
+        return selected_e164 or selected_raw, None
     return "", "No active Twilio caller number is configured."
 
 
@@ -577,6 +738,36 @@ def active_phone_numbers(req: func.HttpRequest) -> func.HttpResponse:
     if req.method == "OPTIONS":
         return func.HttpResponse(status_code=204, headers=API_HEADERS)
 
+    resolved_country = _resolve_country_code(req)
+    default_from = _get_setting("TWILIO_FROM_NUMBER") or _get_setting("TWILIO_CALLER_ID")
+    email = _extract_request_email(req)
+
+    if email:
+        db = SessionLocal()
+        try:
+            client_record = _resolve_client_by_email(db, email)
+            if client_record:
+                _ensure_default_client_caller_numbers(db, client_record.id)
+                db.commit()
+                items = _list_client_caller_number_items(db, client_record.id)
+                selected = _select_number_for_country(items, resolved_country, default_from)
+                return _json_response(
+                    {
+                        "items": items,
+                        "selected": selected,
+                        "resolved_country": resolved_country,
+                        "source": "caller_numbers_table",
+                    }
+                )
+        except Exception as exc:  # pragma: no cover
+            db.rollback()
+            return _json_response(
+                {"error": "Failed to load caller numbers", "details": str(exc)},
+                status_code=500,
+            )
+        finally:
+            db.close()
+
     client = _build_rest_client()
     if not client:
         return _json_response(
@@ -589,8 +780,6 @@ def active_phone_numbers(req: func.HttpRequest) -> func.HttpResponse:
             status_code=500,
         )
 
-    default_from = _get_setting("TWILIO_FROM_NUMBER") or _get_setting("TWILIO_CALLER_ID")
     items = _list_active_numbers(client, default_from)
-    resolved_country = _resolve_country_code(req)
     selected = _select_number_for_country(items, resolved_country, default_from)
-    return _json_response({"items": items, "selected": selected, "resolved_country": resolved_country})
+    return _json_response({"items": items, "selected": selected, "resolved_country": resolved_country, "source": "twilio"})

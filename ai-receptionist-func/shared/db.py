@@ -141,6 +141,23 @@ class PhoneNumber(Base):
     client = relationship("Client", back_populates="phone_numbers")
 
 
+class CallerNumber(Base):
+    __tablename__ = "caller_numbers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
+    phone_number = Column(String, nullable=False)
+    friendly_name = Column(String, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("client_id", "phone_number", name="uq_caller_number_client_phone"),
+        Index("ix_caller_number_client_active", "client_id", "is_active"),
+    )
+
+
 class Call(Base):
     __tablename__ = "calls"
 
@@ -945,6 +962,36 @@ def _ensure_optional_columns() -> None:
                 conn.execute(text("ALTER TABLE calls ADD COLUMN IF NOT EXISTS selected_agent_id VARCHAR"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_calls_ai_phone_started ON calls (ai_phone_number, started_at)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_calls_agent_started ON calls (selected_agent_id, started_at)"))
+
+        if "caller_numbers" not in existing_tables:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS caller_numbers (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        client_id INTEGER NOT NULL,
+                        phone_number VARCHAR NOT NULL,
+                        friendly_name VARCHAR,
+                        is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY(client_id) REFERENCES clients (id)
+                    )
+                    """
+                )
+            )
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_caller_number_client_phone "
+                "ON caller_numbers (client_id, phone_number)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_caller_number_client_active "
+                "ON caller_numbers (client_id, is_active)"
+            )
+        )
 
         if "tasks" not in existing_tables:
             conn.execute(
