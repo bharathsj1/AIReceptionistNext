@@ -1,4 +1,4 @@
-name: Build and deploy (Web App) - smartconnect4u
+name: Build and deploy (Web App) - smartconect4uDev
 
 on:
   push:
@@ -28,8 +28,6 @@ jobs:
           cache: "npm"
           cache-dependency-path: AIReceptionNewUI/package-lock.json
 
-
-      # Borrowed from Static Web Apps workflow (these were used at build-time)
       - name: Build UI (Vite)
         working-directory: AIReceptionNewUI
         env:
@@ -38,6 +36,12 @@ jobs:
         run: |
           npm ci
           npm run build
+
+      # Optional but helpful: fail fast if dist is missing
+      - name: Verify dist output
+        run: |
+          ls -la AIReceptionNewUI/dist
+          test -f AIReceptionNewUI/dist/index.html
 
       # Upload ONLY the static output as the deploy package
       - name: Upload build artifact
@@ -62,7 +66,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: webapp-package
-          path: .
+          path: webapp-package
+
+      - name: Verify downloaded artifact
+        run: |
+          ls -la webapp-package
+          test -f webapp-package/index.html
 
       - name: Login to Azure (OIDC)
         uses: azure/login@v2
@@ -76,6 +85,4 @@ jobs:
         with:
           app-name: smartconect4uDev
           slot-name: Production
-          package: .
-
-
+          package: webapp-package
