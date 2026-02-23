@@ -19,8 +19,13 @@ const explicitHost =
   import.meta.env.VITE_FUNCTION_BASE ||
   import.meta.env.NEXT_PUBLIC_FUNCTION_HOST;
 
+const LOCAL_DEV_API_BASE = "/api";
+const shouldForceLocalDevApi = import.meta.env.DEV && isLocalHost();
+
 const PRIMARY_FUNCTION_BASE = normalizeBase(
-  explicitBase || explicitHost || (isLocalHost() ? LOCAL_FUNCTION_BASE : "/api")
+  shouldForceLocalDevApi
+    ? LOCAL_DEV_API_BASE
+    : explicitBase || explicitHost || (isLocalHost() ? LOCAL_FUNCTION_BASE : "/api")
 );
 const PRIMARY_API_BASE = PRIMARY_FUNCTION_BASE.endsWith("/api") ? PRIMARY_FUNCTION_BASE : `${PRIMARY_FUNCTION_BASE}/api`;
 
