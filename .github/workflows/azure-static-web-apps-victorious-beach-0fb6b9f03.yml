@@ -34,8 +34,10 @@ jobs:
            result-encoding: string
       - name: Build And Deploy
         env:
-          VITE_API_PROXY_BASE: https://aireceptionist-func.azurewebsites.net/api
-          VITE_FUNCTION_HOST: https://aireceptionist-func.azurewebsites.net
+          VITE_API_PROXY_BASE: https://smartconnect4u-func.azurewebsites.net/api
+          VITE_FUNCTION_HOST: https://smartconnect4u-func.azurewebsites.net
+          NEXT_PUBLIC_API_BASE: https://smartconnect4u-func.azurewebsites.net/api
+          NEXT_PUBLIC_FUNCTION_HOST: https://smartconnect4u-func.azurewebsites.net
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1
         with:
@@ -59,4 +61,3 @@ jobs:
         uses: Azure/static-web-apps-deploy@v1
         with:
           action: "close"
-

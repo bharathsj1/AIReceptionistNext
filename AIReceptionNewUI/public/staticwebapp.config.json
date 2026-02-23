@@ -2,7 +2,7 @@
   "routes": [
     {
       "route": "/api/*",
-      "rewrite": "https://aireceptionist-func.azurewebsites.net/api/{*path}"
+      "rewrite": "https://smartconnect4u-func.azurewebsites.net/api/{*path}"
     }
   ],
   "navigationFallback": {
