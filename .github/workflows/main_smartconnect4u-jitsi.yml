@@ -20,22 +20,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Python version
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install dependencies
+      - name: Install dependencies (into .python_packages)
+        working-directory: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
         run: |
-          cd ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
           python -m pip install --upgrade pip
-          pip install -r requirements.txt --target=".python_packages/lib/site-packages"
+          python -m pip install -r requirements.txt --target ".python_packages/lib/site-packages"
 
       - name: Zip artifact for deployment
+        working-directory: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
         run: |
-          cd ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
           zip -r ../release.zip . \
-            -x "**/.venv/*" "**/venv/*" "**/__pycache__/*" "**/*.pyc" "local.settings.json"
+            -x "**/.venv/**" "**/venv/**" "**/__pycache__/**" "**/*.pyc" "local.settings.json"
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
@@ -47,7 +47,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     permissions:
-      contents: read   # id-token not needed when using publish profile
+      id-token: write
+      contents: read
 
     steps:
       - name: Download artifact from build job
@@ -60,10 +61,16 @@ jobs:
           unzip release.zip -d app
           rm release.zip
 
-      - name: Deploy to Azure Functions (publish profile)
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_5C34FF8EAF4C415F9BEFB6D9D5B7982D }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_C31F1BC162DE4A049CD2A84C80044150 }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_5860D62E738344AC8704EC2F761611EE }}
+
+      - name: Deploy to Azure Functions
         uses: Azure/functions-action@v1
         with:
-          app-name: 'smartconnect4u-jitsi'
-          slot-name: 'Production'
-          package: app
-          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE }}
+          app-name: smartconnect4u-jitsi
+          slot-name: Production    # remove if you don’t use slots
+          package: app             # this is the unzipped function app

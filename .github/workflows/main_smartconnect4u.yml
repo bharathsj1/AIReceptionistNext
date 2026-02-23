@@ -1,12 +1,12 @@
-# Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
-# More GitHub Actions for Azure: https://github.com/Azure/actions
-
-name: Build and deploy Node.js app to Azure Web App - smartconect4uDev
+name: Build and deploy (Web App) - smartconnect4u
 
 on:
   push:
     branches:
-      - Feature/development
+      - main
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
@@ -49,29 +49,32 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     needs: build
+
+    # Don't try to deploy on PRs (secrets/OIDC often unavailable for forks)
+    if: github.event_name != 'pull_request'
+
     permissions:
-      id-token: write #This is required for requesting the JWT
-      contents: read #This is required for actions/checkout
+      id-token: write
+      contents: read
 
     steps:
-      - name: Download artifact from build job
+      - name: Download artifact
         uses: actions/download-artifact@v4
         with:
-          name: node-app
-      
-      - name: Login to Azure
+          name: webapp-package
+          path: .
+
+      - name: Login to Azure (OIDC)
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_DA30D42855CC40E7AAD138BDF5DAE03D }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_62648CB98E964D838DCB5384C88DF10B }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_FD76B4D43EE44F29B640D6EFD2C903A8 }}
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_849446DFDF2C4944A90651B419EDFA5C }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_EF95B52F2D2F4B36952956D297E5233E }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_F24EB9ABB1E84A2184141863E0FD347A }}
 
       - name: Deploy to Azure Web App
-        id: deploy-to-webapp
         uses: azure/webapps-deploy@v3
         with:
-          app-name: 'smartconect4uDev'
-          slot-name: 'Production'
+          app-name: smartconnect4u
+          slot-name: Production
           package: .
 
-          
