@@ -1,4 +1,0 @@
-azure-functions
-sqlalchemy
-psycopg2-binary
-python-dotenv
