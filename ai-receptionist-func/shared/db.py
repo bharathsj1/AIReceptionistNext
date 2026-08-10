@@ -41,6 +41,9 @@ def _engine_kwargs(database_url: str) -> dict:
     if database_url.startswith("postgresql"):
         timeout = int(os.getenv("DB_CONNECT_TIMEOUT", "10"))
         kwargs["connect_args"] = {"connect_timeout": timeout}
+        # Recycle pooled connections before hosted Postgres providers drop them.
+        kwargs["pool_recycle"] = int(os.getenv("DB_POOL_RECYCLE_SECONDS", "300"))
+        kwargs["pool_use_lifo"] = True
     return kwargs
 
 

@@ -13,7 +13,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Optional, Tuple
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 import azure.functions as func
 import httpx
@@ -1948,16 +1948,38 @@ def email_autotag_worker(timer: func.TimerRequest) -> None:
     db = SessionLocal()
     try:
         now = datetime.utcnow()
-        jobs = (
-            db.query(EmailAIJob)
-            .filter(EmailAIJob.status.in_(["pending", "retry"]))
-            .filter(or_(EmailAIJob.next_attempt_at.is_(None), EmailAIJob.next_attempt_at <= now))
-            .order_by(EmailAIJob.created_at.asc())
-            .limit(EMAIL_AUTOTAG_BATCH_SIZE)
-            .all()
-        )
-        for job in jobs:
-            job_id = job.id
+        job_ids = [
+            job_id
+            for (job_id,) in (
+                db.query(EmailAIJob.id)
+                .filter(EmailAIJob.status.in_(["pending", "retry"]))
+                .filter(or_(EmailAIJob.next_attempt_at.is_(None), EmailAIJob.next_attempt_at <= now))
+                .order_by(EmailAIJob.created_at.asc())
+                .limit(EMAIL_AUTOTAG_BATCH_SIZE)
+                .all()
+            )
+        ]
+    except Exception as exc:  # pylint: disable=broad-except
+        db.rollback()
+        logger.error("Auto-tag worker failed to load jobs: %s", exc)
+        return
+    finally:
+        try:
+            db.close()
+        except OperationalError as exc:
+            logger.warning("Auto-tag worker close after job load hit a stale DB connection: %s", exc)
+
+    for job_id in job_ids:
+        db = SessionLocal()
+        try:
+            now = datetime.utcnow()
+            job = (
+                db.query(EmailAIJob)
+                .filter_by(id=job_id)
+                .one_or_none()
+            )
+            if not job:
+                continue
             if job.attempts > EMAIL_AUTOTAG_MAX_ATTEMPTS:
                 job.status = "failed"
                 job.updated_at = now
@@ -1979,11 +2001,14 @@ def email_autotag_worker(timer: func.TimerRequest) -> None:
                     continue
                 _schedule_job_retry(retry_job, str(exc))
                 db.commit()
-    except Exception as exc:  # pylint: disable=broad-except
-        db.rollback()
-        logger.error("Auto-tag worker failed: %s", exc)
-    finally:
-        db.close()
+        except Exception as exc:  # pylint: disable=broad-except
+            db.rollback()
+            logger.error("Auto-tag worker failed while handling job %s: %s", job_id, exc)
+        finally:
+            try:
+                db.close()
+            except OperationalError as exc:
+                logger.warning("Auto-tag worker close hit a stale DB connection for job %s: %s", job_id, exc)
 
 
 @app.function_name(name="Inbox")
