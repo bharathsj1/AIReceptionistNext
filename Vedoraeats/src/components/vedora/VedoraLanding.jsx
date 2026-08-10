@@ -498,7 +498,7 @@ export default function VedoraLanding() {
             src="/media/vedora-dining-hero.png"
             alt="An elegant restaurant table at night with a phone ready for a Vedora booking"
             className="vedora-hero-image"
-            fetchPriority="high"
+            fetchpriority="high"
           />
           <div className="vedora-hero-shade" />
           <div className="vedora-hero-grid" aria-hidden="true" />
