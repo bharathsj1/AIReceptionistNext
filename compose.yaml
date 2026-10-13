@@ -1,0 +1,12 @@
+services:
+  ui:
+    build:
+      context: ./AIReceptionNewUI
+      args:
+        VITE_JITSI_API_BASE: ${VITE_JITSI_API_BASE:-https://smartconnect4u-jitsi-eugahzaha5hcdefa.westeurope-01.azurewebsites.net/api}
+        VITE_JITSI_DOMAIN: ${VITE_JITSI_DOMAIN:-meet.jit.si}
+    ports:
+      - "${UI_PORT:-8080}:8080"
+    environment:
+      API_UPSTREAM: ${API_UPSTREAM:-https://smartconnect4u-func.azurewebsites.net}
+    restart: unless-stopped

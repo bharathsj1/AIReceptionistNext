@@ -5,8 +5,8 @@
       "@/*": ["src/*"]
     },
     "jsx": "react-jsx",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
     "target": "ESNext",
     "allowJs": true,
     "checkJs": false,

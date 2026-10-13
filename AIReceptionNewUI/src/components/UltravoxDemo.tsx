@@ -186,7 +186,7 @@ export default function UltravoxDemo() {
   };
 
   const statusLabel = statusCopy[status] || "Ready to start";
-  const surfaceStyle: CSSProperties = {
+  const surfaceStyle: CSSProperties & Record<`--${string}`, string> = {
     "--dot-color": "rgba(15, 23, 42, 0.12)",
     "--warm-bg": "#f5f2ea",
     "--warm-glow": "rgba(255, 255, 255, 0.85)",
