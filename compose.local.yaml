@@ -1,0 +1,29 @@
+# Development storage only. Omit this file when using real Azure Storage.
+services:
+  backend:
+    environment:
+      AzureWebJobsStorage: &storage "DefaultEndpointsProtocol=http;AccountName=localdev;AccountKey=bG9jYWwtZGV2ZWxvcG1lbnQtc3RvcmFnZS1rZXktb25seQ==;BlobEndpoint=http://azurite:10000/localdev;QueueEndpoint=http://azurite:10001/localdev;TableEndpoint=http://azurite:10002/localdev"
+      AZURE_STORAGE_CONNECTION_STRING: *storage
+    depends_on:
+      azurite:
+        condition: service_healthy
+
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:3.37.0
+    # Public development key, used only by the emulator on the Compose network.
+    environment:
+      AZURITE_ACCOUNTS: "localdev:bG9jYWwtZGV2ZWxvcG1lbnQtc3RvcmFnZS1rZXktb25seQ=="
+    command: >-
+      azurite --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0
+      --location /data --disableProductStyleUrl --disableTelemetry
+    volumes:
+      - azurite-data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "const s = require('net').connect(10000, '127.0.0.1'); s.on('connect', () => { s.end(); process.exit(0); }); s.on('error', () => process.exit(1));"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  azurite-data:

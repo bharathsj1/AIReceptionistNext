@@ -1,5 +1,84 @@
 # AI Receptionist Functions
 
+## Docker deployment
+
+This service now has a Docker image using Microsoft's Azure Functions v4 Python
+3.11 runtime. It runs the existing HTTP routes and timer jobs on Docker hosts;
+an Azure Functions hosting resource is not required. The application still uses
+Azure Storage APIs and its existing database/integration providers.
+
+### Run the UI and backend locally
+
+From the repository root, with Docker Engine and Compose installed:
+
+```sh
+cp ai-receptionist-func/.env.docker.example .env.docker
+docker compose -f compose.yaml -f compose.backend.yaml -f compose.local.yaml up --build -d
+curl --fail http://localhost:7071/api/health
+curl --fail http://localhost:8080/api/health
+docker compose -f compose.yaml -f compose.backend.yaml -f compose.local.yaml logs backend
+```
+
+Open http://localhost:8080. Nginx forwards `/api/*` to the backend container.
+The local overlay supplies Azurite Blob/Queue/Table storage and a persistent
+SQLite database; no cloud credentials are required to start and check health.
+Integration features need their own provider settings. Meetings still use the
+existing separate Jitsi service; that service is not included in this backend.
+
+SQLite and local uploads persist in `backend-data`; emulator data persists in
+`azurite-data`. Stop with the same three `-f` options followed by `down`.
+The Functions image uses `linux/amd64`; Apple Silicon requires emulation.
+The backend port is bound to localhost, and emulator ports are not published.
+
+### Deploy with real services
+
+Copy the example to `.env.docker`, then supply these settings there or through
+your hosting platform's secret/environment settings:
+
+- `AzureWebJobsStorage`: runtime storage connection string for scheduled jobs
+  and host coordination. Use a separate development account when testing.
+- `AZURE_STORAGE_CONNECTION_STRING`: application Blob/Table storage connection
+  string for CRM, chat, tasks, routing and media; it can use the same account.
+- `DATABASE_URL`: production PostgreSQL connection URL, preserving TLS options.
+- `API_PUBLIC_BASE_URL`: externally reachable HTTPS origin without `/api`, used
+  in provider callback URLs. `PUBLIC_APP_URL`: the external UI origin.
+- `ALLOWED_ORIGINS`: your UI origins. Add the provider credentials and OAuth
+  redirect URLs used by your existing deployment; retain `SOCIAL_TOKEN_ENC_KEY`
+  when reusing an existing database.
+
+Run the UI/backend with the real storage settings, omitting the emulator overlay:
+
+```sh
+docker compose -f compose.yaml -f compose.backend.yaml up --build -d
+```
+
+Or build and run only the backend:
+
+```sh
+docker build --platform linux/amd64 -t ai-reception-backend ./ai-receptionist-func
+docker run -d --name ai-reception-backend --platform linux/amd64 \
+  --env-file .env.docker -p 127.0.0.1:7071:80 \
+  -v ai-reception-backend-data:/data ai-reception-backend
+```
+
+Deploy the image through your container hosting platform or registry. The
+container listens on port 80; terminate HTTPS at your ingress and route `/api`
+to it. Ensure it can reach the database and storage. Scheduled jobs keep running
+alongside HTTP endpoints. The Docker health check calls `/api/health`, so failed
+function registration or database initialization prevents a healthy startup.
+Local settings, credentials, virtual environments and local data are excluded
+from the image. Requirements are currently unpinned, so dependency resolution
+can change between builds.
+
+The backend Docker workflow runs the existing unit tests, builds and starts the
+UI/backend/Azurite stack, and verifies health both directly and through the UI
+proxy. Local checks passed for all 36 unit tests, registration of 158 functions,
+Functions host health and an Azurite Table Storage write. Docker itself was not
+available on the development machine, so image startup is verified by CI.
+
+References: [Microsoft Functions container guidance](https://learn.microsoft.com/en-us/azure/azure-functions/functions-how-to-custom-container),
+[Azurite local storage](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite).
+
 ### Ultravox calendar booking tool
 The Ultravox HTTP tool `calendar_book` is created and attached to each agent so the model can call `POST /api/calendar/book` with structured fields (start, callerPhone, etc.). The tool is provisioned automatically after Google connect and when listing calendar events.
 

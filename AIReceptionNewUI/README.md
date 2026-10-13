@@ -3,7 +3,9 @@
 The runnable UI is the Vite/React SPA in `src`, with static pages in `public`.
 The legacy Next.js `app`, `lib` and `middleware.ts` files are not served by Vite
 or this image. The two Python directories are separate Azure Functions services;
-the UI container connects to them, rather than starting them.
+the UI container connects to them. To run `ai-receptionist-func` alongside the
+UI, see its Docker instructions in `../ai-receptionist-func/README.md` and use
+the `compose.backend.yaml` / `compose.local.yaml` overlays.
 
 ## Run with Docker
 
