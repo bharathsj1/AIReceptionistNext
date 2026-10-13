@@ -75,9 +75,20 @@ def get_outlook_oauth_settings() -> dict:
 def get_public_api_base() -> str:
     """
     Base URL for webhooks to call back into this API (no trailing slash).
-    Defaults to the Azure Functions hostname if not provided.
+    Priority:
+    1) API_PUBLIC_BASE_URL
+    2) WEBSITE_HOSTNAME (Azure App Service/Functions)
+    3) local Functions host (localhost)
     """
-    return (os.getenv("API_PUBLIC_BASE_URL") or "https://aireceptionist-func.azurewebsites.net").rstrip("/")
+    explicit_base = (os.getenv("API_PUBLIC_BASE_URL") or "").strip()
+    if explicit_base:
+        return explicit_base.rstrip("/")
+
+    website_hostname = (os.getenv("WEBSITE_HOSTNAME") or "").strip()
+    if website_hostname:
+        return f"https://{website_hostname}".rstrip("/")
+
+    return "http://localhost:7071"
 
 
 def get_smtp_settings() -> dict:

@@ -20,12 +20,29 @@ type PageProps = {
 };
 
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{20,32}$/;
-const FUNCTION_API_BASE = "https://aireceptionist-func.azurewebsites.net/api";
+const LOCAL_FUNCTION_API_BASE = "http://localhost:7071/api";
+
+const normalizeBase = (value: string | undefined) =>
+  String(value || "").trim().replace(/\/$/, "");
 
 const resolveFunctionApiBase = () => {
-  const explicitHost = process.env.NEXT_PUBLIC_FUNCTION_HOST || process.env.VITE_FUNCTION_HOST;
-  if (explicitHost) return `${explicitHost.replace(/\/$/, "")}/api`;
-  return FUNCTION_API_BASE;
+  const explicitApiBase = normalizeBase(
+    process.env.NEXT_PUBLIC_API_BASE || process.env.VITE_API_BASE
+  );
+  if (explicitApiBase) {
+    return explicitApiBase.endsWith("/api")
+      ? explicitApiBase
+      : `${explicitApiBase}/api`;
+  }
+
+  const explicitHost = normalizeBase(
+    process.env.NEXT_PUBLIC_FUNCTION_HOST ||
+      process.env.VITE_FUNCTION_HOST ||
+      process.env.VITE_FUNCTION_BASE
+  );
+  if (explicitHost) return `${explicitHost}/api`;
+
+  return LOCAL_FUNCTION_API_BASE;
 };
 
 const digitsOnly = (value: string | undefined) => (value || "").replace(/\D+/g, "");

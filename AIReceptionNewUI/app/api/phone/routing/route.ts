@@ -1,11 +1,25 @@
 import { NextResponse } from "next/server";
 
+const normalizeBase = (value: string | undefined) =>
+  String(value || "").trim().replace(/\/$/, "");
+
 const resolveFunctionApiBase = () => {
-  const host =
+  const explicitApiBase = normalizeBase(
+    process.env.NEXT_PUBLIC_API_BASE || process.env.VITE_API_BASE
+  );
+  if (explicitApiBase) {
+    return explicitApiBase.endsWith("/api")
+      ? explicitApiBase
+      : `${explicitApiBase}/api`;
+  }
+
+  const host = normalizeBase(
     process.env.NEXT_PUBLIC_FUNCTION_HOST ||
-    process.env.VITE_FUNCTION_HOST ||
-    "http://localhost:7071";
-  return `${host.replace(/\/$/, "")}/api`;
+      process.env.VITE_FUNCTION_HOST ||
+      process.env.VITE_FUNCTION_BASE ||
+      "http://localhost:7071"
+  );
+  return `${host}/api`;
 };
 
 const FUNCTION_API_BASE = resolveFunctionApiBase();
