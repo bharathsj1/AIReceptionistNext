@@ -1,5 +1,12 @@
 import { useState } from "react";
-import { Eye, EyeOff } from "lucide-react";
+import {
+  ArrowRight,
+  Eye,
+  EyeOff,
+  LoaderCircle,
+  LockKeyhole,
+} from "lucide-react";
+import AuthStory from "../components/AuthStory";
 
 export default function LoginScreen({
   loginEmail,
@@ -12,98 +19,107 @@ export default function LoginScreen({
   onEmailChange,
   onPasswordChange,
   onCreateAccount,
-  onForgotPassword
+  onForgotPassword,
 }) {
   const [showPassword, setShowPassword] = useState(false);
-
+  const busy = status === "loading";
   return (
-    <div className="signup-card-wrap screen-panel narrow">
-      <section className="login-layout login-layout-compact">
-        <div className="form-card login-card">
-          <div className="login-grid">
-            <div className="login-left">
-              <div>
-                <p className="eyebrow">Welcome back</p>
-                <h2>Login to AI Dashboard</h2>
-                <p className="lead narrow">
-                  Access your concierge dashboard and manage your reception flows.
-                </p>
-              </div>
-              <form className="url-form" onSubmit={onLoginSubmit}>
-                <label htmlFor="login-email">Email</label>
-                <input
-                  id="login-email"
-                  type="email"
-                  placeholder="you@example.com"
-                  value={loginEmail}
-                  onChange={(event) => onEmailChange(event.target.value)}
-                  required
-                />
-                <label htmlFor="login-password">Password</label>
-                <div className="password-field">
-                  <input
-                    id="login-password"
-                    type={showPassword ? "text" : "password"}
-                    placeholder="••••••••"
-                    value={loginPassword}
-                    onChange={(event) => onPasswordChange(event.target.value)}
-                    required
-                  />
-                  <button
-                    type="button"
-                    className="password-toggle"
-                    onClick={() => setShowPassword((prev) => !prev)}
-                    aria-label={showPassword ? "Hide password" : "Show password"}
-                    aria-pressed={showPassword}
-                  >
-                    {showPassword ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
-                  </button>
-                </div>
-                <button className="primary full" type="submit" disabled={status === "loading"}>
-                  {status === "loading" ? "Signing in..." : "Login"}
-                </button>
-              </form>
-              <div className="link-row">
-                <button className="text-link" type="button" onClick={onForgotPassword}>
-                  Forgot password?
-                </button>
-                <button className="text-link" type="button" onClick={onCreateAccount}>
-                  Create an account
-                </button>
-              </div>
-              {responseMessage && (
-                <div className={`status ${status}`}>
-                  <div>{responseMessage}</div>
-                  {responseLink && (
-                    <a href={responseLink} target="_blank" rel="noreferrer">
-                      Reset your password
-                    </a>
-                  )}
-                </div>
+    <section className="auth-layout">
+      <div className="auth-form-panel">
+        <span className="auth-kicker">
+          <LockKeyhole size={15} /> YOUR WORKSPACE, WAITING FOR YOU
+        </span>
+        <h1>
+          Good to have
+          <br />
+          you back.
+        </h1>
+        <p className="auth-description">
+          Sign in and pick up where you left off.
+        </p>
+        <form
+          className="url-form auth-form"
+          onSubmit={onLoginSubmit}
+          aria-busy={busy}
+        >
+          <label htmlFor="login-email">Work email</label>
+          <input
+            id="login-email"
+            type="email"
+            autoComplete="username"
+            placeholder="you@yourbusiness.com"
+            value={loginEmail}
+            onChange={(event) => onEmailChange(event.target.value)}
+            required
+          />
+          <div className="auth-label-row">
+            <label htmlFor="login-password">Password</label>
+            <button
+              className="text-link"
+              type="button"
+              onClick={onForgotPassword}
+            >
+              Forgot password?
+            </button>
+          </div>
+          <div className="password-field">
+            <input
+              id="login-password"
+              type={showPassword ? "text" : "password"}
+              autoComplete="current-password"
+              placeholder="Enter your password"
+              value={loginPassword}
+              onChange={(event) => onPasswordChange(event.target.value)}
+              required
+            />
+            <button
+              type="button"
+              className="password-toggle"
+              onClick={() => setShowPassword((prev) => !prev)}
+              aria-label={showPassword ? "Hide password" : "Show password"}
+              aria-pressed={showPassword}
+            >
+              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
+          </div>
+          {responseMessage && (
+            <div
+              role={status === "error" ? "alert" : "status"}
+              className={`status ${status}`}
+            >
+              <span>{responseMessage}</span>
+              {responseLink && (
+                <a href={responseLink} target="_blank" rel="noreferrer">
+                  Reset your password
+                </a>
               )}
             </div>
-            <aside className="login-aside">
-              <p className="eyebrow">SmartConnect4u, on autopilot</p>
-              <h3>Your voice concierge, ready in minutes.</h3>
-              <ul>
-                <li>Answer calls 24/7 with natural voice.</li>
-                <li>Capture leads, book meetings, and route VIPs.</li>
-                <li>Syncs with your calendar and CRM out of the box.</li>
-              </ul>
-              {checkoutPlanSummary ? (
-                <div className="checkout-plan-summary" aria-label="Selected checkout plan">
-                  <p className="checkout-plan-summary__label">Selected plan</p>
-                  <div className="checkout-plan-summary__row">
-                    <span>{checkoutPlanSummary.name}</span>
-                    <strong>{checkoutPlanSummary.price}</strong>
-                  </div>
-                </div>
-              ) : null}
-              <p className="hint">New here? Hit Create an account to start with your URL.</p>
-            </aside>
-          </div>
-        </div>
-      </section>
-    </div>
+          )}
+          <button
+            className="sc-button sc-button-primary full"
+            type="submit"
+            disabled={busy}
+          >
+            {busy ? <LoaderCircle className="spin" size={17} /> : null}
+            {busy ? "Signing you in…" : "Open my workspace"}
+            {!busy && <ArrowRight size={17} />}
+          </button>
+        </form>
+        <p className="auth-switch">
+          New to SmartConnect4u?{" "}
+          <button type="button" className="text-link" onClick={onCreateAccount}>
+            Create an account <ArrowUp />
+          </button>
+        </p>
+        <p className="auth-security">
+          <LockKeyhole size={13} /> Your business details stay in your
+          workspace.
+        </p>
+      </div>
+      <AuthStory checkoutPlanSummary={checkoutPlanSummary} />
+    </section>
   );
+}
+function ArrowUp() {
+  return <span aria-hidden="true">↗</span>;
 }

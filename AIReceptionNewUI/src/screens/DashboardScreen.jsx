@@ -54,6 +54,7 @@ import ContactsScreen from "./ContactsScreen";
 import CRMManagerScreen from "./CRMManagerScreen";
 import SalesDialerScreen from "./SalesDialerScreen";
 import RoutingSettingsPanel from "../components/RoutingSettingsPanel";
+import WorkspaceNavigation, { WorkspaceTopbar } from "../components/WorkspaceNavigation";
 import { createTaskManagerItem } from "../lib/api/taskManager";
 import {
   listClientUsers,
@@ -709,8 +710,8 @@ export default function DashboardScreen({
   const [emailAutoTagEnabled, setEmailAutoTagEnabled] = useState(true);
   const [emailUrgentThreshold, setEmailUrgentThreshold] = useState(0.75);
   const [emailSettingsStatus, setEmailSettingsStatus] = useState({ status: "idle", message: "" });
-  const [emailPanelOpen, setEmailPanelOpen] = useState(false);
-  const [emailPanelContentVisible, setEmailPanelContentVisible] = useState(false);
+  const [emailPanelOpen, setEmailPanelOpen] = useState(true);
+  const [emailPanelContentVisible, setEmailPanelContentVisible] = useState(true);
   const [emailMessages, setEmailMessages] = useState([]);
   const [emailLoading, setEmailLoading] = useState(false);
   const [emailError, setEmailError] = useState("");
@@ -854,10 +855,8 @@ export default function DashboardScreen({
   const [socialScheduledLoading, setSocialScheduledLoading] = useState(false);
   const [socialScheduledError, setSocialScheduledError] = useState("");
   const [selectedCallDay, setSelectedCallDay] = useState("All days");
-  const [sideNavOpen, setSideNavOpen] = useState(false);
-  const [sideNavPinned, setSideNavPinned] = useState(false);
-  const [sideNavContentVisible, setSideNavContentVisible] = useState(false);
-  const [sideNavHidden, setSideNavHidden] = useState(false);
+  const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
+  const [workspaceSearchOpen, setWorkspaceSearchOpen] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(() => {
     if (typeof window === "undefined") return false;
     return window.matchMedia("(max-width: 900px)").matches;
@@ -1002,8 +1001,6 @@ export default function DashboardScreen({
   const socialDraftsLoadedRef = useRef(false);
   const socialScheduledLoadedRef = useRef(false);
   const socialUploadInputRef = useRef(null);
-  const sideNavCloseTimerRef = useRef(null);
-  const sideNavContentTimerRef = useRef(null);
   const emailPanelCloseTimerRef = useRef(null);
   const emailPanelContentTimerRef = useRef(null);
 
@@ -1048,23 +1045,12 @@ export default function DashboardScreen({
   }, [emailTheme]);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      window.dispatchEvent(new Event("resize"));
-    }, 200);
-    return () => clearTimeout(timer);
-  }, [sideNavOpen, sideNavHidden]);
-
-  useEffect(() => {
     if (typeof window === "undefined") return undefined;
     const mediaQuery = window.matchMedia("(max-width: 900px)");
     const apply = () => {
       const mobile = Boolean(mediaQuery.matches);
       setIsMobileViewport(mobile);
-      if (mobile) {
-        setSideNavOpen(false);
-        setSideNavContentVisible(false);
-        setSideNavPinned(false);
-      }
+      if (!mobile) setWorkspaceMenuOpen(false);
     };
     apply();
     if (typeof mediaQuery.addEventListener === "function") {
@@ -1077,12 +1063,6 @@ export default function DashboardScreen({
 
   useEffect(() => {
     return () => {
-      if (sideNavCloseTimerRef.current) {
-        clearTimeout(sideNavCloseTimerRef.current);
-      }
-      if (sideNavContentTimerRef.current) {
-        clearTimeout(sideNavContentTimerRef.current);
-      }
       if (emailPanelCloseTimerRef.current) {
         clearTimeout(emailPanelCloseTimerRef.current);
       }
@@ -1094,40 +1074,6 @@ export default function DashboardScreen({
       }
     };
   }, []);
-
-  const openSideNav = () => {
-    if (isMobileViewport) {
-      setSideNavOpen(false);
-      setSideNavContentVisible(false);
-      return;
-    }
-    if (sideNavCloseTimerRef.current) {
-      clearTimeout(sideNavCloseTimerRef.current);
-    }
-    if (sideNavContentTimerRef.current) {
-      clearTimeout(sideNavContentTimerRef.current);
-    }
-    setSideNavOpen(true);
-    setSideNavContentVisible(true);
-  };
-
-  const closeSideNav = () => {
-    if (isMobileViewport) {
-      setSideNavOpen(false);
-      setSideNavContentVisible(false);
-      return;
-    }
-    if (sideNavCloseTimerRef.current) {
-      clearTimeout(sideNavCloseTimerRef.current);
-    }
-    if (sideNavContentTimerRef.current) {
-      clearTimeout(sideNavContentTimerRef.current);
-    }
-    sideNavCloseTimerRef.current = setTimeout(() => {
-      setSideNavOpen(false);
-      setSideNavContentVisible(false);
-    }, 120);
-  };
 
   const openEmailPanel = () => {
     if (emailPanelCloseTimerRef.current) {
@@ -4652,11 +4598,6 @@ export default function DashboardScreen({
   const selectedProviderConnected =
     selectedCalendarProvider === "google" ? Boolean(integrationStatus) : false;
   const googleContactsConnected = Boolean(calendarAccountEmail || calendarStatus === "Google");
-  const sideNavWidthClass = sideNavHidden
-    ? "w-0 min-w-0 max-w-0"
-    : sideNavOpen
-      ? "w-[208px]"
-      : "w-12";
   const aiReceptionistDashboardPanel = (
     <>
       <section className="grid gap-4 md:grid-cols-4">
@@ -4769,61 +4710,6 @@ export default function DashboardScreen({
       </section>
     </>
   );
-  const renderToolButton = (tool) => {
-    const Icon = tool.icon;
-    const locked = isToolLocked(tool.id);
-    const isToolActive =
-      currentTool === tool.id && !(settingsActive && tool.id === "email_manager");
-    const toolAccentMap = {
-      dashboard_analytics: "from-indigo-500/80 via-sky-400/70 to-blue-400/70",
-      ai_receptionist: "from-emerald-500/80 via-lime-400/70 to-emerald-300/70",
-      email_manager: "from-sky-500/80 via-cyan-400/70 to-blue-400/70",
-      social_media_manager: "from-fuchsia-500/80 via-pink-400/70 to-rose-400/70",
-      task_manager: "from-amber-500/80 via-orange-400/70 to-rose-400/60",
-      crm_manager: "from-violet-500/80 via-indigo-400/70 to-sky-400/70",
-      contacts: "from-rose-500/80 via-red-400/70 to-orange-300/70",
-      sales_dialer: "from-cyan-500/80 via-blue-500/70 to-indigo-400/70"
-    };
-    const accent = toolAccentMap[tool.id] || "from-slate-500/70 to-slate-400/70";
-    const toolActiveClass = lightThemeActive
-      ? "bg-slate-200/80 text-slate-900 shadow-[0_10px_22px_rgba(15,23,42,0.08)]"
-      : "bg-white/15 text-white";
-    return (
-      <button
-        key={tool.id}
-        onClick={() => {
-          setActiveTool?.(tool.id);
-          if (tool.id === "ai_receptionist") setActiveTab?.("agents");
-          if (tool.id === "email_manager") setEmailSubTab("email");
-        }}
-        className={`dashboard-nav-item group flex h-10 w-full items-center gap-0.5 rounded-2xl text-left transition ${
-          sideNavContentVisible
-            ? "text-slate-200 hover:bg-white/10 hover:text-white"
-            : "text-slate-300 hover:bg-white/10 hover:text-white hover:shadow-[0_10px_22px_rgba(79,70,229,0.25)]"
-        } ${isToolActive ? toolActiveClass : ""}`}
-        data-active={isToolActive}
-        aria-disabled={locked ? "true" : undefined}
-      >
-        <span
-          className={`flex h-7 w-7 items-center justify-center rounded-xl bg-gradient-to-br ${accent} shadow-sm`}
-        >
-          <Icon className="h-[18px] w-[18px] text-white" />
-        </span>
-        <div
-          className={`min-w-0 transition-opacity ${
-            sideNavContentVisible
-              ? "flex-1 opacity-100"
-              : "max-w-0 overflow-hidden opacity-0"
-          }`}
-        >
-          <p className="text-sm font-semibold text-white leading-none whitespace-nowrap">
-            {tool.label}
-          </p>
-        </div>
-      </button>
-    );
-  };
-
   return (
     <section
       className={`relative p-0 dashboard-theme ${lightThemeActive ? "" : "dashboard-theme--dark"} ${
@@ -4833,190 +4719,13 @@ export default function DashboardScreen({
       <div className="absolute inset-0 dashboard-bg" />
       <div className="absolute -left-6 -right-6 -top-6 bottom-0 dashboard-bg-overlay" />
       <div className={`relative mx-auto w-full max-w-none ${isEmailManager ? "h-full" : ""}`}>
-        {sideNavHidden && (
-          <div
-            className="absolute left-0 top-0 z-30 flex flex-col items-start gap-2"
-            onMouseEnter={() => setSideNavHidden(false)}
-            onTouchStart={() => setSideNavHidden(false)}
-          >
-            <button
-              type="button"
-              onClick={() => setSideNavHidden(false)}
-              className={`mt-3 -translate-x-1/2 rounded-full border px-2 py-1 text-[11px] transition ${
-                lightThemeActive
-                  ? "border-slate-300 bg-white text-slate-600 shadow-sm opacity-100"
-                  : "border-white/5 bg-white/5 text-slate-400 opacity-40"
-              }`}
-              aria-label="Show menu"
-            >
-              ⟩
-            </button>
-            <div
-              className="h-24 w-6 cursor-pointer"
-              role="button"
-              tabIndex={0}
-              aria-label="Show menu"
-              onFocus={() => setSideNavHidden(false)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  setSideNavHidden(false);
-                }
-              }}
-            />
-          </div>
-        )}
-        <div className={`flex h-screen overflow-hidden ${sideNavHidden ? "gap-0" : "gap-0 sm:gap-1"}`}>
-          <aside
-            aria-hidden={sideNavHidden}
-            inert={sideNavHidden ? "" : undefined}
-            onMouseEnter={isMobileViewport ? undefined : openSideNav}
-            onMouseLeave={
-              isMobileViewport
-                ? undefined
-                : () => {
-                    if (!sideNavPinned) closeSideNav();
-                  }
-            }
-            className={`dashboard-sidenav sticky top-0 flex h-screen flex-none flex-col gap-3 overflow-x-hidden overflow-y-auto p-0 pb-14 sm:p-2 sm:pb-2 transition-[width] duration-200 ${sideNavWidthClass} ${
-              sideNavHidden
-                ? "pointer-events-none overflow-hidden p-0 opacity-0"
-                : ""
-            } ${lightThemeActive ? "bg-slate-50/90" : ""}`}
-          >
-            <div className={`flex items-center gap-2 ${sideNavContentVisible ? "justify-between" : "justify-center"}`}>
-              <div className={`flex items-center ${sideNavContentVisible ? "" : "w-full justify-center"}`}>
-                <button
-                  type="button"
-                  onClick={() => window.location.reload()}
-                  className={`flex h-[40px] flex-none shrink-0 items-center justify-center rounded-xl bg-transparent ${
-                    sideNavContentVisible ? "w-[160px] pl-[5px]" : "w-12 px-0"
-                  }`}
-                  aria-label="SmartConnect4u"
-                >
-                  <img
-                    src={
-                      sideNavContentVisible
-                        ? (lightThemeActive ? "/media/SC_logo_light1.png" : "/media/SC_logo_dark1.png")
-                        : "/media/SC_logo.png"
-                    }
-                    alt="SmartConnect4u"
-                    className={`shrink-0 ${sideNavContentVisible ? "h-full w-full object-contain" : "h-10 w-10 object-cover"}`}
-                  />
-                </button>
-              </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSideNavPinned((prev) => !prev);
-                    if (!sideNavPinned) openSideNav();
-                  }}
-                  className={`${sideNavContentVisible ? "hidden sm:flex" : "hidden"} h-8 w-8 flex-none shrink-0 items-center justify-center rounded-full text-xs transition ${
-                    sideNavPinned
-                      ? "bg-white/10 text-indigo-100"
-                      : "text-slate-300 hover:bg-white/10 hover:text-white"
-                  } ${sideNavContentVisible ? "opacity-100" : "pointer-events-none opacity-0"}`}
-                  aria-label={sideNavPinned ? "Unpin menu" : "Pin menu"}
-              >
-                {sideNavPinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
-              </button>
-            </div>
-            <div className="mt-2 grid gap-3">
-              <div className="dashboard-nav-section">
-                <p className={`dashboard-nav-heading ${sideNavContentVisible ? "opacity-100" : "opacity-0"}`}>
-                  Dashboard
-                </p>
-                <div className="grid gap-2">
-                  {dashboardMenuItems.map((tool) => renderToolButton(tool))}
-                </div>
-              </div>
-              <div className="dashboard-nav-section">
-                <p className={`dashboard-nav-heading ${sideNavContentVisible ? "opacity-100" : "opacity-0"}`}>
-                  Tools
-                </p>
-                <div className="grid gap-2">
-                  {toolTabs.map((tool) => renderToolButton(tool))}
-                </div>
-              </div>
-            </div>
-            {showResumeBusinessAction && (
-              <button
-                type="button"
-                onClick={onResumeBusinessDetails}
-                className={`dashboard-cta mt-2 inline-flex items-center justify-center rounded-2xl border border-indigo-400/60 bg-indigo-500/15 px-3 py-2 text-xs font-semibold text-indigo-100 transition hover:-translate-y-0.5 hover:border-indigo-300 hover:bg-indigo-500/25 ${
-                  sideNavContentVisible ? "" : "px-0"
-                }`}
-              >
-                {sideNavContentVisible ? "Enter business details" : "Go"}
-              </button>
-            )}
-            <div className="mt-auto border-t border-white/10 pt-3">
-              {(() => {
-                const settingsActiveClass = lightThemeActive
-                  ? "bg-slate-200/80 text-slate-900 shadow-[0_10px_22px_rgba(15,23,42,0.08)]"
-                  : "bg-white/15 text-white";
-                const settingsBaseClass = sideNavContentVisible
-                  ? "text-slate-200 hover:bg-white/10 hover:text-white"
-                  : "text-slate-300 hover:bg-white/10 hover:text-white hover:shadow-[0_10px_22px_rgba(79,70,229,0.25)]";
-                return (
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveTool?.("email_manager");
-                  setEmailSubTab("settings");
-                }}
-                aria-current={settingsActive ? "page" : undefined}
-                className={`dashboard-nav-item group flex h-10 w-full items-center gap-0.5 rounded-2xl text-left transition ${settingsBaseClass} ${
-                  settingsActive ? settingsActiveClass : ""
-                }`}
-                data-active={settingsActive}
-              >
-                <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500/80 via-violet-400/70 to-sky-400/70 shadow-sm">
-                  <Settings className="h-[18px] w-[18px] text-white" />
-                </span>
-                <div
-                  className={`min-w-0 transition-opacity ${
-                    sideNavContentVisible
-                      ? "flex-1 opacity-100"
-                      : "max-w-0 overflow-hidden opacity-0"
-                  }`}
-                >
-                  <p className="text-sm font-semibold text-white leading-none whitespace-nowrap">
-                    Settings
-                  </p>
-                </div>
-              </button>
-                );
-              })()}
-              {onLogout && (
-                <button
-                  type="button"
-                  onClick={onLogout}
-                  className={`dashboard-nav-item dashboard-nav-item--danger group mt-2 flex h-10 w-full items-center gap-0.5 rounded-2xl text-left transition ${
-                    sideNavContentVisible
-                      ? "text-rose-200 hover:bg-rose-500/10 hover:text-rose-100"
-                      : "text-rose-200 hover:bg-rose-500/10 hover:text-rose-100"
-                  }`}
-                >
-                  <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-gradient-to-br from-rose-500/80 via-rose-400/70 to-orange-400/70 shadow-sm">
-                    <LogOut className="h-[18px] w-[18px] text-white" />
-                  </span>
-                  <div
-                    className={`min-w-0 transition-opacity ${
-                      sideNavContentVisible
-                        ? "flex-1 opacity-100"
-                        : "max-w-0 overflow-hidden opacity-0"
-                    }`}
-                  >
-                    <p className="text-sm font-semibold leading-none whitespace-nowrap">
-                      Logout
-                    </p>
-                  </div>
-                </button>
-              )}
-            </div>
-          </aside>
-
+        <div className="workspace-frame flex h-screen overflow-hidden">
+          <WorkspaceNavigation tools={navTabs} currentTool={currentTool} settingsActive={settingsActive} isLocked={isToolLocked}
+            onSelect={id => { setActiveTool?.(id); if (id === "ai_receptionist") setActiveTab?.("agents"); if (id === "email_manager") setEmailSubTab("email"); }}
+            onSettings={() => { setActiveTool?.("email_manager"); setEmailSubTab("settings"); }}
+            onLogout={onLogout} onHome={handleGoHome} onResume={showResumeBusinessAction ? onResumeBusinessDetails : undefined}
+            menuOpen={workspaceMenuOpen} setMenuOpen={setWorkspaceMenuOpen} searchOpen={workspaceSearchOpen} setSearchOpen={setWorkspaceSearchOpen}
+            user={user} businessName={clientData?.business_name || clientData?.name} />
           <div
             className={`dashboard-main flex h-full min-h-0 min-w-0 flex-1 flex-col ${
               isEmailManager
@@ -5024,7 +4733,13 @@ export default function DashboardScreen({
                 : "gap-5 overflow-y-auto"
             }`}
           >
-            {currentTool !== "email_manager" &&
+            <WorkspaceTopbar label={settingsActive ? "Settings" : currentTool === "dashboard_analytics" ? "Overview" : activeToolLabel}
+              businessName={clientData?.business_name || clientData?.name} user={user} dark={!lightThemeActive}
+              onTheme={() => setEmailTheme(theme => theme === "light" ? "dark" : "light")}
+              menuOpen={workspaceMenuOpen} onMenu={() => setWorkspaceMenuOpen(true)} onSearch={() => setWorkspaceSearchOpen(true)} />
+            {currentTool === "email_manager" && emailSubTab === "email" && !gmailConnected && <div className="workspace-connect-notice"><span><Mail size={22} /></span><div><strong>Bring your inbox into focus.</strong><p>Connect Gmail to see your messages, review AI drafts, and stay on top of follow-ups.</p></div><button className="sc-button sc-button-primary" onClick={() => beginGoogleLogin?.({ force: true })} disabled={status === "loading"}>Connect Gmail <Link2 size={15} /></button></div>}
+            {currentTool !== "dashboard_analytics" &&
+              currentTool !== "email_manager" &&
               currentTool !== "task_manager" &&
               currentTool !== "crm_manager" &&
               currentTool !== "sales_dialer" && (
@@ -5184,7 +4899,7 @@ export default function DashboardScreen({
             <div className="dashboard-analytics-header">
               <div>
                 <p className="dashboard-analytics-eyebrow">Performance overview</p>
-                <h2 className="dashboard-analytics-title">Dashboard analytics</h2>
+                <h2 className="dashboard-analytics-title">Your business, at a glance</h2>
                 <p className="dashboard-analytics-subtitle">
                   Track outcomes across AI Receptionist, Email Manager, and Social Media Manager.
                 </p>
@@ -6034,7 +5749,7 @@ export default function DashboardScreen({
                       key={calendarFocusDate || "today"}
                       ref={calendarRef}
                       plugins={[timeGridPlugin, dayGridPlugin, interactionPlugin]}
-                      initialView="timeGridWeek"
+                      initialView={isMobileViewport ? "timeGridDay" : "timeGridWeek"}
                       initialDate={calendarFocusDate || undefined}
                       datesSet={(range) => handleCalendarRangeFetch(range)}
                       eventDisplay="block"

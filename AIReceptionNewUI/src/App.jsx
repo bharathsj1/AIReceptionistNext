@@ -1,10 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Lenis from "lenis";
-import { gsap } from "gsap";
-import { ScrollTrigger } from "gsap/ScrollTrigger";
 import API_URLS, { API_PROXY_BASE } from "./config/urls.js";
-import Aurora from "./components/Aurora";
-import Orb from "./components/Orb";
 import LandingScreen from "./screens/LandingScreen";
 import LoginScreen from "./screens/LoginScreen";
 import DashboardScreen from "./screens/DashboardScreen";
@@ -28,6 +23,8 @@ import PublicMeetingScreen from "./screens/PublicMeetingScreen";
 import PrivateCardScreen from "./screens/PrivateCardScreen";
 import AboutScreen from "./screens/AboutScreen";
 import ChatWidget from "./components/chat/ChatWidget";
+import Brand from "./components/Brand";
+import OnboardingProgress from "./components/OnboardingProgress";
 
 const STAGES = {
   LANDING: "landing",
@@ -51,13 +48,13 @@ const STAGES = {
   PROJECTS: "projects",
   ABOUT: "about",
   PUBLIC_MEETING: "publicMeeting",
-  PRIVATE_CARD: "privateCard"
+  PRIVATE_CARD: "privateCard",
 };
 const ALLOWED_STAGE_VALUES = new Set(Object.values(STAGES));
 const TOOL_IDS = {
   RECEPTIONIST: "ai_receptionist",
   EMAIL: "email_manager",
-  SOCIAL: "social_media_manager"
+  SOCIAL: "social_media_manager",
 };
 const DEFAULT_TOOL_ID = TOOL_IDS.RECEPTIONIST;
 const TOOL_ID_ALIASES = {
@@ -66,7 +63,7 @@ const TOOL_ID_ALIASES = {
   "email manager": "email_manager",
   "email-manager": "email_manager",
   "social media manager": "social_media_manager",
-  "social-media-manager": "social_media_manager"
+  "social-media-manager": "social_media_manager",
 };
 const DASHBOARD_REQUEST_TIMEOUT_MS = 10000;
 const SUBSCRIPTION_REQUEST_TIMEOUT_MS = 4000;
@@ -107,7 +104,7 @@ const buildFallbackUrl = (url) => {
 const fetchJsonWithFallback = async (url, options = {}) => {
   const requestOptions = {
     ...options,
-    headers: { Accept: "application/json", ...(options.headers || {}) }
+    headers: { Accept: "application/json", ...(options.headers || {}) },
   };
   const res = await fetch(url, requestOptions);
   const data = await readResponseBody(res);
@@ -122,10 +119,14 @@ const fetchJsonWithFallback = async (url, options = {}) => {
   return { res, data };
 };
 
-const fetchJsonWithFallbackAndTimeout = async (url, options = {}, timeoutMs = null) => {
+const fetchJsonWithFallbackAndTimeout = async (
+  url,
+  options = {},
+  timeoutMs = null,
+) => {
   const requestOptions = {
     ...options,
-    headers: { Accept: "application/json", ...(options.headers || {}) }
+    headers: { Accept: "application/json", ...(options.headers || {}) },
   };
   const doFetch = (targetUrl) =>
     timeoutMs
@@ -161,7 +162,7 @@ const PLAN_PRICING = {
   bronze: { name: "Bronze", baseAmount: 500, baseCurrency: "CAD" },
   silver: { name: "Silver", baseAmount: 600, baseCurrency: "CAD" },
   gold: { name: "Gold", baseAmount: 700, baseCurrency: "CAD" },
-  custom: { name: "Custom", price: "Let's talk" }
+  custom: { name: "Custom", price: "Let's talk" },
 };
 
 const currencyForCountry = (code) => {
@@ -173,7 +174,9 @@ const currencyForCountry = (code) => {
 };
 
 const normalizeTwilioCountry = (code) => {
-  const upper = String(code || "").trim().toUpperCase();
+  const upper = String(code || "")
+    .trim()
+    .toUpperCase();
   if (upper === "UK") return "GB";
   return upper;
 };
@@ -218,7 +221,7 @@ const formatPlanPrice = (amount, currency) => {
     style: "currency",
     currency,
     minimumFractionDigits: 0,
-    maximumFractionDigits: 0
+    maximumFractionDigits: 0,
   }).format(amount)}/mo`;
 };
 const normalizeToolId = (value) => {
@@ -246,11 +249,22 @@ const isStrongPassword = (value) => {
 const countryCodeToFlag = (code) => {
   if (!code || typeof code !== "string" || code.length !== 2) return "🌐";
   const base = 127397; // Unicode regional indicator symbol offset
-  return String.fromCodePoint(...code.toUpperCase().split("").map((char) => char.charCodeAt(0) + base));
+  return String.fromCodePoint(
+    ...code
+      .toUpperCase()
+      .split("")
+      .map((char) => char.charCodeAt(0) + base),
+  );
 };
 
 export default function App() {
-  const [stage, setStage] = useState(STAGES.LANDING);
+  const [stage, setStage] = useState(() => {
+    const path = window.location.pathname.replace(/\/$/, "").toLowerCase();
+    if (path === "/login" || window.location.hash === "#login")
+      return STAGES.LOGIN;
+    if (path === "/signup") return STAGES.SIGNUP;
+    return STAGES.LANDING;
+  });
   const [url, setUrl] = useState("");
   const [status, setStatus] = useState("idle");
   const [responseMessage, setResponseMessage] = useState("");
@@ -273,15 +287,23 @@ export default function App() {
     temperature: 0.4,
     greeting: "Hi, I'm your AI receptionist. How can I help today?",
     escalation: "Forward complex questions to the human team.",
-    faq: "Hours: 9-6pm PT\nSupport: support@smartconnect4u.com"
+    faq: "Hours: 9-6pm PT\nSupport: support@smartconnect4u.com",
   });
   const [ultravoxVoices, setUltravoxVoices] = useState([]);
   const [ultravoxVoicesLoading, setUltravoxVoicesLoading] = useState(false);
   const [selectedVoiceId, setSelectedVoiceId] = useState("");
-  const [welcomeMessage, setWelcomeMessage] = useState("Hi! Thanks for calling. How can I help today?");
+  const [welcomeMessage, setWelcomeMessage] = useState(
+    "Hi! Thanks for calling. How can I help today?",
+  );
   const [dashboardLoading, setDashboardLoading] = useState(false);
-  const [agentSaveStatus, setAgentSaveStatus] = useState({ status: "idle", message: "" });
-  const [businessSaveStatus, setBusinessSaveStatus] = useState({ status: "idle", message: "" });
+  const [agentSaveStatus, setAgentSaveStatus] = useState({
+    status: "idle",
+    message: "",
+  });
+  const [businessSaveStatus, setBusinessSaveStatus] = useState({
+    status: "idle",
+    message: "",
+  });
   const [userProfile, setUserProfile] = useState(null);
   const [user, setUser] = useState(null);
   const [countryCode, setCountryCode] = useState(null);
@@ -294,7 +316,7 @@ export default function App() {
     messages: [],
     transcript: "",
     loading: false,
-    error: ""
+    error: "",
   });
   const [recentCalls, setRecentCalls] = useState([]);
   const [allCalls, setAllCalls] = useState([]);
@@ -309,7 +331,7 @@ export default function App() {
   const [selectedTool, setSelectedTool] = useState(DEFAULT_TOOL_ID);
   const hasActiveSubscription = useMemo(
     () => Object.values(toolSubscriptions || {}).some((entry) => entry?.active),
-    [toolSubscriptions]
+    [toolSubscriptions],
   );
   const checkoutPlanSummary = useMemo(() => {
     if (!selectedPlan) return null;
@@ -319,7 +341,7 @@ export default function App() {
     if (selected.price) {
       return {
         name: selected.name,
-        price: selected.price
+        price: selected.price,
       };
     }
     const currency = currencyForCountry(countryCode || "US");
@@ -327,11 +349,11 @@ export default function App() {
       selected.baseAmount,
       selected.baseCurrency || "CAD",
       currency,
-      fxRates
+      fxRates,
     );
     return {
       name: selected.name,
-      price: formatPlanPrice(converted, currency)
+      price: formatPlanPrice(converted, currency),
     };
   }, [countryCode, fxRates, selectedPlan]);
   const dateRanges = useMemo(
@@ -339,9 +361,9 @@ export default function App() {
       { label: "Last 1 day", days: 1 },
       { label: "Last 7 days", days: 7 },
       { label: "Last 14 days", days: 14 },
-      { label: "Last 30 days", days: 30 }
+      { label: "Last 30 days", days: 30 },
     ],
-    []
+    [],
   );
   const [dateRange, setDateRange] = useState(dateRanges[1].label);
   const [calendarStatus, setCalendarStatus] = useState(null);
@@ -390,15 +412,25 @@ export default function App() {
   const [bookingSettings, setBookingSettings] = useState({
     booking_enabled: false,
     booking_duration_minutes: 30,
-    booking_buffer_minutes: 5
+    booking_buffer_minutes: 5,
   });
-  const [bookingStatus, setBookingStatus] = useState({ status: "idle", message: "" });
-  const [bookingTestStatus, setBookingTestStatus] = useState({ status: "idle", message: "" });
-  const [assignNumberStatus, setAssignNumberStatus] = useState({ status: "idle", message: "" });
+  const [bookingStatus, setBookingStatus] = useState({
+    status: "idle",
+    message: "",
+  });
+  const [bookingTestStatus, setBookingTestStatus] = useState({
+    status: "idle",
+    message: "",
+  });
+  const [assignNumberStatus, setAssignNumberStatus] = useState({
+    status: "idle",
+    message: "",
+  });
   const aiNumber = useMemo(() => {
     const primary = phoneNumbers?.[0];
     const phoneFromArray =
-      (primary && (primary.phone_number || primary.twilio_phone_number)) || primary;
+      (primary && (primary.phone_number || primary.twilio_phone_number)) ||
+      primary;
     const phoneFromProvision =
       provisionData?.phone_number ||
       provisionData?.twilio_phone_number ||
@@ -410,7 +442,7 @@ export default function App() {
     phoneNumbers,
     provisionData?.phone_number,
     provisionData?.phone_numbers,
-    provisionData?.twilio_phone_number
+    provisionData?.twilio_phone_number,
   ]);
 
   const getSelectedDays = useCallback(() => {
@@ -435,26 +467,26 @@ export default function App() {
   const loadingSteps = useMemo(
     () => ({
       crawl: [
-        "Packaging your website URL",
-        "Notifying AI Reception service",
-        "Crawling and ingesting content"
+        "Finding your website pages",
+        "Learning about your services",
+        "Organising your business details",
       ],
       provision: [
-        "Building S4U-v3 prompt",
-        "Provisioning AI reception client",
-        "Finalizing setup"
-      ]
+        "Preparing your conversation style",
+        "Connecting your receptionist",
+        "Finishing your workspace setup",
+      ],
     }),
-    []
+    [],
   );
 
   const heroCtas = useMemo(
     () => [
       "AI receptionist that never misses a visitor",
       "Onboards your site in seconds",
-      "Secure hand-offs to your team"
+      "Secure hand-offs to your team",
     ],
-    []
+    [],
   );
 
   useEffect(() => {
@@ -495,7 +527,7 @@ export default function App() {
         setFxRates({
           USD: 1,
           CAD: rates.CAD || null,
-          GBP: rates.GBP || null
+          GBP: rates.GBP || null,
         });
       } catch (err) {
         console.warn("Unable to fetch FX rates", err);
@@ -549,14 +581,17 @@ export default function App() {
     setStage(STAGES.LOADING);
 
     try {
-      const { res, data } = await fetchJsonWithFallback(API_URLS.crawlKnowledgeBase, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
+      const { res, data } = await fetchJsonWithFallback(
+        API_URLS.crawlKnowledgeBase,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          mode: "cors",
+          body: JSON.stringify({ url: normalizedUrl }),
         },
-        mode: "cors",
-        body: JSON.stringify({ url: normalizedUrl })
-      });
+      );
 
       if (!res.ok) {
         const errorText =
@@ -569,43 +604,47 @@ export default function App() {
       }
 
       if (!Array.isArray(data?.pages) && looksLikeHtml(data?.raw)) {
-        throw new Error("Crawl API returned HTML instead of JSON. Please check /api routing.");
+        throw new Error(
+          "Crawl API returned HTML instead of JSON. Please check /api routing.",
+        );
       }
 
       setCrawlData(data);
       setResponseMessage("All website data loaded fine.");
       // Persist website URL to clients table (best-effort)
       const websiteUrl = normalizedUrl;
-      const fallbackBusiness = businessName || data?.business_name || "Pending business";
+      const fallbackBusiness =
+        businessName || data?.business_name || "Pending business";
       const fallbackPhone = businessPhone || "+10000000000";
       const payload = {
         email: signupEmail || email || loginEmail || user?.email || "",
         businessName: fallbackBusiness,
         businessPhone: fallbackPhone,
         websiteUrl,
-        websiteData: data || {}
+        websiteData: data || {},
       };
       try {
         await fetch(API_URLS.clientsBusinessDetails, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(payload),
         });
       } catch (persistErr) {
         console.warn("Failed to save website URL", persistErr);
       }
       let profile = null;
       try {
-        const { res: profileRes, data: profileJson } = await fetchJsonWithFallback(API_URLS.businessProfile, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          mode: "cors",
-          body: JSON.stringify({
-            email: signupEmail || email || loginEmail || user?.email || "",
-            website_url: websiteUrl,
-            pages: data?.pages || data?.data || data?.raw || []
-          })
-        });
+        const { res: profileRes, data: profileJson } =
+          await fetchJsonWithFallback(API_URLS.businessProfile, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            mode: "cors",
+            body: JSON.stringify({
+              email: signupEmail || email || loginEmail || user?.email || "",
+              website_url: websiteUrl,
+              pages: data?.pages || data?.data || data?.raw || [],
+            }),
+          });
         if (profileRes.ok) {
           profile = profileJson?.profile || null;
         } else {
@@ -625,7 +664,7 @@ export default function App() {
     } catch (error) {
       setStatus("error");
       setResponseMessage(
-        error?.message || "Unable to send request. Please try again."
+        error?.message || "Unable to send request. Please try again.",
       );
     }
     setShowLoader(false);
@@ -698,7 +737,11 @@ export default function App() {
     setStage(STAGES.PROJECTS);
     if (typeof window !== "undefined") {
       const safeSlug = slug || "receptionist";
-      window.history.replaceState({ stage: STAGES.PROJECTS }, "", `/${safeSlug}`);
+      window.history.replaceState(
+        { stage: STAGES.PROJECTS },
+        "",
+        `/${safeSlug}`,
+      );
     }
   };
 
@@ -720,7 +763,10 @@ export default function App() {
       const res = await fetch(API_URLS.authLogin, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: normalizedLoginEmail, password: loginPassword })
+        body: JSON.stringify({
+          email: normalizedLoginEmail,
+          password: loginPassword,
+        }),
       });
       const text = await res.text();
       let data = {};
@@ -733,11 +779,13 @@ export default function App() {
       if (!res.ok) {
         const isInvalidCredentials =
           res.status === 401 ||
-          String(data?.error || "").toLowerCase().includes("invalid credentials");
+          String(data?.error || "")
+            .toLowerCase()
+            .includes("invalid credentials");
         if (isInvalidCredentials && normalizedLoginEmail) {
           try {
             const existsRes = await fetch(
-              `${API_URLS.authEmailExists}?email=${encodeURIComponent(normalizedLoginEmail)}`
+              `${API_URLS.authEmailExists}?email=${encodeURIComponent(normalizedLoginEmail)}`,
             );
             const existsData = await existsRes.json().catch(() => ({}));
             if (existsRes.ok && existsData?.exists === false) {
@@ -746,7 +794,8 @@ export default function App() {
           } catch (existErr) {
             if (
               existErr instanceof Error &&
-              existErr.message === "This account is not available, please sign up."
+              existErr.message ===
+                "This account is not available, please sign up."
             ) {
               throw existErr;
             }
@@ -758,7 +807,9 @@ export default function App() {
       const userEmail = data?.email || normalizedLoginEmail;
       const displayName =
         data?.name ||
-        (userEmail && userEmail.includes("@") ? userEmail.split("@")[0] : userEmail);
+        (userEmail && userEmail.includes("@")
+          ? userEmail.split("@")[0]
+          : userEmail);
 
       setUser({
         id: data?.user_id,
@@ -768,7 +819,7 @@ export default function App() {
         role: data?.role || null,
         scope: data?.scope || null,
         auth_token: data?.auth_token || null,
-        auth_token_expires_at: data?.auth_token_expires_at || null
+        auth_token_expires_at: data?.auth_token_expires_at || null,
       });
       setEmail(userEmail || "");
       setSignupEmail(userEmail || "");
@@ -781,31 +832,41 @@ export default function App() {
       let hasActive = false;
       let subscriptionCheckSucceeded = false;
       try {
-        const dashRes = await fetch(`${API_URLS.dashboard}?email=${encodeURIComponent(userEmail)}`);
+        const dashRes = await fetch(
+          `${API_URLS.dashboard}?email=${encodeURIComponent(userEmail)}`,
+        );
         if (dashRes.ok) {
           dashboardPayload = await dashRes.json().catch(() => ({}));
           userProfile = dashboardPayload?.user || null;
           clientProfile = dashboardPayload?.client || null;
           if (Array.isArray(dashboardPayload?.subscriptions)) {
-            const normalizedSubs = normalizeToolSubscriptions(dashboardPayload.subscriptions);
+            const normalizedSubs = normalizeToolSubscriptions(
+              dashboardPayload.subscriptions,
+            );
             setToolSubscriptions(normalizedSubs);
-            hasActive = Object.values(normalizedSubs).some((entry) => entry?.active);
+            hasActive = Object.values(normalizedSubs).some(
+              (entry) => entry?.active,
+            );
           }
         }
 
         if (!hasActive) {
           const subsRes = await fetch(
-            `${API_URLS.subscriptionsStatus}?email=${encodeURIComponent(userEmail)}`
+            `${API_URLS.subscriptionsStatus}?email=${encodeURIComponent(userEmail)}`,
           );
           if (subsRes.ok) {
             subscriptionCheckSucceeded = true;
             const subsJson = await subsRes.json().catch(() => ({}));
-            const normalizedSubs = normalizeToolSubscriptions(subsJson?.subscriptions ?? subsJson);
+            const normalizedSubs = normalizeToolSubscriptions(
+              subsJson?.subscriptions ?? subsJson,
+            );
             setToolSubscriptions(normalizedSubs);
             if (typeof subsJson?.active === "boolean") {
               hasActive = subsJson.active;
             } else {
-              hasActive = Object.values(normalizedSubs).some((entry) => entry?.active);
+              hasActive = Object.values(normalizedSubs).some(
+                (entry) => entry?.active,
+              );
             }
           } else if (!dashboardPayload?.subscriptions) {
             setToolSubscriptions({});
@@ -836,8 +897,12 @@ export default function App() {
       const missingBiz =
         !businessNameFromProfile.trim() || !businessPhoneFromProfile.trim();
       const missingWebsite =
-        !websiteUrlFromProfile || !String(websiteUrlFromProfile).trim() || websiteUrlFromProfile === "pending";
-      const hasExistingProfile = Boolean(userProfile || clientProfile || dashboardPayload?.client);
+        !websiteUrlFromProfile ||
+        !String(websiteUrlFromProfile).trim() ||
+        websiteUrlFromProfile === "pending";
+      const hasExistingProfile = Boolean(
+        userProfile || clientProfile || dashboardPayload?.client,
+      );
 
       setIsLoggedIn(true);
       setActiveTab("agents");
@@ -889,7 +954,7 @@ export default function App() {
       const res = await fetch(API_URLS.authForgotPassword, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: targetEmail })
+        body: JSON.stringify({ email: targetEmail }),
       });
       const text = await res.text();
       let data = {};
@@ -900,7 +965,9 @@ export default function App() {
       }
 
       if (!res.ok) {
-        throw new Error(data?.error || data?.details || text || "Password reset failed");
+        throw new Error(
+          data?.error || data?.details || text || "Password reset failed",
+        );
       }
 
       const resetLink = data?.reset_link || data?.reset_password_url;
@@ -908,7 +975,8 @@ export default function App() {
       setResponseMessage(
         resetLink
           ? `Password reset link generated for ${targetEmail}.`
-          : data?.message || "If the account exists, a reset link will be sent."
+          : data?.message ||
+              "If the account exists, a reset link will be sent.",
       );
       const normalized = normalizeResetLink(resetLink);
       setResponseLink(normalized);
@@ -934,7 +1002,7 @@ export default function App() {
       const res = await fetch(API_URLS.authResetPassword, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: resetToken, new_password: newPassword })
+        body: JSON.stringify({ token: resetToken, new_password: newPassword }),
       });
       const text = await res.text();
       let data = {};
@@ -949,7 +1017,9 @@ export default function App() {
       }
 
       setStatus("success");
-      setResponseMessage("Password reset successful. Please log in with your new password.");
+      setResponseMessage(
+        "Password reset successful. Please log in with your new password.",
+      );
       setResponseLink(null);
       setResetToken("");
       setStage(STAGES.LOGIN);
@@ -1010,10 +1080,7 @@ export default function App() {
 
   const buildReviewDefaults = (websiteUrl, data) => {
     let nameGuess =
-      businessName ||
-      data?.business_name ||
-      data?.pages?.[0]?.title ||
-      "";
+      businessName || data?.business_name || data?.pages?.[0]?.title || "";
     if (!nameGuess && websiteUrl) {
       try {
         nameGuess = new URL(websiteUrl).hostname.replace(/^www\./, "");
@@ -1031,7 +1098,7 @@ export default function App() {
       hours: "",
       openings: "",
       services: "",
-      notes: ""
+      notes: "",
     };
   };
 
@@ -1047,7 +1114,7 @@ export default function App() {
       hours: profile.business_hours || defaults.hours,
       openings: profile.business_openings || defaults.openings,
       services: profile.business_services || defaults.services,
-      notes: profile.business_notes || defaults.notes
+      notes: profile.business_notes || defaults.notes,
     };
   };
 
@@ -1055,7 +1122,7 @@ export default function App() {
     setSignupError("");
     if (!isStrongPassword(password)) {
       setSignupError(
-        "Password must be at least 8 characters and include uppercase, lowercase, a number, and a symbol."
+        "Password must be at least 8 characters and include uppercase, lowercase, a number, and a symbol.",
       );
       return;
     }
@@ -1064,15 +1131,15 @@ export default function App() {
       const res = await fetch(API_URLS.authSignup, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, name })
+        body: JSON.stringify({ email, password, name }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-      const msg =
-        res.status === 409
-          ? "Email is already registered. Please log in or use a different email."
-          : data?.error || "Signup failed";
-      setSignupError(msg);
+        const msg =
+          res.status === 409
+            ? "Email is already registered. Please log in or use a different email."
+            : data?.error || "Signup failed";
+        setSignupError(msg);
         return;
       }
       setSignupName(name);
@@ -1086,20 +1153,24 @@ export default function App() {
         role: data?.role || "admin",
         scope: data?.scope || "primary_user",
         auth_token: data?.auth_token || null,
-        auth_token_expires_at: data?.auth_token_expires_at || null
+        auth_token_expires_at: data?.auth_token_expires_at || null,
       });
       setEmail(email);
       setIsLoggedIn(true);
       goToBusinessDetails();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Signup failed. Please try again.";
+      const msg =
+        err instanceof Error ? err.message : "Signup failed. Please try again.";
       setSignupError(msg);
     } finally {
       setSignupLoading(false);
     }
   };
 
-  const handleBusinessDetailsSubmit = async ({ businessName: nameInput, businessPhone: phoneInput }) => {
+  const handleBusinessDetailsSubmit = async ({
+    businessName: nameInput,
+    businessPhone: phoneInput,
+  }) => {
     setBusinessError("");
     if (!nameInput || !phoneInput) {
       setBusinessError("Please add your business name and phone number.");
@@ -1107,7 +1178,8 @@ export default function App() {
     }
     setBusinessLoading(true);
     try {
-      const targetEmail = signupEmail || user?.email || email || loginEmail || "";
+      const targetEmail =
+        signupEmail || user?.email || email || loginEmail || "";
       if (!targetEmail) {
         throw new Error("Please log in before adding business details.");
       }
@@ -1117,8 +1189,8 @@ export default function App() {
         body: JSON.stringify({
           email: targetEmail,
           businessName: nameInput,
-          businessPhone: phoneInput
-        })
+          businessPhone: phoneInput,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -1128,7 +1200,8 @@ export default function App() {
       }
       setStage(STAGES.BUSINESS_TYPE);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Could not save business details.";
+      const msg =
+        err instanceof Error ? err.message : "Could not save business details.";
       setBusinessError(msg);
     } finally {
       setBusinessLoading(false);
@@ -1139,12 +1212,13 @@ export default function App() {
     category,
     subType,
     customType,
-    businessName: nameInput
+    businessName: nameInput,
   }) => {
     setBusinessTypeError("");
     setBusinessTypeLoading(true);
     try {
-      const targetEmail = signupEmail || user?.email || email || loginEmail || "";
+      const targetEmail =
+        signupEmail || user?.email || email || loginEmail || "";
       if (!targetEmail) {
         throw new Error("Please log in before adding business details.");
       }
@@ -1174,8 +1248,8 @@ export default function App() {
           businessPhone: normalizedPhone,
           businessCategory: category,
           businessSubType: subType,
-          businessCustomType: normalizedCustom
-        })
+          businessCustomType: normalizedCustom,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -1185,7 +1259,8 @@ export default function App() {
       }
       setStage(STAGES.CRAWL_FORM);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Could not save business type.";
+      const msg =
+        err instanceof Error ? err.message : "Could not save business type.";
       setBusinessTypeError(msg);
     } finally {
       setBusinessTypeLoading(false);
@@ -1213,13 +1288,13 @@ export default function App() {
       location && `Location: ${location}`,
       notes && `Notes: ${notes}`,
       payload?.businessPhone && `Phone: ${payload.businessPhone}`,
-      payload?.businessEmail && `Email: ${payload.businessEmail}`
+      payload?.businessEmail && `Email: ${payload.businessEmail}`,
     ].filter(Boolean);
     const combinedPages = [
       {
         url: "manual-entry",
-        content: infoLines.join("\n")
-      }
+        content: infoLines.join("\n"),
+      },
     ];
     const normalized = {
       businessName: payload?.businessName || businessName || "Your business",
@@ -1231,7 +1306,7 @@ export default function App() {
       openings,
       location,
       notes,
-      websiteUrl: payload?.websiteUrl || "manual-entry"
+      websiteUrl: payload?.websiteUrl || "manual-entry",
     };
 
     setManualBusinessInfo(normalized);
@@ -1242,7 +1317,7 @@ export default function App() {
       business_phone: normalized.businessPhone,
       website_url: normalized.websiteUrl,
       pages: combinedPages,
-      data: normalized
+      data: normalized,
     };
     setCrawlData(nextCrawlData);
     try {
@@ -1254,8 +1329,8 @@ export default function App() {
           businessName: normalized.businessName,
           businessPhone: normalized.businessPhone,
           websiteUrl: normalized.websiteUrl,
-          websiteData: normalized
-        })
+          websiteData: normalized,
+        }),
       });
     } catch (persistErr) {
       console.warn("Failed to save manual business info", persistErr);
@@ -1264,7 +1339,7 @@ export default function App() {
     if (emailAddress) {
       try {
         const subsRes = await fetch(
-          `${API_URLS.subscriptionsStatus}?email=${encodeURIComponent(emailAddress)}`
+          `${API_URLS.subscriptionsStatus}?email=${encodeURIComponent(emailAddress)}`,
         );
         if (subsRes.ok) {
           const subsJson = await subsRes.json().catch(() => ({}));
@@ -1272,7 +1347,12 @@ export default function App() {
           if (Array.isArray(subsJson?.subscriptions)) {
             normalizedSubs = {};
             subsJson.subscriptions.forEach((entry) => {
-              const toolId = (entry?.tool || entry?.toolId || entry?.tool_id || DEFAULT_TOOL_ID).toLowerCase();
+              const toolId = (
+                entry?.tool ||
+                entry?.toolId ||
+                entry?.tool_id ||
+                DEFAULT_TOOL_ID
+              ).toLowerCase();
               const status = entry?.status || "";
               const active =
                 typeof entry?.active === "boolean"
@@ -1282,7 +1362,8 @@ export default function App() {
                 active,
                 status,
                 planId: entry?.planId || entry?.plan_id || null,
-                currentPeriodEnd: entry?.currentPeriodEnd || entry?.current_period_end || null
+                currentPeriodEnd:
+                  entry?.currentPeriodEnd || entry?.current_period_end || null,
               };
             });
             setToolSubscriptions(normalizedSubs);
@@ -1290,7 +1371,9 @@ export default function App() {
           if (typeof subsJson?.active === "boolean") {
             hasActive = subsJson.active;
           } else if (normalizedSubs) {
-            hasActive = Object.values(normalizedSubs).some((entry) => entry?.active);
+            hasActive = Object.values(normalizedSubs).some(
+              (entry) => entry?.active,
+            );
           }
         }
       } catch (err) {
@@ -1301,7 +1384,7 @@ export default function App() {
       await runProvisionFlow({
         emailOverride: emailAddress,
         manualInfoOverride: normalized,
-        crawlDataOverride: nextCrawlData
+        crawlDataOverride: nextCrawlData,
       });
       return;
     }
@@ -1321,7 +1404,11 @@ export default function App() {
       services: payload?.services || "",
       notes: payload?.notes || "",
       websiteUrl:
-        payload?.websiteUrl || url || crawlData?.website_url || crawlData?.start_url || ""
+        payload?.websiteUrl ||
+        url ||
+        crawlData?.website_url ||
+        crawlData?.start_url ||
+        "",
     };
     setManualBusinessInfo(normalized);
     setBusinessName(normalized.businessName);
@@ -1336,8 +1423,8 @@ export default function App() {
           businessName: normalized.businessName,
           businessPhone: normalized.businessPhone,
           websiteUrl: normalized.websiteUrl,
-          websiteData: normalized
-        })
+          websiteData: normalized,
+        }),
       });
     } catch (persistErr) {
       console.warn("Failed to save reviewed business info", persistErr);
@@ -1347,7 +1434,7 @@ export default function App() {
     if (emailAddress) {
       try {
         const subsRes = await fetch(
-          `${API_URLS.subscriptionsStatus}?email=${encodeURIComponent(emailAddress)}`
+          `${API_URLS.subscriptionsStatus}?email=${encodeURIComponent(emailAddress)}`,
         );
         if (subsRes.ok) {
           const subsJson = await subsRes.json().catch(() => ({}));
@@ -1355,7 +1442,12 @@ export default function App() {
           if (Array.isArray(subsJson?.subscriptions)) {
             normalizedSubs = {};
             subsJson.subscriptions.forEach((entry) => {
-              const toolId = (entry?.tool || entry?.toolId || entry?.tool_id || DEFAULT_TOOL_ID).toLowerCase();
+              const toolId = (
+                entry?.tool ||
+                entry?.toolId ||
+                entry?.tool_id ||
+                DEFAULT_TOOL_ID
+              ).toLowerCase();
               const status = entry?.status || "";
               const active =
                 typeof entry?.active === "boolean"
@@ -1365,7 +1457,8 @@ export default function App() {
                 active,
                 status,
                 planId: entry?.planId || entry?.plan_id || null,
-                currentPeriodEnd: entry?.currentPeriodEnd || entry?.current_period_end || null
+                currentPeriodEnd:
+                  entry?.currentPeriodEnd || entry?.current_period_end || null,
               };
             });
             setToolSubscriptions(normalizedSubs);
@@ -1373,7 +1466,9 @@ export default function App() {
           if (typeof subsJson?.active === "boolean") {
             hasActive = subsJson.active;
           } else if (normalizedSubs) {
-            hasActive = Object.values(normalizedSubs).some((entry) => entry?.active);
+            hasActive = Object.values(normalizedSubs).some(
+              (entry) => entry?.active,
+            );
           }
         }
       } catch (err) {
@@ -1384,7 +1479,7 @@ export default function App() {
       await runProvisionFlow({
         emailOverride: emailAddress,
         manualInfoOverride: normalized,
-        crawlDataOverride: crawlData
+        crawlDataOverride: crawlData,
       });
       return;
     }
@@ -1425,7 +1520,13 @@ export default function App() {
     setManualBusinessInfo(null);
     setAgentSaveStatus({ status: "idle", message: "" });
     setBusinessSaveStatus({ status: "idle", message: "" });
-    setCallTranscript({ call: null, transcripts: [], recordings: [], loading: false, error: "" });
+    setCallTranscript({
+      call: null,
+      transcripts: [],
+      recordings: [],
+      loading: false,
+      error: "",
+    });
     setUserProfile(null);
     setDashboardLoading(false);
     setAgentDetails({
@@ -1436,7 +1537,7 @@ export default function App() {
       temperature: 0.4,
       greeting: "Hi, I'm your AI receptionist. How can I help today?",
       escalation: "Forward complex questions to the human team.",
-      faq: "Hours: 9-6pm PT\nSupport: support@smartconnect4u.com"
+      faq: "Hours: 9-6pm PT\nSupport: support@smartconnect4u.com",
     });
     if (typeof window !== "undefined") {
       window.localStorage.removeItem(STORAGE_KEY);
@@ -1452,7 +1553,7 @@ export default function App() {
       if (current) return current;
       return {
         name: provisionData?.name || email || "You",
-        email: email || provisionData?.email || "you@smartconnect4u.com"
+        email: email || provisionData?.email || "you@smartconnect4u.com",
       };
     });
     setStage(STAGES.DASHBOARD);
@@ -1520,12 +1621,19 @@ export default function App() {
   // Direct public card route render (robust against app stage/history state drift)
   const directCardMatch =
     typeof window !== "undefined"
-      ? (window.location.pathname || "").match(/^\/card\/([A-Za-z0-9_-]{20,32})\/?$/)
+      ? (window.location.pathname || "").match(
+          /^\/card\/([A-Za-z0-9_-]{20,32})\/?$/,
+        )
       : null;
   if (directCardMatch && directCardMatch[1]) {
-    const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search || "") : null;
+    const params =
+      typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search || "")
+        : null;
     const directKey = (params?.get("k") || "").trim();
-    return <PrivateCardScreen token={directCardMatch[1]} accessKey={directKey} />;
+    return (
+      <PrivateCardScreen token={directCardMatch[1]} accessKey={directKey} />
+    );
   }
 
   // Public meeting rendering bypasses the rest of the app shell
@@ -1533,7 +1641,9 @@ export default function App() {
     return <PublicMeetingScreen meetingId={publicMeetingId} />;
   }
   if (stage === STAGES.PRIVATE_CARD) {
-    return <PrivateCardScreen token={privateCardToken} accessKey={privateCardKey} />;
+    return (
+      <PrivateCardScreen token={privateCardToken} accessKey={privateCardKey} />
+    );
   }
 
   const handleEmailSubmit = async (event) => {
@@ -1542,7 +1652,13 @@ export default function App() {
   };
 
   const handleNumberSelectionContinue = async () => {
-    const targetEmail = paymentInfo?.email || signupEmail || user?.email || email || loginEmail || "";
+    const targetEmail =
+      paymentInfo?.email ||
+      signupEmail ||
+      user?.email ||
+      email ||
+      loginEmail ||
+      "";
     if (!targetEmail) {
       setStatus("error");
       setResponseMessage("Missing required field: email");
@@ -1565,13 +1681,16 @@ export default function App() {
         mode: "cors",
         body: JSON.stringify({
           email: targetEmail,
-          selected_twilio_number: selectedTwilioNumber || ""
-        })
+          selected_twilio_number: selectedTwilioNumber || "",
+        }),
       });
       const assignData = await assignRes.json().catch(() => ({}));
       if (!assignRes.ok) {
         throw new Error(
-          assignData?.message || assignData?.error || assignData?.details || "Failed to assign AI number"
+          assignData?.message ||
+            assignData?.error ||
+            assignData?.details ||
+            "Failed to assign AI number",
         );
       }
 
@@ -1584,11 +1703,16 @@ export default function App() {
             body: JSON.stringify({
               email: targetEmail,
               ...(selectedVoiceId ? { voice: selectedVoiceId } : {}),
-              ...((welcomeMessage || "").trim() ? { greeting: (welcomeMessage || "").trim() } : {})
-            })
+              ...((welcomeMessage || "").trim()
+                ? { greeting: (welcomeMessage || "").trim() }
+                : {}),
+            }),
           });
         } catch (err) {
-          console.warn("Failed to apply voice/greeting after number assignment", err);
+          console.warn(
+            "Failed to apply voice/greeting after number assignment",
+            err,
+          );
         }
       }
 
@@ -1612,7 +1736,9 @@ export default function App() {
       await loadDashboard(targetEmail);
     } catch (error) {
       setStatus("error");
-      setResponseMessage(error?.message || "Unable to finish setup. Please try again.");
+      setResponseMessage(
+        error?.message || "Unable to finish setup. Please try again.",
+      );
       setResponseLink(null);
       setStage(STAGES.COMPLETE);
     } finally {
@@ -1623,9 +1749,10 @@ export default function App() {
   const runProvisionFlow = async ({
     emailOverride = null,
     manualInfoOverride = null,
-    crawlDataOverride = null
+    crawlDataOverride = null,
   } = {}) => {
-    const provisionEmail = emailOverride || signupEmail || email || loginEmail || "";
+    const provisionEmail =
+      emailOverride || signupEmail || email || loginEmail || "";
     let manualInfo = manualInfoOverride || manualBusinessInfo;
     const activeCrawlData = crawlDataOverride || crawlData;
     const provisionWebsite =
@@ -1654,7 +1781,8 @@ export default function App() {
     try {
       if (
         (!manualInfo || !manualInfo.businessSummary) &&
-        (Array.isArray(activeCrawlData?.pages) || Array.isArray(activeCrawlData?.data))
+        (Array.isArray(activeCrawlData?.pages) ||
+          Array.isArray(activeCrawlData?.data))
       ) {
         try {
           const profileRes = await fetch(API_URLS.businessProfile, {
@@ -1664,28 +1792,41 @@ export default function App() {
             body: JSON.stringify({
               email: provisionEmail,
               website_url: provisionWebsite,
-              pages: activeCrawlData?.pages || activeCrawlData?.data || []
-            })
+              pages: activeCrawlData?.pages || activeCrawlData?.data || [],
+            }),
           });
           const profileJson = await profileRes.json().catch(() => ({}));
           if (profileRes.ok && profileJson?.profile) {
             const profile = profileJson.profile;
             manualInfo = {
-              businessName: profile.business_name || manualInfo?.businessName || businessName || "",
-              businessPhone: profile.contact_phone || manualInfo?.businessPhone || businessPhone || "",
-              businessEmail: profile.contact_email || manualInfo?.businessEmail || "",
-              businessSummary: profile.business_summary || manualInfo?.businessSummary || "",
+              businessName:
+                profile.business_name ||
+                manualInfo?.businessName ||
+                businessName ||
+                "",
+              businessPhone:
+                profile.contact_phone ||
+                manualInfo?.businessPhone ||
+                businessPhone ||
+                "",
+              businessEmail:
+                profile.contact_email || manualInfo?.businessEmail || "",
+              businessSummary:
+                profile.business_summary || manualInfo?.businessSummary || "",
               hours: profile.business_hours || manualInfo?.hours || "",
               openings: profile.business_openings || manualInfo?.openings || "",
               location: profile.business_location || manualInfo?.location || "",
               services: profile.business_services || manualInfo?.services || "",
               notes: profile.business_notes || manualInfo?.notes || "",
-              websiteUrl: provisionWebsite || manualInfo?.websiteUrl || ""
+              websiteUrl: provisionWebsite || manualInfo?.websiteUrl || "",
             };
             setManualBusinessInfo(manualInfo);
           }
         } catch (profileErr) {
-          console.warn("Business profile extraction before provision failed", profileErr);
+          console.warn(
+            "Business profile extraction before provision failed",
+            profileErr,
+          );
         }
       }
 
@@ -1696,14 +1837,15 @@ export default function App() {
         "Horizon Property Group";
       const infoLines = manualInfo
         ? [
-            manualInfo.businessSummary && `Summary: ${manualInfo.businessSummary}`,
+            manualInfo.businessSummary &&
+              `Summary: ${manualInfo.businessSummary}`,
             manualInfo.services && `Services: ${manualInfo.services}`,
             manualInfo.hours && `Hours: ${manualInfo.hours}`,
             manualInfo.openings && `Openings: ${manualInfo.openings}`,
             manualInfo.location && `Location: ${manualInfo.location}`,
             manualInfo.notes && `Notes: ${manualInfo.notes}`,
             manualInfo.businessPhone && `Phone: ${manualInfo.businessPhone}`,
-            manualInfo.businessEmail && `Email: ${manualInfo.businessEmail}`
+            manualInfo.businessEmail && `Email: ${manualInfo.businessEmail}`,
           ]
             .filter(Boolean)
             .join("\n")
@@ -1712,20 +1854,20 @@ export default function App() {
         ? [
             {
               url: "manual-entry",
-              content: infoLines
-            }
+              content: infoLines,
+            },
           ]
         : [];
       const promptPayload = {
         business_name: fallbackBusiness,
-        pages: manualPages
+        pages: manualPages,
       };
 
       const promptRes = await fetch(API_URLS.ultravoxPrompt, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         mode: "cors",
-        body: JSON.stringify(promptPayload)
+        body: JSON.stringify(promptPayload),
       });
 
       if (!promptRes.ok) {
@@ -1757,14 +1899,14 @@ export default function App() {
         business_notes: manualInfo?.notes || "",
         voice: selectedVoiceId || "",
         welcome_message: welcomeMessage || "",
-        selected_twilio_number: selectedTwilioNumber || ""
+        selected_twilio_number: selectedTwilioNumber || "",
       };
 
       const provisionRes = await fetch(API_URLS.provisionClient, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         mode: "cors",
-        body: JSON.stringify(provisionPayload)
+        body: JSON.stringify(provisionPayload),
       });
 
       if (!provisionRes.ok) {
@@ -1782,7 +1924,8 @@ export default function App() {
           provText ||
           "Failed to provision client";
         const err = new Error(message);
-        err.resetLink = parsed?.reset_password_url || parsed?.reset_link || null;
+        err.resetLink =
+          parsed?.reset_password_url || parsed?.reset_link || null;
         throw err;
       }
 
@@ -1803,7 +1946,7 @@ export default function App() {
       if (!aiNumber) {
         try {
           const dashRes = await fetch(
-            `${API_URLS.dashboard}?email=${encodeURIComponent(provisionEmail)}`
+            `${API_URLS.dashboard}?email=${encodeURIComponent(provisionEmail)}`,
           );
           const dashData = await dashRes.json().catch(() => ({}));
           const phones = dashData?.phone_numbers || dashData?.numbers || [];
@@ -1825,8 +1968,8 @@ export default function App() {
             body: JSON.stringify({
               email: provisionEmail,
               agent_id: agentId,
-              ai_number: aiNumber
-            })
+              ai_number: aiNumber,
+            }),
           });
         } catch (err) {
           console.warn("Failed to persist agent/number", err);
@@ -1852,8 +1995,7 @@ export default function App() {
     } catch (error) {
       setStatus("error");
       setResponseMessage(
-        error?.message ||
-          "Unable to finish setup. Please try again."
+        error?.message || "Unable to finish setup. Please try again.",
       );
       const hasResetLink = Boolean(error?.resetLink);
       setResponseLink(normalizeResetLink(error?.resetLink) || null);
@@ -1877,18 +2019,23 @@ export default function App() {
         const params = new URLSearchParams({
           email: emailAddress,
           max_results: "200",
-          ts: String(Date.now())
+          ts: String(Date.now()),
         });
         if (range?.start) params.set("from", range.start);
         if (range?.end) params.set("to", range.end);
         const { res, data } = await fetchJsonWithFallback(
-          `${API_URLS.calendarEvents}?${params.toString()}`
+          `${API_URLS.calendarEvents}?${params.toString()}`,
         );
         if (!res.ok) {
-          const detail = data?.error || data?.details || data?.raw || "Unable to fetch calendar events";
+          const detail =
+            data?.error ||
+            data?.details ||
+            data?.raw ||
+            "Unable to fetch calendar events";
           const detailText = String(detail || "");
           const isDisconnected =
-            res.status === 404 || detailText.includes("No Google account connected");
+            res.status === 404 ||
+            detailText.includes("No Google account connected");
           const isAuthExpired =
             res.status === 401 ||
             detailText.includes("Invalid Credentials") ||
@@ -1900,17 +2047,23 @@ export default function App() {
             setCalendarDiagnostics(null);
           }
           if (isAuthExpired) {
-            setCalendarError("Google Calendar connection expired. Please reconnect.");
+            setCalendarError(
+              "Google Calendar connection expired. Please reconnect.",
+            );
             return;
           }
           throw new Error(detail);
         }
         if (looksLikeHtml(data?.raw)) {
-          throw new Error("Calendar API returned HTML instead of JSON. Check /api routing.");
+          throw new Error(
+            "Calendar API returned HTML instead of JSON. Check /api routing.",
+          );
         }
         setCalendarEvents(data?.events || []);
         setCalendarStatus("Google");
-        setCalendarAccountEmail(data?.account_email || data?.accountEmail || "");
+        setCalendarAccountEmail(
+          data?.account_email || data?.accountEmail || "",
+        );
         setCalendarDiagnostics(data?.diagnostics || null);
       } catch (error) {
         setCalendarError(error?.message || "Unable to load events");
@@ -1918,7 +2071,7 @@ export default function App() {
         setCalendarLoading(false);
       }
     },
-    [user?.email]
+    [user?.email],
   );
 
   const normalizeToolSubscriptions = useCallback((payload) => {
@@ -1929,7 +2082,9 @@ export default function App() {
         : [];
     const map = {};
     source.forEach((entry) => {
-      const toolId = normalizeToolId(entry?.tool || entry?.toolId || entry?.tool_id || DEFAULT_TOOL_ID);
+      const toolId = normalizeToolId(
+        entry?.tool || entry?.toolId || entry?.tool_id || DEFAULT_TOOL_ID,
+      );
       const status = entry?.status || "";
       const active =
         typeof entry?.active === "boolean"
@@ -1943,7 +2098,8 @@ export default function App() {
         active,
         status,
         planId: entry?.planId || entry?.plan_id || null,
-        currentPeriodEnd: entry?.currentPeriodEnd || entry?.current_period_end || null
+        currentPeriodEnd:
+          entry?.currentPeriodEnd || entry?.current_period_end || null,
       };
     });
     return map;
@@ -1951,7 +2107,8 @@ export default function App() {
 
   const loadDashboard = useCallback(
     async (emailAddress = null) => {
-      const targetEmail = emailAddress || user?.email || email || signupEmail || loginEmail;
+      const targetEmail =
+        emailAddress || user?.email || email || signupEmail || loginEmail;
       if (!targetEmail) {
         setReceptionistUsage(null);
         setSubscriptionsLoading(false);
@@ -1963,22 +2120,28 @@ export default function App() {
         const dashPromise = fetchJsonWithFallbackAndTimeout(
           `${API_URLS.dashboard}?email=${encodeURIComponent(targetEmail)}`,
           {},
-          DASHBOARD_REQUEST_TIMEOUT_MS
+          DASHBOARD_REQUEST_TIMEOUT_MS,
         );
         const subsPromise = fetchJsonWithFallbackAndTimeout(
           `${API_URLS.subscriptionsStatus}?email=${encodeURIComponent(targetEmail)}`,
           {},
-          SUBSCRIPTION_REQUEST_TIMEOUT_MS
+          SUBSCRIPTION_REQUEST_TIMEOUT_MS,
         ).catch(() => null);
 
         const { res: dashRes, data: dashData } = await dashPromise;
 
         if (!dashRes.ok) {
-          const detail = dashData?.error || dashData?.details || dashData?.raw || "Unable to load dashboard";
+          const detail =
+            dashData?.error ||
+            dashData?.details ||
+            dashData?.raw ||
+            "Unable to load dashboard";
           throw new Error(detail);
         }
         if (looksLikeHtml(dashData?.raw)) {
-          throw new Error("Dashboard API returned HTML instead of JSON. Check /api routing.");
+          throw new Error(
+            "Dashboard API returned HTML instead of JSON. Check /api routing.",
+          );
         }
 
         let subscriptionPayload = dashData?.subscriptions;
@@ -1987,8 +2150,9 @@ export default function App() {
           const normalizedSubs = normalizeToolSubscriptions(payload);
           setToolSubscriptions(normalizedSubs);
           const firstActiveTool =
-            Object.entries(normalizedSubs).find(([, entry]) => entry?.active)?.[0] ||
-            null;
+            Object.entries(normalizedSubs).find(
+              ([, entry]) => entry?.active,
+            )?.[0] || null;
           setActiveTool((prev) => {
             if (prev && normalizedSubs[prev]?.active) return prev;
             if (firstActiveTool) return firstActiveTool;
@@ -2016,16 +2180,18 @@ export default function App() {
         if (dashData?.user) {
           setUser((prev) => ({
             ...(prev || {}),
-            ...dashData.user
+            ...dashData.user,
           }));
         }
 
-        setReceptionistUsage(dashData?.receptionist_usage || dashData?.receptionistUsage || null);
+        setReceptionistUsage(
+          dashData?.receptionist_usage || dashData?.receptionistUsage || null,
+        );
 
         setBookingSettings((prev) => ({
           booking_enabled: Boolean(
             (dashData?.client && dashData?.client?.booking_enabled) ||
-              prev.booking_enabled
+              prev.booking_enabled,
           ),
           booking_duration_minutes:
             dashData?.client?.booking_duration_minutes ??
@@ -2034,7 +2200,7 @@ export default function App() {
           booking_buffer_minutes:
             dashData?.client?.booking_buffer_minutes ??
             prev.booking_buffer_minutes ??
-            5
+            5,
         }));
 
         const phones = dashData?.phone_numbers || [];
@@ -2045,35 +2211,48 @@ export default function App() {
                 : {
                     ...p,
                     phone_number: p.phone_number || p.twilio_phone_number,
-                    twilio_phone_number: p.twilio_phone_number || p.phone_number
-                  }
+                    twilio_phone_number:
+                      p.twilio_phone_number || p.phone_number,
+                  },
             )
           : [];
         setPhoneNumbers(normalizedPhones);
         setProvisionData((prev) => ({
           ...(prev || {}),
           phone_numbers: normalizedPhones,
-          phone_number: normalizedPhones?.[0]?.phone_number || prev?.phone_number
+          phone_number:
+            normalizedPhones?.[0]?.phone_number || prev?.phone_number,
         }));
 
         const callTemplate =
-          dashData?.ultravox_agent?.callTemplate || dashData?.agent?.callTemplate || {};
+          dashData?.ultravox_agent?.callTemplate ||
+          dashData?.agent?.callTemplate ||
+          {};
         const derivedBusinessName =
           dashData?.client?.business_name ||
           dashData?.client?.name ||
           businessName;
         const derivedBusinessPhone =
-          dashData?.client?.business_phone ||
-          businessPhone;
+          dashData?.client?.business_phone || businessPhone;
         if (derivedBusinessName) setBusinessName(derivedBusinessName);
         if (derivedBusinessPhone) setBusinessPhone(derivedBusinessPhone);
 
         setAgentDetails((prev) => ({
           ...prev,
           agentId: dashData?.client?.ultravox_agent_id || prev.agentId,
-          agentName: dashData?.ultravox_agent?.name || dashData?.agent?.agent_name || prev.agentName,
-          systemPrompt: callTemplate?.systemPrompt || dashData?.agent?.system_prompt || prev.systemPrompt,
-          voice: callTemplate?.voice || callTemplate?.voiceId || dashData?.agent?.voice || prev.voice,
+          agentName:
+            dashData?.ultravox_agent?.name ||
+            dashData?.agent?.agent_name ||
+            prev.agentName,
+          systemPrompt:
+            callTemplate?.systemPrompt ||
+            dashData?.agent?.system_prompt ||
+            prev.systemPrompt,
+          voice:
+            callTemplate?.voice ||
+            callTemplate?.voiceId ||
+            dashData?.agent?.voice ||
+            prev.voice,
           temperature:
             typeof callTemplate?.temperature === "number"
               ? callTemplate.temperature
@@ -2085,8 +2264,11 @@ export default function App() {
             callTemplate?.greeting ||
             dashData?.agent?.greeting ||
             prev.greeting,
-          escalation: callTemplate?.fallback || dashData?.agent?.escalation || prev.escalation,
-          faq: callTemplate?.faq || dashData?.agent?.faq || prev.faq
+          escalation:
+            callTemplate?.fallback ||
+            dashData?.agent?.escalation ||
+            prev.escalation,
+          faq: callTemplate?.faq || dashData?.agent?.faq || prev.faq,
         }));
       } catch (error) {
         console.error("Failed to load dashboard", error);
@@ -2095,13 +2277,16 @@ export default function App() {
         setSubscriptionsLoading(false);
       }
     },
-    [email, loginEmail, normalizeToolSubscriptions, signupEmail, user?.email]
+    [email, loginEmail, normalizeToolSubscriptions, signupEmail, user?.email],
   );
 
   const handleAssignNumber = useCallback(async () => {
     const targetEmail = user?.email || email || signupEmail || loginEmail;
     if (!targetEmail) {
-      setAssignNumberStatus({ status: "error", message: "Missing user email." });
+      setAssignNumberStatus({
+        status: "error",
+        message: "Missing user email.",
+      });
       return;
     }
     setAssignNumberStatus({ status: "loading", message: "" });
@@ -2111,29 +2296,27 @@ export default function App() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         mode: "cors",
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const message = data?.error || data?.details || "Failed to assign AI number";
+        const message =
+          data?.error || data?.details || "Failed to assign AI number";
         throw new Error(message);
       }
-      setAssignNumberStatus({ status: "success", message: "AI number assigned." });
+      setAssignNumberStatus({
+        status: "success",
+        message: "AI number assigned.",
+      });
       setProvisionData((prev) => ({ ...(prev || {}), ...data }));
       await loadDashboard(targetEmail);
     } catch (error) {
       setAssignNumberStatus({
         status: "error",
-        message: error?.message || "Failed to assign AI number"
+        message: error?.message || "Failed to assign AI number",
       });
     }
-  }, [
-    email,
-    loadDashboard,
-    loginEmail,
-    signupEmail,
-    user?.email
-  ]);
+  }, [email, loadDashboard, loginEmail, signupEmail, user?.email]);
 
   const handleAgentSave = useCallback(
     async (updates) => {
@@ -2141,7 +2324,7 @@ export default function App() {
       if (user?.scope === "client_user") {
         setAgentSaveStatus({
           status: "error",
-          message: "Added users cannot change settings."
+          message: "Added users cannot change settings.",
         });
         return;
       }
@@ -2159,8 +2342,8 @@ export default function App() {
             temperature:
               typeof updates?.temperature === "number"
                 ? updates.temperature
-                : agentDetails.temperature
-          })
+                : agentDetails.temperature,
+          }),
         });
         if (!res.ok) {
           const text = await res.text();
@@ -2171,11 +2354,18 @@ export default function App() {
       } catch (error) {
         setAgentSaveStatus({
           status: "error",
-          message: error?.message || "Failed to update agent"
+          message: error?.message || "Failed to update agent",
         });
       }
     },
-    [agentDetails.systemPrompt, agentDetails.temperature, agentDetails.voice, loadDashboard, user?.email, user?.scope]
+    [
+      agentDetails.systemPrompt,
+      agentDetails.temperature,
+      agentDetails.voice,
+      loadDashboard,
+      user?.email,
+      user?.scope,
+    ],
   );
 
   const triggerPromptGeneration = useCallback(
@@ -2196,23 +2386,34 @@ export default function App() {
             subType,
             taskType: null,
             businessProfile: businessProfile || {},
-            knowledgeText: knowledgeText || ""
-          })
+            knowledgeText: knowledgeText || "",
+          }),
         });
       } catch (error) {
         console.warn("Prompt generation failed", error);
       }
     },
-    [clientData?.business_category, clientData?.business_sub_type, clientData?.client_id, clientData?.id, user?.email]
+    [
+      clientData?.business_category,
+      clientData?.business_sub_type,
+      clientData?.client_id,
+      clientData?.id,
+      user?.email,
+    ],
   );
 
   const handleBusinessSave = useCallback(
-    async ({ businessName: name, businessPhone: phone, websiteUrl, websiteData } = {}) => {
+    async ({
+      businessName: name,
+      businessPhone: phone,
+      websiteUrl,
+      websiteData,
+    } = {}) => {
       if (!user?.email) return;
       if (user?.scope === "client_user") {
         setBusinessSaveStatus({
           status: "error",
-          message: "Added users cannot change settings."
+          message: "Added users cannot change settings.",
         });
         return;
       }
@@ -2222,7 +2423,7 @@ export default function App() {
           email: user.email,
           businessName: name || businessName,
           businessPhone: phone || businessPhone,
-          websiteUrl: websiteUrl || clientData?.website_url || url || ""
+          websiteUrl: websiteUrl || clientData?.website_url || url || "",
         };
         if (websiteData !== undefined) {
           payload.websiteData = websiteData;
@@ -2231,28 +2432,41 @@ export default function App() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           mode: "cors",
-          body: JSON.stringify(payload)
+          body: JSON.stringify(payload),
         });
         if (!res.ok) {
           const text = await res.text();
           throw new Error(text || "Failed to save business details");
         }
-        setBusinessSaveStatus({ status: "success", message: "Business details saved" });
+        setBusinessSaveStatus({
+          status: "success",
+          message: "Business details saved",
+        });
         setBusinessName(name || businessName);
         setBusinessPhone(phone || businessPhone);
         await loadDashboard(user.email);
         triggerPromptGeneration({
           businessProfile: websiteData || {},
-          knowledgeText: websiteData?.businessSummary || websiteData?.business_summary || ""
+          knowledgeText:
+            websiteData?.businessSummary || websiteData?.business_summary || "",
         });
       } catch (error) {
         setBusinessSaveStatus({
           status: "error",
-          message: error?.message || "Failed to save business details"
+          message: error?.message || "Failed to save business details",
         });
       }
     },
-    [businessName, businessPhone, clientData?.website_url, loadDashboard, triggerPromptGeneration, url, user?.email, user?.scope]
+    [
+      businessName,
+      businessPhone,
+      clientData?.website_url,
+      loadDashboard,
+      triggerPromptGeneration,
+      url,
+      user?.email,
+      user?.scope,
+    ],
   );
 
   const handleBookingSettingsSave = useCallback(
@@ -2261,7 +2475,7 @@ export default function App() {
       if (user?.scope === "client_user") {
         setBookingStatus({
           status: "error",
-          message: "Added users cannot change settings."
+          message: "Added users cannot change settings.",
         });
         return;
       }
@@ -2275,71 +2489,85 @@ export default function App() {
             email: user.email,
             booking_enabled: nextSettings.booking_enabled,
             duration_minutes: nextSettings.booking_duration_minutes,
-            buffer_minutes: nextSettings.booking_buffer_minutes
-          })
+            buffer_minutes: nextSettings.booking_buffer_minutes,
+          }),
         });
         if (!res.ok) {
           const text = await res.text();
           throw new Error(text || "Failed to save booking settings");
         }
         setBookingSettings(nextSettings);
-        setBookingStatus({ status: "success", message: "Booking settings saved" });
+        setBookingStatus({
+          status: "success",
+          message: "Booking settings saved",
+        });
       } catch (error) {
         setBookingStatus({
           status: "error",
-          message: error?.message || "Failed to save booking settings"
+          message: error?.message || "Failed to save booking settings",
         });
       }
     },
-    [user?.email, user?.scope]
+    [user?.email, user?.scope],
   );
 
-  const handleTestBooking = useCallback(
-    async () => {
-      if (!user?.email) return;
-      setBookingTestStatus({ status: "loading", message: "" });
-      try {
-        const start = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-        const res = await fetch(API_URLS.calendarBook, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          mode: "cors",
-          body: JSON.stringify({
-            email: user.email,
-            start,
-            duration_minutes: bookingSettings.booking_duration_minutes || 30,
-            buffer_minutes: bookingSettings.booking_buffer_minutes || 5,
-            title: "Test booking from dashboard",
-            description: "Created from dashboard to verify booking flow."
-          })
-        });
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(text || "Failed to book slot");
-        }
-        setBookingTestStatus({ status: "success", message: "Booked next available slot (check Google Calendar)." });
-      } catch (error) {
-        setBookingTestStatus({
-          status: "error",
-          message: error?.message || "Failed to book slot"
-        });
+  const handleTestBooking = useCallback(async () => {
+    if (!user?.email) return;
+    setBookingTestStatus({ status: "loading", message: "" });
+    try {
+      const start = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+      const res = await fetch(API_URLS.calendarBook, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        mode: "cors",
+        body: JSON.stringify({
+          email: user.email,
+          start,
+          duration_minutes: bookingSettings.booking_duration_minutes || 30,
+          buffer_minutes: bookingSettings.booking_buffer_minutes || 5,
+          title: "Test booking from dashboard",
+          description: "Created from dashboard to verify booking flow.",
+        }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Failed to book slot");
       }
-    },
-    [bookingSettings.booking_buffer_minutes, bookingSettings.booking_duration_minutes, user?.email]
-  );
+      setBookingTestStatus({
+        status: "success",
+        message: "Booked next available slot (check Google Calendar).",
+      });
+    } catch (error) {
+      setBookingTestStatus({
+        status: "error",
+        message: error?.message || "Failed to book slot",
+      });
+    }
+  }, [
+    bookingSettings.booking_buffer_minutes,
+    bookingSettings.booking_duration_minutes,
+    user?.email,
+  ]);
 
   const loadAllCalls = useCallback(
     async (emailAddress = user?.email) => {
       if (!emailAddress) return;
       try {
         const { res, data } = await fetchJsonWithFallback(
-          `${API_URLS.dashboardCalls}?email=${encodeURIComponent(emailAddress)}&limit=500`
+          `${API_URLS.dashboardCalls}?email=${encodeURIComponent(emailAddress)}&limit=500`,
         );
         if (!res.ok) {
-          throw new Error(data?.error || data?.details || data?.raw || "Unable to fetch call logs");
+          throw new Error(
+            data?.error ||
+              data?.details ||
+              data?.raw ||
+              "Unable to fetch call logs",
+          );
         }
         if (looksLikeHtml(data?.raw)) {
-          throw new Error("Calls API returned HTML instead of JSON. Check /api routing.");
+          throw new Error(
+            "Calls API returned HTML instead of JSON. Check /api routing.",
+          );
         }
         setAllCalls(data?.calls || []);
       } catch (error) {
@@ -2347,7 +2575,7 @@ export default function App() {
         setAllCalls([]);
       }
     },
-    [user?.email]
+    [user?.email],
   );
 
   const loadCallLogs = useCallback(
@@ -2355,7 +2583,7 @@ export default function App() {
       if (!emailAddress) return;
       try {
         const { res: callsRes, data: callsJson } = await fetchJsonWithFallback(
-          `${API_URLS.calls}?email=${encodeURIComponent(emailAddress)}`
+          `${API_URLS.calls}?email=${encodeURIComponent(emailAddress)}`,
         );
         if (callsRes.ok && !looksLikeHtml(callsJson?.raw)) {
           const calls = Array.isArray(callsJson?.calls) ? callsJson.calls : [];
@@ -2366,15 +2594,23 @@ export default function App() {
           }
         }
 
-        const days = typeof daysOverride === "number" ? daysOverride : getSelectedDays();
+        const days =
+          typeof daysOverride === "number" ? daysOverride : getSelectedDays();
         const { res, data } = await fetchJsonWithFallback(
-          `${API_URLS.dashboardCalls}?email=${encodeURIComponent(emailAddress)}&days=${days}`
+          `${API_URLS.dashboardCalls}?email=${encodeURIComponent(emailAddress)}&days=${days}`,
         );
         if (!res.ok) {
-          throw new Error(data?.error || data?.details || data?.raw || "Unable to fetch call logs");
+          throw new Error(
+            data?.error ||
+              data?.details ||
+              data?.raw ||
+              "Unable to fetch call logs",
+          );
         }
         if (looksLikeHtml(data?.raw)) {
-          throw new Error("Calls API returned HTML instead of JSON. Check /api routing.");
+          throw new Error(
+            "Calls API returned HTML instead of JSON. Check /api routing.",
+          );
         }
         setRecentCalls(data?.calls || []);
         setCallsPage(1);
@@ -2383,7 +2619,7 @@ export default function App() {
         setRecentCalls([]);
       }
     },
-    [user?.email, getSelectedDays]
+    [user?.email, getSelectedDays],
   );
 
   const handleRefreshDashboardAll = useCallback(() => {
@@ -2395,12 +2631,21 @@ export default function App() {
   const loadUltravoxVoices = useCallback(async () => {
     setUltravoxVoicesLoading(true);
     try {
-      const { res, data } = await fetchJsonWithFallback(API_URLS.ultravoxVoices);
+      const { res, data } = await fetchJsonWithFallback(
+        API_URLS.ultravoxVoices,
+      );
       if (!res.ok) {
-        throw new Error(data?.error || data?.details || data?.raw || "Unable to fetch S4U-v3 voices");
+        throw new Error(
+          data?.error ||
+            data?.details ||
+            data?.raw ||
+            "Unable to fetch S4U-v3 voices",
+        );
       }
       if (looksLikeHtml(data?.raw)) {
-        throw new Error("Voices API returned HTML instead of JSON. Check /api routing.");
+        throw new Error(
+          "Voices API returned HTML instead of JSON. Check /api routing.",
+        );
       }
       const voices = Array.isArray(data?.voices) ? data.voices : data;
       setUltravoxVoices(voices || []);
@@ -2413,7 +2658,8 @@ export default function App() {
   }, []);
 
   const loadTwilioAvailableNumbers = useCallback(async () => {
-    const emailAddress = signupEmail || email || loginEmail || paymentInfo?.email || "";
+    const emailAddress =
+      signupEmail || email || loginEmail || paymentInfo?.email || "";
     if (!emailAddress) return;
     setTwilioNumbersLoading(true);
     setTwilioNumbersError("");
@@ -2427,14 +2673,21 @@ export default function App() {
       const { res, data } = await fetchJsonWithFallback(
         `${API_URLS.twilioAvailableNumbers}?${params.toString()}`,
         {
-          headers: requestCountry ? { "X-Country-Code": requestCountry } : {}
-        }
+          headers: requestCountry ? { "X-Country-Code": requestCountry } : {},
+        },
       );
       if (!res.ok) {
-        throw new Error(data?.error || data?.details || data?.raw || "Unable to fetch numbers");
+        throw new Error(
+          data?.error ||
+            data?.details ||
+            data?.raw ||
+            "Unable to fetch numbers",
+        );
       }
       if (looksLikeHtml(data?.raw)) {
-        throw new Error("Numbers API returned HTML instead of JSON. Check /api routing.");
+        throw new Error(
+          "Numbers API returned HTML instead of JSON. Check /api routing.",
+        );
       }
       const country = data?.country || "";
       const numbers = Array.isArray(data?.numbers) ? data.numbers : [];
@@ -2443,7 +2696,8 @@ export default function App() {
       setTwilioNumbersCountry(country);
       setTwilioAssignedNumber(data?.assigned_number || "");
       setSelectedTwilioNumber((prev) => {
-        if (prev && filteredNumbers.some((item) => item?.phone_number === prev)) return prev;
+        if (prev && filteredNumbers.some((item) => item?.phone_number === prev))
+          return prev;
         if (data?.assigned_number) return data.assigned_number;
         return filteredNumbers?.[0]?.phone_number || "";
       });
@@ -2464,8 +2718,8 @@ export default function App() {
       try {
         const res = await fetch(
           `${API_URLS.dashboardCallTranscript}?email=${encodeURIComponent(
-            user.email
-          )}&callSid=${encodeURIComponent(callSid)}`
+            user.email,
+          )}&callSid=${encodeURIComponent(callSid)}`,
         );
         if (!res.ok) {
           const text = await res.text();
@@ -2479,18 +2733,18 @@ export default function App() {
           messages: data?.messages || [],
           transcript: "",
           loading: false,
-          error: ""
+          error: "",
         });
       } catch (error) {
         const message = error?.message || "Unable to fetch transcript";
         setCallTranscript((prev) => ({
           ...prev,
           loading: false,
-          error: message
+          error: message,
         }));
       }
     },
-    [user?.email]
+    [user?.email],
   );
 
   const setLoggedInFromOAuth = useCallback(
@@ -2501,7 +2755,7 @@ export default function App() {
         email: payload?.email,
         name: payload?.profile?.name || payload?.email,
         auth_token: payload?.auth_token || null,
-        auth_token_expires_at: payload?.auth_token_expires_at || null
+        auth_token_expires_at: payload?.auth_token_expires_at || null,
       });
       setIsLoggedIn(true);
 
@@ -2518,7 +2772,9 @@ export default function App() {
 
       setStage(STAGES.DASHBOARD);
       setCalendarStatus("Google");
-      setCalendarAccountEmail(payload?.google_account_email || payload?.account_email || "");
+      setCalendarAccountEmail(
+        payload?.google_account_email || payload?.account_email || "",
+      );
     },
     [
       setCalendarAccountEmail,
@@ -2528,8 +2784,8 @@ export default function App() {
       setEmail,
       setResponseMessage,
       setStatus,
-      setUser
-    ]
+      setUser,
+    ],
   );
 
   const completeGoogleAuth = useCallback(
@@ -2540,7 +2796,7 @@ export default function App() {
         const res = await fetch(API_URLS.googleAuthCallback, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code, state })
+          body: JSON.stringify({ code, state }),
         });
         if (!res.ok) {
           const text = await res.text();
@@ -2560,7 +2816,7 @@ export default function App() {
         setResponseMessage(error?.message || "Google auth failed");
       }
     },
-    [loadCalendarEvents, setLoggedInFromOAuth]
+    [loadCalendarEvents, setLoggedInFromOAuth],
   );
 
   const completeOutlookAuth = useCallback(async (code, state) => {
@@ -2570,14 +2826,16 @@ export default function App() {
       const res = await fetch(API_URLS.outlookAuthCallback, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code, state })
+        body: JSON.stringify({ code, state }),
       });
       if (!res.ok) {
         const text = await res.text();
         throw new Error(text || "Outlook authentication failed");
       }
       const data = await res.json();
-      setOutlookAccountEmail(data?.outlook_account_email || data?.account_email || "");
+      setOutlookAccountEmail(
+        data?.outlook_account_email || data?.account_email || "",
+      );
       setStatus("success");
       setResponseMessage("Outlook account connected.");
       if (window.opener && window.opener !== window) {
@@ -2624,7 +2882,7 @@ export default function App() {
       const popup = window.open(
         data?.auth_url,
         "google-oauth",
-        "width=520,height=640"
+        "width=520,height=640",
       );
       if (!popup) {
         throw new Error("Please allow pop-ups to sign in with Google.");
@@ -2639,23 +2897,35 @@ export default function App() {
     const handler = (event) => {
       const payload = event.data || {};
       if (payload?.outlook_account_email) {
-        if (outlookStateRef.current && payload?.state && payload.state !== outlookStateRef.current) {
+        if (
+          outlookStateRef.current &&
+          payload?.state &&
+          payload.state !== outlookStateRef.current
+        ) {
           return;
         }
-        setOutlookAccountEmail(payload?.outlook_account_email || payload?.account_email || "");
+        setOutlookAccountEmail(
+          payload?.outlook_account_email || payload?.account_email || "",
+        );
         setStatus("success");
         setResponseMessage("Outlook account connected.");
         return;
       }
       if (!payload?.user_id || !payload?.email) return;
-      if (googleStateRef.current && payload?.state && payload.state !== googleStateRef.current) {
+      if (
+        googleStateRef.current &&
+        payload?.state &&
+        payload.state !== googleStateRef.current
+      ) {
         return;
       }
       const isNewUser = Boolean(payload?.is_new_user);
       setLoggedInFromOAuth(payload);
       setStatus("success");
       setResponseMessage("Google account connected.");
-      setCalendarAccountEmail(payload?.google_account_email || payload?.account_email || "");
+      setCalendarAccountEmail(
+        payload?.google_account_email || payload?.account_email || "",
+      );
       if (!isNewUser) {
         setCalendarEvents([]);
         loadCalendarEvents(payload?.email);
@@ -2693,7 +2963,7 @@ export default function App() {
       "receptionist",
       "social-manager",
       "email-manager",
-      "crm-lead-manager"
+      "crm-lead-manager",
     ]);
     if (allowedSlugs.has(slug)) {
       setServiceSlug(slug || "receptionist");
@@ -2711,6 +2981,9 @@ export default function App() {
       const path = (window.location.pathname || "").toLowerCase();
       const hasPathPriorityStage =
         path.startsWith("/about") ||
+        path === "/login" ||
+        path === "/signup" ||
+        window.location.hash === "#login" ||
         path.startsWith("/dashboard") ||
         /^\/meet\/[^/]+/.test(path) ||
         /^\/card\/[a-z0-9_-]+\/?$/.test(path);
@@ -2734,11 +3007,13 @@ export default function App() {
         setToolSubscriptions(normalized);
       }
       if (saved.selectedTool) setSelectedTool(saved.selectedTool);
-      if (saved.manualBusinessInfo) setManualBusinessInfo(saved.manualBusinessInfo);
+      if (saved.manualBusinessInfo)
+        setManualBusinessInfo(saved.manualBusinessInfo);
       if (saved.serviceSlug) setServiceSlug(saved.serviceSlug);
       if (saved.calendarStatus) setCalendarStatus(saved.calendarStatus);
       if (saved.calendarEvents) setCalendarEvents(saved.calendarEvents);
-      if (saved.calendarAccountEmail) setCalendarAccountEmail(saved.calendarAccountEmail);
+      if (saved.calendarAccountEmail)
+        setCalendarAccountEmail(saved.calendarAccountEmail);
       if (saved.bookingSettings) setBookingSettings(saved.bookingSettings);
     } catch (error) {
       console.error("Failed to load persisted state", error);
@@ -2750,7 +3025,8 @@ export default function App() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const path = window.location.pathname || "";
-    const isDashboardPath = path === "/dashboard" || path.endsWith("/dashboard");
+    const isDashboardPath =
+      path === "/dashboard" || path.endsWith("/dashboard");
     if (!isDashboardPath) return;
 
     const hasSession = isLoggedIn || Boolean(user?.email);
@@ -2797,7 +3073,11 @@ export default function App() {
     if (typeof window !== "undefined") {
       const path = window.location.pathname || "";
       if (path !== "/dashboard") {
-        window.history.replaceState({ stage: STAGES.DASHBOARD }, "", "/dashboard");
+        window.history.replaceState(
+          { stage: STAGES.DASHBOARD },
+          "",
+          "/dashboard",
+        );
       }
     }
   }, [isLoggedIn, stage]);
@@ -2814,7 +3094,15 @@ export default function App() {
     loadAllCalls();
     loadUltravoxVoices();
     loadCalendarEvents();
-  }, [hasActiveSubscription, loadAllCalls, loadCalendarEvents, loadCallLogs, loadDashboard, loadUltravoxVoices, stage]);
+  }, [
+    hasActiveSubscription,
+    loadAllCalls,
+    loadCalendarEvents,
+    loadCallLogs,
+    loadDashboard,
+    loadUltravoxVoices,
+    stage,
+  ]);
 
   useEffect(() => {
     if (stage !== STAGES.PAYMENT_SUCCESS) return;
@@ -2841,11 +3129,12 @@ export default function App() {
           voice?.audio_url,
           voice?.audioUrl,
           voice?.demo_url,
-          voice?.demoUrl
-        ].some(Boolean)
+          voice?.demoUrl,
+        ].some(Boolean),
       ) || ultravoxVoices[0];
     const first = sampleFirst || ultravoxVoices[0];
-    const voiceId = first?.id || first?.voiceId || first?.voice_id || first?.name;
+    const voiceId =
+      first?.id || first?.voiceId || first?.voice_id || first?.name;
     if (voiceId) setSelectedVoiceId(voiceId);
   }, [selectedVoiceId, ultravoxVoices]);
 
@@ -2858,7 +3147,8 @@ export default function App() {
   }, [stage, user?.email, email]);
 
   useEffect(() => {
-    if (stage !== STAGES.BUSINESS_DETAILS && stage !== STAGES.BUSINESS_TYPE) return;
+    if (stage !== STAGES.BUSINESS_DETAILS && stage !== STAGES.BUSINESS_TYPE)
+      return;
     const targetEmail = signupEmail || user?.email || email || loginEmail || "";
     if (targetEmail) {
       if (!signupEmail) setSignupEmail(targetEmail);
@@ -2881,7 +3171,7 @@ export default function App() {
     stage,
     user?.email,
     user?.name,
-    userProfile?.business_name
+    userProfile?.business_name,
   ]);
 
   useEffect(() => {
@@ -2906,7 +3196,7 @@ export default function App() {
         calendarStatus,
         calendarEvents,
         calendarAccountEmail,
-        bookingSettings
+        bookingSettings,
       };
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     } catch (error) {
@@ -2930,7 +3220,7 @@ export default function App() {
     calendarStatus,
     calendarEvents,
     calendarAccountEmail,
-    bookingSettings
+    bookingSettings,
   ]);
 
   useEffect(() => {
@@ -2953,16 +3243,17 @@ export default function App() {
 
   useEffect(() => {
     const handlePopState = (event) => {
-    const nextStage = event.state?.stage || STAGES.LANDING;
-    suppressHistoryRef.current = true;
-    setStage(nextStage);
-  };
-  window.addEventListener("popstate", handlePopState);
-  return () => window.removeEventListener("popstate", handlePopState);
+      const nextStage = event.state?.stage || STAGES.LANDING;
+      suppressHistoryRef.current = true;
+      setStage(nextStage);
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
   useEffect(() => {
-    const updateMobile = () => setIsMobile(typeof window !== "undefined" && window.innerWidth <= 768);
+    const updateMobile = () =>
+      setIsMobile(typeof window !== "undefined" && window.innerWidth <= 768);
     updateMobile();
     window.addEventListener("resize", updateMobile);
     return () => window.removeEventListener("resize", updateMobile);
@@ -2973,7 +3264,10 @@ export default function App() {
       setStage(STAGES.LANDING);
       return;
     }
-    if (hasActiveSubscription && (stage === STAGES.PACKAGES || stage === STAGES.PAYMENT)) {
+    if (
+      hasActiveSubscription &&
+      (stage === STAGES.PACKAGES || stage === STAGES.PAYMENT)
+    ) {
       setSelectedPlan(null);
       setStage(STAGES.DASHBOARD);
     }
@@ -2992,135 +3286,28 @@ export default function App() {
     fetch(API_URLS.googleDisconnect, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: user.email })
+      body: JSON.stringify({ email: user.email }),
     }).catch(() => {});
   };
 
   useEffect(() => {
-    gsap.registerPlugin(ScrollTrigger);
-    const scroller = document.querySelector("[data-lenis-wrapper]");
-    const content = document.querySelector("[data-lenis-content]");
-    if (!scroller || !content) return;
-
-    const userAgent = typeof navigator !== "undefined" ? navigator.userAgent : "";
-    const isSafari = /safari/i.test(userAgent) && !/chrome|crios|android|fxios/i.test(userAgent);
-    const isMobile = window.matchMedia("(max-width: 768px)").matches;
-    const isDashboard = stage === STAGES.DASHBOARD;
-    if (isMobile || isSafari || isDashboard) {
-      const prevOverflow = document.body.style.overflow;
-      scroller.style.position = "static";
-      scroller.style.overflow = isDashboard ? "hidden" : "auto";
-      scroller.style.webkitOverflowScrolling = "touch";
-      scroller.style.inset = "auto";
-      document.body.style.overflow = isDashboard ? "hidden" : "auto";
-      content.style.minHeight = "100%";
-      return () => {
-        document.body.style.overflow = prevOverflow;
-        scroller.style.position = "";
-        scroller.style.overflow = "";
-        scroller.style.webkitOverflowScrolling = "";
-        scroller.style.inset = "";
-        content.style.minHeight = "";
-      };
-    }
-
-    scroller.style.position = "";
-    scroller.style.overflow = "";
-    scroller.style.webkitOverflowScrolling = "";
-    scroller.style.inset = "";
-    content.style.minHeight = "";
-
-    const lenis = new Lenis({
-      wrapper: scroller,
-      content,
-      duration: 1.1,
-      easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
-      smoothWheel: true,
-      smoothTouch: true,
-      wheelMultiplier: 1.05
-    });
-
-    ScrollTrigger.scrollerProxy(scroller, {
-      scrollTop(value) {
-        if (typeof value !== "undefined") {
-          lenis.scrollTo(value, { immediate: true });
-        }
-        return lenis.scroll;
-      },
-      getBoundingClientRect() {
-        return { top: 0, left: 0, width: window.innerWidth, height: window.innerHeight };
-      },
-      pinType: "transform"
-    });
-
-    ScrollTrigger.defaults({ scroller });
-
-    const syncLenis = (time) => {
-      lenis.raf(time * 1000);
-    };
-
-    gsap.ticker.add(syncLenis);
-    lenis.on("scroll", ScrollTrigger.update);
-
-    // Hide/show nav on scroll using Lenis scroll position
-    const nav = document.querySelector(".nav-card");
-    let lastY = 0;
-    const handleNav = ({ scroll }) => {
-      if (stageRef.current === STAGES.LANDING) {
-        nav?.classList.remove("nav-hidden");
-        lastY = scroll;
-        return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow =
+      stage === STAGES.DASHBOARD ? "hidden" : "auto";
+    const frame = window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, behavior: "instant" });
+      const heading = document.querySelector("main h1, main h2");
+      if (heading && stage !== STAGES.LANDING) {
+        heading.setAttribute("tabindex", "-1");
+        heading.focus({ preventScroll: true });
       }
-      const goingDown = scroll > lastY + 4;
-      const goingUp = scroll < lastY - 4;
-      if (goingDown) {
-        nav?.classList.add("nav-hidden");
-      } else if (goingUp) {
-        nav?.classList.remove("nav-hidden");
-      }
-      lastY = scroll;
-    };
-    lenis.on("scroll", handleNav);
-
-    const sections = gsap.utils.toArray(".reveal-section");
-    gsap.set(sections, { opacity: 0, y: 40 });
-
-    const animations = sections.map((section) =>
-      gsap.to(section, {
-        opacity: 1,
-        y: 0,
-        duration: 1,
-        ease: "power3.out",
-        scrollTrigger: {
-          trigger: section,
-          start: "top 80%",
-          end: "top 30%",
-          toggleActions: "play none none reverse"
-        }
-      })
-    );
-
-    const onRefresh = () => lenis.resize();
-    ScrollTrigger.addEventListener("refresh", onRefresh);
-    ScrollTrigger.refresh();
-
+    });
     return () => {
-      lenis.off("scroll", handleNav);
-      ScrollTrigger.removeEventListener("refresh", onRefresh);
-      animations.forEach((anim) => {
-        anim.scrollTrigger?.kill();
-        anim.kill();
-      });
-      gsap.ticker.remove(syncLenis);
-      lenis.destroy();
+      window.cancelAnimationFrame(frame);
+      document.body.style.overflow = previous;
     };
   }, [stage]);
 
-  useEffect(() => {
-    // handled via Lenis scroll listener above
-  }, []);
-
-  // Public meeting deep link: /meet/{id}
   useEffect(() => {
     if (typeof window === "undefined") return;
     const match = window.location.pathname.match(/^\/meet\/([^/]+)/);
@@ -3133,7 +3320,9 @@ export default function App() {
   // Private card deep link: /card/{token}?k=...
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const match = window.location.pathname.match(/^\/card\/([A-Za-z0-9_-]{20,32})\/?$/);
+    const match = window.location.pathname.match(
+      /^\/card\/([A-Za-z0-9_-]{20,32})\/?$/,
+    );
     if (!match || !match[1]) return;
     const params = new URLSearchParams(window.location.search || "");
     setPrivateCardToken(match[1]);
@@ -3166,370 +3355,376 @@ export default function App() {
 
   return (
     <div className={pageClassName} data-lenis-wrapper>
-      {stage !== STAGES.DASHBOARD && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 0,
-            pointerEvents: "none",
-            overflow: "hidden",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: "#000000"
-          }}
-          aria-hidden="true"
-        >
-          <div style={{ width: "100%", height: "600px", maxWidth: "100%", position: "relative" }}>
-            <Orb hoverIntensity={2} rotateOnHover hue={248} forceHoverState={false} backgroundColor="#000000" />
-          </div>
-        </div>
-      )}
-      <div className={pageContentClassName} data-lenis-content style={{ position: "relative", zIndex: 1 }}>
+      <a className="skip-link" href="#main-content">
+        Skip to content
+      </a>
+      <div
+        className={pageContentClassName}
+        data-lenis-content
+        style={{ position: "relative", zIndex: 1 }}
+      >
         {showHeader && (
-          <header className="nav-card screen-panel">
-            <div className="nav-brand">
-              <button type="button" className="brand brand-main" onClick={handleGoHome} aria-label="Go to home">
-                <img
-                  src="/media/sc_logo_main.png"
-                  alt="SmartConnect4u logo"
-                  className="brand-logo brand-logo-main"
-                />
-              </button>
-            </div>
-            <div className="nav-actions">
-              <div
-                className="nav-geo"
-                aria-label={`Detected location: ${countryName || "Detecting location"}`}
-                title={countryName || "Detecting location"}
+          <header className="nav-card screen-panel sc-header">
+            <button
+              type="button"
+              className="sc-brand-button"
+              onClick={handleGoHome}
+              aria-label="SmartConnect4u home"
+            >
+              <Brand />
+            </button>
+            <nav className="sc-header-links" aria-label="Main navigation">
+              {isLandingStage ? (
+                <>
+                  <a href="#features">Product</a>
+                  <a href="#how-it-works">How it works</a>
+                  <a href="#plans">Plans</a>
+                </>
+              ) : (
+                <button type="button" onClick={handleGoHome}>
+                  Back to home
+                </button>
+              )}
+              <a href="/contact.html">
+                Let’s talk <span aria-hidden="true">↗</span>
+              </a>
+            </nav>
+            <div className="sc-header-actions">
+              <button
+                className="sc-login-link"
+                type="button"
+                onClick={() => setStage(STAGES.LOGIN)}
               >
-                <span className="nav-geo-flag" aria-hidden>
-                  {countryCodeToFlag(countryCode)}
-                </span>
-                {!isMobile && <span className="nav-geo-label">{countryName || "Detecting..."}</span>}
-              </div>
-              <button className="login-cta" onClick={() => setStage(STAGES.LOGIN)}>
-                <span aria-hidden>→</span>
-                <span>Login</span>
+                Sign in
+              </button>
+              <button
+                className="sc-button sc-button-primary sc-header-cta"
+                type="button"
+                onClick={goToSignup}
+              >
+                Get started <span aria-hidden="true">↗</span>
               </button>
             </div>
           </header>
         )}
-        <main className={contentClassName}>
-        {stage === STAGES.LANDING && (
-          <LandingScreen
-            onTry={() => setStage(STAGES.CRAWL_FORM)}
-            onLogin={() => setStage(STAGES.LOGIN)}
-            onSelectPlan={handleSelectPlan}
-            onShowService={handleGoProjects}
-            geoCountryCode={countryCode}
-            fxRates={fxRates}
-          />
-        )}
-        {stage === STAGES.PROJECTS && (
-          <ProjectsScreen serviceSlug={serviceSlug} onStartSignup={goToSignup} />
-        )}
-        {stage === STAGES.ABOUT && <AboutScreen />}
-        {stage === STAGES.PACKAGES && !hasActiveSubscription && (
-          <div className="shell-card screen-panel">
-            <PricingPackages
-              onSelectPackage={handleSelectPlan}
-              showCrawlSuccess
+        <main className={contentClassName} id="main-content" tabIndex={-1}>
+          <OnboardingProgress stage={stage} />
+          {stage === STAGES.LANDING && (
+            <LandingScreen
+              onTry={goToSignup}
+              onLogin={() => setStage(STAGES.LOGIN)}
+              onSelectPlan={handleSelectPlan}
+              onShowService={handleGoProjects}
               geoCountryCode={countryCode}
               fxRates={fxRates}
             />
-          </div>
-        )}
-
-        {stage === STAGES.BUSINESS_INFO_REVIEW && (
-          <div className="shell-card screen-panel">
-            <BusinessReviewScreen
-              initialData={manualBusinessInfo || {}}
-              onSubmit={handleBusinessReviewSubmit}
-              onBack={() => setStage(STAGES.CRAWL_FORM)}
+          )}
+          {stage === STAGES.PROJECTS && (
+            <ProjectsScreen
+              serviceSlug={serviceSlug}
+              onStartSignup={goToSignup}
             />
-          </div>
-        )}
-
-        {stage === STAGES.BUSINESS_INFO_MANUAL && (
-          <div className="shell-card screen-panel">
-            <ManualBusinessInfoScreen
-              name={businessName || signupName}
-              phone={businessPhone}
-              email={signupEmail || email}
-              onSubmit={handleManualBusinessSubmit}
-              onBack={() => setStage(STAGES.CRAWL_FORM)}
-            />
-          </div>
-        )}
-
-        {stage === STAGES.LOGIN && (
-          <div className="shell-card screen-panel narrow login-shell">
-            <LoginScreen
-              loginEmail={loginEmail}
-              loginPassword={loginPassword}
-              checkoutPlanSummary={checkoutPlanSummary}
-              status={status}
-              responseMessage={responseMessage}
-              responseLink={responseLink}
-              onLoginSubmit={handleLoginSubmit}
-              onEmailChange={setLoginEmail}
-              onPasswordChange={setLoginPassword}
-              onGoogleLogin={beginGoogleLogin}
-              onCreateAccount={goToSignup}
-              onForgotPassword={handleForgotPassword}
-            />
-          </div>
-        )}
-
-        {stage === STAGES.SIGNUP && (
-          <div className="shell-card screen-panel narrow">
-            <CreateAccountScreen
-              name={signupName}
-              email={signupEmail}
-              password={signupPassword}
-              checkoutPlanSummary={checkoutPlanSummary}
-              onNameChange={setSignupName}
-              onEmailChange={setSignupEmail}
-              onPasswordChange={setSignupPassword}
-              onSubmit={handleCreateAccountSubmit}
-              onBackToLogin={() => setStage(STAGES.LOGIN)}
-              loading={signupLoading}
-              error={signupError}
-            />
-          </div>
-        )}
-
-        {stage === STAGES.SIGNUP_SURVEY && (
-          <div className="shell-card screen-panel">
-            <SignupSurveyScreen
-              name={signupName}
-              role={signupRole}
-              useCase={signupUseCase}
-              referral={signupReferral}
-              onRoleChange={setSignupRole}
-              onUseCaseChange={setSignupUseCase}
-              onReferralChange={setSignupReferral}
-              onContinue={goToBusinessDetails}
-            />
-          </div>
-        )}
-
-        {stage === STAGES.BUSINESS_DETAILS && (
-          <div className="shell-card screen-panel">
-            <BusinessDetailsScreen
-              userName={signupName}
-              name={businessName}
-              phone={businessPhone}
-              geoCountryCode={countryCode}
-              onNameChange={setBusinessName}
-              onPhoneChange={setBusinessPhone}
-              onContinue={() =>
-                handleBusinessDetailsSubmit({
-                  businessName: businessName,
-                  businessPhone: businessPhone
-                })
-              }
-              onBack={goToSignup}
-              loading={businessLoading}
-              error={businessError}
-            />
-          </div>
-        )}
-
-        {stage === STAGES.BUSINESS_TYPE && (
-          <div className="shell-card screen-panel">
-            <BusinessTypeScreen
-              businessName={businessName}
-              category={businessCategory}
-              subType={businessSubType}
-              customType={businessCustomType}
-              onBusinessNameChange={setBusinessName}
-              onCategoryChange={setBusinessCategory}
-              onSubTypeChange={setBusinessSubType}
-              onCustomTypeChange={setBusinessCustomType}
-              onContinue={handleBusinessTypeSubmit}
-              onBack={() => setStage(STAGES.BUSINESS_DETAILS)}
-              onSkip={handleBusinessTypeSkip}
-              loading={businessTypeLoading}
-              error={businessTypeError}
-            />
-          </div>
-        )}
-
-        {stage === STAGES.RESET_PASSWORD && (
-          <ResetPasswordScreen
-            status={status}
-            responseMessage={responseMessage}
-            onSubmit={handleResetPasswordSubmit}
-            onBackToLogin={() => setStage(STAGES.LOGIN)}
-          />
-        )}
-
-        {stage === STAGES.DASHBOARD && (
-          <DashboardScreen
-            activeTab={activeTab}
-            setActiveTab={setActiveTab}
-            activeTool={activeTool}
-            setActiveTool={setActiveTool}
-            toolSubscriptions={toolSubscriptions}
-            subscriptionsLoading={subscriptionsLoading}
-            analyticsCalls={allCalls}
-            dateRange={dateRange}
-            dateRanges={dateRanges}
-            onRangeChange={(range) => {
-              setDateRange(range.label);
-              loadCallLogs(user?.email, range.days);
-            }}
-            aiNumber={aiNumber}
-            recentCalls={recentCalls}
-            callsPage={callsPage}
-            setCallsPage={setCallsPage}
-            user={user}
-            agentDetails={agentDetails}
-            setAgentDetails={setAgentDetails}
-            handleGoHome={handleGoHome}
-            calendarStatus={calendarStatus}
-            calendarLoading={calendarLoading}
-            calendarEvents={calendarEvents}
-            calendarError={calendarError}
-            loadCalendarEvents={loadCalendarEvents}
-            handleCalendarDisconnect={handleCalendarDisconnect}
-            beginGoogleLogin={beginGoogleLogin}
-            status={status}
-            dashboardLoading={dashboardLoading}
-            calendarAccountEmail={calendarAccountEmail}
-            calendarDiagnostics={calendarDiagnostics}
-            ultravoxVoices={ultravoxVoices}
-            ultravoxVoicesLoading={ultravoxVoicesLoading}
-            onAgentSave={handleAgentSave}
-            agentSaveStatus={agentSaveStatus}
-            businessSaveStatus={businessSaveStatus}
-            onBusinessSave={handleBusinessSave}
-            clientData={clientData}
-            manualBusinessInfo={manualBusinessInfo}
-            userProfile={userProfile}
-            bookingSettings={bookingSettings}
-            bookingStatus={bookingStatus}
-            bookingTestStatus={bookingTestStatus}
-            setBookingSettings={setBookingSettings}
-            onBookingSave={handleBookingSettingsSave}
-            onTestBooking={handleTestBooking}
-            callTranscript={callTranscript}
-            onLoadTranscript={loadCallTranscript}
-            onRefreshCalls={loadCallLogs}
-            onRefreshDashboard={handleRefreshDashboardAll}
-            receptionistUsage={receptionistUsage}
-            assignNumberStatus={assignNumberStatus}
-            onAssignNumber={handleAssignNumber}
-            hasActiveSubscription={hasActiveSubscription}
-            onResumeBusinessDetails={handleResumeBusinessDetails}
-            onLogout={handleLogout}
-            geoCountryCode={countryCode}
-          />
-        )}
-
-        {stage === STAGES.CRAWL_FORM && (
-          <div className="shell-card screen-panel">
-            <CrawlFormScreen
-              url={url}
-              status={status}
-              responseMessage={responseMessage}
-              onSubmit={handleSubmit}
-              onUrlChange={setUrl}
-              onBack={() => setStage(STAGES.BUSINESS_TYPE)}
-              onSkipWebsite={() => setStage(STAGES.BUSINESS_INFO_MANUAL)}
-            />
-          </div>
-        )}
-
-        {stage === STAGES.LOADING && (
-          <div className="shell-card screen-panel">
-            <LoadingScreen
-              status={status}
-              loadingPhase={loadingPhase}
-              loadingSteps={loadingSteps}
-              responseMessage={responseMessage}
-            />
-          </div>
-        )}
-
-        {stage === STAGES.EMAIL_CAPTURE && (
-          <EmailCaptureScreen
-            email={email}
-            status={status}
-            responseMessage={responseMessage}
-            onEmailChange={setEmail}
-            onSubmit={handleEmailSubmit}
-            onSendDifferentUrl={handleNewUrl}
-          />
-        )}
-
-        {stage === STAGES.COMPLETE && (
-          <CompleteScreen
-            status={status}
-            responseMessage={responseMessage}
-            responseLink={responseLink}
-            provisionData={provisionData}
-            email={email}
-            onGoHome={handleGoHome}
-            onGoToDashboard={handleGoToDashboard}
-            onStartCrawl={handleStartCrawlFlow}
-          />
-        )}
-
-        {stage === STAGES.PAYMENT && (
-          !hasActiveSubscription ? (
+          )}
+          {stage === STAGES.ABOUT && <AboutScreen />}
+          {stage === STAGES.PACKAGES && !hasActiveSubscription && (
             <div className="shell-card screen-panel">
-              <PaymentScreen
-                planId={selectedPlan}
-                toolId={selectedTool || activeTool || DEFAULT_TOOL_ID}
-                onBack={handlePaymentBack}
-                onSubmit={handlePaymentSubmit}
-                initialEmail={signupEmail || email}
+              <PricingPackages
+                onSelectPackage={handleSelectPlan}
+                showCrawlSuccess
                 geoCountryCode={countryCode}
                 fxRates={fxRates}
               />
             </div>
-          ) : (
+          )}
+
+          {stage === STAGES.BUSINESS_INFO_REVIEW && (
             <div className="shell-card screen-panel">
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-center text-sm text-white">
-                You already have an active subscription. Returning to dashboard...
-              </div>
+              <BusinessReviewScreen
+                initialData={manualBusinessInfo || {}}
+                onSubmit={handleBusinessReviewSubmit}
+                onBack={() => setStage(STAGES.CRAWL_FORM)}
+              />
             </div>
-          )
-        )}
-        {stage === STAGES.PAYMENT_SUCCESS && (
-          <div className="shell-card screen-panel">
-            <PaymentSuccessScreen
-              paymentInfo={paymentInfo}
-              voices={ultravoxVoices}
-              selectedVoiceId={selectedVoiceId}
-              onSelectVoice={setSelectedVoiceId}
-              welcomeMessage={welcomeMessage}
-              onWelcomeMessageChange={setWelcomeMessage}
-              onContinue={handlePaymentSuccessContinue}
+          )}
+
+          {stage === STAGES.BUSINESS_INFO_MANUAL && (
+            <div className="shell-card screen-panel">
+              <ManualBusinessInfoScreen
+                name={businessName || signupName}
+                phone={businessPhone}
+                email={signupEmail || email}
+                onSubmit={handleManualBusinessSubmit}
+                onBack={() => setStage(STAGES.CRAWL_FORM)}
+              />
+            </div>
+          )}
+
+          {stage === STAGES.LOGIN && (
+            <div className="shell-card screen-panel narrow login-shell">
+              <LoginScreen
+                loginEmail={loginEmail}
+                loginPassword={loginPassword}
+                checkoutPlanSummary={checkoutPlanSummary}
+                status={status}
+                responseMessage={responseMessage}
+                responseLink={responseLink}
+                onLoginSubmit={handleLoginSubmit}
+                onEmailChange={setLoginEmail}
+                onPasswordChange={setLoginPassword}
+                onGoogleLogin={beginGoogleLogin}
+                onCreateAccount={goToSignup}
+                onForgotPassword={handleForgotPassword}
+              />
+            </div>
+          )}
+
+          {stage === STAGES.SIGNUP && (
+            <div className="shell-card screen-panel narrow">
+              <CreateAccountScreen
+                name={signupName}
+                email={signupEmail}
+                password={signupPassword}
+                checkoutPlanSummary={checkoutPlanSummary}
+                onNameChange={setSignupName}
+                onEmailChange={setSignupEmail}
+                onPasswordChange={setSignupPassword}
+                onSubmit={handleCreateAccountSubmit}
+                onBackToLogin={() => setStage(STAGES.LOGIN)}
+                loading={signupLoading}
+                error={signupError}
+              />
+            </div>
+          )}
+
+          {stage === STAGES.SIGNUP_SURVEY && (
+            <div className="shell-card screen-panel">
+              <SignupSurveyScreen
+                name={signupName}
+                role={signupRole}
+                useCase={signupUseCase}
+                referral={signupReferral}
+                onRoleChange={setSignupRole}
+                onUseCaseChange={setSignupUseCase}
+                onReferralChange={setSignupReferral}
+                onContinue={goToBusinessDetails}
+              />
+            </div>
+          )}
+
+          {stage === STAGES.BUSINESS_DETAILS && (
+            <div className="shell-card screen-panel">
+              <BusinessDetailsScreen
+                userName={signupName}
+                name={businessName}
+                phone={businessPhone}
+                geoCountryCode={countryCode}
+                onNameChange={setBusinessName}
+                onPhoneChange={setBusinessPhone}
+                onContinue={() =>
+                  handleBusinessDetailsSubmit({
+                    businessName: businessName,
+                    businessPhone: businessPhone,
+                  })
+                }
+                onBack={goToSignup}
+                loading={businessLoading}
+                error={businessError}
+              />
+            </div>
+          )}
+
+          {stage === STAGES.BUSINESS_TYPE && (
+            <div className="shell-card screen-panel">
+              <BusinessTypeScreen
+                businessName={businessName}
+                category={businessCategory}
+                subType={businessSubType}
+                customType={businessCustomType}
+                onBusinessNameChange={setBusinessName}
+                onCategoryChange={setBusinessCategory}
+                onSubTypeChange={setBusinessSubType}
+                onCustomTypeChange={setBusinessCustomType}
+                onContinue={handleBusinessTypeSubmit}
+                onBack={() => setStage(STAGES.BUSINESS_DETAILS)}
+                onSkip={handleBusinessTypeSkip}
+                loading={businessTypeLoading}
+                error={businessTypeError}
+              />
+            </div>
+          )}
+
+          {stage === STAGES.RESET_PASSWORD && (
+            <ResetPasswordScreen
+              status={status}
+              responseMessage={responseMessage}
+              onSubmit={handleResetPasswordSubmit}
+              onBackToLogin={() => setStage(STAGES.LOGIN)}
             />
-          </div>
-        )}
-        {stage === STAGES.NUMBER_SELECT && (
-          <div className="shell-card screen-panel">
-            <NumberSelectionScreen
-              paymentInfo={paymentInfo}
-              availableNumbers={twilioAvailableNumbers}
-              numbersLoading={twilioNumbersLoading}
-              numbersError={twilioNumbersError}
-              numbersCountry={twilioNumbersCountry}
-              assignedNumber={twilioAssignedNumber}
-              selectedNumber={selectedTwilioNumber}
-              onSelectNumber={setSelectedTwilioNumber}
-              onRefreshNumbers={loadTwilioAvailableNumbers}
-              onContinue={handleNumberSelectionContinue}
+          )}
+
+          {stage === STAGES.DASHBOARD && (
+            <DashboardScreen
+              activeTab={activeTab}
+              setActiveTab={setActiveTab}
+              activeTool={activeTool}
+              setActiveTool={setActiveTool}
+              toolSubscriptions={toolSubscriptions}
+              subscriptionsLoading={subscriptionsLoading}
+              analyticsCalls={allCalls}
+              dateRange={dateRange}
+              dateRanges={dateRanges}
+              onRangeChange={(range) => {
+                setDateRange(range.label);
+                loadCallLogs(user?.email, range.days);
+              }}
+              aiNumber={aiNumber}
+              recentCalls={recentCalls}
+              callsPage={callsPage}
+              setCallsPage={setCallsPage}
+              user={user}
+              agentDetails={agentDetails}
+              setAgentDetails={setAgentDetails}
+              handleGoHome={handleGoHome}
+              calendarStatus={calendarStatus}
+              calendarLoading={calendarLoading}
+              calendarEvents={calendarEvents}
+              calendarError={calendarError}
+              loadCalendarEvents={loadCalendarEvents}
+              handleCalendarDisconnect={handleCalendarDisconnect}
+              beginGoogleLogin={beginGoogleLogin}
+              status={status}
+              dashboardLoading={dashboardLoading}
+              calendarAccountEmail={calendarAccountEmail}
+              calendarDiagnostics={calendarDiagnostics}
+              ultravoxVoices={ultravoxVoices}
+              ultravoxVoicesLoading={ultravoxVoicesLoading}
+              onAgentSave={handleAgentSave}
+              agentSaveStatus={agentSaveStatus}
+              businessSaveStatus={businessSaveStatus}
+              onBusinessSave={handleBusinessSave}
+              clientData={clientData}
+              manualBusinessInfo={manualBusinessInfo}
+              userProfile={userProfile}
+              bookingSettings={bookingSettings}
+              bookingStatus={bookingStatus}
+              bookingTestStatus={bookingTestStatus}
+              setBookingSettings={setBookingSettings}
+              onBookingSave={handleBookingSettingsSave}
+              onTestBooking={handleTestBooking}
+              callTranscript={callTranscript}
+              onLoadTranscript={loadCallTranscript}
+              onRefreshCalls={loadCallLogs}
+              onRefreshDashboard={handleRefreshDashboardAll}
+              receptionistUsage={receptionistUsage}
+              assignNumberStatus={assignNumberStatus}
+              onAssignNumber={handleAssignNumber}
+              hasActiveSubscription={hasActiveSubscription}
+              onResumeBusinessDetails={handleResumeBusinessDetails}
+              onLogout={handleLogout}
+              geoCountryCode={countryCode}
             />
-          </div>
-        )}
-        <ChatWidget />
+          )}
+
+          {stage === STAGES.CRAWL_FORM && (
+            <div className="shell-card screen-panel">
+              <CrawlFormScreen
+                url={url}
+                status={status}
+                responseMessage={responseMessage}
+                onSubmit={handleSubmit}
+                onUrlChange={setUrl}
+                onBack={() => setStage(STAGES.BUSINESS_TYPE)}
+                onSkipWebsite={() => setStage(STAGES.BUSINESS_INFO_MANUAL)}
+              />
+            </div>
+          )}
+
+          {stage === STAGES.LOADING && (
+            <div className="shell-card screen-panel">
+              <LoadingScreen
+                status={status}
+                loadingPhase={loadingPhase}
+                loadingSteps={loadingSteps}
+                responseMessage={responseMessage}
+              />
+            </div>
+          )}
+
+          {stage === STAGES.EMAIL_CAPTURE && (
+            <EmailCaptureScreen
+              email={email}
+              status={status}
+              responseMessage={responseMessage}
+              onEmailChange={setEmail}
+              onSubmit={handleEmailSubmit}
+              onSendDifferentUrl={handleNewUrl}
+            />
+          )}
+
+          {stage === STAGES.COMPLETE && (
+            <CompleteScreen
+              status={status}
+              responseMessage={responseMessage}
+              responseLink={responseLink}
+              provisionData={provisionData}
+              email={email}
+              onGoHome={handleGoHome}
+              onGoToDashboard={handleGoToDashboard}
+              onStartCrawl={handleStartCrawlFlow}
+            />
+          )}
+
+          {stage === STAGES.PAYMENT &&
+            (!hasActiveSubscription ? (
+              <div className="shell-card screen-panel">
+                <PaymentScreen
+                  planId={selectedPlan}
+                  toolId={selectedTool || activeTool || DEFAULT_TOOL_ID}
+                  onBack={handlePaymentBack}
+                  onSubmit={handlePaymentSubmit}
+                  initialEmail={signupEmail || email}
+                  geoCountryCode={countryCode}
+                  fxRates={fxRates}
+                />
+              </div>
+            ) : (
+              <div className="shell-card screen-panel">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-center text-sm text-white">
+                  You already have an active subscription. Returning to
+                  dashboard...
+                </div>
+              </div>
+            ))}
+          {stage === STAGES.PAYMENT_SUCCESS && (
+            <div className="shell-card screen-panel">
+              <PaymentSuccessScreen
+                paymentInfo={paymentInfo}
+                voices={ultravoxVoices}
+                selectedVoiceId={selectedVoiceId}
+                onSelectVoice={setSelectedVoiceId}
+                welcomeMessage={welcomeMessage}
+                onWelcomeMessageChange={setWelcomeMessage}
+                onContinue={handlePaymentSuccessContinue}
+              />
+            </div>
+          )}
+          {stage === STAGES.NUMBER_SELECT && (
+            <div className="shell-card screen-panel">
+              <NumberSelectionScreen
+                paymentInfo={paymentInfo}
+                availableNumbers={twilioAvailableNumbers}
+                numbersLoading={twilioNumbersLoading}
+                numbersError={twilioNumbersError}
+                numbersCountry={twilioNumbersCountry}
+                assignedNumber={twilioAssignedNumber}
+                selectedNumber={selectedTwilioNumber}
+                onSelectNumber={setSelectedTwilioNumber}
+                onRefreshNumbers={loadTwilioAvailableNumbers}
+                onContinue={handleNumberSelectionContinue}
+              />
+            </div>
+          )}
+          <ChatWidget />
         </main>
       </div>
     </div>

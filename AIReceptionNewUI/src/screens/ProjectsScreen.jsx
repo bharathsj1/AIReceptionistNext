@@ -1,330 +1,174 @@
+import {
+  ArrowRight,
+  AudioLines,
+  CalendarDays,
+  Check,
+  CheckCheck,
+  Mail,
+  MessageCircle,
+  Phone,
+  Sparkles,
+} from "lucide-react";
 import UltravoxDemo from "../components/UltravoxDemo";
-
-const emailManagerSteps = [
-  {
-    title: "Connect your inbox",
-    copy: "Securely link Gmail or Outlook and let us pull in every active thread.",
-    img: "/media/email-step-connect.svg",
-    alt: "Screenshot showing an email inbox connection setup."
-  },
-  {
-    title: "Triage and label",
-    copy: "We categorize by priority, intent, and SLA so nothing slips through.",
-    img: "/media/email-step-triage.svg",
-    alt: "Screenshot showing inbox triage with tags."
-  },
-  {
-    title: "Draft smart replies",
-    copy: "AI suggests responses with full context, ready for one-click approval.",
-    img: "/media/email-step-draft.svg",
-    alt: "Screenshot showing AI drafted replies."
-  },
-  {
-    title: "Track outcomes",
-    copy: "We log resolutions, surface follow-ups, and keep the team aligned.",
-    img: "/media/email-step-track.svg",
-    alt: "Screenshot showing resolution tracking and status updates."
-  }
-];
-
-const socialManagerSteps = [
-  {
-    title: "Connect channels",
-    copy: "Link Facebook, Instagram, and LinkedIn so we can manage every feed.",
-    img: "/media/social-step-connect.svg",
-    alt: "Screenshot showing social channel connections."
-  },
-  {
-    title: "Plan content",
-    copy: "Build a calendar with weekly themes, campaigns, and launch moments.",
-    img: "/media/social-step-plan.svg",
-    alt: "Screenshot showing a social content calendar plan."
-  },
-  {
-    title: "Draft and approve",
-    copy: "Generate captions, hashtags, and creatives ready for your review.",
-    img: "/media/social-step-draft.svg",
-    alt: "Screenshot showing drafted social posts."
-  },
-  {
-    title: "Insights and follow-up",
-    copy: "Track reach, engagement, and next actions from one place.",
-    img: "/media/social-step-insights.svg",
-    alt: "Screenshot showing social performance insights."
-  }
-];
-
-const EmailManagerExplainer = ({ steps }) => (
-  <div className="email-manager-explainer">
-    <div className="email-explainer-head">
-      <div>
-        <p className="eyebrow">Email Manager Flow</p>
-        <h4 className="email-explainer-title">We organize, reply, and close the loop.</h4>
-        <p className="hint">A simple four-step system that keeps customers informed and teams focused.</p>
-      </div>
-      <div className="email-explainer-badges">
-        <span className="email-explainer-badge">Live triage</span>
-        <span className="email-explainer-badge">AI replies</span>
-        <span className="email-explainer-badge">SLA tracking</span>
-      </div>
-    </div>
-    <div className="email-explainer-summary">
-      <p>
-        Summary: Your inbox stays clean, replies go out faster, and your team always knows what needs attention.
-        Replace this copy with your preferred summary when ready.
-      </p>
-    </div>
-    <div className="email-step-grid">
-      {steps.map((step, index) => (
-        <div key={step.title} className="email-step-card" style={{ "--step-delay": `${index * 0.2}s` }}>
-          <div className="email-step-head">
-            <span className="email-step-index">{String(index + 1).padStart(2, "0")}</span>
-            <div>
-              <p className="email-step-title">{step.title}</p>
-              <p className="email-step-copy">{step.copy}</p>
-            </div>
-          </div>
-          <div className="email-step-media">
-            <img src={step.img} alt={step.alt} loading="lazy" />
-            <div className="email-step-scan" aria-hidden="true" />
-            <div className="email-step-glow" aria-hidden="true" />
-          </div>
-        </div>
-      ))}
-    </div>
-  </div>
-);
-
-const SocialManagerExplainer = ({ steps }) => (
-  <div className="social-manager-explainer">
-    <div className="social-explainer-head">
-      <div>
-        <p className="eyebrow">Social Manager Flow</p>
-        <h4 className="social-explainer-title">We plan, publish, and learn.</h4>
-        <p className="hint">A simple loop that keeps your brand consistent and your team in sync.</p>
-      </div>
-      <div className="social-explainer-badges">
-        <span className="social-explainer-badge">Content calendar</span>
-        <span className="social-explainer-badge">Auto drafts</span>
-        <span className="social-explainer-badge">Performance</span>
-      </div>
-    </div>
-    <div className="social-step-grid">
-      {steps.map((step, index) => (
-        <div key={step.title} className="social-step-card" style={{ "--step-delay": `${index * 0.2}s` }}>
-          <div className="social-step-head">
-            <span className="social-step-index">{String(index + 1).padStart(2, "0")}</span>
-            <div>
-              <p className="social-step-title">{step.title}</p>
-              <p className="social-step-copy">{step.copy}</p>
-            </div>
-          </div>
-          <div className="social-step-media">
-            <img src={step.img} alt={step.alt} loading="lazy" />
-            <div className="social-step-scan" aria-hidden="true" />
-            <div className="social-step-glow" aria-hidden="true" />
-          </div>
-        </div>
-      ))}
-    </div>
-  </div>
-);
+import Footer from "../components/Footer";
 
 const services = {
   receptionist: {
-    title: "AI Receptionist",
-    eyebrow: "Solutions",
-    summary: "Handle voice calls, capture leads, and route intelligently with our S4U-v3 agent.",
-    body: <UltravoxDemo />,
-    cta: "Try live voice demo"
-  },
-  "social-manager": {
-    title: "AI Social Media Manager",
-    eyebrow: "Solutions",
-    summary: "Plan, draft, and schedule posts across channels with AI-assisted workflows.",
-    body: <SocialManagerExplainer steps={socialManagerSteps} />,
-    cta: "Talk to us"
+    icon: Phone,
+    label: "AI receptionist",
+    headline: "Make every caller feel welcome.",
+    copy: "A natural voice for your business, with the knowledge to help and the judgment to bring your team into the conversation.",
+    features: [
+      "A greeting that sounds like your business",
+      "Business knowledge you can review and refine",
+      "Call routing, transcripts, and clear follow-ups",
+    ],
+    steps: [
+      [
+        "Tell us what matters",
+        "Share your business details and the questions customers ask most.",
+      ],
+      [
+        "Find your voice",
+        "Choose a voice and personalise your greeting and instructions.",
+      ],
+      [
+        "Stay in the conversation",
+        "Review calls and follow-ups from your connected workspace.",
+      ],
+    ],
   },
   "email-manager": {
-    title: "Email Manager",
-    eyebrow: "Solutions",
-    summary: "Automate replies, triage inboxes, and keep SLAs on track.",
-    body: <EmailManagerExplainer steps={emailManagerSteps} />,
-    cta: "Talk to us"
+    icon: Mail,
+    label: "Email manager",
+    headline: "A clear head. A clearer inbox.",
+    copy: "From the first enquiry to the final follow-up, keep every thread moving with AI summaries and drafts you can make your own.",
+    features: [
+      "Your messages, prioritised and summarised",
+      "AI reply drafts with you in control",
+      "Contacts and follow-ups in the same workspace",
+    ],
+    steps: [
+      [
+        "Connect your inbox",
+        "Bring supported email accounts into your workspace.",
+      ],
+      [
+        "Get to the important part",
+        "Review summaries, tags, and suggested next steps.",
+      ],
+      [
+        "Reply with confidence",
+        "Refine your drafts and keep the conversation moving.",
+      ],
+    ],
+  },
+  "social-manager": {
+    icon: MessageCircle,
+    label: "Social manager",
+    headline: "Stay social. Stay organised.",
+    copy: "Create, plan, and respond from one place. Give your team a shared view of the conversations happening around your business.",
+    features: [
+      "Connected social messages in one inbox",
+      "AI assistance for your next caption",
+      "A plan for your scheduled posts",
+    ],
+    steps: [
+      [
+        "Connect your channels",
+        "Choose the supported social accounts you want to manage.",
+      ],
+      [
+        "Make it your own",
+        "Write your post or start with an AI-assisted caption.",
+      ],
+      [
+        "Keep things moving",
+        "Schedule content and respond to incoming conversations.",
+      ],
+    ],
   },
   "crm-lead-manager": {
-    title: "CRM & Lead Manager",
-    eyebrow: "Solutions",
-    summary: "Qualify, score, and nurture leads automatically with clear handoffs.",
-    body: (
-      <p className="hint">
-        Lead enrichment, scoring, and automated follow-ups that keep sales focused on the best opportunities.
-      </p>
-    ),
-    cta: "Talk to us"
-  }
+    icon: CheckCheck,
+    label: "CRM & leads",
+    headline: "A home for every next step.",
+    copy: "Bring your contacts, deals, tasks, and comments together. Give every conversation a clear owner and every opportunity a way forward.",
+    features: [
+      "A shared view of contacts and deals",
+      "Task ownership and progress you can follow",
+      "Conversation history and team comments",
+    ],
+    steps: [
+      ["Bring people together", "Organise contacts and companies in your CRM."],
+      [
+        "Choose the next step",
+        "Create tasks, track deals, and assign the right teammate.",
+      ],
+      ["See the whole story", "Keep notes, comments, and activity connected."],
+    ],
+  },
 };
-
-const impactStats = [
-  { label: "Response speed", value: "+60%", note: "Faster answers after launch" },
-  { label: "Bookings secured", value: "99.9%", note: "Appointment success rate" },
-  { label: "Missed calls", value: "0", note: "No work missed this week" },
-  { label: "Lead capture", value: "3.2x", note: "More conversations routed to staff" }
-];
-
-const impactTrend = [
-  { label: "Week 1", value: 48 },
-  { label: "Week 2", value: 55 },
-  { label: "Week 3", value: 61 },
-  { label: "Week 4", value: 64 },
-  { label: "Week 5", value: 68 },
-  { label: "Week 6", value: 72 }
-];
-
-export default function ProjectsScreen({ serviceSlug = "receptionist", onStartSignup }) {
+export default function ProjectsScreen({
+  serviceSlug = "receptionist",
+  onStartSignup,
+}) {
   const service = services[serviceSlug] || services.receptionist;
+  const Icon = service.icon;
   return (
-    <section className="screen-panel projects-shell reveal-section">
-      <div className="projects-hero">
-        <div>
-          <p className="eyebrow">{service.eyebrow}</p>
-          <h1 className="hero-title large">{service.title}</h1>
-          <p className="lead narrow" style={{ marginTop: 6 }}>
-            {service.summary}
-          </p>
-        </div>
-      </div>
-
-      <div className="projects-grid">
-        {serviceSlug === "receptionist" && (
-          <div className="project-card hero-callout">
-            <div>
-              <p className="eyebrow">SmartConnect4u</p>
-              <h2 className="hero-callout-title">
-                SmartConnect4u helps you turn missed calls into revenue, 24/7
-              </h2>
-              <p className="lead narrow">
-                SmartConnect4u answers every inbound call, captures critical details, and turns conversations into qualified opportunities.
-              </p>
-            </div>
+    <div className="solution-page">
+      <section className="solution-hero">
+        <span className="pill-label">
+          <Icon size={14} />
+          {service.label}
+        </span>
+        <h1>{service.headline}</h1>
+        <p>{service.copy}</p>
+        <button className="sc-button sc-button-primary" onClick={onStartSignup}>
+          Build my workspace <ArrowRight size={16} />
+        </button>
+      </section>
+      <section className="solution-benefits">
+        {service.features.map((feature) => (
+          <div key={feature}>
+            <Check size={19} />
+            <h3>{feature}</h3>
           </div>
-        )}
-        <div className="project-card">
-          <div className="project-header">
-            <div>
-              <p className="eyebrow">{service.title}</p>
-              <h3>{service.cta}</h3>
-            </div>
-          </div>
-          <div className="project-body">
-            {service.body}
-          </div>
-          <div className="project-actions">
-            {serviceSlug === "receptionist" ? (
-              <button className="login-cta hero-centered-cta hero-main-cta" type="button" onClick={onStartSignup}>
-                <span>Try now</span>
-                <span aria-hidden>↗</span>
-              </button>
-            ) : (
-              <button className="primary small" type="button" onClick={onStartSignup}>
-                <span>Get started</span>
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-
+        ))}
+      </section>
       {serviceSlug === "receptionist" && (
-        <div className="onboarding-steps">
-          <header className="steps-header">
-            <div>
-              <h2>Up and Running in Minutes</h2>
-              <p className="lead narrow">No tech skills needed. No complicated setup.</p>
-            </div>
-          </header>
-          <div className="steps-grid">
-            {[
-              {
-                number: "01",
-                title: "Share Your Website",
-                body:
-                  "We’ll learn about your business and automatically set everything up for you. You can review, edit, or add any info you want your AI Receptionist to know.",
-                accent: "#3b82f6"
-              },
-              {
-                number: "02",
-                title: "Choose How It Answers Calls",
-                body:
-                  "Decide when your AI Receptionist picks up — all the time, when you’re busy, or after hours. Or use the dedicated business number you get given.",
-                accent: "#f97316"
-              },
-              {
-                number: "03",
-                title: "You’re Live!",
-                body:
-                  "Your AI Receptionist is live and ready to answer calls. From now on, you’ll never miss a customer — or a new job — again.",
-                accent: "#10b981"
-              }
-            ].map((step) => (
-              <div className="step-card" key={step.number}>
-                <div className="step-number" style={{ backgroundColor: step.accent + "22", color: step.accent }}>
-                  {step.number}
-                </div>
-                <h3>{step.title}</h3>
-                <p className="hint">{step.body}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {serviceSlug === "receptionist" && (
-        <div className="project-impact">
-          <div className="project-impact-header">
-            <p className="eyebrow">Dashboard preview</p>
-            <h2>See the impact your AI Receptionist delivers</h2>
-            <p className="lead narrow">
-              Sample performance snapshot showing business growth after rollout.
+        <section className="solution-demo">
+          <div>
+            <p className="eyebrow">HEAR THE DIFFERENCE</p>
+            <h2>Start a conversation.</h2>
+            <p>
+              Explore the live voice demo and see how a receptionist can help
+              your customers.
             </p>
           </div>
-          <div className="project-card impact-card">
-            <div className="impact-grid">
-              <div className="impact-stats">
-                {impactStats.map((stat) => (
-                  <div className="impact-stat" key={stat.label}>
-                    <div className="stat-top">
-                      <p className="hint">{stat.label}</p>
-                      <span className="stat-value">{stat.value}</span>
-                    </div>
-                    <p className="hint">{stat.note}</p>
-                  </div>
-                ))}
-              </div>
-              <div className="impact-chart">
-                <div className="chart-title">
-                  <span>6-week uplift</span>
-                  <span className="pill subtle">AI vs before</span>
-                </div>
-                <div className="chart-bars">
-                  {impactTrend.map((item) => (
-                    <div className="bar-row" key={item.label}>
-                      <span className="bar-label">{item.label}</span>
-                      <div className="bar-track">
-                        <div className="bar-fill" style={{ width: `${item.value}%` }} />
-                      </div>
-                      <span className="bar-value">{item.value}%</span>
-                    </div>
-                  ))}
-                </div>
-                <div className="chart-footnotes">
-                  <span>• 99.9% appointment booking success rate recorded.</span>
-                  <span>• Zero missed work with AI handling off-hours calls.</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+          <UltravoxDemo />
+        </section>
       )}
-    </section>
+      <section className="solution-steps">
+        <p className="eyebrow">A THOUGHTFUL WORKFLOW</p>
+        <h2>Bring it all together.</h2>
+        <div className="how-steps">
+          {service.steps.map(([title, copy], index) => (
+            <article key={title}>
+              <span className="how-number">0{index + 1}</span>
+              <h3>{title}</h3>
+              <p>{copy}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+      <section className="solution-cta">
+        <Sparkles size={22} />
+        <h2>Your next day, a little easier.</h2>
+        <button className="sc-button sc-button-primary" onClick={onStartSignup}>
+          Get started <ArrowRight size={16} />
+        </button>
+      </section>
+      <Footer />
+    </div>
   );
 }

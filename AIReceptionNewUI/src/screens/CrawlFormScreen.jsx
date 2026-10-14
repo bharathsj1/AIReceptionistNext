@@ -5,17 +5,17 @@ export default function CrawlFormScreen({
   onSubmit,
   onUrlChange,
   onBack,
-  onSkipWebsite
+  onSkipWebsite,
 }) {
   return (
     <section className="crawl-layout screen-panel">
       <div className="form-card">
         <div>
           <p className="eyebrow">Connect your site</p>
-          <h2>Share a URL to start the crawl</h2>
+          <h2>Let’s get to know your business.</h2>
           <p className="lead narrow">
-            We will send the address to the AI receptionist service running
-            locally so it can begin ingesting your content.
+            Share your website and we’ll find the information your receptionist
+            needs to help your customers. You’ll review it before continuing.
           </p>
         </div>
 
@@ -35,13 +35,19 @@ export default function CrawlFormScreen({
               type="submit"
               disabled={status === "loading"}
             >
-              {status === "loading" ? "Sending..." : "Send to AI Reception"}
+              {status === "loading" ? "Sending..." : "Find my business details"}
             </button>
           </div>
-          <p className="hint">POST to /api/crawl-kb</p>
+          <p className="hint">
+            We use publicly available pages. You can edit the details in the
+            next step.
+          </p>
         </form>
 
-        <div className="input-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+        <div
+          className="input-row"
+          style={{ justifyContent: "space-between", alignItems: "center" }}
+        >
           <button className="ghost small" onClick={onBack}>
             ← Back
           </button>
@@ -50,18 +56,21 @@ export default function CrawlFormScreen({
           </button>
         </div>
 
-        {responseMessage && <div className={`status ${status}`}>{responseMessage}</div>}
+        {responseMessage && (
+          <div className={`status ${status}`}>{responseMessage}</div>
+        )}
       </div>
       <aside className="crawl-aside">
         <p className="eyebrow">What happens next</p>
-        <h3>We ingest and wire your concierge</h3>
+        <h3>A head start, made for you.</h3>
         <ul>
-          <li>Fetch your pages and structure them for AI-ready knowledge.</li>
-          <li>Generate a tailored prompt that mirrors your brand voice.</li>
-          <li>Provision the receptionist to greet, route, and capture leads.</li>
+          <li>Find your services, opening hours, and contact details.</li>
+          <li>Review and refine how your AI speaks about your business.</li>
+          <li>Choose a voice and greeting before taking your first call.</li>
         </ul>
         <p className="hint">
-          Need a new account? Use the login page “Create an account” link to jump here automatically.
+          No website yet? Add your details yourself — you’ll get the same guided
+          setup.
         </p>
       </aside>
     </section>

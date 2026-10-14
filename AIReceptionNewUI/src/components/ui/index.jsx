@@ -1,15 +1,12 @@
-import {
-  createContext,
-  useContext,
-  useMemo
-} from "react";
+import { createContext, useContext, useMemo, useRef } from "react";
+import { useDialogFocus } from "./useDialogFocus";
 
 const TabsContext = createContext(null);
 
 export const Tabs = ({ value, onValueChange, className = "", children }) => {
   const contextValue = useMemo(
     () => ({ value, onValueChange }),
-    [value, onValueChange]
+    [value, onValueChange],
   );
   return (
     <TabsContext.Provider value={contextValue}>
@@ -19,38 +16,74 @@ export const Tabs = ({ value, onValueChange, className = "", children }) => {
 };
 
 export const TabsList = ({ className = "", children }) => (
-  <div className={`flex flex-wrap gap-2 ${className}`.trim()}>{children}</div>
+  <div role="tablist" className={`flex flex-wrap gap-2 ${className}`.trim()}>
+    {children}
+  </div>
 );
 
-export const TabsTrigger = ({ value, className = "", variant = "default", children }) => {
+export const TabsTrigger = ({
+  value,
+  className = "",
+  variant = "default",
+  children,
+}) => {
   const ctx = useContext(TabsContext);
   const isActive = ctx?.value === value;
   const variants = {
     default: {
       active: "border-emerald-300/70 bg-emerald-400/15 text-emerald-50",
-      inactive: "border-white/10 bg-white/5 text-slate-200 hover:border-white/30 hover:bg-white/10"
+      inactive:
+        "border-white/10 bg-white/5 text-slate-200 hover:border-white/30 hover:bg-white/10",
     },
     all: {
       active: "border-slate-300/70 bg-slate-400/15 text-slate-900",
-      inactive: "border-slate-200 bg-white text-slate-800 hover:border-slate-300"
+      inactive:
+        "border-slate-200 bg-white text-slate-800 hover:border-slate-300",
     },
     new: {
       active: "border-emerald-300/80 bg-emerald-400/25 text-emerald-900",
-      inactive: "border-emerald-200 bg-emerald-50 text-emerald-900 hover:border-emerald-300"
+      inactive:
+        "border-emerald-200 bg-emerald-50 text-emerald-900 hover:border-emerald-300",
     },
     accepted: {
       active: "border-indigo-300/80 bg-indigo-400/25 text-indigo-900",
-      inactive: "border-indigo-200 bg-indigo-50 text-indigo-900 hover:border-indigo-300"
+      inactive:
+        "border-indigo-200 bg-indigo-50 text-indigo-900 hover:border-indigo-300",
     },
     rejected: {
       active: "border-rose-300/80 bg-rose-400/25 text-rose-900",
-      inactive: "border-rose-200 bg-rose-50 text-rose-900 hover:border-rose-300"
-    }
+      inactive:
+        "border-rose-200 bg-rose-50 text-rose-900 hover:border-rose-300",
+    },
   };
   const tone = variants[variant] || variants.default;
   return (
     <button
       type="button"
+      role="tab"
+      aria-selected={isActive}
+      tabIndex={isActive ? 0 : -1}
+      data-tab-value={value}
+      onKeyDown={(event) => {
+        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key))
+          return;
+        event.preventDefault();
+        const tabs = Array.from(
+          event.currentTarget
+            .closest('[role="tablist"]')
+            .querySelectorAll('[role="tab"]'),
+        );
+        const index = tabs.indexOf(event.currentTarget);
+        const next =
+          event.key === "Home"
+            ? 0
+            : event.key === "End"
+              ? tabs.length - 1
+              : (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) %
+                tabs.length;
+        ctx?.onValueChange?.(tabs[next].dataset.tabValue);
+        tabs[next].focus();
+      }}
       onClick={() => ctx?.onValueChange?.(value)}
       className={`rounded-full border px-3 py-1 text-xs font-semibold transition sm:text-sm ${
         isActive ? tone.active : tone.inactive
@@ -62,7 +95,9 @@ export const TabsTrigger = ({ value, className = "", variant = "default", childr
 };
 
 export const Card = ({ className = "", children }) => (
-  <div className={`rounded-3xl border border-white/10 bg-white/5 ${className}`.trim()}>
+  <div
+    className={`rounded-3xl border border-white/10 bg-white/5 ${className}`.trim()}
+  >
     {children}
   </div>
 );
@@ -91,16 +126,21 @@ export const Button = ({
   ...props
 }) => {
   const variants = {
-    default: "border-white/10 bg-white/10 text-slate-100 hover:border-white/30 hover:bg-white/20",
-    primary: "border-indigo-300/50 bg-indigo-500/25 text-indigo-50 hover:border-indigo-200/80 hover:bg-indigo-500/40",
-    success: "border-emerald-300/60 bg-emerald-500/25 text-emerald-50 hover:border-emerald-200 hover:bg-emerald-500/40",
-    danger: "border-rose-300/60 bg-rose-500/20 text-rose-100 hover:border-rose-200 hover:bg-rose-500/35",
-    ghost: "border-white/10 bg-white/5 text-slate-100 hover:border-white/30 hover:bg-white/10"
+    default:
+      "border-white/10 bg-white/10 text-slate-100 hover:border-white/30 hover:bg-white/20",
+    primary:
+      "border-indigo-300/50 bg-indigo-500/25 text-indigo-50 hover:border-indigo-200/80 hover:bg-indigo-500/40",
+    success:
+      "border-emerald-300/60 bg-emerald-500/25 text-emerald-50 hover:border-emerald-200 hover:bg-emerald-500/40",
+    danger:
+      "border-rose-300/60 bg-rose-500/20 text-rose-100 hover:border-rose-200 hover:bg-rose-500/35",
+    ghost:
+      "border-white/10 bg-white/5 text-slate-100 hover:border-white/30 hover:bg-white/10",
   };
   const sizes = {
     sm: "px-3 py-1 text-xs",
     md: "px-3.5 py-2 text-xs",
-    lg: "px-4 py-2 text-sm"
+    lg: "px-4 py-2 text-sm",
   };
   return (
     <button
@@ -121,16 +161,26 @@ export const Input = ({ className = "", ...props }) => (
 );
 
 export const Skeleton = ({ className = "" }) => (
-  <div
-    className={`animate-pulse rounded-xl bg-white/10 ${className}`.trim()}
-  />
+  <div className={`animate-pulse rounded-xl bg-white/10 ${className}`.trim()} />
 );
 
-export const Dialog = ({ open, onOpenChange, children }) => {
+export const Dialog = ({
+  open,
+  onOpenChange,
+  children,
+  label = "Workspace dialog",
+}) => {
+  const ref = useRef(null);
+  useDialogFocus(ref, open, () => onOpenChange?.(false));
   if (!open) return null;
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 dashboard-modal-backdrop"
+      ref={ref}
+      role="dialog"
+      aria-modal="true"
+      aria-label={label}
+      tabIndex={-1}
       onClick={(event) => {
         if (event.target === event.currentTarget) {
           onOpenChange?.(false);
@@ -151,9 +201,7 @@ export const DialogContent = ({ className = "", children }) => (
 );
 
 export const DropdownMenu = ({ className = "", children }) => (
-  <details className={`relative ${className}`.trim()}>
-    {children}
-  </details>
+  <details className={`relative ${className}`.trim()}>{children}</details>
 );
 
 export const DropdownMenuTrigger = ({ className = "", children }) => (

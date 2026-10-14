@@ -32,7 +32,7 @@ assert request("/healthz")[2] == b"ok\n"
 status, headers, index = request("/")
 assert status == 200 and b'id="root"' in index
 assert "no-cache" in headers.get("Cache-Control", "")
-for path in ("/dashboard", "/card/abcdefghijklmnopqrstuv", "/meet/demo"):
+for path in ("/login", "/signup", "/dashboard", "/card/abcdefghijklmnopqrstuv", "/meet/demo"):
     assert request(path)[2] == index, path
 assert b"Contact" in request("/contact.html")[2]
 asset = re.search(rb'src="(/assets/[^\"]+\.js)"', index).group(1).decode()

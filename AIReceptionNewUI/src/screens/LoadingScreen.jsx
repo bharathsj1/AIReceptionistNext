@@ -1,25 +1,30 @@
-export default function LoadingScreen({ status, loadingPhase, loadingSteps, responseMessage }) {
+export default function LoadingScreen({
+  status,
+  loadingPhase,
+  loadingSteps,
+  responseMessage,
+}) {
   return (
     <section className="progress-card screen-panel">
       <div className="progress-header">
         <p className="eyebrow">AI Reception</p>
         <h2>
           {status === "loading" && loadingPhase === "crawl"
-            ? "Sending to AI Reception"
+            ? "Getting to know your business"
             : status === "loading" && loadingPhase === "provision"
-            ? "Finalizing your AI reception setup"
-            : status === "success"
-            ? "All website data loaded fine"
-            : "Unable to complete request"}
+              ? "Bringing your receptionist to life"
+              : status === "success"
+                ? "Your business knowledge is ready"
+                : "Unable to complete request"}
         </h2>
         <p className="lead narrow">
           {status === "loading" && loadingPhase === "crawl"
-            ? "We are dispatching your URL and preparing the crawl."
+            ? "We’re finding the details that will help your AI welcome customers."
             : status === "loading" && loadingPhase === "provision"
-            ? "Generating your S4U-v3 prompt and provisioning the client."
-            : status === "success"
-            ? "Your site was ingested successfully. You can send another URL anytime."
-            : responseMessage || "Please try again with a valid URL."}
+              ? "Preparing your greeting, voice, and business knowledge."
+              : status === "success"
+                ? "Your website details are ready to review. You can update them as your business grows."
+                : responseMessage || "Please try again with a valid URL."}
         </p>
       </div>
 
@@ -47,11 +52,8 @@ export default function LoadingScreen({ status, loadingPhase, loadingSteps, resp
       )}
 
       {status !== "loading" && responseMessage && (
-        <div className={`status ${status}`}>
-          {responseMessage}
-        </div>
+        <div className={`status ${status}`}>{responseMessage}</div>
       )}
-
     </section>
   );
 }

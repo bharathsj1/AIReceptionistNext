@@ -10,32 +10,40 @@ import {
   CardHeader,
   Dialog,
   DialogContent,
-  Input
+  Input,
 } from "../components/ui/index.jsx";
-import { CalendarClock, ChevronLeft, ChevronRight, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
+import {
+  CalendarClock,
+  ChevronLeft,
+  ChevronRight,
+  Plus,
+  RefreshCw,
+  Search,
+  Trash2,
+} from "lucide-react";
 import {
   createTaskManagerItem,
   deleteTaskManagerItem,
   fetchTaskManagerItems,
-  updateTaskManagerItem
+  updateTaskManagerItem,
 } from "../lib/api/taskManager";
 
 const SOURCE_COLORS = {
   ai_task: {
     backgroundColor: "rgba(167, 139, 250, 0.24)",
     borderColor: "rgba(167, 139, 250, 0.8)",
-    textColor: "#f8fafc"
+    textColor: "#f8fafc",
   },
   email_summary: {
     backgroundColor: "rgba(16, 185, 129, 0.22)",
     borderColor: "rgba(16, 185, 129, 0.7)",
-    textColor: "#f8fafc"
+    textColor: "#f8fafc",
   },
   manual: {
     backgroundColor: "rgba(59, 130, 246, 0.22)",
     borderColor: "rgba(59, 130, 246, 0.7)",
-    textColor: "#f8fafc"
-  }
+    textColor: "#f8fafc",
+  },
 };
 
 const pad = (value) => String(value).padStart(2, "0");
@@ -44,7 +52,7 @@ const toLocalIso = (value) => {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return "";
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
-    date.getHours()
+    date.getHours(),
   )}:${pad(date.getMinutes())}:00`;
 };
 
@@ -52,7 +60,7 @@ const toInputValue = (value) => {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return "";
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
-    date.getHours()
+    date.getHours(),
   )}:${pad(date.getMinutes())}`;
 };
 
@@ -72,7 +80,7 @@ const normalizeItems = (items) =>
   (items || []).map((item) => ({
     ...item,
     start: item.start || item.start_time || item.startTime,
-    end: item.end || item.end_time || item.endTime
+    end: item.end || item.end_time || item.endTime,
   }));
 
 const toCalendarScrollTime = (value = new Date()) => {
@@ -101,7 +109,7 @@ export default function TaskManagerScreen({ email, businessName }) {
     title: "",
     description: "",
     start: "",
-    end: ""
+    end: "",
   });
   const [actionBusy, setActionBusy] = useState(false);
 
@@ -114,7 +122,7 @@ export default function TaskManagerScreen({ email, businessName }) {
         const data = await fetchTaskManagerItems({
           email,
           start: range?.start || undefined,
-          end: range?.end || undefined
+          end: range?.end || undefined,
         });
         setItems(normalizeItems(data));
       } catch (err) {
@@ -123,7 +131,7 @@ export default function TaskManagerScreen({ email, businessName }) {
         setLoading(false);
       }
     },
-    [calendarRange, email]
+    [calendarRange, email],
   );
 
   const events = useMemo(() => {
@@ -131,8 +139,12 @@ export default function TaskManagerScreen({ email, businessName }) {
       if (!search) return true;
       const lowered = search.toLowerCase();
       return (
-        String(item.title || "").toLowerCase().includes(lowered) ||
-        String(item.description || "").toLowerCase().includes(lowered)
+        String(item.title || "")
+          .toLowerCase()
+          .includes(lowered) ||
+        String(item.description || "")
+          .toLowerCase()
+          .includes(lowered)
       );
     });
     return filtered.map((item) => {
@@ -145,7 +157,7 @@ export default function TaskManagerScreen({ email, businessName }) {
         backgroundColor: palette.backgroundColor,
         borderColor: palette.borderColor,
         textColor: palette.textColor,
-        extendedProps: item
+        extendedProps: item,
       };
     });
   }, [items, search]);
@@ -156,7 +168,7 @@ export default function TaskManagerScreen({ email, businessName }) {
       title: "",
       description: "",
       start,
-      end
+      end,
     });
     setActiveItem(null);
     setModalMode("create");
@@ -168,7 +180,7 @@ export default function TaskManagerScreen({ email, businessName }) {
       title: item?.title || "",
       description: item?.description || "",
       start: toInputValue(item?.start || item?.start_time),
-      end: toInputValue(item?.end || item?.end_time)
+      end: toInputValue(item?.end || item?.end_time),
     });
     setActiveItem(item);
     setModalMode("edit");
@@ -181,14 +193,18 @@ export default function TaskManagerScreen({ email, businessName }) {
       return;
     }
     if (!allowOverlaps) {
-      const effectiveEnd = form.end || toInputValue(new Date(new Date(form.start).getTime() + 60 * 60 * 1000));
+      const effectiveEnd =
+        form.end ||
+        toInputValue(new Date(new Date(form.start).getTime() + 60 * 60 * 1000));
       const overlapFound = items.some((item) => {
-        if (activeItem?.id && String(item.id) === String(activeItem.id)) return false;
+        if (activeItem?.id && String(item.id) === String(activeItem.id))
+          return false;
         const start = new Date(item.start);
         const end = new Date(item.end || item.start);
         const nextStart = new Date(form.start);
         const nextEnd = new Date(effectiveEnd);
-        if (Number.isNaN(start.getTime()) || Number.isNaN(nextStart.getTime())) return false;
+        if (Number.isNaN(start.getTime()) || Number.isNaN(nextStart.getTime()))
+          return false;
         return nextStart < end && nextEnd > start;
       });
       if (overlapFound) {
@@ -205,7 +221,7 @@ export default function TaskManagerScreen({ email, businessName }) {
           description: form.description,
           start: form.start,
           end: form.end,
-          sourceType: "manual"
+          sourceType: "manual",
         });
         setItems((prev) => normalizeItems([created, ...prev]));
       } else if (activeItem?.id) {
@@ -215,10 +231,12 @@ export default function TaskManagerScreen({ email, businessName }) {
           title: form.title,
           description: form.description,
           start: form.start,
-          end: form.end
+          end: form.end,
         });
         setItems((prev) =>
-          normalizeItems(prev.map((item) => (item.id === updated.id ? updated : item)))
+          normalizeItems(
+            prev.map((item) => (item.id === updated.id ? updated : item)),
+          ),
         );
       }
       setModalOpen(false);
@@ -248,7 +266,9 @@ export default function TaskManagerScreen({ email, businessName }) {
     if (!email) return;
     if (!allowOverlaps) {
       const start = event.start ? new Date(event.start) : null;
-      const end = event.end ? new Date(event.end) : new Date(event.start.getTime() + 60 * 60 * 1000);
+      const end = event.end
+        ? new Date(event.end)
+        : new Date(event.start.getTime() + 60 * 60 * 1000);
       const overlapFound = items.some((item) => {
         if (String(item.id) === String(event.id)) return false;
         const itemStart = new Date(item.start);
@@ -267,10 +287,12 @@ export default function TaskManagerScreen({ email, businessName }) {
         email,
         id: event.id,
         start: toLocalIso(event.start),
-        end: event.end ? toLocalIso(event.end) : ""
+        end: event.end ? toLocalIso(event.end) : "",
       });
       setItems((prev) =>
-        normalizeItems(prev.map((item) => (item.id === updated.id ? updated : item)))
+        normalizeItems(
+          prev.map((item) => (item.id === updated.id ? updated : item)),
+        ),
       );
     } catch (err) {
       if (revert) revert();
@@ -328,7 +350,9 @@ export default function TaskManagerScreen({ email, businessName }) {
                 <CalendarClock className="h-5 w-5 text-indigo-200" />
               </div>
               <div>
-                <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">Task manager</p>
+                <p className="text-xs uppercase tracking-[0.24em] text-indigo-200">
+                  Task manager
+                </p>
                 <h2 className="text-2xl font-semibold text-white">
                   {businessName || "Schedule"}
                 </h2>
@@ -370,11 +394,7 @@ export default function TaskManagerScreen({ email, businessName }) {
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={jumpToToday}
-              >
+              <Button size="sm" variant="ghost" onClick={jumpToToday}>
                 Today
               </Button>
               <Button
@@ -408,7 +428,9 @@ export default function TaskManagerScreen({ email, businessName }) {
                 Month
               </Button>
               <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-slate-200">
-                <span className="uppercase tracking-[0.2em] text-slate-400">Multi</span>
+                <span className="uppercase tracking-[0.2em] text-slate-400">
+                  Multi
+                </span>
                 <button
                   type="button"
                   onClick={() => setAllowOverlaps((prev) => !prev)}
@@ -425,7 +447,9 @@ export default function TaskManagerScreen({ email, businessName }) {
                     }`}
                   />
                 </button>
-                <span className="text-slate-300">{allowOverlaps ? "On" : "Off"}</span>
+                <span className="text-slate-300">
+                  {allowOverlaps ? "On" : "Off"}
+                </span>
               </div>
             </div>
           </div>
@@ -451,7 +475,12 @@ export default function TaskManagerScreen({ email, businessName }) {
               <FullCalendar
                 ref={calendarRef}
                 plugins={[timeGridPlugin, dayGridPlugin, interactionPlugin]}
-                initialView="timeGridWeek"
+                initialView={
+                  typeof window !== "undefined" &&
+                  window.matchMedia("(max-width: 700px)").matches
+                    ? "timeGridDay"
+                    : "timeGridWeek"
+                }
                 headerToolbar={false}
                 height="100%"
                 editable
@@ -464,7 +493,7 @@ export default function TaskManagerScreen({ email, businessName }) {
                 datesSet={(range) => {
                   const nextRange = {
                     start: toLocalIso(range.start),
-                    end: toLocalIso(range.end)
+                    end: toLocalIso(range.end),
                   };
                   setCalendarRange(nextRange);
                   loadItems(nextRange);
@@ -481,7 +510,9 @@ export default function TaskManagerScreen({ email, businessName }) {
                     const overlapFound = items.some((item) => {
                       const itemStart = new Date(item.start);
                       const itemEnd = new Date(item.end || item.start);
-                      return selection.start < itemEnd && selection.end > itemStart;
+                      return (
+                        selection.start < itemEnd && selection.end > itemStart
+                      );
                     });
                     if (overlapFound) {
                       calendarRef.current?.getApi().unselect();
@@ -493,14 +524,16 @@ export default function TaskManagerScreen({ email, businessName }) {
                     title: "",
                     description: "",
                     start: toInputValue(selection.start),
-                    end: toInputValue(selection.end)
+                    end: toInputValue(selection.end),
                   });
                   setActiveItem(null);
                   setModalMode("create");
                   setModalOpen(true);
                 }}
                 eventDrop={(info) => handleDragUpdate(info.event, info.revert)}
-                eventResize={(info) => handleDragUpdate(info.event, info.revert)}
+                eventResize={(info) =>
+                  handleDragUpdate(info.event, info.revert)
+                }
                 scrollTime={initialScrollTime}
                 scrollTimeReset={false}
                 slotMinTime="06:00:00"
@@ -511,7 +544,13 @@ export default function TaskManagerScreen({ email, businessName }) {
         </CardContent>
       </Card>
 
-      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+      <Dialog
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+        label={
+          modalMode === "create" ? "Schedule a task" : "Update task schedule"
+        }
+      >
         <DialogContent>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -523,7 +562,12 @@ export default function TaskManagerScreen({ email, businessName }) {
               </h4>
             </div>
             {modalMode === "edit" ? (
-              <Button variant="danger" size="sm" onClick={handleDelete} disabled={actionBusy}>
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={handleDelete}
+                disabled={actionBusy}
+              >
                 <Trash2 className="h-4 w-4" />
                 Delete
               </Button>
@@ -533,17 +577,26 @@ export default function TaskManagerScreen({ email, businessName }) {
             <div>
               <label className="text-xs text-slate-300">Title</label>
               <Input
+                aria-label="Task title"
                 value={form.title}
-                onChange={(event) => setForm((prev) => ({ ...prev, title: event.target.value }))}
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, title: event.target.value }))
+                }
                 placeholder="Task title"
               />
             </div>
             <div>
               <label className="text-xs text-slate-300">Description</label>
               <textarea
+                aria-label="Task description"
                 rows={3}
                 value={form.description}
-                onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))}
+                onChange={(event) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    description: event.target.value,
+                  }))
+                }
                 className="w-full rounded-2xl border border-white/10 bg-slate-900/60 px-4 py-2 text-sm text-white outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/40"
                 placeholder="Notes, context, or next steps"
               />
@@ -554,7 +607,9 @@ export default function TaskManagerScreen({ email, businessName }) {
                 <Input
                   type="datetime-local"
                   value={form.start}
-                  onChange={(event) => setForm((prev) => ({ ...prev, start: event.target.value }))}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, start: event.target.value }))
+                  }
                 />
               </div>
               <div>
@@ -562,7 +617,9 @@ export default function TaskManagerScreen({ email, businessName }) {
                 <Input
                   type="datetime-local"
                   value={form.end}
-                  onChange={(event) => setForm((prev) => ({ ...prev, end: event.target.value }))}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, end: event.target.value }))
+                  }
                 />
               </div>
             </div>
@@ -572,10 +629,18 @@ export default function TaskManagerScreen({ email, businessName }) {
               </div>
             ) : null}
             <div className="flex items-center justify-end gap-2">
-              <Button variant="ghost" onClick={() => setModalOpen(false)} disabled={actionBusy}>
+              <Button
+                variant="ghost"
+                onClick={() => setModalOpen(false)}
+                disabled={actionBusy}
+              >
                 Cancel
               </Button>
-              <Button variant="primary" onClick={handleSave} disabled={actionBusy}>
+              <Button
+                variant="primary"
+                onClick={handleSave}
+                disabled={actionBusy}
+              >
                 {modalMode === "create" ? "Add task" : "Save changes"}
               </Button>
             </div>

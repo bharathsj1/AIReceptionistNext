@@ -1,5 +1,28 @@
 # AIReceptionNewUI
 
+## Interface design
+
+The app uses a light workspace, ink sidebar and teal accents. Shared design
+tokens and responsive styles live in `src/redesign.css`. The landing page,
+account screens, pricing and service pages share this visual system with the
+workspace tools and public pages (`public/public-theme.css`).
+
+Setup has a persistent progress indicator, inline password guidance and a
+direct signup entry point. The workspace includes labeled tool navigation,
+a mobile drawer, a theme toggle, and a keyboard-accessible tool search (`⌘K`
+or `Ctrl+K`). Shared dialogs and CRM drawers trap focus, close with Escape and return focus to the
+trigger. Motion respects the reduced-motion preference, and page scrolling is
+native. Mobile task calendars start in day view; week and month remain available.
+
+Existing backend routes, payment amounts, authentication, subscription checks,
+and provider integrations are retained. No API contract changes are required
+for the new layouts. Public `/login` and `/signup` links resolve to the account
+screens. Live payment, phone and OAuth operations still need configured providers.
+
+Validation includes TypeScript and production builds, desktop/mobile browser
+checks, and isolated review of workspace navigation and onboarding screens.
+Temporary review fixtures are not included in the shipped app.
+
 The runnable UI is the Vite/React SPA in `src`, with static pages in `public`.
 The legacy Next.js `app`, `lib` and `middleware.ts` files are not served by Vite
 or this image. The two Python directories are separate Azure Functions services;

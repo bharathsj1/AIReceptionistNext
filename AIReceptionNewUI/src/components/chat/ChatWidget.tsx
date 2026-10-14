@@ -13,12 +13,23 @@ const MAX_MESSAGE_LENGTH = 1500;
 const WELCOME: ChatMessage = {
   id: "welcome",
   role: "assistant",
-  content: "Hi! I'm the SmartConnect4u Assistant. Ask about products, pricing, or book a quick demo—I'll keep it concise."
+  content:
+    "Hi! I'm the SmartConnect4u Assistant. Ask about products, pricing, or book a quick demo—I'll keep it concise.",
 };
-const HANDOFF_KEYWORDS = ["agent", "human", "live support", "live agent", "real person", "representative"];
+const HANDOFF_KEYWORDS = [
+  "agent",
+  "human",
+  "live support",
+  "live agent",
+  "real person",
+  "representative",
+];
 
 const StatusDot: React.FC<{ status: "online" | "idle" }> = ({ status }) => (
-  <span className={`chat-status-dot chat-status-${status}`} aria-label={status === "online" ? "Online" : "Idle"} />
+  <span
+    className={`chat-status-dot chat-status-${status}`}
+    aria-label={status === "online" ? "Online" : "Idle"}
+  />
 );
 
 function nowId(prefix: string) {
@@ -40,7 +51,10 @@ const ChatWidget: React.FC = () => {
   const decoderRef = useRef<TextDecoder | null>(null);
 
   useEffect(() => {
-    const stored = typeof window !== "undefined" ? window.localStorage.getItem(STORAGE_KEY) : null;
+    const stored =
+      typeof window !== "undefined"
+        ? window.localStorage.getItem(STORAGE_KEY)
+        : null;
     if (stored) {
       setConversationId(stored);
     }
@@ -52,7 +66,10 @@ const ChatWidget: React.FC = () => {
     }
   }, [messages, isStreaming]);
 
-  const status = useMemo<"online" | "idle">(() => (isStreaming ? "online" : "online"), [isStreaming]);
+  const status = useMemo<"online" | "idle">(
+    () => (isStreaming ? "online" : "online"),
+    [isStreaming],
+  );
 
   const toggleOpen = () => {
     setIsOpen((open) => {
@@ -80,12 +97,18 @@ const ChatWidget: React.FC = () => {
     }
     console.log("[chat-widget] send", { length: text.length });
 
-    const userMessage: ChatMessage = { id: nowId("user"), role: "user", content: text };
+    const userMessage: ChatMessage = {
+      id: nowId("user"),
+      role: "user",
+      content: text,
+    };
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setError(null);
 
-    const isHandoff = HANDOFF_KEYWORDS.some((k) => text.toLowerCase().includes(k));
+    const isHandoff = HANDOFF_KEYWORDS.some((k) =>
+      text.toLowerCase().includes(k),
+    );
     if (isHandoff) {
       setIsSending(true);
       setIsStreaming(false);
@@ -99,20 +122,23 @@ const ChatWidget: React.FC = () => {
     const body = {
       conversationId,
       message: text,
-      pageUrl: typeof window !== "undefined" ? window.location.href : undefined
+      pageUrl: typeof window !== "undefined" ? window.location.href : undefined,
     };
 
     controllerRef.current = new AbortController();
     let assistantText = "";
     const assistantId = nowId("assistant");
-    setMessages((prev) => [...prev, { id: assistantId, role: "assistant", content: "" }]);
+    setMessages((prev) => [
+      ...prev,
+      { id: assistantId, role: "assistant", content: "" },
+    ]);
 
     try {
       const res = await fetch(API_URLS.chat, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
-        signal: controllerRef.current.signal
+        signal: controllerRef.current.signal,
       });
 
       const newConversation = res.headers.get("x-conversation-id");
@@ -128,7 +154,9 @@ const ChatWidget: React.FC = () => {
         setError(fallback);
         setInput(text);
         setMessages((prev) =>
-          prev.map((msg) => (msg.id === assistantId ? { ...msg, content: fallback } : msg))
+          prev.map((msg) =>
+            msg.id === assistantId ? { ...msg, content: fallback } : msg,
+          ),
         );
         console.log("[chat-widget] send failed", { status: res.status });
         setIsStreaming(false);
@@ -149,7 +177,9 @@ const ChatWidget: React.FC = () => {
         if (!chunk) continue;
         assistantText += chunk;
         setMessages((prev) =>
-          prev.map((msg) => (msg.id === assistantId ? { ...msg, content: assistantText } : msg))
+          prev.map((msg) =>
+            msg.id === assistantId ? { ...msg, content: assistantText } : msg,
+          ),
         );
       }
     } catch (err) {
@@ -157,7 +187,11 @@ const ChatWidget: React.FC = () => {
       const fallback = "Sorry, something went wrong. Try again.";
       setInput(text);
       setError(fallback);
-      setMessages((prev) => prev.map((msg) => (msg.id === assistantId ? { ...msg, content: fallback } : msg)));
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === assistantId ? { ...msg, content: fallback } : msg,
+        ),
+      );
     } finally {
       setIsSending(false);
       setIsStreaming(false);
@@ -165,7 +199,9 @@ const ChatWidget: React.FC = () => {
     }
   };
 
-  const handleKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement> = (event) => {
+  const handleKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement> = (
+    event,
+  ) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       void sendMessage();
@@ -184,23 +220,24 @@ const ChatWidget: React.FC = () => {
       message: userMessage.content,
       conversation: [...messages, userMessage].map((m) => ({
         role: m.role,
-        content: m.content
-      }))
+        content: m.content,
+      })),
     };
 
     try {
       await fetch(API_URLS.liveHandoff, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
       });
       setMessages((prev) => [
         ...prev,
         {
           id: nowId("assistant"),
           role: "assistant",
-          content: "I’m handing you off to a live agent now. They’ll respond shortly in this chat or via the contact details you shared."
-        }
+          content:
+            "I’m handing you off to a live agent now. They’ll respond shortly in this chat or via the contact details you shared.",
+        },
       ]);
     } catch (err) {
       console.error("[chat-widget] handoff failed", err);
@@ -209,8 +246,9 @@ const ChatWidget: React.FC = () => {
         {
           id: nowId("assistant"),
           role: "assistant",
-          content: "Sorry, I couldn’t reach a live agent right now. Please try again or provide an email to reach you."
-        }
+          content:
+            "Sorry, I couldn’t reach a live agent right now. Please try again or provide an email to reach you.",
+        },
       ]);
     } finally {
       setHandoffPending(false);
@@ -227,28 +265,46 @@ const ChatWidget: React.FC = () => {
         className="chat-launcher"
         onClick={toggleOpen}
         data-open={isOpen}
+        aria-expanded={isOpen}
+        aria-controls="sc-assistant"
       >
         <span className="chat-launcher-glow" />
         <span className="chat-launcher-icon">✦</span>
         <span className="chat-launcher-label">{bubbleText}</span>
       </button>
 
-      <div className={`chat-shell ${isOpen ? "chat-open" : ""}`} role="dialog" aria-label="SmartConnect4u Assistant">
+      <div
+        id="sc-assistant"
+        className={`chat-shell ${isOpen ? "chat-open" : ""}`}
+        role="dialog"
+        aria-label="SmartConnect4u Assistant"
+        aria-hidden={!isOpen}
+      >
         <div className="chat-card">
           <header className="chat-header">
             <div className="chat-header-left">
               <div className="chat-avatar">S4U</div>
               <div className="chat-title">
                 <div className="chat-subtitle">
-                  <StatusDot status={status} /> {status === "online" ? "Online" : "Idle"}
+                  <StatusDot status={status} />{" "}
+                  {status === "online" ? "Online" : "Idle"}
                 </div>
               </div>
             </div>
             <div className="chat-header-actions">
-              <button type="button" className="chat-secondary-btn" onClick={handleNewConversation}>
+              <button
+                type="button"
+                className="chat-secondary-btn"
+                onClick={handleNewConversation}
+              >
                 New chat
               </button>
-              <button type="button" className="chat-icon-btn" onClick={toggleOpen} aria-label="Close chat">
+              <button
+                type="button"
+                className="chat-icon-btn"
+                onClick={toggleOpen}
+                aria-label="Close chat"
+              >
                 ✕
               </button>
             </div>
@@ -258,7 +314,9 @@ const ChatWidget: React.FC = () => {
             <div className="chat-messages" ref={listRef}>
               {messages.map((msg) => (
                 <div key={msg.id} className={`chat-bubble ${msg.role}`}>
-                  <div className="chat-bubble-label">{msg.role === "assistant" ? "Assistant" : "You"}</div>
+                  <div className="chat-bubble-label">
+                    {msg.role === "assistant" ? "Assistant" : "You"}
+                  </div>
                   <div className="chat-bubble-body">{msg.content}</div>
                 </div>
               ))}
@@ -277,7 +335,12 @@ const ChatWidget: React.FC = () => {
             {error && (
               <div className="chat-error">
                 {error}{" "}
-                <button type="button" onClick={sendMessage} className="chat-inline-btn" disabled={isSending}>
+                <button
+                  type="button"
+                  onClick={sendMessage}
+                  className="chat-inline-btn"
+                  disabled={isSending}
+                >
                   Retry
                 </button>
               </div>
@@ -287,6 +350,7 @@ const ChatWidget: React.FC = () => {
           <footer className="chat-footer">
             <textarea
               className="chat-input"
+              aria-label="Message the assistant"
               placeholder="Ask about pricing, features, or book a demo…"
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -294,7 +358,12 @@ const ChatWidget: React.FC = () => {
               maxLength={MAX_MESSAGE_LENGTH}
               rows={3}
             />
-            <button type="button" className="chat-send-btn" onClick={sendMessage} disabled={isSending}>
+            <button
+              type="button"
+              className="chat-send-btn"
+              onClick={sendMessage}
+              disabled={isSending}
+            >
               {isSending ? "Sending…" : "Send"}
             </button>
           </footer>

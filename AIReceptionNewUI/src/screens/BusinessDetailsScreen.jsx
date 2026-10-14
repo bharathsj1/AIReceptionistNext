@@ -12,7 +12,7 @@ export default function BusinessDetailsScreen({
   onContinue,
   onBack,
   loading = false,
-  error = ""
+  error = "",
 }) {
   const welcomeName = userName || "there";
   const [country, setCountry] = useState("US");
@@ -20,9 +20,11 @@ export default function BusinessDetailsScreen({
   const countryOptions = [
     { value: "GB", label: "🇬🇧", dialCode: "+44" },
     { value: "CA", label: "🇨🇦", dialCode: "+1" },
-    { value: "US", label: "🇺🇸", dialCode: "+1" }
+    { value: "US", label: "🇺🇸", dialCode: "+1" },
   ];
-  const selectedCountry = countryOptions.find((option) => option.value === country) || countryOptions[0];
+  const selectedCountry =
+    countryOptions.find((option) => option.value === country) ||
+    countryOptions[0];
 
   useEffect(() => {
     const normalized = (phone || "").trim();
@@ -37,7 +39,10 @@ export default function BusinessDetailsScreen({
     }
     if (normalized.startsWith("+1")) {
       // +1 is shared by US and CA; prefer geo hint if available.
-      const fallback = geoCountryCode && ["US", "CA"].includes(geoCountryCode) ? geoCountryCode : "CA";
+      const fallback =
+        geoCountryCode && ["US", "CA"].includes(geoCountryCode)
+          ? geoCountryCode
+          : "CA";
       setCountry(fallback);
       setLocalPhone(normalized.replace(/^\+1\s*/, ""));
       return;
@@ -68,15 +73,18 @@ export default function BusinessDetailsScreen({
           </div>
         </div>
 
-        <h3 className="mt-4">🎉 Welcome aboard, {welcomeName}!</h3>
+        <h3 className="mt-4">Let’s make it yours, {welcomeName}.</h3>
         <p className="lead">
-          We're excited to have you here. To kick things off, share your business name and phone number so
-          we can set up your workspace.
+          Tell us who you are and how customers can reach you. We’ll use these
+          details to personalise your workspace.
         </p>
 
         <div className="business-field">
-          <label>What's your business name?</label>
+          <label htmlFor="setup-business-name">
+            What’s your business name?
+          </label>
           <input
+            id="setup-business-name"
             type="text"
             value={name}
             onChange={(e) => onNameChange(e.target.value)}
@@ -86,7 +94,9 @@ export default function BusinessDetailsScreen({
         </div>
 
         <div className="business-field">
-          <label>What's your phone number?</label>
+          <label htmlFor="setup-business-phone">
+            What’s your phone number?
+          </label>
           <div className="phone-input">
             <select
               className="country-select"
@@ -94,7 +104,8 @@ export default function BusinessDetailsScreen({
               onChange={(event) => {
                 const next = event.target.value;
                 const nextCountry =
-                  countryOptions.find((option) => option.value === next) || countryOptions[0];
+                  countryOptions.find((option) => option.value === next) ||
+                  countryOptions[0];
                 setCountry(nextCountry.value);
                 onPhoneChange(`${nextCountry.dialCode}${localPhone}`);
               }}
@@ -107,6 +118,8 @@ export default function BusinessDetailsScreen({
               ))}
             </select>
             <input
+              id="setup-business-phone"
+              autoComplete="tel-national"
               type="tel"
               value={localPhone}
               onChange={(e) => {

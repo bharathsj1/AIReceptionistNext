@@ -709,7 +709,7 @@ export default function ContactsScreen({ email, onConnectGoogle, googleConnected
         </CardContent>
       </Card>
 
-      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+      <Dialog open={modalOpen} onOpenChange={setModalOpen} label={editingContact ? "Edit contact" : "Create contact"}>
         <DialogContent className="max-w-lg">
           <div className="flex items-center justify-between">
             <div>
@@ -723,6 +723,7 @@ export default function ContactsScreen({ email, onConnectGoogle, googleConnected
             <button
               type="button"
               onClick={() => setModalOpen(false)}
+              aria-label="Close contact form"
               className="rounded-full border border-white/10 p-2 text-slate-200 hover:border-white/30"
             >
               <X className="h-4 w-4" />
@@ -732,6 +733,7 @@ export default function ContactsScreen({ email, onConnectGoogle, googleConnected
             <div>
               <label className="text-[11px] uppercase tracking-[0.2em] text-slate-400">Name</label>
               <Input
+                aria-label="Contact name"
                 value={form.name}
                 onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
                 placeholder="Full name"
@@ -740,6 +742,7 @@ export default function ContactsScreen({ email, onConnectGoogle, googleConnected
             <div>
               <label className="text-[11px] uppercase tracking-[0.2em] text-slate-400">Organization</label>
               <Input
+                aria-label="Organization"
                 value={form.organization}
                 onChange={(event) => setForm((prev) => ({ ...prev, organization: event.target.value }))}
                 placeholder="Company or organization"
@@ -751,11 +754,13 @@ export default function ContactsScreen({ email, onConnectGoogle, googleConnected
                 {form.phones.map((phone, index) => (
                   <div key={`phone-${index}`} className="grid gap-2 sm:grid-cols-[1fr_120px_auto]">
                     <Input
+                      aria-label={`Phone number ${index + 1}`}
                       value={phone.value}
                       onChange={(event) => updatePhone(index, "value", event.target.value)}
                       placeholder="Phone number"
                     />
                     <select
+                      aria-label={`Phone type ${index + 1}`}
                       value={phone.type}
                       onChange={(event) => updatePhone(index, "type", event.target.value)}
                       className="rounded-2xl border border-white/10 bg-slate-900/60 px-3 py-2 text-xs text-white focus:border-indigo-300 focus:outline-none"
@@ -792,11 +797,13 @@ export default function ContactsScreen({ email, onConnectGoogle, googleConnected
                 {form.emails.map((emailItem, index) => (
                   <div key={`email-${index}`} className="grid gap-2 sm:grid-cols-[1fr_120px_auto]">
                     <Input
+                      aria-label={`Email address ${index + 1}`}
                       value={emailItem.value}
                       onChange={(event) => updateEmail(index, "value", event.target.value)}
                       placeholder="Email address"
                     />
                     <select
+                      aria-label={`Email type ${index + 1}`}
                       value={emailItem.type}
                       onChange={(event) => updateEmail(index, "type", event.target.value)}
                       className="rounded-2xl border border-white/10 bg-slate-900/60 px-3 py-2 text-xs text-white focus:border-indigo-300 focus:outline-none"
