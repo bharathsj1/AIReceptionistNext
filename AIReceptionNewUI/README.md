@@ -1,5 +1,28 @@
 # AIReceptionNewUI
 
+## Local setup without payment
+
+Add `VITE_LOCAL_SKIP_PAYMENT=true` to `.env.development.local` and run Vite with
+`VITE_API_PROXY_BASE=/api` and `VITE_FUNCTION_HOST=http://127.0.0.1:7071`. The
+currently running local UI is at `http://127.0.0.1:5176`.
+
+Sign in (or create a local account), enter the business name and phone, add the
+website, review the crawled details, and select **Save and open dashboard**.
+Existing accounts with a completed business profile return directly to the
+dashboard. You can also enter details manually if the site cannot be crawled.
+Local crawling copies readable website text into the review form without an AI
+API key; verify and edit it before saving. A failed crawl or profile save stays
+in setup with an error so you can retry.
+
+This option requires Vite development mode, a loopback host and a relative `/api`
+proxy. Production builds ignore it. It skips plan selection, Stripe payment,
+Ultravox provisioning and Twilio number purchases, and opens the dashboard tools
+for local development. It does not create paid subscriptions or bypass login.
+Live provider operations retain their server configuration and access checks.
+Your local database has its own accounts; production logins are not copied.
+
+Run `npm run test:local-setup` to check the local-only gate and website extraction.
+
 ## Interface design
 
 The app uses a light workspace, ink sidebar and teal accents. Shared design

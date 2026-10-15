@@ -4,7 +4,7 @@ const clampText = (value, limit) => (value || "").slice(0, limit);
 const SUMMARY_LIMIT = 5000;
 const FIELD_LIMIT = 1000;
 
-export default function BusinessReviewScreen({ initialData = {}, onSubmit, onBack }) {
+export default function BusinessReviewScreen({ initialData = {}, onSubmit, onBack, localSetup = false, loading = false, error = "" }) {
   const defaults = useMemo(
     () => ({
       businessName: initialData.businessName || "",
@@ -63,7 +63,7 @@ export default function BusinessReviewScreen({ initialData = {}, onSubmit, onBac
             <h2 className="text-3xl font-semibold text-white">Review your business profile</h2>
             <p className="text-sm text-slate-200/85 leading-relaxed">
               We pulled these details from your website crawl. Please confirm or update anything
-              before continuing to packages.
+              {localSetup ? "before opening your dashboard." : "before continuing to packages."}
             </p>
             <div className="mt-4 grid gap-3 rounded-2xl border border-white/10 bg-slate-900/40 p-4 text-sm text-slate-100">
               <div className="flex items-center justify-between">
@@ -75,7 +75,7 @@ export default function BusinessReviewScreen({ initialData = {}, onSubmit, onBac
               <ul className="list-disc space-y-1 pl-5 text-slate-200/90">
                 <li>We confirm your business summary and service focus.</li>
                 <li>We tailor the AI receptionist to your brand voice.</li>
-                <li>You proceed to packages and provisioning.</li>
+                <li>{localSetup ? "Save your profile and open your dashboard." : "You proceed to packages and provisioning."}</li>
               </ul>
             </div>
           </div>
@@ -206,12 +206,13 @@ export default function BusinessReviewScreen({ initialData = {}, onSubmit, onBac
               <div className="text-xs text-slate-300 text-right">{openings.length}/1000</div>
             </Field>
 
+            {error && <p role="alert" className="status error">{error}</p>}
             <div className="flex flex-wrap items-center gap-3">
-              <button type="button" className="ghost" onClick={onBack}>
+              <button type="button" className="ghost" onClick={onBack} disabled={loading}>
                 ← Back
               </button>
-              <button type="submit" className="primary">
-                Continue to packages
+              <button type="submit" className="primary" disabled={loading}>
+                {loading ? "Saving…" : localSetup ? "Save and open dashboard" : "Continue to packages"}
               </button>
             </div>
           </form>

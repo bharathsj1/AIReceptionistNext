@@ -23,6 +23,7 @@ const labels = {
   crm_manager: "CRM",
   contacts: "Contacts",
   sales_dialer: "Sales dialer",
+  ai_outreach: "AI outreach",
 };
 
 export function WorkspaceTopbar({

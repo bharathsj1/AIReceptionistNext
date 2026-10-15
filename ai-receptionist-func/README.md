@@ -1,5 +1,123 @@
 # AI Receptionist Functions
 
+## VedoraEats AI outreach
+
+Dashboard -> **AI outreach** imports a UTF-8 restaurant CSV, creates a reviewable
+draft, and starts sequential Twilio calls connected to Ultravox conversations.
+Enter verified VedoraEats benefits and your team's notification email in the
+campaign form. The agent identifies itself as an AI assistant, asks for the owner,
+explains those benefits, and collects interest, owner name, email, preferred
+callback time, and explicit permission for team follow-up. It does not invent
+product benefits, prices or savings. Campaign settings are fixed after import;
+create a new draft to change the offer, recipient or calling hours.
+
+Calls run in CSV order, at most one active call **per campaign**, on weekdays in
+the selected Europe/London window (default 10:00–17:00, automatically handling
+BST/GMT). The durable Functions timer runs each minute, so keep the backend and
+its runtime storage running; the browser can close. Each attempt rings for up to
+30 seconds and is limited to 10 minutes. Pause stops new calls and allows an
+active conversation to finish. Unanswered/busy/failed calls are not redialled.
+Callback requests are collected for the human team, not automatically scheduled.
+
+### CSV format
+
+Download the header-only template from the dashboard. Required columns:
+
+| Column | Meaning |
+| --- | --- |
+| `phone` | UK landline/mobile in `020…`, `07…`, `+44…` or `0044…` format |
+| `restaurant_name` | Restaurant being contacted |
+| `automated_call_consent` | `yes`, `true` or `1` only where specific consent was obtained |
+| `consent_evidence` | Record of when/how the subscriber consented to VedoraEats automated marketing calls |
+
+Optional columns include `owner_name`, `email`, `city` and additional business
+details. Quoted cells and UTF-8 BOMs are supported. Limits: 2 MB, 5,000 rows,
+30 columns and 2,000 characters per cell. Invalid rows and duplicate normalized
+numbers are reported during import. Non-UK numbers, premium-rate, personal
+numbering and pager destinations are excluded, including Crown Dependency
+numbers sharing +44. Valid contacts without consent evidence remain visible as
+skipped. CSV owner details are context; the agent must confirm contact details.
+
+UK automated marketing calls require prior consent specifically covering the
+organisation and automated calls, including calls to businesses. General
+marketing or live-call consent is insufficient. See [ICO guidance](https://ico.org.uk/for-organisations/direct-marketing-and-privacy-and-electronic-communications/direct-marketing-guidance/plan-direct-marketing/).
+The CSV records operator-supplied evidence; this feature does not independently
+verify that consent. Opt-outs are stored per account and suppress that number in
+all its current and future campaigns. Importing it again cannot clear an opt-out.
+
+### Server configuration
+
+- `AUTH_SESSION_SECRET` (or an existing supported session-secret setting): signed
+  login sessions. Campaign APIs require a valid owner/manager session; supplying
+  an email address alone is insufficient. Added client users cannot manage campaigns.
+- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`: existing Twilio account with voice
+  geographic permissions for the UK; trial-account destination restrictions still apply.
+- An active tenant-owned caller ID in `phone_numbers` or `caller_numbers`. It must
+  also be a voice-capable Twilio number or verified outgoing caller ID in that account.
+- `ULTRAVOX_API_KEY`: existing Ultravox API key. Optional `ULTRAVOX_BASE_URL`
+  defaults to `https://api.ultravox.ai/api`; optional `OUTREACH_ULTRAVOX_VOICE`
+  selects a voice ID. Calls use the direct create-call API with a dedicated prompt;
+  existing inbound receptionist agents are unaffected.
+- `OUTREACH_TOOL_SECRET`: separate random secret for per-contact HMAC tool
+  authentication. Generate a strong random value and retain it while calls are active.
+- `SENDGRID_API_KEY`, `FROM_EMAIL`: SendGrid mail-send credentials and a verified
+  sender identity. Email is never reported as sent when credentials are missing.
+- `API_PUBLIC_BASE_URL`: public HTTPS origin **without `/api`**, reachable from
+  Twilio and Ultravox, for example `https://api.example.com`. Localhost does not
+  work for live callbacks; use a development tunnel and set its HTTPS origin.
+- `AzureWebJobsStorage`, `DATABASE_URL`: existing runtime storage and persistent
+  SQL database. `init_db()` automatically creates the three new outreach tables.
+
+No provider dashboard webhook registration is necessary: each Twilio call
+includes its signed status callback, and each Ultravox conversation includes a
+temporary `save_outreach_result` tool secured by a contact-specific header.
+Twilio signatures are always validated on the outreach callback, including behind
+an ingress; `TWILIO_VALIDATE_SIGNATURE=false` does not bypass this check.
+Provider credentials are never returned to the frontend.
+
+### Results and delivery
+
+Owner outcomes are `interested`, `not_interested`, `callback_requested`,
+`owner_unavailable`, `wrong_number` and `do_not_call`. Completed calls without a
+tool result are labelled as missing a structured result; interest is never guessed.
+Only an `interested` outcome with explicit follow-up permission queues a team
+email. Email waits for call completion, includes the confirmed details, summary,
+callback request and provider references, and has a durable delivery state.
+The UI's email count means SendGrid accepted the request, not inbox delivery.
+Rate-limit rejections retry with backoff; other definitive email rejections show
+`failed`. Network/5xx uncertainty shows `needs_review` to avoid duplicate email.
+Check SendGrid activity before manually following up on failed/uncertain emails.
+
+A call-creation timeout or interrupted attempt pauses the campaign and marks the
+contact `needs_review`; the worker never retries an uncertain paid call. Check
+Twilio logs, then use the contact's **Resolve call review** form to supply the
+matching completed Call SID, or confirm there is no active call and skip that
+contact. A verified active call cannot be resolved prematurely. Resume the
+campaign after reviewing all uncertain contacts. Missed status callbacks for
+known call IDs are reconciled by polling Twilio. Duplicate/out-of-order callbacks
+cannot regress a terminal call. Duplicate tool delivery cannot resend an accepted email.
+
+### API and validation
+
+- `GET /api/outreach/config`
+- `GET|POST /api/outreach/campaigns` (POST: `name`, `benefits`,
+  `notification_email`, `caller_id`, `csv_text`, optional `start_hour`, `end_hour`, `voice`)
+- `GET|POST /api/outreach/campaigns/{id}` (POST: `action: start|pause`)
+- `POST /api/outreach/leads/{id}/review` (owner session; matching `call_sid` or
+  `confirmed_no_active_call: true`)
+- `POST /api/outreach/leads/{id}/status` (Twilio signature)
+- `POST /api/outreach/leads/{id}/result` (per-contact `X-Outreach-Token`)
+
+The campaign UI uses the existing login bearer token. Data and caller IDs are
+scoped to the resolved account, and another account's campaign/contact returns 404.
+
+Run `DATABASE_URL=sqlite:///:memory: python -m unittest discover -s tests -v` from
+this directory, and `npm run build` / `npm run typecheck` from `AIReceptionNewUI`.
+The outreach tests use isolated SQLite databases and simulated providers; they do
+not call phone numbers or send email. Before production, run one consenting test
+contact through a configured public HTTPS deployment and confirm conversation,
+opt-out handling, callback status and actual email receipt.
+
 ## Docker deployment
 
 This service now has a Docker image using Microsoft's Azure Functions v4 Python

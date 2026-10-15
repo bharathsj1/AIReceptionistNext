@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import "@fullcalendar/react/dist/vdom";
 import FullCalendar from "@fullcalendar/react";
 import interactionPlugin from "@fullcalendar/interaction";
@@ -62,6 +62,8 @@ import {
   deleteClientUser,
   updateClientUser
 } from "../lib/api/clientUsers";
+
+const AIOutreachScreen = lazy(() => import("./AIOutreachScreen"));
 
 const resolveFeatureFlag = (value) => {
   if (value === undefined || value === null) return false;
@@ -572,6 +574,7 @@ const ToolGate = ({ locked, loading, message, children, className = "" }) => (
 );
 
 export default function DashboardScreen({
+  localSetup = false,
   activeTab,
   setActiveTab,
   activeTool,
@@ -3330,6 +3333,13 @@ export default function DashboardScreen({
 
   const baseToolTabs = [
     {
+      id: "ai_outreach",
+      label: "AI outreach",
+      eyebrow: "Restaurant partnerships",
+      icon: PhoneCall,
+      copy: "Upload UK restaurant contacts, run AI conversations, and email interested-owner details."
+    },
+    {
       id: "ai_receptionist",
       label: "AI receptionist",
       eyebrow: "Voice + calls",
@@ -3421,11 +3431,13 @@ export default function DashboardScreen({
   );
 
   const isToolLocked = (toolId) => {
+    if (localSetup) return false;
     if (toolId === "dashboard_analytics") return false;
     if (toolId === "task_manager") return false;
     if (toolId === "crm_manager") return false;
     if (toolId === "contacts") return false;
     if (toolId === "sales_dialer") return false;
+    if (toolId === "ai_outreach") return false;
     const entry = toolSubscriptions?.[toolId];
     if (entry && typeof entry.active === "boolean") return !entry.active;
     if (subscriptionsLoading) return false;
@@ -3462,7 +3474,7 @@ export default function DashboardScreen({
   const hasTwilioNumber = Boolean(aiNumber);
   const hasReceptionistSubscription = !subscriptionsLoading && !isToolLocked("ai_receptionist");
   const needsNumberAssignment = !hasTwilioNumber;
-  const showAssignCta = hasReceptionistSubscription && needsNumberAssignment;
+  const showAssignCta = !localSetup && hasReceptionistSubscription && needsNumberAssignment;
   const showNumberGate = currentTool === "ai_receptionist" && showAssignCta;
   const usageIncluded = Number(receptionistUsage?.includedMinutes);
   const usageUsed = Number(receptionistUsage?.usedMinutes || 0);
@@ -3475,7 +3487,7 @@ export default function DashboardScreen({
   const assignBusy = assignNumberStatus?.status === "loading";
   const assignError =
     assignNumberStatus?.status === "error" ? assignNumberStatus?.message : "";
-  const showResumeBusinessAction = !subscriptionsLoading && !hasActiveSubscription;
+  const showResumeBusinessAction = !localSetup && !subscriptionsLoading && !hasActiveSubscription;
   const selectedEmailSummary = selectedEmailMessage ? emailSummaries[selectedEmailMessage.id] : "";
   const emailSummaryLoading = emailSummaryStatus.status === "loading";
   const emailSummaryError = emailSummaryStatus.status === "error" ? emailSummaryStatus.message : "";
@@ -4796,7 +4808,7 @@ export default function DashboardScreen({
                             </button>
                           ) : (
                             <span className="text-xs text-slate-400">
-                              Activate AI Receptionist to assign a number.
+                              {localSetup ? "No phone number configured for this local workspace." : "Activate AI Receptionist to assign a number."}
                             </span>
                           )}
                           {assignError && (
@@ -4853,7 +4865,7 @@ export default function DashboardScreen({
                         </div>
                       ) : (
                         <p className="mt-2 text-xs font-medium text-slate-300">
-                          Usage data will appear once an active plan is detected.
+                          {localSetup ? "No call usage yet." : "Usage data will appear once an active plan is detected."}
                         </p>
                       )}
                     </div>
@@ -5155,6 +5167,12 @@ export default function DashboardScreen({
             sessionEmail={user?.email || userProfile?.contact_email || clientData?.email || ""}
             geoCountryCode={geoCountryCode || ""}
           />
+        )}
+
+        {currentTool === "ai_outreach" && (
+          <Suspense fallback={<p role="status">Loading AI outreach…</p>}>
+            <AIOutreachScreen user={user} />
+          </Suspense>
         )}
 
         {currentTool === "ai_receptionist" && (

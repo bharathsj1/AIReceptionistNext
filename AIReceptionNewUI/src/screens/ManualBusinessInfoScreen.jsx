@@ -21,7 +21,10 @@ export default function ManualBusinessInfoScreen({
   phone = "",
   email = "",
   onSubmit,
-  onBack
+  onBack,
+  localSetup = false,
+  loading = false,
+  error = ""
 }) {
   const [daySchedule, setDaySchedule] = useState(() =>
     DAY_ORDER.reduce((acc, day) => {
@@ -214,12 +217,13 @@ export default function ManualBusinessInfoScreen({
               </Field>
             </div>
 
+            {error && <p role="alert" className="status error">{error}</p>}
             <div className="flex flex-wrap items-center gap-3">
-              <button type="button" className="ghost" onClick={onBack}>
+              <button type="button" className="ghost" onClick={onBack} disabled={loading}>
                 ← Back
               </button>
-              <button type="submit" className="primary">
-                Continue to packages
+              <button type="submit" className="primary" disabled={loading}>
+                {loading ? "Saving…" : localSetup ? "Save and open dashboard" : "Continue to packages"}
               </button>
             </div>
           </form>

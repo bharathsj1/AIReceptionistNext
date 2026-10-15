@@ -13,6 +13,7 @@ export default function BusinessDetailsScreen({
   onBack,
   loading = false,
   error = "",
+  localSetup = false,
 }) {
   const welcomeName = userName || "there";
   const [country, setCountry] = useState("US");
@@ -66,7 +67,7 @@ export default function BusinessDetailsScreen({
           <div className="brand-dot" />
           <span className="brand-name">SmartConnect4u</span>
           <div className="stepper">
-            <span>Step 1/4</span>
+            <span>{localSetup ? "Business details" : "Step 1/4"}</span>
             <div className="progress">
               <div className="progress-bar" />
             </div>

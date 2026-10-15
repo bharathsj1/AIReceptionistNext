@@ -10,6 +10,7 @@ requests
 beautifulsoup4
 sqlalchemy
 twilio
+phonenumbers>=9.0,<10
 psycopg2-binary
 tqdm>=4.66.0
 stripe

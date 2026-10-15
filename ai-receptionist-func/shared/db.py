@@ -532,6 +532,58 @@ class ClientUser(Base):
     )
 
 
+class OutreachCampaign(Base):
+    __tablename__ = "outreach_campaigns"
+
+    id = Column(String, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
+    name = Column(String, nullable=False)
+    benefits = Column(Text, nullable=False)
+    notification_email = Column(String, nullable=False)
+    caller_id = Column(String, nullable=False)
+    voice = Column(String, nullable=True)
+    status = Column(String, nullable=False, default="draft", index=True)
+    start_hour = Column(Integer, nullable=False, default=10)
+    end_hour = Column(Integer, nullable=False, default=17)
+    locked_until = Column(DateTime, nullable=True)
+    error = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class OutreachLead(Base):
+    __tablename__ = "outreach_leads"
+
+    id = Column(String, primary_key=True)
+    campaign_id = Column(String, ForeignKey("outreach_campaigns.id"), nullable=False, index=True)
+    position = Column(Integer, nullable=False, default=0)
+    phone = Column(String, nullable=False)
+    restaurant_name = Column(String, nullable=False)
+    contact = Column(JSON, nullable=False)
+    consent_evidence = Column(Text, nullable=True)
+    status = Column(String, nullable=False, default="queued", index=True)
+    error = Column(Text, nullable=True)
+    twilio_call_sid = Column(String, unique=True, nullable=True)
+    ultravox_call_id = Column(String, unique=True, nullable=True)
+    started_at = Column(DateTime, nullable=True)
+    ended_at = Column(DateTime, nullable=True)
+    callback_sequence = Column(Integer, nullable=False, default=-1)
+    result = Column(JSON, nullable=True)
+    notification_status = Column(String, nullable=False, default="none")
+    notification_attempts = Column(Integer, nullable=False, default=0)
+    notification_next_at = Column(DateTime, nullable=True)
+    notification_sent_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (UniqueConstraint("campaign_id", "phone", name="uq_outreach_campaign_phone"),)
+
+
+class OutreachSuppression(Base):
+    __tablename__ = "outreach_suppressions"
+
+    client_id = Column(Integer, ForeignKey("clients.id"), primary_key=True)
+    phone = Column(String, primary_key=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 def init_db() -> None:
     """Create tables if they do not exist."""
     strict = os.getenv("DB_INIT_STRICT", "true").strip().lower() in {"1", "true", "yes", "on"}

@@ -25,6 +25,14 @@ import AboutScreen from "./screens/AboutScreen";
 import ChatWidget from "./components/chat/ChatWidget";
 import Brand from "./components/Brand";
 import OnboardingProgress from "./components/OnboardingProgress";
+import { isLocalSetupEnabled, localBusinessReview, localResumeStage } from "./lib/localSetup";
+
+const LOCAL_SETUP_ENABLED = isLocalSetupEnabled({
+  dev: import.meta.env.DEV,
+  enabled: import.meta.env.VITE_LOCAL_SKIP_PAYMENT,
+  hostname: window.location.hostname,
+  apiBase: API_PROXY_BASE,
+});
 
 const STAGES = {
   LANDING: "landing",
@@ -608,6 +616,9 @@ export default function App() {
           "Crawl API returned HTML instead of JSON. Please check /api routing.",
         );
       }
+      if (LOCAL_SETUP_ENABLED && !data?.pages?.length) {
+        throw new Error("No readable website pages were found. Check the address or add your business details manually.");
+      }
 
       setCrawlData(data);
       setResponseMessage("All website data loaded fine.");
@@ -634,38 +645,43 @@ export default function App() {
       }
       let profile = null;
       try {
-        const { res: profileRes, data: profileJson } =
-          await fetchJsonWithFallback(API_URLS.businessProfile, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            mode: "cors",
-            body: JSON.stringify({
-              email: signupEmail || email || loginEmail || user?.email || "",
-              website_url: websiteUrl,
-              pages: data?.pages || data?.data || data?.raw || [],
-            }),
-          });
-        if (profileRes.ok) {
-          profile = profileJson?.profile || null;
-        } else {
-          console.warn("Business profile extraction failed", profileJson);
+        if (!LOCAL_SETUP_ENABLED) {
+          const { res: profileRes, data: profileJson } =
+            await fetchJsonWithFallback(API_URLS.businessProfile, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              mode: "cors",
+              body: JSON.stringify({
+                email: signupEmail || email || loginEmail || user?.email || "",
+                website_url: websiteUrl,
+                pages: data?.pages || data?.data || data?.raw || [],
+              }),
+            });
+          if (profileRes.ok) {
+            profile = profileJson?.profile || null;
+          } else {
+            console.warn("Business profile extraction failed", profileJson);
+          }
         }
       } catch (profileErr) {
         console.warn("Business profile extraction request failed", profileErr);
       }
       const defaults = buildReviewDefaults(websiteUrl, data);
-      const reviewInfo = mergeProfileIntoReview(defaults, profile);
+      const reviewInfo = LOCAL_SETUP_ENABLED
+        ? localBusinessReview(defaults, data)
+        : mergeProfileIntoReview(defaults, profile);
       setManualBusinessInfo(reviewInfo);
       if (reviewInfo.businessName) setBusinessName(reviewInfo.businessName);
       if (reviewInfo.businessPhone) setBusinessPhone(reviewInfo.businessPhone);
       setStatus("success");
-      // After a successful crawl, confirm business details before packages
+      // Review the crawled details before completing setup.
       setStage(STAGES.BUSINESS_INFO_REVIEW);
     } catch (error) {
       setStatus("error");
       setResponseMessage(
         error?.message || "Unable to send request. Please try again.",
       );
+      if (LOCAL_SETUP_ENABLED) setStage(STAGES.CRAWL_FORM);
     }
     setShowLoader(false);
   };
@@ -850,7 +866,7 @@ export default function App() {
           }
         }
 
-        if (!hasActive) {
+        if (!hasActive && !LOCAL_SETUP_ENABLED) {
           const subsRes = await fetch(
             `${API_URLS.subscriptionsStatus}?email=${encodeURIComponent(userEmail)}`,
           );
@@ -907,7 +923,21 @@ export default function App() {
       setIsLoggedIn(true);
       setActiveTab("agents");
       setActiveTool(DEFAULT_TOOL_ID);
-      if (hasActive) {
+      if (LOCAL_SETUP_ENABLED) {
+        let savedProfile = {};
+        try {
+          const data = typeof clientProfile?.website_data === "string" ? JSON.parse(clientProfile.website_data) : clientProfile?.website_data;
+          savedProfile = data?.business_profile || {};
+        } catch { /* An incomplete profile should resume setup. */ }
+        setActiveTool("dashboard_analytics");
+        setUrl(missingWebsite ? "" : websiteUrlFromProfile);
+        const nextStage = missingBiz ? STAGES.BUSINESS_DETAILS
+          : missingWebsite || !savedProfile.business_summary ? STAGES.CRAWL_FORM : STAGES.DASHBOARD;
+        setStage(nextStage);
+        if (nextStage === STAGES.DASHBOARD) window.history.replaceState({ stage: nextStage }, "", "/dashboard");
+        setStatus("idle");
+        setResponseMessage("");
+      } else if (hasActive) {
         setUrl(websiteUrlFromProfile || "");
         setStage(STAGES.DASHBOARD);
         setStatus("success");
@@ -1198,7 +1228,10 @@ export default function App() {
         setBusinessError(msg);
         return;
       }
-      setStage(STAGES.BUSINESS_TYPE);
+      setBusinessName(nameInput);
+      setBusinessPhone(phoneInput);
+      if (data.client_id) setUser((current) => ({ ...current, client_id: data.client_id }));
+      setStage(LOCAL_SETUP_ENABLED ? STAGES.CRAWL_FORM : STAGES.BUSINESS_TYPE);
     } catch (err) {
       const msg =
         err instanceof Error ? err.message : "Could not save business details.";
@@ -1320,6 +1353,10 @@ export default function App() {
       data: normalized,
     };
     setCrawlData(nextCrawlData);
+    if (LOCAL_SETUP_ENABLED) {
+      await finishLocalSetup(normalized);
+      return;
+    }
     try {
       await fetch(API_URLS.clientsBusinessDetails, {
         method: "POST",
@@ -1414,6 +1451,11 @@ export default function App() {
     setBusinessName(normalized.businessName);
     if (normalized.businessPhone) setBusinessPhone(normalized.businessPhone);
 
+    if (LOCAL_SETUP_ENABLED) {
+      await finishLocalSetup(normalized);
+      return;
+    }
+
     try {
       await fetch(API_URLS.clientsBusinessDetails, {
         method: "POST",
@@ -1484,6 +1526,39 @@ export default function App() {
       return;
     }
     setStage(STAGES.PACKAGES);
+  };
+
+  const finishLocalSetup = async (business) => {
+    const targetEmail = signupEmail || user?.email || email || loginEmail;
+    setBusinessLoading(true);
+    setBusinessError("");
+    try {
+      const res = await fetch(API_URLS.clientsBusinessDetails, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: targetEmail, businessName: business.businessName,
+          businessPhone: business.businessPhone || businessPhone, websiteUrl: business.websiteUrl,
+          websiteData: business }),
+      });
+      const saved = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(saved.error || "Could not save your business details.");
+      setUser((current) => ({ ...current, client_id: saved.client_id || current?.client_id }));
+      setClientData((current) => ({ ...current, id: saved.client_id, business_name: business.businessName,
+        business_phone: business.businessPhone || businessPhone, website_url: business.websiteUrl }));
+      setManualBusinessInfo(business);
+      setUrl(business.websiteUrl || "");
+      setSelectedPlan(null);
+      setActiveTool("dashboard_analytics");
+      setActiveTab("agents");
+      setStatus("success");
+      setResponseMessage("Your business details are saved.");
+      setStage(STAGES.DASHBOARD);
+      window.history.replaceState({ stage: STAGES.DASHBOARD }, "", "/dashboard");
+    } catch (err) {
+      setBusinessError(err.message || "Could not save your business details.");
+    } finally {
+      setBusinessLoading(false);
+    }
   };
 
   const handleLogout = () => {
@@ -1577,6 +1652,11 @@ export default function App() {
 
   const handleSelectPlan = (planId, options = {}) => {
     const { source } = options;
+    if (LOCAL_SETUP_ENABLED) {
+      setSelectedPlan(null);
+      setStage(isLoggedIn ? STAGES.DASHBOARD : STAGES.SIGNUP);
+      return;
+    }
     if (hasActiveSubscription) {
       setStage(STAGES.DASHBOARD);
       return;
@@ -2987,8 +3067,14 @@ export default function App() {
         path.startsWith("/dashboard") ||
         /^\/meet\/[^/]+/.test(path) ||
         /^\/card\/[a-z0-9_-]+\/?$/.test(path);
-      if (!resetFlowActiveRef.current && saved.stage && !hasPathPriorityStage) {
-        setStage(saved.stage);
+      const resumeStage = LOCAL_SETUP_ENABLED ? localResumeStage(saved, path) : null;
+      if (!resetFlowActiveRef.current && saved.stage && (!hasPathPriorityStage || resumeStage)) {
+        setStage(resumeStage || saved.stage);
+      }
+      if (LOCAL_SETUP_ENABLED) {
+        if (saved.businessName) setBusinessName(saved.businessName);
+        if (saved.businessPhone) setBusinessPhone(saved.businessPhone);
+        if (saved.url) setUrl(saved.url);
       }
       if (saved.isLoggedIn) setIsLoggedIn(true);
       if (saved.user) setUser(saved.user);
@@ -3033,7 +3119,7 @@ export default function App() {
     if (hasSession) {
       setStage(STAGES.DASHBOARD);
       setActiveTab("agents");
-      setActiveTool(DEFAULT_TOOL_ID);
+      if (!LOCAL_SETUP_ENABLED) setActiveTool(DEFAULT_TOOL_ID);
       return;
     }
 
@@ -3069,7 +3155,7 @@ export default function App() {
     if (stage === STAGES.DASHBOARD) return;
     setStage(STAGES.DASHBOARD);
     setActiveTab("agents");
-    setActiveTool(DEFAULT_TOOL_ID);
+    setActiveTool(LOCAL_SETUP_ENABLED ? "dashboard_analytics" : DEFAULT_TOOL_ID);
     if (typeof window !== "undefined") {
       const path = window.location.pathname || "";
       if (path !== "/dashboard") {
@@ -3092,8 +3178,10 @@ export default function App() {
     loadDashboard();
     loadCallLogs();
     loadAllCalls();
-    loadUltravoxVoices();
-    loadCalendarEvents();
+    if (!LOCAL_SETUP_ENABLED) {
+      loadUltravoxVoices();
+      loadCalendarEvents();
+    }
   }, [
     hasActiveSubscription,
     loadAllCalls,
@@ -3179,6 +3267,7 @@ export default function App() {
     try {
       const payload = {
         stage,
+        ...(LOCAL_SETUP_ENABLED ? { businessName, businessPhone, url } : {}),
         isLoggedIn,
         user,
         email,
@@ -3207,6 +3296,10 @@ export default function App() {
     isLoggedIn,
     user,
     email,
+    businessName,
+    businessPhone,
+    url,
+    manualBusinessInfo,
     provisionData,
     phoneNumbers,
     selectedVoiceId,
@@ -3265,13 +3358,13 @@ export default function App() {
       return;
     }
     if (
-      hasActiveSubscription &&
+      (hasActiveSubscription || LOCAL_SETUP_ENABLED) &&
       (stage === STAGES.PACKAGES || stage === STAGES.PAYMENT)
     ) {
       setSelectedPlan(null);
-      setStage(STAGES.DASHBOARD);
+      setStage(LOCAL_SETUP_ENABLED && !isLoggedIn ? STAGES.SIGNUP : STAGES.DASHBOARD);
     }
-  }, [hasActiveSubscription, stage, validStages]);
+  }, [hasActiveSubscription, isLoggedIn, stage, validStages]);
 
   const handleCalendarDisconnect = () => {
     if (!user?.email) {
@@ -3408,7 +3501,7 @@ export default function App() {
           </header>
         )}
         <main className={contentClassName} id="main-content" tabIndex={-1}>
-          <OnboardingProgress stage={stage} />
+          <OnboardingProgress stage={stage} localSetup={LOCAL_SETUP_ENABLED} />
           {stage === STAGES.LANDING && (
             <LandingScreen
               onTry={goToSignup}
@@ -3426,7 +3519,7 @@ export default function App() {
             />
           )}
           {stage === STAGES.ABOUT && <AboutScreen />}
-          {stage === STAGES.PACKAGES && !hasActiveSubscription && (
+          {stage === STAGES.PACKAGES && !LOCAL_SETUP_ENABLED && !hasActiveSubscription && (
             <div className="shell-card screen-panel">
               <PricingPackages
                 onSelectPackage={handleSelectPlan}
@@ -3443,6 +3536,9 @@ export default function App() {
                 initialData={manualBusinessInfo || {}}
                 onSubmit={handleBusinessReviewSubmit}
                 onBack={() => setStage(STAGES.CRAWL_FORM)}
+                localSetup={LOCAL_SETUP_ENABLED}
+                loading={businessLoading}
+                error={businessError}
               />
             </div>
           )}
@@ -3454,6 +3550,9 @@ export default function App() {
                 phone={businessPhone}
                 email={signupEmail || email}
                 onSubmit={handleManualBusinessSubmit}
+                localSetup={LOCAL_SETUP_ENABLED}
+                loading={businessLoading}
+                error={businessError}
                 onBack={() => setStage(STAGES.CRAWL_FORM)}
               />
             </div>
@@ -3514,6 +3613,7 @@ export default function App() {
           {stage === STAGES.BUSINESS_DETAILS && (
             <div className="shell-card screen-panel">
               <BusinessDetailsScreen
+                localSetup={LOCAL_SETUP_ENABLED}
                 userName={signupName}
                 name={businessName}
                 phone={businessPhone}
@@ -3564,6 +3664,7 @@ export default function App() {
 
           {stage === STAGES.DASHBOARD && (
             <DashboardScreen
+              localSetup={LOCAL_SETUP_ENABLED}
               activeTab={activeTab}
               setActiveTab={setActiveTab}
               activeTool={activeTool}
@@ -3674,7 +3775,7 @@ export default function App() {
             />
           )}
 
-          {stage === STAGES.PAYMENT &&
+          {stage === STAGES.PAYMENT && !LOCAL_SETUP_ENABLED &&
             (!hasActiveSubscription ? (
               <div className="shell-card screen-panel">
                 <PaymentScreen
@@ -3695,7 +3796,7 @@ export default function App() {
                 </div>
               </div>
             ))}
-          {stage === STAGES.PAYMENT_SUCCESS && (
+          {stage === STAGES.PAYMENT_SUCCESS && !LOCAL_SETUP_ENABLED && (
             <div className="shell-card screen-panel">
               <PaymentSuccessScreen
                 paymentInfo={paymentInfo}
@@ -3708,7 +3809,7 @@ export default function App() {
               />
             </div>
           )}
-          {stage === STAGES.NUMBER_SELECT && (
+          {stage === STAGES.NUMBER_SELECT && !LOCAL_SETUP_ENABLED && (
             <div className="shell-card screen-panel">
               <NumberSelectionScreen
                 paymentInfo={paymentInfo}

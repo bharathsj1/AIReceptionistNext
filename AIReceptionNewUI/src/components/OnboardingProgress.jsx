@@ -18,8 +18,9 @@ const steps = [
   { label: "Go live", stages: ["paymentSuccess", "numberSelect"] },
 ];
 
-export default function OnboardingProgress({ stage }) {
-  const current = steps.findIndex((step) => step.stages.includes(stage));
+export default function OnboardingProgress({ stage, localSetup = false }) {
+  const visibleSteps = localSetup ? steps.slice(0, 3) : steps;
+  const current = visibleSteps.findIndex((step) => step.stages.includes(stage));
   if (current < 0) return null;
   return (
     <nav className="setup-progress" aria-label="Workspace setup progress">
@@ -30,7 +31,7 @@ export default function OnboardingProgress({ stage }) {
         </span>
       </div>
       <ol>
-        {steps.map((step, index) => (
+        {visibleSteps.map((step, index) => (
           <li
             key={step.label}
             aria-label={step.label}
@@ -51,7 +52,7 @@ export default function OnboardingProgress({ stage }) {
         ))}
       </ol>
       <p className="setup-progress-mobile">
-        Step {current + 1} of {steps.length} · {steps[current].label}
+        Step {current + 1} of {visibleSteps.length} · {visibleSteps[current].label}
       </p>
     </nav>
   );
