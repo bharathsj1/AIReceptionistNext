@@ -1,0 +1,26 @@
+name: Deploy Docker after checks
+on:
+  workflow_run:
+    workflows: ["Backend Docker checks"]
+    types: [completed]
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: docker-deploy-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: >-
+      vars.LOCAL_DOCKER_DEPLOY_ENABLED == 'true' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      contains(fromJSON('["main", "staging"]'), github.event.workflow_run.head_branch)
+    runs-on: [self-hosted, Linux, X64, vedora-deploy, outreach]
+    timeout-minutes: 50
+    steps:
+      # Deliberately no checkout, downloaded artifact, npm install, or PR script.
+      # This fixed client is installed in the local runner image by the operator.
+      - name: Deploy the verified commit and wait for readiness
+        run: python3 /opt/vedora-automation/deploy_client.py --event "$GITHUB_EVENT_PATH"
