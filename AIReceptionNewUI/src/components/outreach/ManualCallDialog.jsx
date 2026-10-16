@@ -145,7 +145,7 @@ export default function ManualCallDialog({ user, config, campaigns, defaultCampa
         try {
           const { Device } = await import("@twilio/voice-sdk");
           if (!mounted.current || version !== connectionVersion.current) return;
-          device.current = new Device(response.browser.token, { closeProtection: true, enableRingingState: true });
+          device.current = new Device(response.browser.token, { closeProtection: true });
           device.current.on("error", () => {
             if (mounted.current) setError("The browser voice connection needs attention. Check microphone access and your network.");
             endBrowserCall();
