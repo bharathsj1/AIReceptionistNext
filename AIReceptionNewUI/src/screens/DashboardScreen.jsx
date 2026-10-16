@@ -36,10 +36,10 @@ export default function DashboardScreen({
   const [view, setView] = useState("overview");
   const [menuOpen, setMenuOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(
-    () => window.matchMedia("(max-width: 760px)").matches,
+    () => window.matchMedia("(max-width: 960px)").matches,
   );
   useEffect(() => {
-    const media = window.matchMedia("(max-width: 760px)");
+    const media = window.matchMedia("(max-width: 960px)");
     const changed = () => {
       setIsMobile(media.matches);
       if (!media.matches) setMenuOpen(false);

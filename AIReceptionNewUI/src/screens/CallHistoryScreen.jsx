@@ -524,9 +524,8 @@ export default function CallHistoryScreen({
         </footer>
       </section>
       <p className="call-history-note">
-        Talk time comes from the phone provider or the AI connection, and
-        excludes preparation time. A missing transcript is shown explicitly; an
-        AI summary is kept separately from the spoken conversation.
+        <em>Talk time excludes call preparation.</em> Open a call to read its
+        transcript, summary, and activity log.
       </p>
       {selected && (
         <ConversationDrawer

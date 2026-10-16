@@ -3,8 +3,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  color: #849378;
-  font-size: 11px;
+  color: var(--call-muted);
+  font-size: var(--call-text-body);
 }
 .call-history-intro > span {
   display: flex;
@@ -12,9 +12,12 @@
   gap: 8px;
   line-height: 1.8;
 }
+.call-history-intro svg {
+  flex-shrink: 0;
+}
 .call-history-intro > span:last-child {
-  color: #89a275;
-  font-size: 10px;
+  color: var(--call-muted);
+  font-size: var(--call-text-small);
 }
 .call-history-stats {
   margin-top: 18px;
@@ -36,8 +39,9 @@
   display: grid;
   gap: 7px;
   min-width: 0;
-  color: #87967a;
-  font-size: 10px;
+  color: var(--call-muted);
+  font-size: var(--call-text-small);
+  font-weight: 600;
 }
 .call-history-selects select,
 .call-history-selects input {
@@ -45,12 +49,13 @@
   min-width: 0;
   border: 1px solid #e2e9d9;
   border-radius: 7px;
-  color: #748368;
+  color: var(--call-muted);
   background: #fff;
-  min-height: 39px;
+  min-height: 44px;
   padding: 9px 10px;
   font: inherit;
-  font-size: 11px;
+  font-size: var(--call-text-body);
+  font-weight: 400;
   text-transform: capitalize;
 }
 .call-history-selects input {
@@ -84,28 +89,31 @@
   white-space: normal;
   min-width: 135px;
   max-width: 210px;
-  color: #6d7f60 !important;
-  font-size: 11px;
+  color: var(--call-muted) !important;
+  font-size: var(--call-text-body);
   line-height: 1.7;
 }
 .call-history-date {
-  font-size: 10px;
-  color: #6f7f63 !important;
+  font-size: var(--call-text-small);
+  color: var(--call-muted) !important;
 }
 .call-history-duration {
   font-variant-numeric: tabular-nums;
+  color: var(--call-ink);
+  font-weight: 600;
 }
 .call-history-outcome {
   text-transform: capitalize;
-  font-size: 10px;
-  color: #97a28a;
+  font-size: var(--call-text-small);
+  color: var(--call-muted);
 }
 .call-history-outcome.outcome-interested {
-  color: #729755;
-  font-weight: 550;
+  color: var(--call-green);
+  font-weight: 700;
 }
 .call-history-outcome.outcome-do_not_call {
-  color: #b28d77;
+  color: var(--call-danger);
+  font-weight: 700;
 }
 .call-history-transcript {
   display: inline-flex;
@@ -114,14 +122,16 @@
   border: 0;
   padding: 0;
   background: none;
-  color: #94a184;
-  font-size: 10px;
+  color: var(--call-muted);
+  font-size: var(--call-text-small);
+  font-weight: 600;
+  min-height: 44px;
 }
 .call-history-transcript.transcript-ready {
-  color: #6d9456;
+  color: var(--call-green);
 }
 .call-history-transcript.transcript-unavailable {
-  color: #b2996e;
+  color: var(--call-warning);
 }
 .call-history-transcript:hover {
   text-decoration: underline;
@@ -136,8 +146,8 @@
   gap: 16px;
   padding: 18px 23px;
   border-top: 1px solid #e9eee0;
-  font-size: 10px;
-  color: #96a18a;
+  font-size: var(--call-text-small);
+  color: var(--call-muted);
 }
 .call-history-pagination > div {
   display: flex;
@@ -145,13 +155,13 @@
   gap: 14px;
 }
 .call-history-pagination .calling-button {
-  min-height: 32px;
+  min-height: 44px;
   padding: 7px 10px;
-  font-size: 10px;
+  font-size: var(--call-text-small);
 }
 .call-history-note {
-  color: #96a38b;
-  font-size: 10px;
+  color: var(--call-muted);
+  font-size: var(--call-text-small);
   line-height: 1.9;
   margin-top: 16px !important;
 }
@@ -185,16 +195,16 @@
     justify-content: space-between;
   }
   .call-history-intro {
-    font-size: 10px;
+    font-size: var(--call-text-small);
   }
   .call-history-intro > span:last-child {
-    font-size: 9px;
+    font-size: var(--call-text-small);
   }
   .call-history .calling-panel-heading {
     flex-wrap: wrap;
   }
   .call-history-note {
-    font-size: 9px;
+    font-size: var(--call-text-small);
   }
 }
 
@@ -202,17 +212,17 @@
   margin-block: 14px 20px;
 }
 .call-history-stats .calling-stat {
-  padding: 13px 16px;
+  padding: 20px;
 }
 .call-history-stats .calling-stat > strong {
-  font-size: 25px;
-  margin-block: 3px 4px;
+  font-size: 2rem;
+  margin-block: 7px;
 }
 .call-history-stats .calling-stat > div {
-  font-size: 11px;
+  font-size: var(--call-text-body);
 }
 .call-history-stats .calling-stat > small {
-  font-size: 9px;
+  font-size: var(--call-text-small);
 }
 .call-history-stats .calling-stat-icon {
   width: 25px;
@@ -229,7 +239,7 @@
 .call-history-mobile {
   display: none;
 }
-@media (max-width: 590px) {
+@media (max-width: 1000px) {
   .call-history-desktop {
     display: none;
   }
@@ -250,23 +260,24 @@
     border: 0;
     background: none;
     text-align: left;
-    color: #769061;
+    color: var(--call-muted);
   }
   .call-history-card-heading strong {
     display: block;
-    font-size: 13px;
-    font-weight: 550;
-    color: #596f48;
+    font-size: var(--call-text-lead);
+    font-weight: 700;
+    color: var(--call-ink);
+    overflow-wrap: anywhere;
   }
   .call-history-card-heading small {
     display: block;
     margin-top: 5px;
-    font-size: 10px;
-    color: #8a9d78;
+    font-size: var(--call-text-small);
+    color: var(--call-muted);
   }
   .call-history-card > p {
-    font-size: 10px;
-    color: #98a58c;
+    font-size: var(--call-text-small);
+    color: var(--call-muted);
     margin-top: 12px;
     line-height: 1.7;
   }
@@ -277,18 +288,19 @@
     justify-content: space-between;
     gap: 8px;
     margin-top: 10px;
-    color: #869976;
-    font-size: 9px;
+    color: var(--call-muted);
+    font-size: var(--call-text-small);
   }
   .call-history-card-status {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 10px;
+    flex-wrap: wrap;
     margin-top: 15px;
   }
   .call-history-card-status .call-history-outcome {
-    font-size: 9px;
+    font-size: var(--call-text-small);
   }
   .call-history-card-transcript {
     display: flex;
@@ -300,15 +312,33 @@
     background: none;
     border: 0;
     border-top: 1px solid #edf1e5;
-    color: #92a47e;
-    font-size: 9px;
+    color: var(--call-muted);
+    font-size: var(--call-text-small);
+    min-height: 44px;
+    flex-wrap: wrap;
+    text-align: left;
+    font-weight: 600;
   }
   .call-history-card-transcript.transcript-ready {
-    color: #769958;
+    color: var(--call-green);
   }
   .call-history-card-transcript > span:last-child {
     margin-left: auto;
-    font-size: 8px;
-    color: #93a47d;
+    font-size: var(--call-text-small);
+    color: var(--call-muted);
+  }
+}
+@media (max-width: 400px) {
+  .call-history-selects {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .call-history-pagination > div {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .call-history-pagination > div > span {
+    order: -1;
+    flex-basis: 100%;
+    text-align: center;
   }
 }

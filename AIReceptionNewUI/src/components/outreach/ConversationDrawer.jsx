@@ -478,9 +478,12 @@ export default function ConversationDrawer({
               {transcript?.synced_at && (
                 <p className="conversation-saved-note">
                   <CheckCircle2 size={13} />
-                  Saved to your workspace · {callDate(transcript.synced_at)}
-                  {!transcript.is_final &&
-                    " · This transcript may still be incomplete."}
+                  <span>
+                    Saved to your workspace · {callDate(transcript.synced_at)}
+                    {!transcript.is_final && (
+                      <> · <em>This transcript may still be incomplete.</em></>
+                    )}
+                  </span>
                 </p>
               )}
             </>

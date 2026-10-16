@@ -14,13 +14,13 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-  color: #91a17e;
-  font-size: 11px;
+  color: var(--call-muted);
+  font-size: var(--call-text-body);
   line-height: 1.8;
   margin-top: 8px !important;
 }
 .conversation-subtitle > span {
-  color: #bec9b0;
+  color: var(--call-muted);
 }
 .conversation-meta {
   display: grid;
@@ -36,15 +36,15 @@
 }
 .conversation-meta span {
   display: block;
-  color: #9aa88c;
-  font-size: 9px;
+  color: var(--call-muted);
+  font-size: var(--call-text-small);
   line-height: 1.7;
 }
 .conversation-meta strong {
   display: block;
-  color: #6d8459;
-  font-weight: 500;
-  font-size: 11px;
+  color: var(--call-ink);
+  font-weight: 700;
+  font-size: var(--call-text-body);
   line-height: 1.6;
   margin-top: 5px;
   overflow-wrap: anywhere;
@@ -68,14 +68,14 @@
   border: 0;
   border-bottom: 2px solid transparent;
   background: none;
-  color: #99a78a;
+  color: var(--call-muted);
   white-space: nowrap;
-  font-size: 11px;
+  font-size: var(--call-text-body);
 }
 .conversation-tabs > button[aria-selected="true"] {
-  color: #588146;
+  color: var(--call-green);
   border-bottom-color: #6e9957;
-  font-weight: 550;
+  font-weight: 700;
 }
 .conversation-tabs > button > span {
   display: inline-grid;
@@ -83,9 +83,10 @@
   background: #eff5e6;
   border-radius: 5px;
   min-width: 20px;
-  height: 17px;
-  font-size: 9px;
-  color: #8aa273;
+  min-height: 24px;
+  padding-inline: 5px;
+  font-size: var(--call-text-small);
+  color: var(--call-muted);
 }
 .conversation-body {
   flex: 1;
@@ -95,7 +96,7 @@
   padding: 22px 28px;
 }
 .conversation-body .calling-alert {
-  font-size: 11px;
+  font-size: var(--call-text-body);
 }
 .conversation-transcript-toolbar {
   display: flex;
@@ -108,8 +109,8 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 10px;
-  color: #97a783;
+  font-size: var(--call-text-small);
+  color: var(--call-muted);
   line-height: 1.7;
 }
 .conversation-sync-state > span {
@@ -119,7 +120,7 @@
   background: #acc28c;
 }
 .conversation-sync-state.state-ready {
-  color: #739b55;
+  color: var(--call-green);
 }
 .conversation-search {
   display: flex;
@@ -128,9 +129,13 @@
   border: 1px solid #e4ebd9;
   padding: 0 11px;
   border-radius: 7px;
-  color: #9bac89;
+  color: var(--call-muted);
   margin-bottom: 24px;
   background: #fdfefb;
+}
+.conversation-search:focus-within {
+  outline: 2px solid var(--call-green);
+  outline-offset: 3px;
 }
 .conversation-search input {
   flex: 1;
@@ -139,12 +144,12 @@
   padding: 12px 0;
   box-shadow: none;
   background: none;
-  font-size: 11px;
-  color: #6f8759;
+  font-size: var(--call-text-body);
+  color: var(--call-muted);
   outline: none;
 }
 .conversation-search > span {
-  font-size: 9px;
+  font-size: var(--call-text-small);
   white-space: nowrap;
 }
 .conversation-messages {
@@ -160,7 +165,7 @@
   display: grid;
   place-items: center;
   background: #edf4e4;
-  color: #93ad77;
+  color: var(--call-muted);
   border-radius: 9px;
   width: 32px;
   height: 32px;
@@ -170,7 +175,7 @@
 .conversation-message.speaker-contact .conversation-speaker-icon,
 .conversation-message.speaker-owner .conversation-speaker-icon {
   background: #f2eee5;
-  color: #ac9a7c;
+  color: var(--call-muted);
 }
 .conversation-message > div {
   min-width: 0;
@@ -184,17 +189,17 @@
   margin: 0 0 7px;
 }
 .conversation-message strong {
-  font-size: 10px;
-  font-weight: 550;
-  color: #7d9468;
+  font-size: var(--call-text-body);
+  font-weight: 700;
+  color: var(--call-green);
 }
 .conversation-message.speaker-contact strong,
 .conversation-message.speaker-owner strong {
-  color: #9d8d70;
+  color: #715837;
 }
 .conversation-message time {
-  font-size: 9px;
-  color: #b3bda7;
+  font-size: var(--call-text-small);
+  color: var(--call-muted);
   font-variant-numeric: tabular-nums;
 }
 .conversation-message p {
@@ -202,9 +207,10 @@
   border-radius: 0 9px 9px 9px;
   background: #f4f8ed;
   border: 1px solid #e8efdc;
-  color: #526a46;
-  font-size: 13px;
-  line-height: 1.9;
+  color: var(--call-ink);
+  font-size: var(--call-text-lead);
+  line-height: 1.75;
+  max-width: 65ch;
   padding: 13px 16px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -213,7 +219,7 @@
 .conversation-message.speaker-owner p {
   background: #fbfaf6;
   border-color: #eeebe2;
-  color: #756650;
+  color: var(--call-ink);
 }
 .conversation-message mark {
   background: #ebedb0;
@@ -228,28 +234,28 @@
   text-align: center;
   min-height: 250px;
   gap: 14px;
-  color: #a3b78c;
+  color: var(--call-muted);
   padding: 25px 15px;
 }
 .conversation-empty h3 {
-  font-size: 17px;
-  color: #7d9664;
-  font-weight: 550;
+  font-size: var(--call-text-section);
+  color: var(--call-ink);
+  font-weight: 600;
   letter-spacing: -0.5px;
 }
 .conversation-empty p {
   max-width: 440px;
-  font-size: 11px;
+  font-size: var(--call-text-body);
   line-height: 1.9;
-  color: #9cae87;
+  color: var(--call-muted);
 }
 .conversation-saved-note {
   display: flex;
   align-items: center;
   gap: 7px;
   flex-wrap: wrap;
-  color: #a2b38e;
-  font-size: 9px;
+  color: var(--call-muted);
+  font-size: var(--call-text-small);
   line-height: 1.8;
   margin-top: 25px !important;
   border-top: 1px solid #eaf0de;
@@ -262,8 +268,8 @@
   margin-bottom: 20px;
 }
 .conversation-activity > p {
-  color: #9baa8b;
-  font-size: 11px;
+  color: var(--call-muted);
+  font-size: var(--call-text-body);
   line-height: 1.8;
 }
 .conversation-activity ol {
@@ -296,20 +302,20 @@
 }
 .conversation-activity strong {
   display: block;
-  font-size: 12px;
-  color: #7b9562;
-  font-weight: 550;
+  font-size: var(--call-text-body);
+  color: var(--call-ink);
+  font-weight: 700;
 }
 .conversation-activity li p {
-  font-size: 11px;
-  color: #a4af96;
+  font-size: var(--call-text-body);
+  color: var(--call-muted);
   line-height: 1.8;
   margin-top: 5px;
 }
 .conversation-activity time {
   display: block;
-  font-size: 9px;
-  color: #adb99d;
+  font-size: var(--call-text-small);
+  color: var(--call-muted);
   margin-top: 7px;
 }
 .conversation-dialog .calling-dialog-footer {
@@ -318,12 +324,13 @@
 @media (max-width: 590px) {
   .calling-dialog.conversation-dialog {
     height: calc(100dvh - 24px);
+    overflow-y: auto;
   }
   .conversation-dialog .calling-dialog-heading {
     padding-bottom: 17px;
   }
   .conversation-subtitle {
-    font-size: 10px;
+    font-size: var(--call-text-small);
   }
   .conversation-meta {
     padding: 14px 20px;
@@ -331,30 +338,38 @@
     gap: 12px;
   }
   .conversation-meta strong {
-    font-size: 10px;
+    font-size: var(--call-text-body);
   }
   .conversation-meta span {
-    font-size: 8px;
+    font-size: var(--call-text-small);
   }
   .conversation-tabs {
-    gap: 17px;
-    padding-inline: 20px;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    padding-inline: 12px;
+    overflow: visible;
   }
   .conversation-tabs > button {
-    font-size: 10px;
+    font-size: var(--call-text-small);
     padding-block: 13px;
     gap: 5px;
+    justify-content: center;
+    white-space: normal;
+    text-align: center;
+    line-height: 1.5;
+    min-width: 0;
   }
   .conversation-tabs svg {
-    width: 13px;
-    height: 13px;
+    display: none;
   }
   .conversation-body {
     padding: 20px;
+    flex: none;
+    overflow: visible;
   }
   .conversation-message p {
     padding: 12px;
-    font-size: 12px;
   }
   .conversation-speaker-icon {
     width: 27px;
@@ -368,24 +383,52 @@
     padding-inline: 9px;
   }
   .conversation-search input {
-    font-size: 10px;
+    font-size: var(--call-text-body);
   }
   .conversation-sync-state {
-    font-size: 9px;
+    font-size: var(--call-text-small);
   }
   .conversation-transcript-toolbar > .calling-text-button {
-    font-size: 10px;
+    font-size: var(--call-text-small);
   }
   .conversation-search > span {
-    font-size: 8px;
+    font-size: var(--call-text-small);
   }
   .conversation-empty h3 {
-    font-size: 15px;
+    font-size: var(--call-text-lead);
   }
   .conversation-empty p {
-    font-size: 10px;
+    font-size: var(--call-text-small);
   }
   .conversation-tabs > button > span {
     display: none;
+  }
+  .conversation-message > div {
+    max-width: none;
+  }
+  .conversation-transcript-toolbar {
+    align-items: flex-start;
+  }
+  .conversation-transcript-toolbar > button {
+    flex-shrink: 0;
+  }
+  .conversation-dialog .calling-dialog-footer {
+    flex-wrap: wrap;
+  }
+  .conversation-dialog .calling-dialog-footer button {
+    flex: 1 1 auto;
+    font-size: var(--call-text-body);
+    white-space: normal;
+  }
+}
+/* At high zoom or on short screens, scroll the whole dialog so its header
+   and controls cannot squeeze the transcript out of view. */
+@media (max-height: 700px) {
+  .calling-dialog.conversation-dialog {
+    overflow-y: auto;
+  }
+  .conversation-body {
+    flex: none;
+    overflow: visible;
   }
 }
