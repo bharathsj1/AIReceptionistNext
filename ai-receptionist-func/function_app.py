@@ -1,6 +1,12 @@
 import azure.functions as func
+import os
+
+from shared.config import get_required_setting
 
 from shared.db import init_db  # 👈 import this
+
+if os.getenv("REQUIRE_AUTH_SESSION_SECRET") == "true":
+    get_required_setting("AUTH_SESSION_SECRET")
 
 # Initialize the database (creates tables if they don't exist)
 init_db()  # 👈 this runs once when Functions host starts
@@ -41,3 +47,4 @@ import live_handoff  # noqa
 import private_cards_endpoints  # noqa
 import voice_endpoints  # noqa
 import outreach_endpoints  # noqa
+import storage_endpoints  # noqa

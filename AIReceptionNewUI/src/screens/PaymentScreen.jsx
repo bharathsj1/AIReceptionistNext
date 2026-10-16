@@ -6,11 +6,7 @@ import {
   useStripe
 } from "@stripe/react-stripe-js";
 import { loadStripe } from "@stripe/stripe-js";
-import API_URLS, { API_PROXY_BASE } from "../config/urls.js";
-
-const FALLBACK_API_BASE = (
-  import.meta.env.VITE_FALLBACK_API_BASE || API_PROXY_BASE
-).replace(/\/$/, "");
+import API_URLS from "../config/urls.js";
 
 const parseResponseBody = async (res) => {
   const text = await res.text();
@@ -25,28 +21,13 @@ const parseResponseBody = async (res) => {
 const looksLikeHtml = (value) =>
   typeof value === "string" && /<!doctype|<html/i.test(value.slice(0, 200));
 
-const buildFallbackUrl = (url) => {
-  if (typeof url !== "string") return null;
-  if (/^https?:\/\//i.test(url)) return null;
-  if (!url.startsWith("/api/")) return null;
-  return `${FALLBACK_API_BASE}${url.slice(4)}`;
-};
-
-const fetchJsonWithFallback = async (url, options = {}) => {
+const fetchJson = async (url, options = {}) => {
   const requestOptions = {
     ...options,
     headers: { Accept: "application/json", ...(options.headers || {}) }
   };
   const res = await fetch(url, requestOptions);
   const data = await parseResponseBody(res);
-  const fallbackUrl = buildFallbackUrl(url);
-
-  if (fallbackUrl && looksLikeHtml(data?.raw)) {
-    const retryRes = await fetch(fallbackUrl, requestOptions);
-    const retryData = await parseResponseBody(retryRes);
-    return { res: retryRes, data: retryData };
-  }
-
   return { res, data };
 };
 
@@ -287,7 +268,7 @@ export default function PaymentScreen({
     const loadCheckoutConfig = async () => {
       setPublishableKeyLoading(true);
       try {
-        const { res, data } = await fetchJsonWithFallback(API_URLS.paymentsPublicConfig, {
+        const { res, data } = await fetchJson(API_URLS.paymentsPublicConfig, {
           method: "GET",
           signal: controller.signal
         });
@@ -349,7 +330,7 @@ export default function PaymentScreen({
       setIntentLoading(true);
       setIntentError(null);
       try {
-        const { res, data } = await fetchJsonWithFallback(API_URLS.paymentsCreateSubscription, {
+        const { res, data } = await fetchJson(API_URLS.paymentsCreateSubscription, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -706,7 +687,7 @@ function PaymentForm({
 
     if (subscriptionId) {
       try {
-        const { data: confirmData } = await fetchJsonWithFallback(API_URLS.paymentsConfirmSubscription, {
+        const { data: confirmData } = await fetchJson(API_URLS.paymentsConfirmSubscription, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

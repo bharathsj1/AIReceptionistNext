@@ -2,22 +2,7 @@
 
 import { useMemo, useState } from "react";
 
-const normalizeBase = (value: string | undefined) =>
-  String(value || "").trim().replace(/\/$/, "");
-
-const resolveApiBase = () => {
-  const explicitApiBase = normalizeBase(process.env.NEXT_PUBLIC_API_BASE);
-  if (explicitApiBase) {
-    return explicitApiBase.endsWith("/api") ? explicitApiBase : `${explicitApiBase}/api`;
-  }
-
-  const explicitHost = normalizeBase(process.env.NEXT_PUBLIC_FUNCTION_HOST);
-  if (explicitHost) return `${explicitHost}/api`;
-
-  return "/api";
-};
-
-const API_BASE = resolveApiBase();
+const API_BASE = "/api";
 
 type RoutingPayload = {
   selectedTwilioNumber?: string;

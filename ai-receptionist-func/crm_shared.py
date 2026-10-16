@@ -53,7 +53,6 @@ def _auth_session_secret() -> str:
         "JWT_SECRET",
         "SECRET_KEY",
         "WEBSITE_AUTH_ENCRYPTION_KEY",
-        "AZURE_STORAGE_CONNECTION_STRING",
     ):
         value = str(get_setting(key) or "").strip()
         if value:

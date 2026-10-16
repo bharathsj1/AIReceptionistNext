@@ -23,12 +23,14 @@ from shared_code.private_cards import (
     sanitize_public_card,
 )
 from utils.cors import build_cors_headers
+from services.public_storage import public_blob_url
+from shared.config import get_public_api_base
 
 logger = logging.getLogger(__name__)
 
 PRIVATE_PARTITION = "PRIVATE"
 PRIVATE_CARDS_TABLE = os.getenv("PRIVATE_CARDS_TABLE", "PrivateCards")
-PUBLIC_APP_URL = (os.getenv("PUBLIC_APP_URL") or "https://smartconnect4u.com").rstrip("/")
+PUBLIC_APP_URL = (os.getenv("PUBLIC_APP_URL") or get_public_api_base()).rstrip("/")
 BLOB_CONTAINER_PHOTOS = (os.getenv("BLOB_CONTAINER_PHOTOS") or "employee-photos").strip().lower()
 MAX_PHOTO_BYTES = int(os.getenv("PRIVATE_CARD_MAX_PHOTO_BYTES", str(5 * 1024 * 1024)))
 RATE_TOKENS = max(1, int(os.getenv("PRIVATE_CARD_RATE_LIMIT_TOKENS", "12")))
@@ -302,7 +304,7 @@ def _admin_view(entity: Dict[str, Any]) -> Dict[str, Any]:
         "address": _normalize_optional(entity.get("address")),
         "mapUrl": _normalize_optional(entity.get("mapUrl")),
         "linkedInUrl": _normalize_optional(entity.get("linkedInUrl")),
-        "photoUrl": _normalize_optional(entity.get("photoUrl")),
+        "photoUrl": public_blob_url(_normalize_optional(entity.get("photoUrl"))),
         "isActive": _to_bool(entity.get("isActive"), default=True),
         "createdAt": _normalize_optional(entity.get("createdAt")),
         "updatedAt": _normalize_optional(entity.get("updatedAt")),
@@ -452,7 +454,7 @@ def _upload_photo_blob(token: str, raw_bytes: bytes, content_type: str, filename
         overwrite=True,
         content_settings=ContentSettings(content_type=normalized_content_type),
     )
-    return blob.url
+    return public_blob_url(blob.url)
 
 
 @app.function_name(name="PrivateCards")

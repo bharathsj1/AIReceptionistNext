@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Mail, Pause, PhoneCall, Play, RefreshCw, Upload } from "lucide-react";
 import { outreachRequest } from "../lib/api/outreach";
+import { hasCurrentSession, SignInRequiredError } from "../lib/authSession";
 import "./AIOutreachScreen.css";
 
 const label = (value) => String(value || "unknown").replaceAll("_", " ").replaceAll("-", " ");
@@ -30,12 +31,13 @@ function CallReview({ lead, user, onReviewed, onError }) {
   return <form className="outreach-call-review" onSubmit={review}><label>Twilio Call SID<input value={sid} onChange={(event) => setSid(event.target.value)} placeholder="CA…" /></label><label><input type="checkbox" checked={checked} onChange={(event) => setChecked(event.target.checked)} />I checked Twilio logs and there is no active call. Skip this contact if no SID is provided.</label><button className="outreach-button" disabled={busy || (!sid.trim() && !checked)}>Resolve call review</button></form>;
 }
 
-export default function AIOutreachScreen({ user }) {
+export default function AIOutreachScreen({ user, onSignIn }) {
   const [config, setConfig] = useState(null);
   const [campaigns, setCampaigns] = useState([]);
   const [selectedId, setSelectedId] = useState("");
   const [campaign, setCampaign] = useState(null);
   const [error, setError] = useState("");
+  const [authRequired, setAuthRequired] = useState(!hasCurrentSession(user));
   const [busy, setBusy] = useState(false);
   const [importErrors, setImportErrors] = useState([]);
   const [filename, setFilename] = useState("");
@@ -62,10 +64,23 @@ export default function AIOutreachScreen({ user }) {
   }, []);
 
   useEffect(() => {
-    load().catch((err) => setError(err.message));
-    const timer = setInterval(() => load().catch((err) => setError(err.message)), 15000);
+    if (authRequired) return;
+    const failed = (err) => {
+      setError(err.message);
+      if (err instanceof SignInRequiredError) setAuthRequired(true);
+    };
+    load().catch(failed);
+    const timer = setInterval(() => load().catch(failed), 15000);
     return () => { clearInterval(timer); generation.current += 1; };
-  }, [load, user?.auth_token, user?.authToken]);
+  }, [authRequired, load, user?.auth_token, user?.authToken]);
+
+  if (authRequired) return (
+    <section className="ai-outreach outreach-panel" aria-label="Outreach sign-in required">
+      <h2>Sign in to manage outreach</h2>
+      <p>Your saved session is no longer valid for this deployment.</p>
+      <button type="button" className="outreach-button outreach-primary" onClick={onSignIn}>Sign in</button>
+    </section>
+  );
 
   const select = async (id) => {
     selectedRef.current = id;

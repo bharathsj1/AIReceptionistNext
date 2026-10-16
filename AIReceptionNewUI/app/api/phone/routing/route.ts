@@ -4,21 +4,7 @@ const normalizeBase = (value: string | undefined) =>
   String(value || "").trim().replace(/\/$/, "");
 
 const resolveFunctionApiBase = () => {
-  const explicitApiBase = normalizeBase(
-    process.env.NEXT_PUBLIC_API_BASE || process.env.VITE_API_BASE
-  );
-  if (explicitApiBase) {
-    return explicitApiBase.endsWith("/api")
-      ? explicitApiBase
-      : `${explicitApiBase}/api`;
-  }
-
-  const host = normalizeBase(
-    process.env.NEXT_PUBLIC_FUNCTION_HOST ||
-      process.env.VITE_FUNCTION_HOST ||
-      process.env.VITE_FUNCTION_BASE ||
-      "http://localhost:7071"
-  );
+  const host = normalizeBase(process.env.BACKEND_UPSTREAM || "http://backend:80");
   return `${host}/api`;
 };
 

@@ -4,17 +4,21 @@ import react from "@vitejs/plugin-react";
 // Vite configuration for a simple React SPA
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
-  const functionHost = env.VITE_FUNCTION_HOST || "http://localhost:7071";
+  const backendUpstream = env.BACKEND_UPSTREAM || "http://127.0.0.1:7071";
+  const meetingsUpstream = env.MEETINGS_UPSTREAM || "http://127.0.0.1:7072";
 
   return {
     plugins: [react()],
     server: {
       port: 5173,
       proxy: {
-        "/api": {
-          target: functionHost,
+        "/api/meetings": {
+          target: meetingsUpstream,
           changeOrigin: true,
-          secure: false
+        },
+        "/api": {
+          target: backendUpstream,
+          changeOrigin: true
         }
       }
     },

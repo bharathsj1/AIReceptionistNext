@@ -3,10 +3,10 @@ name: UI Docker checks
 on:
   push:
     branches: [main]
-    paths: ["AIReceptionNewUI/**", "compose.yaml", ".github/workflows/ui-docker.yml"]
+    paths: ["AIReceptionNewUI/**", "scripts/**", "compose.yaml", ".github/workflows/ui-docker.yml"]
   pull_request:
     branches: [main]
-    paths: ["AIReceptionNewUI/**", "compose.yaml", ".github/workflows/ui-docker.yml"]
+    paths: ["AIReceptionNewUI/**", "scripts/**", "compose.yaml", ".github/workflows/ui-docker.yml"]
   workflow_dispatch:
 
 permissions:
@@ -19,6 +19,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate Compose and build image
         run: |
+          python3 scripts/configure_docker.py
           docker compose config --quiet
           docker build -t ai-reception-ui:test ./AIReceptionNewUI
       - name: Check container with isolated backend
@@ -27,8 +28,13 @@ jobs:
           docker run -d --name mock-api --network ui-test \
             -v "$PWD/AIReceptionNewUI/docker/mock_api.py:/mock_api.py:ro" \
             python:3.12-alpine python /mock_api.py
+          docker run -d --name mock-meetings --network ui-test \
+            -e MOCK_SERVICE=meetings \
+            -v "$PWD/AIReceptionNewUI/docker/mock_api.py:/mock_api.py:ro" \
+            python:3.12-alpine python /mock_api.py
           docker run -d --name ui --network ui-test -p 8080:8080 \
-            -e API_UPSTREAM=http://mock-api:7071 ai-reception-ui:test
+            -e API_UPSTREAM=http://mock-api:7071 \
+            -e MEETINGS_UPSTREAM=http://mock-meetings:7071 ai-reception-ui:test
           python3 AIReceptionNewUI/docker/smoke_test.py
           docker exec ui nginx -t
       - name: Container logs and cleanup
@@ -36,5 +42,6 @@ jobs:
         run: |
           docker logs ui || true
           docker logs mock-api || true
-          docker rm -f ui mock-api || true
+          docker logs mock-meetings || true
+          docker rm -f ui mock-api mock-meetings || true
           docker network rm ui-test || true

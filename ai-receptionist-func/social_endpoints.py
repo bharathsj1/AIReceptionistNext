@@ -34,6 +34,7 @@ from shared.db import (
 )
 from utils.cors import build_cors_headers
 from utils.token_crypto import decrypt_token, encrypt_token
+from services.public_storage import blob_reference, public_blob_url
 
 logger = logging.getLogger(__name__)
 
@@ -107,14 +108,7 @@ def _delete_uploaded_media(media_urls: list[str] | None) -> None:
 
     for url in media_urls or []:
         try:
-            parsed = urlparse(url)
-            path = parsed.path.lstrip("/")
-            if not path:
-                continue
-            parts = path.split("/", 1)
-            if len(parts) != 2:
-                continue
-            container_name, blob_name = parts
+            container_name, blob_name = blob_reference(url)
             if container_name != _AZ_CONTAINER:
                 continue
             blob_client = container.get_blob_client(blob_name)
@@ -1561,7 +1555,7 @@ def social_media_upload(req: func.HttpRequest) -> func.HttpResponse:
                 overwrite=True,
                 content_settings=ContentSettings(content_type=content_type),
             )
-            media_url = blob.url
+            media_url = public_blob_url(blob.url)
             return func.HttpResponse(
                 json.dumps({"media_url": media_url, "content_type": content_type, "filename": filename}),
                 status_code=200,
@@ -2402,7 +2396,7 @@ def social_post_drafts(req: func.HttpRequest) -> func.HttpResponse:
             {
                 "id": draft.id,
                 "caption": draft.caption,
-                "media_urls": draft.media_urls_json or [],
+                "media_urls": [public_blob_url(url) for url in (draft.media_urls_json or [])],
                 "created_at": _dt_to_iso(draft.created_at),
                 "updated_at": _dt_to_iso(draft.updated_at),
             }
@@ -2558,7 +2552,7 @@ def _publish_targets(
             errors.append(f"Facebook page {page_id} not connected")
         else:
             access_token = _get_connection_token(connection)
-            media_url = (draft.media_urls_json or [None])[0]
+            media_url = public_blob_url((draft.media_urls_json or [None])[0])
             post_id, error = meta_adapter.publish_facebook_post(
                 page_id, access_token, draft.caption or "", media_url
             )
@@ -2579,7 +2573,7 @@ def _publish_targets(
             errors.append(f"Instagram account {ig_id} not connected")
         else:
             access_token = _get_connection_token(connection)
-            media_url = (draft.media_urls_json or [None])[0]
+            media_url = public_blob_url((draft.media_urls_json or [None])[0])
             if not media_url:
                 errors.append("Instagram publishing requires media URL")
                 return results, "; ".join(errors)

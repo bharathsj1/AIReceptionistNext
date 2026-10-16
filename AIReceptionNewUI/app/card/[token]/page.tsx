@@ -20,29 +20,12 @@ type PageProps = {
 };
 
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{20,32}$/;
-const LOCAL_FUNCTION_API_BASE = "http://localhost:7071/api";
 
 const normalizeBase = (value: string | undefined) =>
   String(value || "").trim().replace(/\/$/, "");
 
 const resolveFunctionApiBase = () => {
-  const explicitApiBase = normalizeBase(
-    process.env.NEXT_PUBLIC_API_BASE || process.env.VITE_API_BASE
-  );
-  if (explicitApiBase) {
-    return explicitApiBase.endsWith("/api")
-      ? explicitApiBase
-      : `${explicitApiBase}/api`;
-  }
-
-  const explicitHost = normalizeBase(
-    process.env.NEXT_PUBLIC_FUNCTION_HOST ||
-      process.env.VITE_FUNCTION_HOST ||
-      process.env.VITE_FUNCTION_BASE
-  );
-  if (explicitHost) return `${explicitHost}/api`;
-
-  return LOCAL_FUNCTION_API_BASE;
+  return `${normalizeBase(process.env.BACKEND_UPSTREAM || "http://backend:80")}/api`;
 };
 
 const digitsOnly = (value: string | undefined) => (value || "").replace(/\D+/g, "");
@@ -106,7 +89,7 @@ export default async function PrivateCardPage({ params, searchParams }: PageProp
   const whatsappTarget = digitsOnly(card.whatsappPhone || card.mobilePhone);
   const email = (card.email || "").trim();
   const queryString = buildQuery(token, key);
-  const saveContactUrl = `${resolveFunctionApiBase()}/private-vcard?${queryString}`;
+  const saveContactUrl = `/api/private-vcard?${queryString}`;
   const hasPhone = Boolean(primaryPhone);
   const hasWhatsApp = Boolean(whatsappTarget);
   const hasEmail = Boolean(email);

@@ -1,27 +1,7 @@
-// Central place for API URLs and future endpoints.
-
-const normalizeBase = (value) => String(value || "").trim().replace(/\/$/, "");
-
-const explicitBase =
-  import.meta.env.VITE_API_PROXY_BASE ||
-  import.meta.env.VITE_API_BASE ||
-  import.meta.env.NEXT_PUBLIC_API_BASE;
-// VITE_FUNCTION_HOST configures the server-side Vite proxy only. A Docker
-// service name or localhost backend must never become a browser URL.
-const explicitHost =
-  import.meta.env.VITE_FUNCTION_BASE || import.meta.env.NEXT_PUBLIC_FUNCTION_HOST;
-
-const PRIMARY_FUNCTION_BASE = normalizeBase(
-  explicitBase || explicitHost || "/api"
-);
-const PRIMARY_API_BASE = PRIMARY_FUNCTION_BASE.endsWith("/api") ? PRIMARY_FUNCTION_BASE : `${PRIMARY_FUNCTION_BASE}/api`;
-
-// Dedicated Jitsi/meetings function app base
-const rawJitsiBase =
-  import.meta.env.VITE_JITSI_API_BASE || import.meta.env.NEXT_PUBLIC_JITSI_API_BASE;
-const normalizedJitsiBase =
-  typeof rawJitsiBase === "string" ? rawJitsiBase.replace(/\/$/, "") : "";
-const JITSI_API_BASE = normalizedJitsiBase || PRIMARY_API_BASE;
+// Browser requests stay on this deployment. Vite/Nginx select internal services.
+// Legacy public API environment settings cannot route requests to the old host.
+const PRIMARY_API_BASE = "/api";
+const JITSI_API_BASE = PRIMARY_API_BASE;
 
 export { JITSI_API_BASE };
 export const jitsiApiUrl = (path) =>
@@ -32,7 +12,7 @@ export const apiUrl = (path) =>
   `${API_PROXY_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
 
 export const API_URLS = {
-  // Jitsi meetings app (new function app)
+  // Nginx/Vite forward meetings routes to the meetings container.
   jitsiMeetings: jitsiApiUrl("meetings"),
   jitsiMeeting: (id) => jitsiApiUrl(`meetings/${id}`),
   jitsiMeetingAudio: (id) => jitsiApiUrl(`meetings/${id}/audio`),

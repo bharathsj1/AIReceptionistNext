@@ -4,16 +4,17 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
-# Public browser settings are compiled by Vite. Backend proxy target is runtime-only.
-ARG VITE_JITSI_API_BASE=https://smartconnect4u-jitsi-eugahzaha5hcdefa.westeurope-01.azurewebsites.net/api
+# The API uses /api on the current origin. Only the video UI domain is public.
 ARG VITE_JITSI_DOMAIN=meet.jit.si
-ENV VITE_API_PROXY_BASE=/api
+ENV VITE_JITSI_DOMAIN=${VITE_JITSI_DOMAIN}
 RUN npm run typecheck && npm run build
 
 FROM nginx:stable-alpine AS runtime
-ENV API_UPSTREAM=https://smartconnect4u-func.azurewebsites.net
-ENV NGINX_ENVSUBST_FILTER=^API_UPSTREAM$
+ENV API_UPSTREAM=http://backend:80 \
+    MEETINGS_UPSTREAM=http://meetings:80 \
+    NGINX_ENVSUBST_FILTER=^(API_UPSTREAM|MEETINGS_UPSTREAM)$
 COPY docker/default.conf.template /etc/nginx/templates/default.conf.template
+COPY docker/api-proxy.conf /etc/nginx/snippets/api-proxy.conf
 COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \

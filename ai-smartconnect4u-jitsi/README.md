@@ -1,6 +1,6 @@
 # ai-smartconnect4u-jitsi
 
-Azure Functions (Python) app for Jitsi meeting creation, audio ingestion, AI transcription/summary, and task extraction. This app lives alongside the existing `ai-receptionist-func` and uses Azure Storage tables/blobs/queues plus OpenAI.
+Docker-hosted Python Functions service for Jitsi meeting creation, audio ingestion, AI transcription/summary, and task extraction. This app lives alongside the existing `ai-receptionist-func` and uses the internal Azurite tables/blobs/queues, with an optional configured AI provider for audio processing.
 
 ## Structure
 - `function_app.py` — Functions host entry point (new programming model).
@@ -29,12 +29,13 @@ func start --port 7072
 - `OPENAI_MODEL_SUMMARIZE` (optional, default `gpt-4o-mini`)
 - CORS: `CORS` / `ALLOWED_ORIGINS` / `CORS_ALLOW_CREDENTIALS` follow the existing pattern.
 
-## Frontend integration
-Add a Jitsi API base env var following the existing pattern:
-- Vite/dev: `VITE_JITSI_API_BASE=http://localhost:7072/api`
-- Next.js-compatible: `NEXT_PUBLIC_JITSI_API_BASE=https://<prod-ai-smartconnect4u-jitsi-host>/api`
+## Docker and frontend integration
 
-Point meeting-related requests to the new base and use the routes exposed in `meetings_endpoints.py`.
+The root `compose.yaml` builds this service as `meetings`, alongside the main
+backend and Azurite. Its health endpoint is `GET /api/health`. Nginx forwards
+same-origin `/api/meetings` requests here. Vite development uses the server-only
+`MEETINGS_UPSTREAM` setting, default `http://127.0.0.1:7072`.
+No browser API-base settings or cloud API hosts are needed.
 
 ## Meetings + AI Summary
 - Tables: `Meetings` (PartitionKey = tenantId, RowKey = meetingId), `MeetingArtifacts`.
@@ -51,4 +52,8 @@ Point meeting-related requests to the new base and use the routes exposed in `me
   - downloads temp audio, transcribes via OpenAI, summarizes to strict JSON schema, writes artifacts, sets status=ready, deletes blob; on error sets status=failed and deletes blob.
 
 ## Deployment
-Deploy this folder as a separate Functions app (distinct from `ai-receptionist-func`). Ensure the storage account and OpenAI key are configured, and the processing queue/container exist. A separate pipeline/slot can deploy this app without impacting the existing one.
+
+Run `python3 scripts/configure_docker.py` followed by `docker compose up --build -d`
+from the repository root. Docker provides the storage connection strings. Audio
+processing requires its provider credentials in `.env.docker`; basic meetings and
+health do not. Existing cloud tables/blobs are not copied automatically.

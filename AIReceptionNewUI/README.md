@@ -3,7 +3,7 @@
 ## Local setup without payment
 
 Add `VITE_LOCAL_SKIP_PAYMENT=true` to `.env.development.local` and run Vite with
-`VITE_API_PROXY_BASE=/api` and `VITE_FUNCTION_HOST=http://127.0.0.1:7071`. The
+`BACKEND_UPSTREAM=http://127.0.0.1:7071`. The
 currently running local UI is at `http://127.0.0.1:5176`.
 
 Sign in (or create a local account), enter the business name and phone, add the
@@ -48,54 +48,60 @@ Temporary review fixtures are not included in the shipped app.
 
 The runnable UI is the Vite/React SPA in `src`, with static pages in `public`.
 The legacy Next.js `app`, `lib` and `middleware.ts` files are not served by Vite
-or this image. The two Python directories are separate Azure Functions services;
-the UI container connects to them. To run `ai-receptionist-func` alongside the
-UI, see its Docker instructions in `../ai-receptionist-func/README.md` and use
-the `compose.backend.yaml` / `compose.local.yaml` overlays.
+or this image. The two Python services run in Docker containers alongside
+Nginx, SQLite and Azurite storage. The default stack does not use cloud API or
+storage hosts.
 
 ## Run with Docker
 
-From the repository root, with Docker Engine and Compose installed:
+From the repository root:
 
 ```sh
+python3 scripts/configure_docker.py
 docker compose up --build -d
-curl --fail http://localhost:8080/healthz
-docker compose logs ui
+curl --fail http://localhost:8080/api/health
+docker compose logs backend meetings
 ```
 
-Open http://localhost:8080. SPA deep links are supported, existing public HTML
-pages are served directly, and `/api/*` is proxied to the Functions backend.
-The default backend is `https://smartconnect4u-func.azurewebsites.net`; meetings
-use the dedicated Jitsi Functions app from `.env.example`.
+Open http://localhost:8080. Compose starts Nginx, the backend, the meetings
+service and Azurite. `/api/meetings` and its subpaths go to `meetings:80`;
+other `/api/*` requests go to `backend:80`. Browser requests always use `/api`
+on the current origin. Legacy public API and fallback-host environment variables
+are ignored. No static Azure routing configuration or Azure deployment workflows
+remain. `compose.backend.yaml` and `compose.local.yaml` are compatibility overlays;
+they are no longer necessary.
 
-To use another backend, set its origin **without a trailing slash or `/api`**:
+`configure_docker.py` creates `.env.docker` and fills missing session-signing,
+social-token encryption and outreach-tool secrets without printing or rotating
+existing values. Retain that file across deployments. The backend refuses to
+start without `AUTH_SESSION_SECRET` in Docker. Old sessions without a token,
+expired sessions, or sessions rejected by the backend require a fresh sign-in;
+the app does not authenticate an account from a cached email alone.
 
-```sh
-API_UPSTREAM=https://your-functions.azurewebsites.net UI_PORT=8081 docker compose up -d
-```
+Before deploying behind HTTPS, set `PUBLIC_APP_URL` and `API_PUBLIC_BASE_URL`
+in `.env.docker` to your public origin (without `/api`), for example
+`https://aireceptionist.vedoraeats.com`. Set `ALLOWED_ORIGINS` to the UI origin.
+Add provider credentials there as needed. Recreate containers after changes.
+Keep backend secrets out of Vite settings.
 
-`API_UPSTREAM` is read when the container starts, so changing it only needs a
-container recreation. A local backend on a Docker Desktop host can use
-`http://host.docker.internal:7071`; `localhost` inside the container refers to
-the container itself. Configure that backend to accept the incoming host.
+Compose fixes the SQL database to `sqlite:////data/app.db`, overriding copied
+remote database URLs. SQLite/uploads persist in `backend-data`; Blob/Table/Queue data persists in
+`azurite-data`. Storage ports are not published, and backend/meetings host ports
+bind to loopback only. Existing cloud data is not automatically copied: import
+it into the Docker data stores before switching a populated deployment. Keep
+backups and existing encryption keys; `docker compose down` retains data, while
+`down --volumes` deletes it. Azurite implements the storage API locally; it does
+not make the application use Azure cloud storage. The Python container runtime
+remains the Functions runtime.
 
-Jitsi URLs and domains are public build settings. Change `VITE_JITSI_API_BASE`
-(including `/api`) or `VITE_JITSI_DOMAIN` before `docker compose up --build -d`.
-Set `VITE_JITSI_API_BASE=/api` to send meetings to the main proxy instead.
+Public photos/social uploads are served through a read-only backend media route,
+not through a public Azurite port. Private meeting audio is not exposed there.
 
-For deployment without Compose:
-
-```sh
-docker build -t ai-reception-ui ./AIReceptionNewUI
-docker run -d --name ai-reception-ui -p 8080:8080 \
-  -e API_UPSTREAM=https://your-functions.azurewebsites.net ai-reception-ui
-```
-
-The runtime serves static files through Nginx on port 8080. It includes an
-HTTP health check and disables API response buffering for streamed chat/tasks.
-Terminate HTTPS at your hosting platform or ingress. Local `.env` files,
-dependencies and old build output are excluded from the image build context.
-Keep backend credentials in the Functions service; Vite variables are public.
+`VITE_JITSI_DOMAIN` selects the video UI host (default `meet.jit.si`) at build
+time. It is separate from the Docker meetings API. Nginx serves the SPA and static
+assets, supports deep links and forwards streams without buffering. Terminate
+HTTPS at your ingress. Local environment files and old builds are excluded from
+image build contexts.
 
 ## Local development
 
@@ -106,9 +112,9 @@ npm ci
 npm run dev -- --host 0.0.0.0
 ```
 
-Open http://localhost:5173. `VITE_FUNCTION_HOST` selects the Vite proxy target
-(default `http://localhost:7071`); the browser uses `/api`. To call a backend
-directly, set `VITE_API_PROXY_BASE` to its full API URL and configure backend CORS.
+Open http://localhost:5173. `BACKEND_UPSTREAM` selects the server-side Vite
+proxy target (default `http://127.0.0.1:7071`); `MEETINGS_UPSTREAM` defaults to
+`http://127.0.0.1:7072`. The browser always uses the same-origin `/api` routes.
 `npm run typecheck` checks the TypeScript components. `npm run build` generates
 `dist`; `npm run preview` previews static files only
 and does not provide the production Nginx API proxy.
@@ -117,7 +123,8 @@ and does not provide the production Nginx API proxy.
 
 The Docker CI workflow builds the image and checks health, SPA routing, static
 pages/assets, API path/query forwarding, API errors and unbuffered streams
-against a mock backend.
+against isolated backend and meetings mocks. `npm test` checks same-origin API
+routes, session expiry and local onboarding.
 Real login, payments, calling, email and meetings additionally require working
 backend services, credentials and data; a frontend build cannot verify them.
 

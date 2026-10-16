@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "test": "node --test tests/*.test.js",
     "test:local-setup": "node --test tests/local-setup.test.js",
     "dev": "vite",
     "typecheck": "tsc --noEmit",

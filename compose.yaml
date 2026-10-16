@@ -1,12 +1,77 @@
+x-storage-environment: &storage_environment
+  # SDKs retain their storage interface while all endpoints stay inside Docker.
+  AzureWebJobsStorage: "DefaultEndpointsProtocol=http;AccountName=localdev;AccountKey=bG9jYWwtZGV2ZWxvcG1lbnQtc3RvcmFnZS1rZXktb25seQ==;BlobEndpoint=http://azurite:10000/localdev;QueueEndpoint=http://azurite:10001/localdev;TableEndpoint=http://azurite:10002/localdev"
+  AZURE_STORAGE_CONNECTION_STRING: "DefaultEndpointsProtocol=http;AccountName=localdev;AccountKey=bG9jYWwtZGV2ZWxvcG1lbnQtc3RvcmFnZS1rZXktb25seQ==;BlobEndpoint=http://azurite:10000/localdev;QueueEndpoint=http://azurite:10001/localdev;TableEndpoint=http://azurite:10002/localdev"
+  APPLICATIONINSIGHTS_CONNECTION_STRING: ""
+  APPINSIGHTS_INSTRUMENTATIONKEY: ""
+
 services:
   ui:
     build:
       context: ./AIReceptionNewUI
       args:
-        VITE_JITSI_API_BASE: ${VITE_JITSI_API_BASE:-https://smartconnect4u-jitsi-eugahzaha5hcdefa.westeurope-01.azurewebsites.net/api}
         VITE_JITSI_DOMAIN: ${VITE_JITSI_DOMAIN:-meet.jit.si}
     ports:
       - "${UI_PORT:-8080}:8080"
     environment:
-      API_UPSTREAM: ${API_UPSTREAM:-https://smartconnect4u-func.azurewebsites.net}
+      API_UPSTREAM: http://backend:80
+      MEETINGS_UPSTREAM: http://meetings:80
+    depends_on:
+      backend:
+        condition: service_healthy
+      meetings:
+        condition: service_healthy
     restart: unless-stopped
+
+  backend:
+    platform: linux/amd64
+    build:
+      context: ./ai-receptionist-func
+    env_file:
+      - .env.docker
+    environment:
+      <<: *storage_environment
+      # Ignore any retired remote database URL copied into the environment file.
+      DATABASE_URL: sqlite:////data/app.db
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-7071}:80"
+    volumes:
+      - backend-data:/data
+    depends_on:
+      azurite:
+        condition: service_healthy
+    restart: unless-stopped
+
+  meetings:
+    platform: linux/amd64
+    build:
+      context: ./ai-smartconnect4u-jitsi
+    env_file:
+      - .env.docker
+    environment: *storage_environment
+    ports:
+      - "127.0.0.1:${MEETINGS_PORT:-7072}:80"
+    depends_on:
+      azurite:
+        condition: service_healthy
+    restart: unless-stopped
+
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:3.37.0
+    environment:
+      AZURITE_ACCOUNTS: "localdev:bG9jYWwtZGV2ZWxvcG1lbnQtc3RvcmFnZS1rZXktb25seQ=="
+    command: >-
+      azurite --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0
+      --location /data --disableProductStyleUrl --disableTelemetry --skipApiVersionCheck
+    volumes:
+      - azurite-data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "const s = require('net').connect(10000, '127.0.0.1'); s.on('connect', () => { s.end(); process.exit(0); }); s.on('error', () => process.exit(1));"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  backend-data:
+  azurite-data:

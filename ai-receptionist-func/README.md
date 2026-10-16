@@ -120,91 +120,65 @@ opt-out handling, callback status and actual email receipt.
 
 ## Docker deployment
 
-This service now has a Docker image using Microsoft's Azure Functions v4 Python
-3.11 runtime. It runs the existing HTTP routes and timer jobs on Docker hosts;
-an Azure Functions hosting resource is not required. The application still uses
-Azure Storage APIs and its existing database/integration providers.
+The default Compose stack runs the UI, backend, meetings and storage containers.
+It has no legacy cloud API upstreams and uses Azurite for Blob/Table/Queue storage
+inside the Docker network. SQLite and uploaded files persist in `backend-data`,
+and storage persists in `azurite-data`. The Functions framework runs inside the
+Python containers; an Azure-hosted application or storage account is not required.
 
-### Run the UI and backend locally
-
-From the repository root, with Docker Engine and Compose installed:
+From the repository root:
 
 ```sh
-cp ai-receptionist-func/.env.docker.example .env.docker
-docker compose -f compose.yaml -f compose.backend.yaml -f compose.local.yaml up --build -d
+python3 scripts/configure_docker.py
+docker compose up --build -d
 curl --fail http://localhost:7071/api/health
+curl --fail http://localhost:7072/api/health
 curl --fail http://localhost:8080/api/health
-docker compose -f compose.yaml -f compose.backend.yaml -f compose.local.yaml logs backend
+docker compose logs backend meetings
 ```
 
-Open http://localhost:8080. Nginx forwards `/api/*` to the backend container.
-The local overlay supplies Azurite Blob/Queue/Table storage and a persistent
-SQLite database; no cloud credentials are required to start and check health.
-Integration features need their own provider settings. Meetings still use the
-existing separate Jitsi service; that service is not included in this backend.
+Open http://localhost:8080. Existing three-file Compose commands still work,
+but the compatibility overlays are optional. Both Python images run on amd64;
+Apple Silicon uses emulation. Azurite is reachable only inside Docker. The backend
+and meetings host ports bind to localhost.
 
-SQLite and local uploads persist in `backend-data`; emulator data persists in
-`azurite-data`. Stop with the same three `-f` options followed by `down`.
-The Functions image uses `linux/amd64`; Apple Silicon requires emulation.
-The backend port is bound to localhost, and emulator ports are not published.
+### Deployment settings
 
-### Deploy with real services
+The configuration helper preserves non-empty secrets and generates only missing
+`AUTH_SESSION_SECRET`, `SOCIAL_TOKEN_ENC_KEY` and `OUTREACH_TOOL_SECRET` values.
+Keep `.env.docker` private and retain it across restarts and deployments. The
+backend image requires `AUTH_SESSION_SECRET` before registering functions, so
+sign-in cannot silently succeed without a usable token. Storage connection
+strings are not used as authentication secrets.
 
-Copy the example to `.env.docker`, then supply these settings there or through
-your hosting platform's secret/environment settings:
+Set `API_PUBLIC_BASE_URL` and `PUBLIC_APP_URL` to the public HTTPS origin without
+`/api`, and set `ALLOWED_ORIGINS` to the UI origin. Add Twilio, Ultravox, SendGrid
+and other provider credentials as needed. Docker supplies the internal storage
+connection strings and disables cloud Application Insights destinations.
+Credentials are kept in the backend/meetings containers, never in the UI image.
+Nginx sends `/api/meetings` to the meetings container and other APIs to the main
+backend. There is no automatic fallback to a retired host.
 
-- `AzureWebJobsStorage`: runtime storage connection string for scheduled jobs
-  and host coordination. Use a separate development account when testing.
-- `AZURE_STORAGE_CONNECTION_STRING`: application Blob/Table storage connection
-  string for CRM, chat, tasks, routing and media; it can use the same account.
-- `DATABASE_URL`: production PostgreSQL connection URL, preserving TLS options.
-- `API_PUBLIC_BASE_URL`: externally reachable HTTPS origin without `/api`, used
-  in provider callback URLs. `PUBLIC_APP_URL`: the external UI origin.
-- `ALLOWED_ORIGINS`: your UI origins. Add the provider credentials and OAuth
-  redirect URLs used by your existing deployment; retain `SOCIAL_TOKEN_ENC_KEY`
-  when reusing an existing database.
+Existing database/blob/table data is not copied automatically. Import existing
+data into the Docker volumes before switching an installation, and preserve
+its encryption key. Stop with `docker compose down` to retain volumes; do not
+use `--volumes` unless intentionally deleting data. Back up both data volumes.
+Compose fixes the database URL to `sqlite:////data/app.db`, overriding copied
+remote database URLs.
 
-Run the UI/backend with the real storage settings, omitting the emulator overlay:
-
-```sh
-docker compose -f compose.yaml -f compose.backend.yaml up --build -d
-```
-
-Or build and run only the backend:
-
-```sh
-docker build --platform linux/amd64 -t ai-reception-backend ./ai-receptionist-func
-docker run -d --name ai-reception-backend --platform linux/amd64 \
-  --env-file .env.docker -p 127.0.0.1:7071:80 \
-  -v ai-reception-backend-data:/data ai-reception-backend
-```
-
-Deploy the image through your container hosting platform or registry. The
-container listens on port 80; terminate HTTPS at your ingress and route `/api`
-to it. Ensure it can reach the database and storage. Scheduled jobs keep running
-alongside HTTP endpoints. The Docker health check calls `/api/health`, so failed
-function registration or database initialization prevents a healthy startup.
-Local settings, credentials, virtual environments and local data are excluded
-from the image. Requirements are currently unpinned, so dependency resolution
-can change between builds.
-
-The backend Docker workflow runs the existing unit tests, builds and starts the
-UI/backend/Azurite stack, and verifies health both directly and through the UI
-proxy. Local checks passed for all 36 unit tests, registration of 158 functions,
-Functions host health and an Azurite Table Storage write. Docker itself was not
-available on the development machine, so image startup is verified by CI.
-
-References: [Microsoft Functions container guidance](https://learn.microsoft.com/en-us/azure/azure-functions/functions-how-to-custom-container),
-[Azurite local storage](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite).
+Local settings, environment files, virtual environments and local data are
+excluded from image builds. The Docker workflows check proxy routing, provider
+isolation, functions registration, health and persistent storage startup; the
+retired cloud deployment workflows have been removed.
 
 ### Ultravox calendar booking tool
 The Ultravox HTTP tool `calendar_book` is created and attached to each agent so the model can call `POST /api/calendar/book` with structured fields (start, callerPhone, etc.). The tool is provisioned automatically after Google connect and when listing calendar events.
 
 ### How to test
-1. Connect Google via the existing auth flow so tokens are stored.  
-2. Place a call with the Ultravox agent and confirm an appointment time (e.g., 2025-12-17T15:00:00+00:00).  
-3. After confirmation, Ultravox should invoke the `calendar_book` HTTP tool; verify the call in Azure logs and that the payload includes `start` and `callerPhone`.  
-4. Verify the request hits `POST /api/calendar/book` (public base comes from `API_PUBLIC_BASE_URL`) and a Google Calendar event is created.  
+1. Connect Google via the existing auth flow so tokens are stored.
+2. Place a call with the Ultravox agent and confirm an appointment time (e.g., 2025-12-17T15:00:00+00:00).
+3. After confirmation, Ultravox should invoke the `calendar_book` HTTP tool; verify the call in backend container logs and that the payload includes `start` and `callerPhone`.
+4. Verify the request hits `POST /api/calendar/book` (public base comes from `API_PUBLIC_BASE_URL`) and a Google Calendar event is created.
 5. Optional: enable `ENABLE_ULTRAVOX_DEBUG=true` and call `GET /api/ultravox/debug-tools?agentId=<id>` to see attached tools.
 
 ### Config
@@ -212,7 +186,7 @@ The Ultravox HTTP tool `calendar_book` is created and attached to each agent so 
 - `ULTRAVOX_BASE_URL` (optional, defaults to https://api.ultravox.ai/api)
 - `ULTRAVOX_WEBHOOK_SECRET` (optional, shared secret for Ultravox webhooks)
 - `TWILIO_AUTH_TOKEN` (required for Twilio API usage)
-- `API_PUBLIC_BASE_URL` (used for tool callback URL; if unset, falls back to `WEBSITE_HOSTNAME` on Azure or `http://localhost:7071` locally)
+- `API_PUBLIC_BASE_URL` (used for tool callback URL; if unset, falls back to `http://localhost:7071` locally)
 - `ENABLE_ULTRAVOX_DEBUG` (optional, enables debug endpoint)
 
 ### Webhooks
@@ -294,26 +268,26 @@ Connect WhatsApp (MVP manual):
 - `CHAT_RATE_LIMIT_TOKENS` (default `6` requests)
 - `CHAT_RATE_LIMIT_WINDOW_SEC` (default `60`)
 - `ALLOWED_ORIGINS` (comma-separated origins for CORS; falls back to `CORS_ALLOWED_ORIGINS`)
-- Frontend: `VITE_API_PROXY_BASE` (prod API base, e.g., `https://<func-app>.azurewebsites.net/api`), `VITE_FUNCTION_HOST` (local Azure Functions host, default `http://localhost:7071`)
+- Frontend: `BACKEND_UPSTREAM` (Vite server-side development proxy, default `http://127.0.0.1:7071`); browser requests stay on `/api`
 
 ### Local development
-1) Backend  
-   - `cd ai-receptionist-func`  
-   - Ensure `python -m venv .venv && source .venv/bin/activate` (or Windows equivalent)  
-   - `pip install -r requirements.txt`  
-   - Set envs in `local.settings.json` (`OPENAI_API_KEY`, `CHAT_SYSTEM_PROMPT`, `ALLOWED_ORIGINS=http://localhost:5173`, optional `CHAT_FAQ_TEXT`)  
+1) Backend
+   - `cd ai-receptionist-func`
+   - Ensure `python -m venv .venv && source .venv/bin/activate` (or Windows equivalent)
+   - `pip install -r requirements.txt`
+   - Set envs in `local.settings.json` (`OPENAI_API_KEY`, `CHAT_SYSTEM_PROMPT`, `ALLOWED_ORIGINS=http://localhost:5173`, optional `CHAT_FAQ_TEXT`)
    - Run: `func host start`
-2) Frontend  
-   - `cd AIReceptionNewUI`  
-   - `npm install` (if not already)  
-   - `npm run dev` (Vite dev server on 5173; proxy target from `VITE_FUNCTION_HOST`)  
+2) Frontend
+   - `cd AIReceptionNewUI`
+   - `npm install` (if not already)
+   - `npm run dev` (Vite dev server on 5173; proxy target from `BACKEND_UPSTREAM`)
    - Open http://localhost:5173 and click the launcher bottom-right to chat.
 
 ### Production checklist
-- Deploy the Functions app with the env vars above and Azure Table Storage connection string (`AZURE_STORAGE_CONNECTION_STRING`) set.  
-- Confirm the table `ChatConversations` is created automatically on first write.  
-- Configure CORS origins (`ALLOWED_ORIGINS`) to your domains.  
-- Build and deploy the Vite frontend (`npm run build`) and ensure it calls the deployed `/api/chat`.  
+- Deploy the Functions app with the env vars above and Azure Table Storage connection string (`AZURE_STORAGE_CONNECTION_STRING`) set.
+- Confirm the table `ChatConversations` is created automatically on first write.
+- Configure CORS origins (`ALLOWED_ORIGINS`) to your domains.
+- Build and deploy the Vite frontend (`npm run build`) and ensure it calls the deployed `/api/chat`.
 - Verify streaming works via browser DevTools (Network -> chat -> Preview should stream).
 
 ---

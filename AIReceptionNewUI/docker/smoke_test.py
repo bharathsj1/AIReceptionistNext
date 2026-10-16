@@ -45,12 +45,22 @@ assert request("/media/missing.png")[0] == 404
 status, headers, content = request("/api/probe?value=hello%20world")
 assert status == 200 and "application/json" in headers["Content-Type"]
 assert json.loads(content)["path"] == "/api/probe?value=hello%20world"
+assert json.loads(content)["service"] == "backend"
+for path in ("/api/meetings", "/api/meetings?limit=5", "/api/meetings/demo/artifacts"):
+    status, _, content = request(path)
+    result = json.loads(content)
+    assert status == 200 and result["service"] == "meetings" and result["path"] == path
+status, _, content = request("/api/meetings/demo/audio", b"test-audio", {"x-user-email": "test@example.com"})
+result = json.loads(content)
+assert status == 200 and result["service"] == "meetings" and result["body"] == "test-audio"
+assert result["user"] == "test@example.com"
 payload = b'{"message":"test"}'
 status, _, content = request("/api/probe", payload,
-                             {"Content-Type": "application/json", "x-user-email": "test@example.com"})
+                             {"Content-Type": "application/json", "x-user-email": "test@example.com", "Authorization": "Bearer isolated-test-token"})
 result = json.loads(content)
 assert status == 200 and result["method"] == "POST"
 assert result["body"] == payload.decode() and result["user"] == "test@example.com"
+assert result["authorization"] == "Bearer isolated-test-token"
 status, headers, _ = request("/api/failure")
 assert status == 503 and "application/json" in headers["Content-Type"]
 started = time.monotonic()
@@ -58,4 +68,4 @@ with urlopen(base + "/api/stream", timeout=5) as response:
     assert response.readline() == b"data: first\n"
     assert time.monotonic() - started < 1.5, "API events were buffered"
     assert b"data: last" in response.read()
-print("Passed: health, SPA deep links, static pages/assets, API path/query/body/headers, API errors, streaming")
+print("Passed: health, SPA deep links, static pages/assets, API and meetings routing, query/body/headers, API errors, streaming")

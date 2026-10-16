@@ -575,6 +575,7 @@ const ToolGate = ({ locked, loading, message, children, className = "" }) => (
 
 export default function DashboardScreen({
   localSetup = false,
+  onSessionExpired,
   activeTab,
   setActiveTab,
   activeTool,
@@ -5171,7 +5172,7 @@ export default function DashboardScreen({
 
         {currentTool === "ai_outreach" && (
           <Suspense fallback={<p role="status">Loading AI outreach…</p>}>
-            <AIOutreachScreen user={user} />
+            <AIOutreachScreen user={user} onSignIn={onSessionExpired} />
           </Suspense>
         )}
 

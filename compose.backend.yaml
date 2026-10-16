@@ -1,24 +1,6 @@
-# Layer over compose.yaml to run the backend as well as the UI.
+# Compatibility overlay: compose.yaml now includes the backend by default.
 services:
   ui:
-    environment:
-      API_UPSTREAM: http://backend:80
     depends_on:
       backend:
         condition: service_healthy
-
-  backend:
-    # Microsoft's Functions image runs on amd64; Docker Desktop emulates on ARM.
-    platform: linux/amd64
-    build:
-      context: ./ai-receptionist-func
-    env_file:
-      - .env.docker
-    ports:
-      - "127.0.0.1:${BACKEND_PORT:-7071}:80"
-    volumes:
-      - backend-data:/data
-    restart: unless-stopped
-
-volumes:
-  backend-data:

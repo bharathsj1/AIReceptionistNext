@@ -26,6 +26,7 @@ import ChatWidget from "./components/chat/ChatWidget";
 import Brand from "./components/Brand";
 import OnboardingProgress from "./components/OnboardingProgress";
 import { isLocalSetupEnabled, localBusinessReview, localResumeStage } from "./lib/localSetup";
+import { hasCurrentSession } from "./lib/authSession";
 
 const LOCAL_SETUP_ENABLED = isLocalSetupEnabled({
   dev: import.meta.env.DEV,
@@ -75,9 +76,6 @@ const TOOL_ID_ALIASES = {
 };
 const DASHBOARD_REQUEST_TIMEOUT_MS = 10000;
 const SUBSCRIPTION_REQUEST_TIMEOUT_MS = 4000;
-const FALLBACK_API_BASE = (
-  import.meta.env.VITE_FALLBACK_API_BASE || API_PROXY_BASE
-).replace(/\/$/, "");
 
 const fetchWithTimeout = async (resource, options = {}, timeoutMs = 8000) => {
   const controller = new AbortController();
@@ -102,32 +100,17 @@ const readResponseBody = async (response) => {
 const looksLikeHtml = (value) =>
   typeof value === "string" && /<!doctype|<html/i.test(value.slice(0, 200));
 
-const buildFallbackUrl = (url) => {
-  if (typeof url !== "string") return null;
-  if (/^https?:\/\//i.test(url)) return null;
-  if (!url.startsWith("/api/")) return null;
-  return `${FALLBACK_API_BASE}${url.slice(4)}`;
-};
-
-const fetchJsonWithFallback = async (url, options = {}) => {
+const fetchJson = async (url, options = {}) => {
   const requestOptions = {
     ...options,
     headers: { Accept: "application/json", ...(options.headers || {}) },
   };
   const res = await fetch(url, requestOptions);
   const data = await readResponseBody(res);
-  const fallbackUrl = buildFallbackUrl(url);
-
-  if (fallbackUrl && looksLikeHtml(data?.raw)) {
-    const retryRes = await fetch(fallbackUrl, requestOptions);
-    const retryData = await readResponseBody(retryRes);
-    return { res: retryRes, data: retryData };
-  }
-
   return { res, data };
 };
 
-const fetchJsonWithFallbackAndTimeout = async (
+const fetchJsonWithTimeout = async (
   url,
   options = {},
   timeoutMs = null,
@@ -143,14 +126,6 @@ const fetchJsonWithFallbackAndTimeout = async (
 
   const res = await doFetch(url);
   const data = await readResponseBody(res);
-  const fallbackUrl = buildFallbackUrl(url);
-
-  if (fallbackUrl && looksLikeHtml(data?.raw)) {
-    const retryRes = await doFetch(fallbackUrl);
-    const retryData = await readResponseBody(retryRes);
-    return { res: retryRes, data: retryData };
-  }
-
   return { res, data };
 };
 
@@ -589,7 +564,7 @@ export default function App() {
     setStage(STAGES.LOADING);
 
     try {
-      const { res, data } = await fetchJsonWithFallback(
+      const { res, data } = await fetchJson(
         API_URLS.crawlKnowledgeBase,
         {
           method: "POST",
@@ -647,7 +622,7 @@ export default function App() {
       try {
         if (!LOCAL_SETUP_ENABLED) {
           const { res: profileRes, data: profileJson } =
-            await fetchJsonWithFallback(API_URLS.businessProfile, {
+            await fetchJson(API_URLS.businessProfile, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               mode: "cors",
@@ -818,6 +793,10 @@ export default function App() {
           }
         }
         throw new Error(data?.error || data?.details || "Login failed");
+      }
+
+      if (!hasCurrentSession(data)) {
+        throw new Error("The backend did not return a secure session. Configure AUTH_SESSION_SECRET on the Docker backend, then sign in again.");
       }
 
       const userEmail = data?.email || normalizedLoginEmail;
@@ -1171,6 +1150,9 @@ export default function App() {
             : data?.error || "Signup failed";
         setSignupError(msg);
         return;
+      }
+      if (!hasCurrentSession(data)) {
+        throw new Error("The backend did not return a secure session. Configure AUTH_SESSION_SECRET on the Docker backend, then sign in again.");
       }
       setSignupName(name);
       setSignupEmail(email);
@@ -1620,17 +1602,27 @@ export default function App() {
     }
   };
 
+  const handleSessionExpired = () => {
+    const previousEmail = user?.email || email || "";
+    handleLogout();
+    setLoginEmail(previousEmail);
+    setStage(STAGES.LOGIN);
+    setStatus("error");
+    setResponseMessage("Your session has expired. Sign in to connect to this deployment.");
+    window.history.replaceState({ stage: STAGES.LOGIN }, "", "/login");
+  };
+
   const handleGoToDashboard = () => {
+    if (!hasCurrentSession(user)) {
+      setLoginEmail(user?.email || email || provisionData?.email || "");
+      setStage(STAGES.LOGIN);
+      setStatus("idle");
+      setResponseMessage("Sign in to open your workspace.");
+      return;
+    }
     setActiveTab("agents");
     setActiveTool(DEFAULT_TOOL_ID);
     setIsLoggedIn(true);
-    setUser((current) => {
-      if (current) return current;
-      return {
-        name: provisionData?.name || email || "You",
-        email: email || provisionData?.email || "you@smartconnect4u.com",
-      };
-    });
     setStage(STAGES.DASHBOARD);
   };
 
@@ -2103,7 +2095,7 @@ export default function App() {
         });
         if (range?.start) params.set("from", range.start);
         if (range?.end) params.set("to", range.end);
-        const { res, data } = await fetchJsonWithFallback(
+        const { res, data } = await fetchJson(
           `${API_URLS.calendarEvents}?${params.toString()}`,
         );
         if (!res.ok) {
@@ -2197,12 +2189,12 @@ export default function App() {
       setDashboardLoading(true);
       setSubscriptionsLoading(true);
       try {
-        const dashPromise = fetchJsonWithFallbackAndTimeout(
+        const dashPromise = fetchJsonWithTimeout(
           `${API_URLS.dashboard}?email=${encodeURIComponent(targetEmail)}`,
           {},
           DASHBOARD_REQUEST_TIMEOUT_MS,
         );
-        const subsPromise = fetchJsonWithFallbackAndTimeout(
+        const subsPromise = fetchJsonWithTimeout(
           `${API_URLS.subscriptionsStatus}?email=${encodeURIComponent(targetEmail)}`,
           {},
           SUBSCRIPTION_REQUEST_TIMEOUT_MS,
@@ -2633,7 +2625,7 @@ export default function App() {
     async (emailAddress = user?.email) => {
       if (!emailAddress) return;
       try {
-        const { res, data } = await fetchJsonWithFallback(
+        const { res, data } = await fetchJson(
           `${API_URLS.dashboardCalls}?email=${encodeURIComponent(emailAddress)}&limit=500`,
         );
         if (!res.ok) {
@@ -2662,7 +2654,7 @@ export default function App() {
     async (emailAddress = user?.email, daysOverride = null) => {
       if (!emailAddress) return;
       try {
-        const { res: callsRes, data: callsJson } = await fetchJsonWithFallback(
+        const { res: callsRes, data: callsJson } = await fetchJson(
           `${API_URLS.calls}?email=${encodeURIComponent(emailAddress)}`,
         );
         if (callsRes.ok && !looksLikeHtml(callsJson?.raw)) {
@@ -2676,7 +2668,7 @@ export default function App() {
 
         const days =
           typeof daysOverride === "number" ? daysOverride : getSelectedDays();
-        const { res, data } = await fetchJsonWithFallback(
+        const { res, data } = await fetchJson(
           `${API_URLS.dashboardCalls}?email=${encodeURIComponent(emailAddress)}&days=${days}`,
         );
         if (!res.ok) {
@@ -2711,7 +2703,7 @@ export default function App() {
   const loadUltravoxVoices = useCallback(async () => {
     setUltravoxVoicesLoading(true);
     try {
-      const { res, data } = await fetchJsonWithFallback(
+      const { res, data } = await fetchJson(
         API_URLS.ultravoxVoices,
       );
       if (!res.ok) {
@@ -2750,7 +2742,7 @@ export default function App() {
         params.set("country", requestCountry);
         params.set("country_code", requestCountry);
       }
-      const { res, data } = await fetchJsonWithFallback(
+      const { res, data } = await fetchJson(
         `${API_URLS.twilioAvailableNumbers}?${params.toString()}`,
         {
           headers: requestCountry ? { "X-Country-Code": requestCountry } : {},
@@ -2829,6 +2821,12 @@ export default function App() {
 
   const setLoggedInFromOAuth = useCallback(
     (payload) => {
+      if (!hasCurrentSession(payload)) {
+        setStatus("error");
+        setResponseMessage("The backend did not return a secure session. Configure AUTH_SESSION_SECRET on the Docker backend, then sign in again.");
+        setStage(STAGES.LOGIN);
+        return;
+      }
       const isNewUser = Boolean(payload?.is_new_user);
       setUser({
         id: payload?.user_id,
@@ -3059,6 +3057,16 @@ export default function App() {
       if (!raw) return;
       const saved = JSON.parse(raw);
       const path = (window.location.pathname || "").toLowerCase();
+      if (saved.isLoggedIn && !hasCurrentSession(saved.user)) {
+        setLoginEmail(saved.user?.email || saved.email || "");
+        if (!path.startsWith("/about") && !/^\/(meet|card)\//.test(path) && !resetFlowActiveRef.current) {
+          setStage(STAGES.LOGIN);
+          setStatus("error");
+          setResponseMessage("Your session has expired. Sign in to connect to this deployment.");
+          window.history.replaceState({ stage: STAGES.LOGIN }, "", "/login");
+        }
+        return;
+      }
       const hasPathPriorityStage =
         path.startsWith("/about") ||
         path === "/login" ||
@@ -3115,7 +3123,7 @@ export default function App() {
       path === "/dashboard" || path.endsWith("/dashboard");
     if (!isDashboardPath) return;
 
-    const hasSession = isLoggedIn || Boolean(user?.email);
+    const hasSession = isLoggedIn && hasCurrentSession(user);
     if (hasSession) {
       setStage(STAGES.DASHBOARD);
       setActiveTab("agents");
@@ -3131,7 +3139,7 @@ export default function App() {
 
   // Ensure logged-in users retain access to dashboard across refreshes
   useEffect(() => {
-    if (!isLoggedIn) return;
+    if (!isLoggedIn || !hasCurrentSession(user)) return;
     if (stage === STAGES.RESET_PASSWORD) return;
     if (stage === STAGES.ABOUT) return;
     const onboardingStages = new Set([
@@ -3166,7 +3174,7 @@ export default function App() {
         );
       }
     }
-  }, [isLoggedIn, stage]);
+  }, [isLoggedIn, stage, user]);
 
   useEffect(() => {
     if (stage !== STAGES.DASHBOARD) {
@@ -3665,6 +3673,7 @@ export default function App() {
           {stage === STAGES.DASHBOARD && (
             <DashboardScreen
               localSetup={LOCAL_SETUP_ENABLED}
+              onSessionExpired={handleSessionExpired}
               activeTab={activeTab}
               setActiveTab={setActiveTab}
               activeTool={activeTool}

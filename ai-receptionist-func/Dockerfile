@@ -4,6 +4,7 @@ ENV AzureWebJobsScriptRoot=/home/site/wwwroot \
     AzureFunctionsJobHost__Logging__Console__IsEnabled=true \
     FUNCTIONS_WORKER_RUNTIME=python \
     PYTHONUNBUFFERED=1 \
+    REQUIRE_AUTH_SESSION_SECRET=true \
     DATABASE_URL=sqlite:////data/app.db \
     SOCIAL_UPLOAD_DIR=/data/social_uploads
 
