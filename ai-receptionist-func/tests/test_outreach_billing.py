@@ -449,4 +449,18 @@ class OutreachBillingTests(unittest.TestCase):
         self.assertEqual(billing.wallet_payload(self.db,1)['balance_pence'],0)
 
 
+
+    def test_adding_balance_then_resuming_clears_previous_insufficient_credit_error(self):
+        campaign,lead,quote,actor=self.campaign()
+        self.db.add(OutreachCampaignBilling(campaign_id=campaign.id,client_id=1,actor_email=actor.email,admin_exempt=False,max_rate_gbp='0.12'));self.db.commit()
+        calls.launch_call(self.db,campaign,lead)
+        self.assertEqual(campaign.status,'paused');self.assertIn('credits',lead.error)
+        billing.credit_wallet(self.db,1,100,'paid-after-pause')
+        billing.bind_campaign(self.db,campaign.id,actor,quote.id,DEST,CALLER)
+        campaign.status='running';self.db.commit()
+        calls.launch_call(self.db,campaign,lead)
+        self.assertEqual(lead.status,'queued-provider');self.assertIsNone(lead.error)
+        self.provider.calls.create.assert_called_once()
+
+
 if __name__ == '__main__': unittest.main()

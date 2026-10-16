@@ -89,7 +89,7 @@ def billing_admin_overview(req):
     def action(db, actor):
         if not billing.is_platform_admin(actor): raise billing.BillingError("Platform administrator access required", 403)
         orders = db.query(OutreachPaymentOrder).filter(OutreachPaymentOrder.status.in_([
-            "needs_review", "refund_pending", "checkout_review", "provisioning"])).order_by(OutreachPaymentOrder.created_at).limit(100).all()
+            "needs_review", "refund_pending", "checkout_review", "provisioning", "release_pending"])).order_by(OutreachPaymentOrder.created_at).limit(100).all()
         return {"orders": [{**payments.order_payload(row), "client_id": row.client_id, "customer_email": row.actor_email} for row in orders]}
     return handle(req, action)
 

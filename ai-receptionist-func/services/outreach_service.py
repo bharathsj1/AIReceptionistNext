@@ -252,7 +252,7 @@ def launch_call(db, campaign, lead):
         OutreachSuppression.client_id == OutreachCampaign.client_id).filter(OutreachSuppression.phone == lead.phone)
     claimed = db.query(OutreachLead).filter_by(id=lead.id, status="queued").filter(
         ~OutreachLead.campaign_id.in_(suppressed_campaigns)).update(
-            {"status": "preparing", "started_at": datetime.utcnow()}, synchronize_session=False)
+            {"status": "preparing", "started_at": datetime.utcnow(), "error": None}, synchronize_session=False)
     if claimed:
         ensure_conversation(db, lead)
         log_event(db, lead, "preparing")
