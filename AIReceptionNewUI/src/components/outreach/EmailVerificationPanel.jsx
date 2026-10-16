@@ -88,7 +88,7 @@ export default function EmailVerificationPanel({ user, onAuthRequired }) {
       }} />}
       {loading ? <p role="status">Checking verification status…</p> : status && !status.is_email_verified && <>
         <p>Confirm that you can receive emails at your signed-in address.</p>
-        {!status.delivery_configured && <p className="calling-alert">Email delivery is not configured. Your administrator needs to configure SMTP or SendGrid to send verification codes.</p>}
+        {!status.delivery_configured && <p className="calling-alert">Email delivery is not configured. Your administrator needs to configure SMTP in Email delivery settings to send verification codes and lead summaries.</p>}
         <button type="button" className="calling-button" disabled={Boolean(busy) || seconds > 0 || !status.delivery_configured} onClick={() => submit("send")}>
           {busy === "send" && <LoaderCircle size={16} className="calling-spin" />}
           {busy === "send" ? "Sending code…" : seconds > 0 ? `Resend in ${seconds}s` : status.challenge_pending ? "Send a new code" : "Send verification code"}

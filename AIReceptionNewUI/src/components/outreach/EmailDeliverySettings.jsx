@@ -47,7 +47,7 @@ export default function EmailDeliverySettings({ user, onAuthRequired, onSaved })
   const update = (field) => (event) => setForm((current) => ({ ...current, [field]: event.target.value }));
   return <details className="calling-email-settings">
     <summary>Email delivery settings <span>Platform administrator</span></summary>
-    <p>Use the SMTP credentials for <strong>support@vedoraeats.com</strong>. Saving checks the secure connection, login and sender without sending an email.</p>
+    <p>Verification codes and interested-owner summaries use this connection. Use the SMTP credentials for <strong>support@vedoraeats.com</strong>. Saving checks the secure connection, login and sender without sending an email.</p>
     {settings ? <form onSubmit={save}>
       <fieldset disabled={busy}>
         <legend>Secure SMTP connection</legend>

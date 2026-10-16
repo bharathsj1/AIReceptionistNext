@@ -1,13 +1,11 @@
 """Signed-account email verification, following the restaurant portal's OTP flow."""
 import hmac
 import math
-import os
 import re
 import secrets
 from datetime import datetime, timedelta
 from email.message import EmailMessage
 
-import requests
 from sqlalchemy import case, or_
 from sqlalchemy.exc import IntegrityError
 
@@ -38,12 +36,7 @@ def identity(actor, email=None):
 
 
 def delivery_available(db=None):
-    try:
-        smtp = smtp_delivery.smtp_settings(db)
-    except smtp_delivery.MailConfigurationError:
-        return False
-    smtp_ready = bool(smtp.get("host") and (not smtp.get("username") or smtp.get("password")))
-    return bool(valid_email(outreach_from_email()) and (smtp_ready or os.getenv("SENDGRID_API_KEY")))
+    return bool(valid_email(outreach_from_email()) and smtp_delivery.delivery_available(db))
 
 
 def status_payload(db, actor, now=None):
@@ -76,26 +69,14 @@ def send_verification_email(email, code, db=None):
     message["Subject"] = "Your Vedora Outreach verification code"
     message.set_content(f"Your verification code is:\n\n{code}\n\nThis code expires in 10 minutes.\n"
                         "If you did not request this code, you can ignore this email.")
-    smtp = smtp_delivery.smtp_settings(db)
-    if db is not None and db.get(smtp_delivery.OutreachEmailSetting, "smtp"):
-        message.replace_header("From", smtp["from_email"])
-    if smtp.get("host") and (not smtp.get("username") or smtp.get("password")):
-        with smtp_delivery.smtp_connection(smtp) as server:
-            server.send_message(message)
-        return
-    response = requests.post("https://api.sendgrid.com/v3/mail/send", timeout=15,
-        headers={"Authorization": f"Bearer {os.environ['SENDGRID_API_KEY']}"},
-        json={"personalizations": [{"to": [{"email": email}]}], "from": {"email": outreach_from_email()},
-            "subject": str(message["Subject"]), "content": [{"type": "text/plain", "value": message.get_content()}]})
-    if response.status_code != 202:
-        raise VerificationError("Email provider did not accept the verification email", 503)
+    smtp_delivery.send_message(message, db)
 
 
 def send_code(db, actor, email=None, now=None):
     now = now or datetime.utcnow()
     key = identity(actor, email)
     if not delivery_available(db):
-        raise VerificationError("Email delivery is not configured. Configure SMTP or SendGrid to send verification codes.", 503)
+        raise VerificationError("Email delivery is not configured. Configure SMTP in Calling setup → Email delivery settings.", 503)
     code, salt = f"{secrets.randbelow(1_000_000):06d}", secrets.token_hex(16)
     digest = hash_code(key, salt, code)
     if not db.get(OutreachEmailVerification, key):

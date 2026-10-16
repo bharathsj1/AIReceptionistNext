@@ -66,7 +66,7 @@ def outreach_config(req):
             number_error = "Could not verify the assigned Twilio number. Refresh to check again."
         return response(req, {"caller_ids": caller_numbers(db, actor.client_id),
                               "numbers": [number_payload(n) for n in own_numbers(db, actor.client_id)],
-                              "number_error": number_error, "configuration_errors": configuration_errors(),
+                              "number_error": number_error, "configuration_errors": configuration_errors(db),
                               "from_email": outreach_from_email(),
                               "notification_email": actor.email,
                               "billing": {"is_platform_admin": billing.is_platform_admin(actor),
@@ -143,7 +143,7 @@ def outreach_campaign(req):
             body = body_for(req)
             action = body.get("action")
             if action == "start":
-                errors = configuration_errors()
+                errors = configuration_errors(db)
                 if errors:
                     return response(req, {"error": "; ".join(errors)}, 409)
                 if campaign.status not in {"draft", "paused"}:

@@ -43,6 +43,38 @@ def smtp_settings(db=None):
     return get_smtp_settings()
 
 
+def delivery_available(db=None):
+    try:
+        settings = smtp_settings(db)
+        return bool(settings.get("host") and (not settings.get("username") or settings.get("password")))
+    except MailConfigurationError:
+        return False
+
+
+def send_message(message, db=None):
+    settings = smtp_settings(db)
+    if not settings.get("host") or (settings.get("username") and not settings.get("password")):
+        raise MailConfigurationError("Configure SMTP in Calling setup → Email delivery settings")
+    if db is not None and db.get(OutreachEmailSetting, "smtp"):
+        message.replace_header("From", settings["from_email"])
+    with smtp_connection(settings) as server:
+        refused = server.send_message(message)
+        if refused:
+            raise smtplib.SMTPRecipientsRefused(refused)
+
+
+def failure_status(exc):
+    """Retry explicit SMTP rejections only; an unknown DATA outcome needs review."""
+    if isinstance(exc, smtplib.SMTPResponseException):
+        return "retry" if 400 <= exc.smtp_code < 500 else "failed"
+    if isinstance(exc, smtplib.SMTPRecipientsRefused):
+        codes = [value[0] for value in exc.recipients.values()]
+        return "retry" if codes and all(400 <= code < 500 for code in codes) else "failed"
+    if isinstance(exc, (MailConfigurationError, smtplib.SMTPNotSupportedError, ValueError)):
+        return "failed"
+    return "needs_review"
+
+
 @contextmanager
 def smtp_connection(settings):
     port = settings.get("port") or 587

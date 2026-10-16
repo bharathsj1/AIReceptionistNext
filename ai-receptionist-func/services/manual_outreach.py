@@ -49,7 +49,7 @@ def start_manual_call(db, client_id, body, now=None, actor=None):
     replay = existing()
     if replay:
         return replay
-    errors = outreach.configuration_errors()
+    errors = outreach.configuration_errors(db)
     if errors:
         raise ManualCallConflict("; ".join(errors))
     if details["caller_id"] not in outreach.caller_numbers(db, client_id):

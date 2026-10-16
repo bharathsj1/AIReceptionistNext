@@ -55,9 +55,13 @@ all its current and future campaigns. Importing it again cannot clear an opt-out
   existing inbound receptionist agents are unaffected.
 - `OUTREACH_TOOL_SECRET`: separate random secret for per-contact HMAC tool
   authentication. Generate a strong random value and retain it while calls are active.
-- `SENDGRID_API_KEY`: SendGrid mail-send credentials. `FROM_EMAIL` overrides the
-  default sender `support@vedoraeats.com`; the chosen sender must be verified in
-  SendGrid. Email is never reported as sent when credentials are missing.
+- SMTP settings, saved in **Calling setup → Email delivery settings** or configured
+  with `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD` and `SMTP_USE_TLS`.
+  Verification codes and interested-owner summaries use this same connection.
+  `FROM_EMAIL` overrides the default sender `support@vedoraeats.com` when using
+  environment settings; a saved platform configuration uses its validated support
+  sender. The sender must be authorized by the SMTP provider. Email is never
+  reported as sent when credentials are missing. No SendGrid key is required.
   New campaigns and manual calls default their notification recipient to the
   signed-in user's email from the authenticated session, including manager logins.
   An explicitly entered campaign recipient is preserved. Existing campaigns keep
@@ -163,7 +167,8 @@ to validate and save SMTP credentials. The check opens a TLS connection, logs in
 and checks `MAIL FROM` for `support@vedoraeats.com`; it does not send a message.
 Use port 587 for STARTTLS or 465 for implicit TLS. Settings are encrypted in
 `outreach_email_settings` using `AUTH_SESSION_SECRET` and override environment SMTP
-settings for verification emails. Passwords are never returned by the settings API.
+settings for both verification emails and interested-owner summaries. Passwords
+are never returned by the settings API.
 Request an actual verification code after saving to check delivery to the inbox.
 SMTP authentication, sender, recipient and connection failures have distinct safe
 messages; logs contain only the exception category and SMTP status, never the code
@@ -196,10 +201,14 @@ send intent is saved before mail delivery, with no automatic provider retry.
 Verified status survives restarts. Changing the signed-in email requires a new
 verification. The flow does not change login, calling or notification permissions.
 
-OTP mail uses existing `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`
-and `SMTP_USE_TLS` settings when available (SSL on port 465, STARTTLS otherwise
-when enabled). It otherwise uses `SENDGRID_API_KEY`. Both use the configured
-Outreach sender. Missing mail configuration returns 503, never a simulated code.
+Both email flows use saved encrypted SMTP settings, falling back to existing
+`SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD` and `SMTP_USE_TLS`
+settings when no saved configuration exists (SSL on port 465, STARTTLS otherwise
+when enabled). There is no SendGrid fallback. Missing mail configuration returns
+503 for verification and blocks new calls until SMTP is configured. Explicit
+temporary SMTP rejections retry with backoff; unknown send outcomes require review
+to avoid duplicate lead emails. A successful provider acceptance is recorded as
+sent; inbox delivery still depends on the receiving email provider.
 
 The campaign UI uses the existing login bearer token. Data and caller IDs are
 scoped to the resolved account, and another account's campaign/contact returns 404.

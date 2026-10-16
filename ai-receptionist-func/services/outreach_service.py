@@ -103,9 +103,12 @@ def parse_contacts(csv_text):
     return contacts, errors
 
 
-def configuration_errors():
-    required = ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "ULTRAVOX_API_KEY", "OUTREACH_TOOL_SECRET", "SENDGRID_API_KEY")
+def configuration_errors(db=None):
+    from services.outreach_smtp import delivery_available
+    required = ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "ULTRAVOX_API_KEY", "OUTREACH_TOOL_SECRET")
     errors = [f"Configure {key}" for key in required if not os.getenv(key)]
+    if not delivery_available(db):
+        errors.append("Configure SMTP in Calling setup → Email delivery settings")
     if not valid_email(outreach_from_email()):
         errors.append("Configure a valid FROM_EMAIL")
     if not get_public_api_base().startswith("https://"):
@@ -392,7 +395,9 @@ def save_result(db, lead, body):
     db.commit()
 
 
-def send_lead_email(campaign, lead):
+def send_lead_email(campaign, lead, db=None):
+    from email.message import EmailMessage
+    from services.outreach_smtp import send_message
     sender = outreach_from_email()
     if not valid_email(sender):
         raise ValueError("Configure a valid FROM_EMAIL")
@@ -405,13 +410,13 @@ def send_lead_email(campaign, lead):
         "Team follow-up permission: Yes", "", result.get("summary", ""), "", f"Lead reference: {lead.id}",
         f"Twilio call: {lead.twilio_call_sid or ''}", f"Ultravox conversation: {lead.ultravox_call_id or ''}",
     ])
-    response = requests.post("https://api.sendgrid.com/v3/mail/send",
-        headers={"Authorization": f"Bearer {os.environ['SENDGRID_API_KEY']}"},
-        json={"personalizations": [{"to": [{"email": campaign.notification_email}]}],
-              "from": {"email": sender}, "subject": "VedoraEats: interested restaurant owner",
-              "content": [{"type": "text/plain", "value": text}]}, timeout=15)
-    # A definitive rejection can be retried; 5xx/network failures may have accepted the email.
-    return response.status_code
+    if not valid_email(campaign.notification_email):
+        raise ValueError("Provide a valid team notification email")
+    message = EmailMessage()
+    message["From"], message["To"] = sender, campaign.notification_email
+    message["Subject"] = "VedoraEats: interested restaurant owner"
+    message.set_content(text)
+    send_message(message, db)
 
 
 def process_notifications(db, now):
@@ -432,17 +437,18 @@ def process_notifications(db, now):
         lead.notification_attempts += 1
         db.commit()
         try:
-            status = send_lead_email(campaign, lead)
-            if status == 202:
-                lead.notification_status, lead.notification_sent_at = "sent", datetime.utcnow()
-            elif status == 429 and lead.notification_attempts < 5:
+            send_lead_email(campaign, lead, db=db)
+            lead.notification_status, lead.notification_sent_at = "sent", datetime.utcnow()
+        except Exception as exc:
+            from services.outreach_smtp import failure_status
+            status = failure_status(exc)
+            if status == "retry" and lead.notification_attempts < 5:
                 lead.notification_status = "retry"
                 lead.notification_next_at = now + timedelta(minutes=2 ** lead.notification_attempts)
             else:
-                lead.notification_status = "needs_review" if status >= 500 else "failed"
-        except Exception:
-            logger.exception("Outreach email request uncertain for lead %s", lead.id)
-            lead.notification_status = "needs_review"
+                lead.notification_status = "failed" if status == "retry" else status
+            logger.error("Outreach email not confirmed: lead=%s category=%s smtp_status=%s",
+                         lead.id, type(exc).__name__, getattr(exc, "smtp_code", None))
         db.commit()
     db.query(OutreachLead).filter(OutreachLead.notification_status == "sending",
         OutreachLead.notification_next_at < now - timedelta(minutes=5)).update(
@@ -482,7 +488,7 @@ def process_campaign(db, campaign, now):
     london = now.replace(tzinfo=timezone.utc).astimezone(ZoneInfo("Europe/London"))
     if london.weekday() >= 5 or not campaign.start_hour <= london.hour < campaign.end_hour:
         return
-    if configuration_errors() or campaign.caller_id not in caller_numbers(db, campaign.client_id):
+    if configuration_errors(db) or campaign.caller_id not in caller_numbers(db, campaign.client_id):
         campaign.status, campaign.error = "paused", "Provider configuration or caller ID is unavailable"
         db.commit()
         return

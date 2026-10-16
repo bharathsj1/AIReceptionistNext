@@ -50,7 +50,7 @@ class EmailVerificationTests(unittest.TestCase):
                          Client(id=2, email="other@example.com", website_url="https://example.com")]); self.db.commit()
         self.actor = replace(ACTOR, user_id="1")
         self.manager = replace(ACTOR, email="manager@example.com", role="manager", scope="client_user", client_user_id="7")
-        self.smtp_patch = patch.object(service.smtp_delivery, "get_smtp_settings", return_value={}); self.smtp_patch.start()
+        self.smtp_patch = patch.object(service.smtp_delivery, "get_smtp_settings", return_value={"host": "smtp.example.com", "port": 587, "username": "support@vedoraeats.com", "password": "test-smtp"}); self.smtp_patch.start()
         self.mail_patch = patch.object(service, "send_verification_email"); self.mail = self.mail_patch.start()
         self.random_patch = patch.object(service.secrets, "randbelow", return_value=123456); self.random_patch.start()
 
@@ -137,7 +137,8 @@ class EmailVerificationTests(unittest.TestCase):
         self.mail.assert_called_once()
 
     def test_missing_mail_or_signing_configuration_cannot_send(self):
-        for settings in [{"SENDGRID_API_KEY": ""}, {"AUTH_SESSION_SECRET": "", "APP_SESSION_SECRET": "", "JWT_SECRET": "", "SECRET_KEY": "", "WEBSITE_AUTH_ENCRYPTION_KEY": ""}]:
+        with patch.object(service.smtp_delivery, "get_smtp_settings", return_value={}), self.assertRaises(service.VerificationError): self.send()
+        for settings in [{"AUTH_SESSION_SECRET": "", "APP_SESSION_SECRET": "", "JWT_SECRET": "", "SECRET_KEY": "", "WEBSITE_AUTH_ENCRYPTION_KEY": ""}]:
             with patch.dict(os.environ, settings), self.assertRaises(service.VerificationError): self.send()
         self.mail.assert_not_called()
 
@@ -179,20 +180,19 @@ class EmailVerificationTests(unittest.TestCase):
     def test_delivery_uses_existing_smtp_with_tls(self):
         with patch.object(service.smtp_delivery, "get_smtp_settings", return_value={"host": "smtp.example.com", "port": 587,
             "username": "support@vedoraeats.com", "password": "test-smtp"}), patch.object(service.smtp_delivery.smtplib, "SMTP") as smtp:
-            with patch.object(service.requests, "post") as post:
+            smtp.return_value.send_message.return_value = {}
+            with patch.object(requests, "post") as post:
                 REAL_SEND_EMAIL("owner@example.com", "123456")
             smtp.return_value.starttls.assert_called_once()
             smtp.return_value.send_message.assert_called_once()
             post.assert_not_called()
 
-    def test_delivery_falls_back_to_sendgrid_and_checks_acceptance(self):
-        with patch.object(service.requests, "post", return_value=Mock(status_code=202)) as post:
-            REAL_SEND_EMAIL("owner@example.com", "123456")
-        payload = post.call_args.kwargs["json"]
-        self.assertEqual(payload["personalizations"][0]["to"][0]["email"], "owner@example.com")
-        self.assertIn("123456", payload["content"][0]["value"])
-        with patch.object(service.requests, "post", return_value=Mock(status_code=403)), self.assertRaises(service.VerificationError):
-            REAL_SEND_EMAIL("owner@example.com", "123456")
+    def test_missing_smtp_does_not_fall_back_to_sendgrid(self):
+        with patch.object(service.smtp_delivery, "get_smtp_settings", return_value={}), patch.dict(os.environ, {"SENDGRID_API_KEY": "unused-legacy-key"}), patch.object(requests, "post") as post:
+            with self.assertRaises(service.smtp_delivery.MailConfigurationError):
+                REAL_SEND_EMAIL("owner@example.com", "123456")
+            self.assertFalse(service.delivery_available())
+            post.assert_not_called()
 
     def smtp_body(self):
         return {"host": "smtp.example.com", "port": 587, "username": "support@vedoraeats.com", "password": "private-app-password"}
@@ -209,6 +209,7 @@ class EmailVerificationTests(unittest.TestCase):
 
     def test_smtp_setup_validates_login_and_sender_without_sending_then_encrypts(self):
         with patch.object(service.smtp_delivery.smtplib, "SMTP") as smtp:
+            smtp.return_value.send_message.return_value = {}
             smtp.return_value.mail.return_value = (250, b"OK")
             result = service.smtp_delivery.save_settings(self.db, self.admin(), self.smtp_body())
         smtp.return_value.starttls.assert_called_once()
@@ -227,6 +228,7 @@ class EmailVerificationTests(unittest.TestCase):
     def test_smtp_failed_setup_preserves_previous_configuration_and_hides_provider_details(self):
         self.db.add(OutreachEmailSetting(id="smtp", encrypted_value="existing-ciphertext")); self.db.commit()
         with patch.object(service.smtp_delivery.smtplib, "SMTP") as smtp:
+            smtp.return_value.send_message.return_value = {}
             smtp.return_value.login.side_effect = smtplib.SMTPAuthenticationError(535, b"private-app-password details")
             response = self.api(endpoints.email_verification_settings, self.smtp_body(), self.admin())
         self.assertEqual(response.status_code, 503)
@@ -238,6 +240,7 @@ class EmailVerificationTests(unittest.TestCase):
 
     def test_smtp_sender_rejection_does_not_save_configuration(self):
         with patch.object(service.smtp_delivery.smtplib, "SMTP") as smtp:
+            smtp.return_value.send_message.return_value = {}
             smtp.return_value.mail.return_value = (553, b"private sender detail")
             response = self.api(endpoints.email_verification_settings, self.smtp_body(), self.admin())
         self.assertEqual(response.status_code, 503)
@@ -246,7 +249,7 @@ class EmailVerificationTests(unittest.TestCase):
 
     def test_smtp_setup_rejects_insecure_ports_invalid_hosts_and_missing_password(self):
         for update in [{"host": "https://smtp.example.com"}, {"host": "smtp\r\nexample.com"}, {"port": 25},
-                       {"port": True}, {"password": ""}, {"password": None}, {"username": "a\r\nb"}]:
+                       {"port": True}, {"password": ""}, {"password": None, "host": "other.example.com"}, {"username": "a\r\nb"}]:
             response = self.api(endpoints.email_verification_settings, {**self.smtp_body(), **update}, self.admin())
             self.assertEqual(response.status_code, 400)
         self.assertEqual(self.api(endpoints.email_verification_settings, actor=self.admin(), raw=b"x" * 8193).status_code, 413)
@@ -264,6 +267,7 @@ class EmailVerificationTests(unittest.TestCase):
     def test_smtp_implicit_ssl_and_quit_failure_after_acceptance(self):
         with patch.object(service.smtp_delivery, "get_smtp_settings", return_value={"host": "smtp.example.com", "port": 465,
                 "username": "support@vedoraeats.com", "password": "test-password"}), patch.object(service.smtp_delivery.smtplib, "SMTP_SSL") as smtp:
+            smtp.return_value.send_message.return_value = {}
             smtp.return_value.quit.side_effect = smtplib.SMTPServerDisconnected("closed after acceptance")
             REAL_SEND_EMAIL("owner@example.com", "123456")
             smtp.return_value.starttls.assert_not_called()
@@ -272,10 +276,11 @@ class EmailVerificationTests(unittest.TestCase):
 
     def test_saved_smtp_is_used_for_delivery_without_env_fallback(self):
         with patch.object(service.smtp_delivery.smtplib, "SMTP") as smtp:
+            smtp.return_value.send_message.return_value = {}
             smtp.return_value.mail.return_value = (250, b"OK")
             service.smtp_delivery.save_settings(self.db, self.admin(), self.smtp_body())
             smtp.reset_mock()
-            with patch.object(service.requests, "post") as post:
+            with patch.object(requests, "post") as post:
                 REAL_SEND_EMAIL("owner@example.com", "123456", db=self.db)
             smtp.assert_called_once_with("smtp.example.com", 587, timeout=10)
             self.assertEqual(smtp.return_value.send_message.call_args.args[0]["From"], "support@vedoraeats.com")
@@ -286,6 +291,7 @@ class EmailVerificationTests(unittest.TestCase):
 
     def test_blank_password_retains_secret_only_for_unchanged_host_and_username(self):
         with patch.object(service.smtp_delivery.smtplib, "SMTP") as smtp:
+            smtp.return_value.send_message.return_value = {}
             smtp.return_value.mail.return_value = (250, b"OK")
             service.smtp_delivery.save_settings(self.db, self.admin(), self.smtp_body())
             body = self.smtp_body(); del body["password"]

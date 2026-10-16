@@ -2,6 +2,7 @@ from endpoint_imports import function_app_module
 import importlib.util
 import json
 import os
+import smtplib
 import sys
 import types
 import unittest
@@ -18,13 +19,15 @@ from twilio.request_validator import RequestValidator
 
 from crm_shared import CRMActor, issue_auth_session_token
 from services import outreach_service as service
-from shared.db import Base, PhoneNumber, Client, OutreachCampaign, OutreachLead, OutreachSuppression, OutreachCallEvent
+from services import outreach_smtp as smtp_delivery
+from shared.db import Base, PhoneNumber, Client, OutreachCampaign, OutreachLead, OutreachSuppression, OutreachCallEvent, OutreachEmailSetting
 
 HEADER = "phone,restaurant_name,automated_call_consent,consent_evidence,city\n"
 CSV = HEADER + '020 7946 0018,"The Bistro, London",yes,Owner opted in to VedoraEats automated calls on 2026-10-01,London\n'
 SETTINGS = {"TWILIO_ACCOUNT_SID": "AC" + "1" * 32, "TWILIO_AUTH_TOKEN": "test-twilio-token",
             "ULTRAVOX_API_KEY": "test-ultravox", "OUTREACH_TOOL_SECRET": "test-tool-secret",
-            "AUTH_SESSION_SECRET": "test-session-secret", "SENDGRID_API_KEY": "test-sendgrid",
+            "AUTH_SESSION_SECRET": "test-session-secret", "SMTP_HOST": "smtp.example.com",
+            "SMTP_PORT": "587", "SMTP_USERNAME": "support@vedoraeats.com", "SMTP_PASSWORD": "test-smtp",
             "FROM_EMAIL": "team@example.com", "API_PUBLIC_BASE_URL": "https://example.com"}
 ACTOR = CRMActor("1", 1, "owner@example.com", "admin", "primary_user", None, None)
 SID = "CA" + "1" * 32
@@ -129,11 +132,14 @@ class OutreachTests(unittest.TestCase):
     def test_summary_email_uses_support_sender_and_saved_campaign_recipient(self):
         campaign = service.create_campaign(self.db, 1, {**self.body, "notification_email": "recipient@example.com"})[0]
         lead = self.lead(campaign)
-        with patch.dict(os.environ, {"FROM_EMAIL": ""}), patch.object(service.requests, "post", return_value=Mock(status_code=202)) as post:
-            self.assertEqual(service.send_lead_email(campaign, lead), 202)
-        payload = post.call_args.kwargs["json"]
-        self.assertEqual(payload["from"]["email"], "support@vedoraeats.com")
-        self.assertEqual(payload["personalizations"][0]["to"], [{"email": "recipient@example.com"}])
+        with patch.dict(os.environ, {"FROM_EMAIL": ""}), patch.object(smtp_delivery.smtplib, "SMTP") as smtp, patch.object(service.requests, "post") as post:
+            smtp.return_value.send_message.return_value = {}
+            service.send_lead_email(campaign, lead, db=self.db)
+        message = smtp.return_value.send_message.call_args.args[0]
+        self.assertEqual(message["From"], "support@vedoraeats.com")
+        self.assertEqual(message["To"], "recipient@example.com")
+        self.assertIn(lead.restaurant_name, message.get_content())
+        post.assert_not_called()
 
     def test_config_exposes_email_defaults_for_signed_in_account_only(self):
         from dataclasses import replace
@@ -152,11 +158,59 @@ class OutreachTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(json.loads(response.get_body())["campaign"]["notification_email"], "manager@example.com")
 
-    def test_default_sender_does_not_hide_missing_sendgrid_or_invalid_override(self):
+    def test_smtp_is_required_but_sendgrid_is_not(self):
         with patch.dict(os.environ, {"FROM_EMAIL": "", "SENDGRID_API_KEY": ""}):
-            self.assertEqual(service.configuration_errors(), ["Configure SENDGRID_API_KEY"])
+            self.assertEqual(service.configuration_errors(self.db), [])
+        with patch.object(smtp_delivery, "get_smtp_settings", return_value={}):
+            self.assertEqual(service.configuration_errors(self.db), ["Configure SMTP in Calling setup → Email delivery settings"])
         with patch.dict(os.environ, {"FROM_EMAIL": "bad\nemail@example.com"}):
-            self.assertIn("Configure a valid FROM_EMAIL", service.configuration_errors())
+            self.assertIn("Configure a valid FROM_EMAIL", service.configuration_errors(self.db))
+
+    def test_saved_smtp_supplies_readiness_and_summary_delivery_without_environment_credentials(self):
+        settings = {"host": "smtppro.zoho.eu", "port": 465, "username": "support@vedoraeats.com",
+                    "password": "private-smtp-password", "from_email": "support@vedoraeats.com", "use_ssl": True}
+        self.db.add(OutreachEmailSetting(id="smtp", encrypted_value=smtp_delivery.cipher().encrypt(json.dumps(settings).encode()).decode()))
+        self.db.commit()
+        campaign = self.campaign()
+        lead = self.lead(campaign, "completed")
+        service.save_result(self.db, lead, self.result())
+        with patch.object(smtp_delivery, "get_smtp_settings", return_value={}), patch.dict(os.environ, {"SENDGRID_API_KEY": ""}), patch.object(smtp_delivery.smtplib, "SMTP_SSL") as smtp:
+            smtp.return_value.send_message.return_value = {}
+            self.assertEqual(service.configuration_errors(self.db), [])
+            service.process_notifications(self.db, datetime.utcnow())
+            service.process_notifications(self.db, datetime.utcnow())
+            smtp.assert_called_once()
+            smtp.return_value.login.assert_called_once_with("support@vedoraeats.com", "private-smtp-password")
+            message = smtp.return_value.send_message.call_args.args[0]
+            self.assertEqual(message["From"], "support@vedoraeats.com")
+            self.assertEqual(message["To"], campaign.notification_email)
+            self.assertIn("Owner wants a partnership discussion.", message.get_content())
+            self.assertEqual(lead.notification_status, "sent")
+            self.assertIsNotNone(lead.notification_sent_at)
+
+    def test_smtp_permanent_rejection_and_disconnect_are_not_automatically_retried(self):
+        for exc, expected in [(smtplib.SMTPAuthenticationError(535, b"private-password"), "failed"),
+                              (smtplib.SMTPRecipientsRefused({"owner@example.com": (550, b"private-password")}), "failed"),
+                              (smtplib.SMTPServerDisconnected("private-password"), "needs_review")]:
+            lead = self.lead(self.campaign(), "completed")
+            service.save_result(self.db, lead, self.result())
+            with patch.object(service, "send_lead_email", side_effect=exc) as send, self.assertLogs(service.logger, level="ERROR") as logs:
+                service.process_notifications(self.db, datetime.utcnow())
+                service.process_notifications(self.db, datetime.utcnow())
+                send.assert_called_once()
+            self.assertEqual(lead.notification_status, expected)
+            self.assertIsNone(lead.notification_sent_at)
+            self.assertNotIn("private-password", " ".join(logs.output))
+
+    def test_smtp_temporary_rejections_stop_after_five_attempts(self):
+        lead = self.lead(self.campaign(), "completed")
+        service.save_result(self.db, lead, self.result())
+        lead.notification_attempts = 4
+        self.db.commit()
+        with patch.object(service, "send_lead_email", side_effect=smtplib.SMTPDataError(451, b"Try later")), self.assertLogs(service.logger, level="ERROR"):
+            service.process_notifications(self.db, datetime.utcnow())
+        self.assertEqual(lead.notification_attempts, 5)
+        self.assertEqual(lead.notification_status, "failed")
 
     def test_consent_and_suppression_rechecked_at_launch(self):
         campaign = self.campaign()
@@ -253,7 +307,7 @@ class OutreachTests(unittest.TestCase):
         campaign = self.campaign()
         lead = self.lead(campaign)
         service.save_result(self.db, lead, self.result())
-        with patch.object(service, "send_lead_email", return_value=202) as send:
+        with patch.object(service, "send_lead_email") as send:
             service.process_notifications(self.db, datetime.utcnow())
             send.assert_not_called()
             service.apply_call_status(self.db, lead, SID, "completed", 3)
@@ -285,7 +339,7 @@ class OutreachTests(unittest.TestCase):
         lead = self.lead(self.campaign(), "completed")
         service.save_result(self.db, lead, self.result())
         now = datetime.utcnow()
-        with patch.object(service, "send_lead_email", return_value=429) as send:
+        with patch.object(service, "send_lead_email", side_effect=smtplib.SMTPDataError(451, b"Try later")) as send:
             service.process_notifications(self.db, now)
             service.process_notifications(self.db, now)
             self.assertEqual(send.call_count, 1)

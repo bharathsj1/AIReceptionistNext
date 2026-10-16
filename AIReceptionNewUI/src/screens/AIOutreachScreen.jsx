@@ -1254,7 +1254,7 @@ export default function AIOutreachScreen({
                     [
                       "Team handoff",
                       "Interested-owner notifications",
-                      ["SENDGRID", "FROM_EMAIL"],
+                      ["SMTP", "FROM_EMAIL"],
                     ],
                     [
                       "Call callbacks",
