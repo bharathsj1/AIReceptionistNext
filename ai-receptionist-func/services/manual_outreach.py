@@ -2,9 +2,7 @@
 import hashlib
 import json
 import os
-from datetime import datetime, timezone
 from uuid import UUID, NAMESPACE_URL, uuid5
-from zoneinfo import ZoneInfo
 
 from sqlalchemy.exc import IntegrityError
 
@@ -61,14 +59,10 @@ def start_manual_call(db, client_id, body, now=None, actor=None):
         OutreachLead.status.in_(outreach.ACTIVE | {"needs_review"})).first()
     if active:
         raise ManualCallConflict("This number has an active or uncertain call. Check call history before calling again.")
-    london = (now or datetime.now(timezone.utc)).astimezone(ZoneInfo("Europe/London"))
-    if london.weekday() >= 5 or not 9 <= london.hour < 20:
-        raise ManualCallConflict("Manual calls are available Monday to Friday, 09:00–20:00 Europe/London")
-
     campaign = OutreachCampaign(id=campaign_id, client_id=client_id,
         name=f"Manual call · {details['restaurant_name']}"[:150], benefits=details["benefits"],
         notification_email=details["notification_email"], caller_id=details["caller_id"],
-        voice=os.getenv("OUTREACH_ULTRAVOX_VOICE") or None, start_hour=9, end_hour=20, status="running")
+        voice=os.getenv("OUTREACH_ULTRAVOX_VOICE") or None, start_hour=0, end_hour=24, status="running")
     lead = OutreachLead(id=str(uuid5(NAMESPACE_URL, f"vedora-manual-lead:{campaign_id}")),
         campaign_id=campaign.id, position=0, phone=phone, restaurant_name=details["restaurant_name"],
         status="queued",

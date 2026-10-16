@@ -124,10 +124,17 @@ class OutreachTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             service.create_campaign(self.db, 2, self.body)
 
-    def test_invalid_calling_hours_and_email(self):
-        for updates in [{"start_hour": 20}, {"end_hour": 9}, {"start_hour": True}, {"notification_email": "bad\nemail@example.com"}]:
-            with self.subTest(updates=updates), self.assertRaises(ValueError):
-                service.create_campaign(self.db, 1, {**self.body, **updates})
+    def test_invalid_notification_email_is_rejected(self):
+        with self.assertRaises(ValueError):
+            service.create_campaign(self.db, 1, {**self.body, "notification_email": "bad\nemail@example.com"})
+
+    def test_legacy_calling_hours_no_longer_restrict_new_or_existing_campaigns(self):
+        campaign, _ = service.create_campaign(self.db, 1, {**self.body, "start_hour": 20, "end_hour": 9})
+        self.assertEqual((campaign.start_hour, campaign.end_hour), (0, 24))
+        campaign.start_hour, campaign.end_hour = 10, 17
+        self.db.commit()
+        payload = service.campaign_payload(self.db, campaign)
+        self.assertEqual((payload["start_hour"], payload["end_hour"]), (0, 24))
 
     def test_summary_email_uses_support_sender_and_saved_campaign_recipient(self):
         campaign = service.create_campaign(self.db, 1, {**self.body, "notification_email": "recipient@example.com"})[0]
@@ -346,22 +353,22 @@ class OutreachTests(unittest.TestCase):
         self.assertEqual(lead.notification_status, "retry")
         self.assertGreater(lead.notification_next_at, now)
 
-    def test_worker_enforces_london_hours_and_one_active_call(self):
-        campaign = self.campaign(CSV + "02079460019,Second,yes,evidence,London\n")
-        campaign.status = "running"
-        self.db.commit()
-        with patch.object(service, "launch_call") as launch:
-            service.process_campaign(self.db, campaign, datetime(2026, 10, 15, 8))  # 09:00 BST
-            service.process_campaign(self.db, campaign, datetime(2026, 10, 17, 11))  # Saturday
-            launch.assert_not_called()
-            service.process_campaign(self.db, campaign, datetime(2026, 10, 15, 11))
-            self.assertEqual(launch.call_count, 1)
-            first = launch.call_args.args[2]
-            self.assertEqual(first.position, 0)
-            first.status, first.started_at = "ringing", datetime(2026, 10, 15, 11)
-            self.db.commit()
-            service.process_campaign(self.db, campaign, datetime(2026, 10, 15, 11, 1))
-            self.assertEqual(launch.call_count, 1)
+    def test_worker_runs_evenings_and_weekends_but_keeps_one_active_call(self):
+        for now in (datetime(2026, 10, 16, 22), datetime(2026, 10, 17, 11),
+                    datetime(2026, 10, 18, 0), datetime(2026, 12, 6, 1)):
+            with self.subTest(now=now):
+                campaign = self.campaign(CSV + "02079460019,Second,yes,evidence,London\n")
+                campaign.status, campaign.start_hour, campaign.end_hour = "running", 10, 17
+                self.db.commit()
+                with patch.object(service, "launch_call") as launch:
+                    service.process_campaign(self.db, campaign, now)
+                    self.assertEqual(launch.call_count, 1)
+                    first = launch.call_args.args[2]
+                    self.assertEqual(first.position, 0)
+                    first.status, first.started_at = "ringing", now
+                    self.db.commit()
+                    service.process_campaign(self.db, campaign, now + timedelta(minutes=1))
+                    self.assertEqual(launch.call_count, 1)
 
     def test_worker_recovers_stale_intent_without_redial(self):
         campaign = self.campaign()

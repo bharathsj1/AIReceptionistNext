@@ -71,7 +71,7 @@ class ManualOutreachTests(unittest.TestCase):
         self.assertEqual(lead.ultravox_call_id, "uv-manual-call")
         self.assertIsNotNone(lead.started_at)
         self.assertTrue(campaign.name.startswith("Manual call ·"))
-        self.assertEqual((campaign.start_hour, campaign.end_hour), (9, 20))
+        self.assertEqual((campaign.start_hour, campaign.end_hour), (0, 24))
         self.assertEqual(self.db.query(OutreachLead).count(), 1)
         self.assertEqual(self.client.calls.create.call_args.kwargs["to"], lead.phone)
         self.assertIn("Confirmed company benefits.", self.post.call_args.kwargs["json"]["systemPrompt"])
@@ -135,17 +135,20 @@ class ManualOutreachTests(unittest.TestCase):
         self.assertEqual(self.db.query(OutreachCampaign).count(), 0)
         self.post.assert_not_called()
 
-    def test_london_weekday_hours_include_dst_boundaries(self):
-        for now in (datetime(2026, 10, 16, 7, 59, tzinfo=timezone.utc),
-                    datetime(2026, 10, 16, 19, tzinfo=timezone.utc),
-                    datetime(2026, 10, 17, 11, tzinfo=timezone.utc),
-                    datetime(2026, 12, 4, 8, 59, tzinfo=timezone.utc)):
-            with self.subTest(now=now), self.assertRaises(manual.ManualCallConflict):
-                manual.start_manual_call(self.db, 1, self.body, now=now)
-        self.post.assert_not_called()
-        manual.start_manual_call(self.db, 1, self.body,
-            now=datetime(2026, 10, 16, 8, tzinfo=timezone.utc))  # 09:00 London
-        self.assertEqual(self.client.calls.create.call_count, 1)
+    def test_manual_calls_allow_evenings_weekends_and_winter_hours(self):
+        times = (datetime(2026, 10, 16, 22, tzinfo=timezone.utc),
+                 datetime(2026, 10, 17, 11, tzinfo=timezone.utc),
+                 datetime(2026, 10, 18, 0, tzinfo=timezone.utc),
+                 datetime(2026, 12, 6, 1, tzinfo=timezone.utc))
+        for index, now in enumerate(times):
+            with self.subTest(now=now):
+                self.post.return_value.json.return_value = {"callId": f"uv-manual-{index}", "joinUrl": "wss://api.ultravox.ai/join/test"}
+                self.client.calls.create.return_value.sid = "CA" + str(index + 2).zfill(32)
+                _, lead, created = manual.start_manual_call(self.db, 1,
+                    {**self.body, "request_id": str(uuid4()), "phone": f"020794600{18 + index}"}, now=now)
+                self.assertTrue(created)
+                self.assertEqual(lead.status, "queued-provider")
+        self.assertEqual(self.client.calls.create.call_count, len(times))
 
     def test_new_request_cannot_redial_active_or_uncertain_call(self):
         _, lead, _ = self.start()

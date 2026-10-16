@@ -47,8 +47,6 @@ export default function CampaignWizard({ user, config, onClose, onCreate, compan
     benefits: "",
     notification_email: user?.email || config?.notification_email || "",
     caller_id: config?.caller_ids?.[0] || "",
-    start_hour: 10,
-    end_hour: 17,
   });
   const [file, setFile] = useState(null);
   const [csv, setCsv] = useState("");
@@ -100,16 +98,10 @@ export default function CampaignWizard({ user, config, onClose, onCreate, compan
       setStep(step + 1);
       return;
     }
-    if (Number(form.start_hour) >= Number(form.end_hour)) {
-      setError("The end time must be after the start time.");
-      return;
-    }
     setBusy(true);
     try {
       await onCreate({
         ...form,
-        start_hour: Number(form.start_hour),
-        end_hour: Number(form.end_hour),
         csv_text: csv,
       });
     } catch (err) {
@@ -317,35 +309,8 @@ export default function CampaignWizard({ user, config, onClose, onCreate, compan
                   to your team.
                 </small>
               </label>
-              <div className="calling-field-pair">
-                <label>
-                  Call from
-                  <select
-                    value={form.start_hour}
-                    onChange={update("start_hour")}
-                  >
-                    {Array.from({ length: 11 }, (_, i) => i + 9).map((hour) => (
-                      <option key={hour} value={hour}>
-                        {String(hour).padStart(2, "0")}:00
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Call until
-                  <select value={form.end_hour} onChange={update("end_hour")}>
-                    {Array.from({ length: 11 }, (_, i) => i + 10).map(
-                      (hour) => (
-                        <option key={hour} value={hour}>
-                          {String(hour).padStart(2, "0")}:00
-                        </option>
-                      ),
-                    )}
-                  </select>
-                </label>
-              </div>
               <p className="calling-fine-print">
-                Monday to Friday · Europe/London. Calls run one at a time per
+                Available any day, at any time. Calls run one at a time per
                 campaign. Creating a campaign imports your contacts; calling
                 starts only when you choose “Start calling”.
               </p>

@@ -9,11 +9,13 @@ campaign form. The agent identifies itself as an AI assistant, asks for the owne
 explains those benefits, and collects interest, owner name, email, preferred
 callback time, and explicit permission for team follow-up. It does not invent
 product benefits, prices or savings. Campaign settings are fixed after import;
-create a new draft to change the offer, recipient or calling hours.
+create a new draft to change the offer or recipient.
 
-Calls run in CSV order, at most one active call **per campaign**, on weekdays in
-the selected Europe/London window (default 10:00–17:00, automatically handling
-BST/GMT). The durable Functions timer runs each minute, so keep the backend and
+Calls run in CSV order, at most one active call **per campaign**, on any day and
+at any time. No weekday or time-window restrictions apply to manual calls or
+campaigns, including existing campaigns with saved legacy hours. London time is
+still used to display call history and callback preferences. The durable Functions
+timer runs each minute, so keep the backend and
 its runtime storage running; the browser can close. Each attempt rings for up to
 30 seconds and is limited to 10 minutes. Pause stops new calls and allows an
 active conversation to finish. Unanswered/busy/failed calls are not redialled.
@@ -149,11 +151,13 @@ timelines are not invented. Audio recording is not enabled by this feature.
   retries and concurrent delivery cannot redial the same request. Reusing an ID
   with different details returns 409. Provider uncertainty remains `needs_review`.
   Checks assigned caller IDs, opt-outs, active/uncertain attempts for that number,
-  configuration and weekday 09:00–20:00 Europe/London hours. The existing
+  configuration. Calls can start on any day and at any time. The existing
   worker reconciles the call, and history/transcripts/notifications use the same
   storage and callbacks. No database migration is required.
 - `GET|POST /api/outreach/campaigns` (POST: `name`, `benefits`,
-  `notification_email`, `caller_id`, `csv_text`, optional `start_hour`, `end_hour`, `voice`)
+  `notification_email`, `caller_id`, `csv_text`, optional `voice`). Legacy
+  `start_hour` and `end_hour` inputs are ignored; responses use 0 and 24 for
+  compatibility. Existing database columns are retained without a data migration.
 - `GET|POST /api/outreach/campaigns/{id}` (POST: `action: start|pause`)
 - `POST /api/outreach/leads/{id}/review` (owner session; matching `call_sid` or
   `confirmed_no_active_call: true`)

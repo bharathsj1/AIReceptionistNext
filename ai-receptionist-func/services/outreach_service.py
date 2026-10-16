@@ -8,7 +8,7 @@ import logging
 import os
 import re
 from collections import Counter
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -141,16 +141,13 @@ def create_campaign(db, client_id, body):
         raise ValueError("Provide a valid team notification email")
     if caller not in caller_numbers(db, client_id):
         raise ValueError("Select an active caller ID belonging to your account")
-    start, end = body.get("start_hour", 10), body.get("end_hour", 17)
-    if type(start) is not int or type(end) is not int or not 9 <= start < end <= 20:
-        raise ValueError("Calling hours must fall between 09:00 and 20:00 Europe/London")
     voice = str(body.get("voice") or os.getenv("OUTREACH_ULTRAVOX_VOICE", "")).strip()
     if len(voice) > 150:
         raise ValueError("Voice ID is too long")
     contacts, errors = parse_contacts(body.get("csv_text"))
     campaign = OutreachCampaign(id=str(uuid4()), client_id=client_id, name=name, benefits=benefits,
                                 notification_email=email, caller_id=caller, voice=voice or None,
-                                start_hour=start, end_hour=end, status="draft")
+                                start_hour=0, end_hour=24, status="draft")
     db.add(campaign)
     suppressed = {p.phone for p in db.query(OutreachSuppression).filter_by(client_id=client_id)}
     for position, contact in enumerate(contacts):
@@ -165,7 +162,7 @@ def campaign_payload(db, campaign, include_leads=False):
     leads = db.query(OutreachLead).filter_by(campaign_id=campaign.id).order_by(OutreachLead.position).all()
     payload = {"id": campaign.id, "name": campaign.name, "status": campaign.status,
                "benefits": campaign.benefits, "notification_email": campaign.notification_email,
-               "caller_id": campaign.caller_id, "start_hour": campaign.start_hour, "end_hour": campaign.end_hour,
+               "caller_id": campaign.caller_id, "start_hour": 0, "end_hour": 24,
                "error": campaign.error, "counts": dict(Counter(lead.status for lead in leads)),
                "total": len(leads), "interested": sum((lead.result or {}).get("outcome") == "interested" for lead in leads),
                "emails_sent": sum(lead.notification_status == "sent" for lead in leads),
@@ -484,9 +481,6 @@ def process_campaign(db, campaign, now):
         if campaign.status == "running":
             campaign.status = "completed"
             db.commit()
-        return
-    london = now.replace(tzinfo=timezone.utc).astimezone(ZoneInfo("Europe/London"))
-    if london.weekday() >= 5 or not campaign.start_hour <= london.hour < campaign.end_hour:
         return
     if configuration_errors(db) or campaign.caller_id not in caller_numbers(db, campaign.client_id):
         campaign.status, campaign.error = "paused", "Provider configuration or caller ID is unavailable"

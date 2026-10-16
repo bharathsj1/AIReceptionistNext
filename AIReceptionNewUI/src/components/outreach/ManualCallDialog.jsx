@@ -160,7 +160,7 @@ export default function ManualCallDialog({ user, config, campaigns, defaultCampa
                   </label>
                 </div>
                 <CallPriceCard quote={quote} wallet={config?.billing?.wallet} admin={config?.billing?.is_platform_admin} loading={quoteLoading} error={quoteError} onAddBalance={onAddBalance} />
-                <p className="calling-fine-print">Available Monday to Friday, 09:00–20:00 London time. The AI speaks to the contact; you can follow the saved conversation in call history.</p>
+                <p className="calling-fine-print">Call any day, at any time. The AI speaks to the contact; you can follow the saved conversation in call history.</p>
               </fieldset>
               <div className="manual-call-feedback" ref={feedbackRef} aria-live="polite">
                 {configurationErrors.length > 0 && <div className="calling-alert"><strong>Calling setup is incomplete.</strong> {configurationErrors.join(". ")}</div>}

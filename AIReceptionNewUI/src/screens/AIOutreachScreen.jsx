@@ -851,10 +851,7 @@ export default function AIOutreachScreen({
                       <h2>{campaign?.name || "Loading campaign…"}</h2>
                       {campaign && (
                         <p>
-                          {campaign.caller_id} ·{" "}
-                          {String(campaign.start_hour).padStart(2, "0")}:00–
-                          {String(campaign.end_hour).padStart(2, "0")}:00 ·
-                          Weekdays, London
+                          {campaign.caller_id} · Any day, any time
                         </p>
                       )}
                     </div>
@@ -1225,7 +1222,7 @@ export default function AIOutreachScreen({
                     </div>
                     <div>
                       <dt>Calling schedule</dt>
-                      <dd>Weekdays · Europe/London</dd>
+                      <dd>Any day, any time</dd>
                     </div>
                   </dl>
                   <button className="calling-button" onClick={onEditCompany}>
