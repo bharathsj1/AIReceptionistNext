@@ -106,7 +106,7 @@ export default function LoginScreen({
           </button>
         </form>
         <p className="auth-switch">
-          New to SmartConnect4u?{" "}
+          New to Vedora Outreach?{" "}
           <button type="button" className="text-link" onClick={onCreateAccount}>
             Create an account <ArrowUp />
           </button>

@@ -4,32 +4,34 @@ export default function AuthStory({ checkoutPlanSummary }) {
   return (
     <aside className="auth-story">
       <span className="auth-story-label">
-        <Sparkles size={16} /> A little less busywork
+        <Sparkles size={16} /> YOUR NEXT OPPORTUNITY STARTS HERE
       </span>
       <h3>
-        More human connections.
+        Your pitch.
         <br />
-        Less on your plate.
+        More possibilities.
       </h3>
       <p>
-        Your calls, messages, and follow-ups. One calm place to bring it all
-        together.
+        One focused workspace for your company’s outbound calls, owner
+        conversations, and interested leads.
       </p>
       <div className="auth-story-card">
         <span className="story-icon">
           <Phone size={20} />
         </span>
         <div>
-          <strong>Your next conversation, covered.</strong>
-          <span>AI answers. Your team stays in the loop.</span>
+          <strong>Make the first connection.</strong>
+          <span>
+            AI introduces your company. Your team takes the next step.
+          </span>
         </div>
         <ArrowUpRight size={18} />
       </div>
       <ul>
         {[
-          "Answer calls around the clock",
-          "Turn conversations into clear next steps",
-          "Keep your calendar and CRM connected",
+          "Upload contacts and build your campaign",
+          "Explain your offer in a natural conversation",
+          "Capture interest and follow-up permission",
         ].map((text) => (
           <li key={text}>
             <Check size={16} />

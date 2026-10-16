@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   businessCategories,
-  getPreviewBullets,
   getSubTypesForCategory
 } from "../lib/businessTypes";
 
@@ -28,7 +27,7 @@ export default function BusinessTypeScreen({
 
   const subTypeOptions = useMemo(() => getSubTypesForCategory(category), [category]);
 
-  const previewBullets = useMemo(() => getPreviewBullets(category), [category]);
+  const previewBullets = ["Your company and the customers you serve", "The services and benefits behind your pitch", "A useful brief for your outbound campaigns"];
 
   useEffect(() => {
     onSubTypeChange("");
@@ -87,7 +86,7 @@ export default function BusinessTypeScreen({
       <div className="business-left">
         <div className="brand-row">
           <div className="brand-dot" />
-          <span className="brand-name">SmartConnect4u</span>
+          <span className="brand-name">Vedora Outreach</span>
           <div className="stepper">
             <span>Step 2/4</span>
             <div className="progress">
@@ -98,7 +97,7 @@ export default function BusinessTypeScreen({
 
         <h3 className="mt-2">Tell us about your business</h3>
         <p className="lead">
-          We'll tailor your AI receptionist scripts, voice, and booking flow.
+          Help your calling assistant introduce your company with the right context.
         </p>
 
         <div className="business-field">

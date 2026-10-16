@@ -1,50 +1,47 @@
-# AIReceptionNewUI
+# Vedora Outreach UI
 
-## Local setup without payment
+The app is a dedicated company cold-calling workspace. The former receptionist,
+mail, social, tasks, and CRM modules are no longer part of the active interface.
 
-Add `VITE_LOCAL_SKIP_PAYMENT=true` to `.env.development.local` and run Vite with
-`BACKEND_UPSTREAM=http://127.0.0.1:7071`. The
-currently running local UI is at `http://127.0.0.1:5176`.
+## Company setup
 
-Sign in (or create a local account), enter the business name and phone, add the
-website, review the crawled details, and select **Save and open dashboard**.
-Existing accounts with a completed business profile return directly to the
-dashboard. You can also enter details manually if the site cannot be crawled.
-Local crawling copies readable website text into the review form without an AI
-API key; verify and edit it before saving. A failed crawl or profile save stays
-in setup with an error so you can retry.
+Run `npm run dev -- --host 127.0.0.1` with
+`BACKEND_UPSTREAM=http://127.0.0.1:7071` to use the local backend.
+Sign in or create an account, add company details, enter a website or a manual
+brief, review the information, and save to open the dashboard. This direct setup
+applies to development and Docker builds; it does not open a payment flow or
+provision a receptionist. Website review uses the crawler's source text and
+requires no additional AI provider. Login and backend authorization still apply.
 
-This option requires Vite development mode, a loopback host and a relative `/api`
-proxy. Production builds ignore it. It skips plan selection, Stripe payment,
-Ultravox provisioning and Twilio number purchases, and opens the dashboard tools
-for local development. It does not create paid subscriptions or bypass login.
-Live provider operations retain their server configuration and access checks.
-Your local database has its own accounts; production logins are not copied.
+## Calling workspace
 
-Run `npm run test:local-setup` to check the local-only gate and website extraction.
+- **Overview:** aggregate campaign, attempted-call, interest, and handoff counts.
+- **Campaigns:** search and filter campaigns, inspect the brief and imported
+  contacts, and start, pause, or resume calling.
+- **Contacts:** campaign-scoped calling lists with search and status filters.
+- **Call history:** campaign-scoped call attempts, captured outcomes, summaries,
+  and manual review for uncertain provider calls.
+- **Interested leads:** captured owner details, follow-up permissions, callback
+  preferences, notification state, and CSV export of the filtered view.
+- **Calling setup:** company profile, assigned caller IDs, and provider settings
+  readiness. Credentials remain on the backend; configured settings do not
+  establish that a provider is reachable.
 
-## Interface design
+The new-campaign dialog collects the pitch, a UTF-8 CSV (up to 2 MB), caller ID,
+team notification address, and weekday London calling hours. Importing creates
+an inactive draft for review. Calling starts only after the explicit start action
+and the existing backend checks. Automated interested-owner notifications remain
+part of campaign handoff; there is no standalone mail interface.
 
-The app uses a light workspace, ink sidebar and teal accents. Shared design
-tokens and responsive styles live in `src/redesign.css`. The landing page,
-account screens, pricing and service pages share this visual system with the
-workspace tools and public pages (`public/public-theme.css`).
+`src/screens/CallingWorkspace.css` owns the responsive workspace styles.
+`OutreachLanding.css` styles the calling-focused landing page. Account and
+company setup screens retain shared styles in `src/redesign.css`. Navigation,
+CSV input, dialogs, filters, and exports work without third-party UI services.
+Temporary browser fixtures are excluded from the shipped application.
 
-Setup has a persistent progress indicator, inline password guidance and a
-direct signup entry point. The workspace includes labeled tool navigation,
-a mobile drawer, a theme toggle, and a keyboard-accessible tool search (`⌘K`
-or `Ctrl+K`). Shared dialogs and CRM drawers trap focus, close with Escape and return focus to the
-trigger. Motion respects the reduced-motion preference, and page scrolling is
-native. Mobile task calendars start in day view; week and month remain available.
-
-Existing backend routes, payment amounts, authentication, subscription checks,
-and provider integrations are retained. No API contract changes are required
-for the new layouts. Public `/login` and `/signup` links resolve to the account
-screens. Live payment, phone and OAuth operations still need configured providers.
-
-Validation includes TypeScript and production builds, desktop/mobile browser
-checks, and isolated review of workspace navigation and onboarding screens.
-Temporary review fixtures are not included in the shipped app.
+Run `npm test`, `npm run typecheck`, and `npm run build` for existing automated
+checks. Provider credentials and assigned calling numbers are required for live
+calls; UI verification does not require placing calls or sending notifications.
 
 The runnable UI is the Vite/React SPA in `src`, with static pages in `public`.
 The legacy Next.js `app`, `lib` and `middleware.ts` files are not served by Vite

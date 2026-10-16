@@ -14,8 +14,8 @@ export default function CrawlFormScreen({
           <p className="eyebrow">Connect your site</p>
           <h2>Let’s get to know your business.</h2>
           <p className="lead narrow">
-            Share your website and we’ll find the information your receptionist
-            needs to help your customers. You’ll review it before continuing.
+            Share your website and we’ll find the company information your AI
+            needs for a useful first introduction. You’ll review it before continuing.
           </p>
         </div>
 
@@ -66,7 +66,7 @@ export default function CrawlFormScreen({
         <ul>
           <li>Find your services, opening hours, and contact details.</li>
           <li>Review and refine how your AI speaks about your business.</li>
-          <li>Choose a voice and greeting before taking your first call.</li>
+          <li>Create a campaign and review your contacts before making calls.</li>
         </ul>
         <p className="hint">
           No website yet? Add your details yourself — you’ll get the same guided

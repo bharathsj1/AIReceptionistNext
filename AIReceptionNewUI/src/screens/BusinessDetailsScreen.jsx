@@ -16,7 +16,7 @@ export default function BusinessDetailsScreen({
   localSetup = false,
 }) {
   const welcomeName = userName || "there";
-  const [country, setCountry] = useState("US");
+  const [country, setCountry] = useState("GB");
   const [localPhone, setLocalPhone] = useState("");
   const countryOptions = [
     { value: "GB", label: "🇬🇧", dialCode: "+44" },
@@ -65,7 +65,7 @@ export default function BusinessDetailsScreen({
       <div className="business-left">
         <div className="brand-row">
           <div className="brand-dot" />
-          <span className="brand-name">SmartConnect4u</span>
+          <span className="brand-name">Vedora Outreach</span>
           <div className="stepper">
             <span>{localSetup ? "Business details" : "Step 1/4"}</span>
             <div className="progress">

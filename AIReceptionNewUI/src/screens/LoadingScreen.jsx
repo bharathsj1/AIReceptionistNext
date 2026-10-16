@@ -7,21 +7,21 @@ export default function LoadingScreen({
   return (
     <section className="progress-card screen-panel">
       <div className="progress-header">
-        <p className="eyebrow">AI Reception</p>
+        <p className="eyebrow">COMPANY OUTREACH</p>
         <h2>
           {status === "loading" && loadingPhase === "crawl"
             ? "Getting to know your business"
             : status === "loading" && loadingPhase === "provision"
-              ? "Bringing your receptionist to life"
+              ? "Preparing your company brief"
               : status === "success"
                 ? "Your business knowledge is ready"
                 : "Unable to complete request"}
         </h2>
         <p className="lead narrow">
           {status === "loading" && loadingPhase === "crawl"
-            ? "We’re finding the details that will help your AI welcome customers."
+            ? "We’re finding the details that will help your AI introduce your company."
             : status === "loading" && loadingPhase === "provision"
-              ? "Preparing your greeting, voice, and business knowledge."
+              ? "Saving your company details and preparing your calling workspace."
               : status === "success"
                 ? "Your website details are ready to review. You can update them as your business grows."
                 : responseMessage || "Please try again with a valid URL."}

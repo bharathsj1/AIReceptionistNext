@@ -8,7 +8,7 @@ export default function Brand({ compact = false }) {
       </span>
       {!compact && (
         <span>
-          smartconnect<span className="sc-brand-suffix">4u</span>
+          vedora<span className="sc-brand-suffix"> outreach</span>
         </span>
       )}
     </span>

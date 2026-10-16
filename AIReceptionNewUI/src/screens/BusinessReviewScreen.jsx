@@ -74,7 +74,7 @@ export default function BusinessReviewScreen({ initialData = {}, onSubmit, onBac
               </div>
               <ul className="list-disc space-y-1 pl-5 text-slate-200/90">
                 <li>We confirm your business summary and service focus.</li>
-                <li>We tailor the AI receptionist to your brand voice.</li>
+                <li>You add your verified pitch when creating a calling campaign.</li>
                 <li>{localSetup ? "Save your profile and open your dashboard." : "You proceed to packages and provisioning."}</li>
               </ul>
             </div>
@@ -134,7 +134,7 @@ export default function BusinessReviewScreen({ initialData = {}, onSubmit, onBac
                 value={businessSummary}
                 onChange={(event) => setBusinessSummary(clampText(event.target.value, SUMMARY_LIMIT))}
                 className="w-full rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-sm text-white outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
-                placeholder="Explain what you sell, who you serve, and the tone you want your receptionist to use."
+                placeholder="Explain what you sell, who you serve, and the tone you want your calling assistant to use."
               />
               <div className="text-xs text-slate-300 text-right">{businessSummary.length}/5000</div>
             </Field>

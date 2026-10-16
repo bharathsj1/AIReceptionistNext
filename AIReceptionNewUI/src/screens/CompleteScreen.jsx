@@ -14,12 +14,12 @@ export default function CompleteScreen({
         <p className="eyebrow">All set</p>
         <h2>
           {status === "success"
-            ? "Welcome to Advanced Voice AI Receptionist"
+            ? "Welcome to your calling workspace"
             : "We could not finish setup"}
         </h2>
         <p className="lead narrow">
           {status === "success"
-            ? responseMessage || "Your payment was successful and your AI receptionist is ready. "
+            ? responseMessage || "Your company details are ready for your first campaign."
             : responseMessage || "Please try again or adjust your inputs."}
         </p>
       </div>
@@ -31,10 +31,10 @@ export default function CompleteScreen({
           <div className="ribbon left" aria-hidden="true" />
           <div className="ribbon right" aria-hidden="true" />
           <div className="ready-card">
-            <p className="eyebrow">AI receptionist ready</p>
-            <h3>{provisionData?.name || "Your AI Reception"}</h3>
+            <p className="eyebrow">Calling workspace ready</p>
+            <h3>{provisionData?.name || "Your company workspace"}</h3>
             <p className="lead">
-              You can start connecting callers and visitors.
+              You can start preparing your contacts and campaign pitch.
             </p>
             {provisionData?.phone_number && (
               <div className="big-number">{provisionData.phone_number}</div>
@@ -46,7 +46,7 @@ export default function CompleteScreen({
               </div>
             )}
             <div className="badge">
-              {responseMessage || "Your AI receptionist is ready!"}
+              {responseMessage || "Your calling workspace is ready!"}
             </div>
           </div>
           <div className="button-row ready-actions">

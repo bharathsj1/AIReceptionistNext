@@ -2,9 +2,9 @@ import { Check, LockKeyhole } from "lucide-react";
 
 const steps = [
   { label: "Your account", stages: ["signup", "signupSurvey"] },
-  { label: "Your business", stages: ["businessDetails", "businessType"] },
+  { label: "Your company", stages: ["businessDetails", "businessType"] },
   {
-    label: "Your knowledge",
+    label: "Company brief",
     stages: [
       "crawlForm",
       "loading",
@@ -14,12 +14,10 @@ const steps = [
       "complete",
     ],
   },
-  { label: "Your plan", stages: ["packages", "payment"] },
-  { label: "Go live", stages: ["paymentSuccess", "numberSelect"] },
 ];
 
-export default function OnboardingProgress({ stage, localSetup = false }) {
-  const visibleSteps = localSetup ? steps.slice(0, 3) : steps;
+export default function OnboardingProgress({ stage }) {
+  const visibleSteps = steps;
   const current = visibleSteps.findIndex((step) => step.stages.includes(stage));
   if (current < 0) return null;
   return (
@@ -52,7 +50,8 @@ export default function OnboardingProgress({ stage, localSetup = false }) {
         ))}
       </ol>
       <p className="setup-progress-mobile">
-        Step {current + 1} of {visibleSteps.length} · {visibleSteps[current].label}
+        Step {current + 1} of {visibleSteps.length} ·{" "}
+        {visibleSteps[current].label}
       </p>
     </nav>
   );

@@ -71,8 +71,8 @@ export default function ManualBusinessInfoScreen({
             </p>
             <h2 className="text-3xl font-semibold text-white">No website? No problem.</h2>
             <p className="text-sm text-slate-200/85 leading-relaxed">
-              Tell us about your brand, hours, and services. We’ll craft the AI receptionist prompt,
-              voice, and booking rules without a site crawl.
+              Tell us about your brand, hours, and services. We’ll prepare your company brief,
+              ready for your first outbound campaign.
             </p>
             <div className="mt-4 grid gap-3 rounded-2xl border border-white/10 bg-slate-900/40 p-4 text-sm text-slate-100">
               <div className="flex items-center justify-between">
@@ -82,9 +82,9 @@ export default function ManualBusinessInfoScreen({
                 </span>
               </div>
               <ul className="list-disc space-y-1 pl-5 text-slate-200/90">
-                <li>Tailored S4U-v3 prompt for your receptionist</li>
-                <li>Hours, services, and escalation rules baked in</li>
-                <li>Ready for booking and call routing after checkout</li>
+                <li>Company context for your calling campaigns</li>
+                <li>Your services, contact details, and business summary</li>
+                <li>Save your profile and open your calling workspace</li>
               </ul>
             </div>
           </div>
@@ -135,7 +135,7 @@ export default function ManualBusinessInfoScreen({
                 rows={3}
                 required
                 className="w-full rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-sm text-white outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/40"
-                placeholder="Explain what you sell, who you serve, and the tone you want your receptionist to use."
+                placeholder="Explain what you sell, who you serve, and the tone you want your calling assistant to use."
               />
             </Field>
 

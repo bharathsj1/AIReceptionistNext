@@ -19,10 +19,10 @@ export default function SignupSurveyScreen({
     "Other",
   ];
   const useCases = [
-    "AI Receptionist",
-    "Lead capture",
-    "Support triage",
-    "Booking / scheduling",
+    "Restaurant partnerships",
+    "Outbound introductions",
+    "Lead qualification",
+    "Owner interest collection",
     "Other",
   ];
   const referrals = [
@@ -38,7 +38,7 @@ export default function SignupSurveyScreen({
       <div className="survey-left">
         <div className="brand-row">
           <div className="brand-dot" />
-          <span className="brand-name">SmartConnect4u</span>
+          <span className="brand-name">Vedora Outreach</span>
         </div>
         <h3 className="mt-4">
           Make yourself at home{name ? `, ${name}` : ""}.
@@ -112,13 +112,13 @@ export default function SignupSurveyScreen({
         <p className="eyebrow">YOUR WORKSPACE, YOUR WAY</p>
         <h3>Start with what matters to you.</h3>
         <p className="lead">
-          Calls, messages, follow-ups, or all of the above. Your workspace
-          brings them together.
+          Your company pitch, outbound calls, and owner responses in one focused
+          workspace.
         </p>
         <ul>
-          <li>Connect your customer conversations</li>
+          <li>Introduce your company to new prospects</li>
           <li>Give every follow-up a clear next step</li>
-          <li>Keep your team working together</li>
+          <li>Bring interested owners to your team</li>
         </ul>
       </div>
     </section>

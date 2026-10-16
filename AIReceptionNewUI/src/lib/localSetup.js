@@ -1,8 +1,3 @@
-export function isLocalSetupEnabled({ dev, enabled, hostname, apiBase }) {
-  return dev === true && enabled === "true" &&
-    ["localhost", "127.0.0.1", "[::1]"].includes(hostname) && apiBase === "/api";
-}
-
 export function localBusinessReview(defaults, data) {
   const pages = Array.isArray(data?.pages) ? data.pages : [];
   const text = pages.map((page) => page.content || "").filter(Boolean).join("\n\n");

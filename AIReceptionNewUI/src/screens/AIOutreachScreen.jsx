@@ -1,184 +1,1464 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Mail, Pause, PhoneCall, Play, RefreshCw, Upload } from "lucide-react";
+import {
+  ArrowDownToLine,
+  ArrowRight,
+  ArrowUpRight,
+  AudioLines,
+  Building2,
+  CheckCircle2,
+  ChevronLeft,
+  FileSpreadsheet,
+  LoaderCircle,
+  Pause,
+  Phone,
+  PhoneCall,
+  Play,
+  Plus,
+  RefreshCw,
+  Search,
+  Settings2,
+  ShieldCheck,
+  Target,
+  Users,
+  X,
+} from "lucide-react";
 import { outreachRequest } from "../lib/api/outreach";
 import { hasCurrentSession, SignInRequiredError } from "../lib/authSession";
-import "./AIOutreachScreen.css";
+import { useDialogFocus } from "../components/ui/useDialogFocus";
+import CampaignWizard, {
+  downloadCsv,
+  downloadTemplate,
+} from "../components/outreach/CampaignWizard";
 
-const label = (value) => String(value || "unknown").replaceAll("_", " ").replaceAll("-", " ");
-const downloadTemplate = () => {
-  const blob = new Blob(["phone,restaurant_name,owner_name,email,city,automated_call_consent,consent_evidence\r\n"], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = "vedoraeats-outreach-template.csv";
-  link.click();
-  URL.revokeObjectURL(url);
+const label = (value) =>
+  String(value || "unknown")
+    .replaceAll("_", " ")
+    .replaceAll("-", " ");
+const terminal = new Set([
+  "completed",
+  "busy",
+  "no_answer",
+  "no-answer",
+  "failed",
+  "canceled",
+]);
+const date = (value) =>
+  value
+    ? new Date(value).toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      })
+    : "—";
+const pageTitles = {
+  overview: [
+    "Every call starts an opportunity.",
+    "Your campaigns, conversations, and next steps. All in one place.",
+  ],
+  campaigns: [
+    "Make your next connection.",
+    "Create a campaign, share your pitch, and let the conversations begin.",
+  ],
+  contacts: [
+    "Good conversations start here.",
+    "Review the people and businesses in your calling lists.",
+  ],
+  calls: [
+    "Every conversation, accounted for.",
+    "See call outcomes and the context your team needs.",
+  ],
+  leads: [
+    "Meet your next partnerships.",
+    "Interested owners, captured details, and clear follow-up permissions.",
+  ],
+  settings: [
+    "Set up for a good conversation.",
+    "Your company, calling numbers, and the services behind your campaigns.",
+  ],
 };
 
-function CallReview({ lead, user, onReviewed, onError }) {
+function Status({ value }) {
+  return (
+    <span className={`calling-status status-${value || "unknown"}`}>
+      <span />
+      {label(value)}
+    </span>
+  );
+}
+function EmptyState({ icon: Icon = PhoneCall, title, children, action }) {
+  return (
+    <div className="calling-empty">
+      <span className="calling-empty-icon">
+        <Icon size={27} />
+      </span>
+      <h3>{title}</h3>
+      <p>{children}</p>
+      {action}
+    </div>
+  );
+}
+function Wave({ large = false }) {
+  return (
+    <div
+      className={`calling-wave ${large ? "is-large" : ""}`}
+      aria-hidden="true"
+    >
+      {[
+        14, 24, 40, 22, 50, 68, 36, 54, 80, 46, 64, 32, 52, 74, 40, 24, 44, 18,
+        30,
+      ].map((height, i) => (
+        <i key={i} style={{ height: large ? height : height / 2 }} />
+      ))}
+    </div>
+  );
+}
+
+function CallReview({ lead, user, onReviewed }) {
   const [sid, setSid] = useState("");
   const [checked, setChecked] = useState(false);
   const [busy, setBusy] = useState(false);
-  const review = async (event) => {
-    event.preventDefault();
-    setBusy(true);
-    try {
-      await outreachRequest(`leads/${lead.id}/review`, user, { call_sid: sid.trim(), confirmed_no_active_call: checked });
-      await onReviewed();
-    } catch (err) { onError(err.message); }
-    finally { setBusy(false); }
-  };
-  return <form className="outreach-call-review" onSubmit={review}><label>Twilio Call SID<input value={sid} onChange={(event) => setSid(event.target.value)} placeholder="CA…" /></label><label><input type="checkbox" checked={checked} onChange={(event) => setChecked(event.target.checked)} />I checked Twilio logs and there is no active call. Skip this contact if no SID is provided.</label><button className="outreach-button" disabled={busy || (!sid.trim() && !checked)}>Resolve call review</button></form>;
+  const [error, setError] = useState("");
+  return (
+    <form
+      className="calling-review-form"
+      onSubmit={async (event) => {
+        event.preventDefault();
+        setBusy(true);
+        setError("");
+        try {
+          await outreachRequest(`leads/${lead.id}/review`, user, {
+            call_sid: sid.trim(),
+            confirmed_no_active_call: checked,
+          });
+          await onReviewed();
+        } catch (err) {
+          setError(err.message);
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <h4>Verify this call</h4>
+      <p>Check the provider logs before continuing this campaign.</p>
+      <label>
+        Twilio Call SID
+        <input
+          value={sid}
+          onChange={(event) => setSid(event.target.value)}
+          placeholder="CA…"
+        />
+      </label>
+      <label className="calling-checkbox">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(event) => setChecked(event.target.checked)}
+        />
+        <span>
+          I checked the logs and there is no active call. Skip this contact if
+          no SID is provided.
+        </span>
+      </label>
+      {error && (
+        <p role="alert" className="calling-inline-warning">
+          {error}
+        </p>
+      )}
+      <button
+        className="calling-button"
+        disabled={busy || (!sid.trim() && !checked)}
+      >
+        {busy ? "Verifying…" : "Resolve call review"}
+      </button>
+    </form>
+  );
 }
 
-export default function AIOutreachScreen({ user, onSignIn }) {
+function LeadDrawer({ lead, user, onClose, onReviewed }) {
+  const ref = useRef(null);
+  useDialogFocus(ref, true, onClose);
+  const result = lead.result;
+  return (
+    <div
+      className="calling-dialog-backdrop"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section
+        className="calling-dialog calling-lead-drawer"
+        ref={ref}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="lead-detail-title"
+        tabIndex={-1}
+      >
+        <header className="calling-dialog-heading">
+          <div>
+            <span className="calling-eyebrow">CONVERSATION DETAILS</span>
+            <h2 id="lead-detail-title">{lead.restaurant_name}</h2>
+          </div>
+          <button
+            className="calling-icon"
+            aria-label="Close conversation details"
+            onClick={onClose}
+          >
+            <X size={20} />
+          </button>
+        </header>
+        <div className="calling-drawer-content">
+          <Status value={lead.status} />
+          <a className="calling-phone-link" href={`tel:${lead.phone}`}>
+            {lead.phone}
+          </a>
+          <div className="calling-result-summary">
+            <h3>Conversation summary</h3>
+            <p>
+              {result?.summary ||
+                (lead.status === "completed"
+                  ? "No structured result was captured for this call."
+                  : "A conversation summary will appear when a result is captured.")}
+            </p>
+          </div>
+          <dl className="calling-result-details">
+            {[
+              ["Owner", result?.owner_name],
+              ["Email", result?.owner_email],
+              ["Outcome", result ? label(result.outcome) : "Awaiting result"],
+              ["Preferred callback", result?.preferred_callback_time],
+              [
+                "Follow-up permission",
+                result
+                  ? result.follow_up_permission
+                    ? "Granted"
+                    : "Not granted"
+                  : "Not captured",
+              ],
+              ["Team notification", label(lead.notification_status)],
+              ["Call reference", lead.twilio_call_sid],
+            ].map(([key, value]) => (
+              <div key={key}>
+                <dt>{key}</dt>
+                <dd>{value || "Not captured"}</dd>
+              </div>
+            ))}
+          </dl>
+          {lead.error && <p className="calling-alert">{lead.error}</p>}
+          {lead.status === "needs_review" && (
+            <CallReview lead={lead} user={user} onReviewed={onReviewed} />
+          )}
+        </div>
+        <footer className="calling-dialog-footer">
+          <button className="calling-button" onClick={onClose}>
+            Close details
+          </button>
+          <span>Summaries are captured by your AI caller.</span>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+export default function AIOutreachScreen({
+  user,
+  onSignIn,
+  view = "overview",
+  onNavigate,
+  company = "Your company",
+  clientData,
+  onEditCompany,
+}) {
   const [config, setConfig] = useState(null);
   const [campaigns, setCampaigns] = useState([]);
   const [selectedId, setSelectedId] = useState("");
   const [campaign, setCampaign] = useState(null);
   const [error, setError] = useState("");
   const [authRequired, setAuthRequired] = useState(!hasCurrentSession(user));
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [importErrors, setImportErrors] = useState([]);
-  const [filename, setFilename] = useState("");
-  const [csvText, setCsvText] = useState("");
-  const [form, setForm] = useState({ name: "VedoraEats restaurant outreach", benefits: "", notification_email: "", caller_id: "", start_hour: 10, end_hour: 17 });
+  const [wizard, setWizard] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [leadId, setLeadId] = useState(null);
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState("all");
+  const [lastUpdated, setLastUpdated] = useState(null);
   const selectedRef = useRef("");
   const generation = useRef(0);
-  const fileGeneration = useRef(0);
   const userRef = useRef(user);
   userRef.current = user;
-
+  const failed = useCallback((err) => {
+    setError(err.message);
+    if (err instanceof SignInRequiredError) setAuthRequired(true);
+  }, []);
   const load = useCallback(async (id = selectedRef.current) => {
-    const requestGeneration = ++generation.current;
-    const [settings, list, detail] = await Promise.all([
+    const version = ++generation.current;
+    const [settings, list] = await Promise.all([
       outreachRequest("config", userRef.current),
       outreachRequest("campaigns", userRef.current),
-      id ? outreachRequest(`campaigns/${id}`, userRef.current) : Promise.resolve(null),
     ]);
-    if (requestGeneration !== generation.current) return;
+    if (version !== generation.current) return;
+    const nextId = list.items.some((item) => item.id === id)
+      ? id
+      : list.items[0]?.id || "";
+    const detail = nextId
+      ? await outreachRequest(`campaigns/${nextId}`, userRef.current)
+      : null;
+    if (version !== generation.current) return;
+    selectedRef.current = nextId;
+    setSelectedId(nextId);
+    setCampaign(detail?.campaign || null);
     setConfig(settings);
     setCampaigns(list.items);
-    if (detail) setCampaign(detail.campaign);
-    setForm((current) => ({ ...current, caller_id: current.caller_id || settings.caller_ids[0] || "" }));
+    setLastUpdated(new Date());
+    setError("");
   }, []);
-
   useEffect(() => {
-    if (authRequired) return;
-    const failed = (err) => {
-      setError(err.message);
-      if (err instanceof SignInRequiredError) setAuthRequired(true);
-    };
-    load().catch(failed);
+    if (authRequired) {
+      setLoading(false);
+      return;
+    }
+    let mounted = true;
+    load()
+      .catch(failed)
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
     const timer = setInterval(() => load().catch(failed), 15000);
-    return () => { clearInterval(timer); generation.current += 1; };
-  }, [authRequired, load, user?.auth_token, user?.authToken]);
-
-  if (authRequired) return (
-    <section className="ai-outreach outreach-panel" aria-label="Outreach sign-in required">
-      <h2>Sign in to manage outreach</h2>
-      <p>Your saved session is no longer valid for this deployment.</p>
-      <button type="button" className="outreach-button outreach-primary" onClick={onSignIn}>Sign in</button>
-    </section>
-  );
-
-  const select = async (id) => {
+    return () => {
+      mounted = false;
+      clearInterval(timer);
+      generation.current += 1;
+    };
+  }, [authRequired, load, failed, user?.auth_token, user?.authToken]);
+  useEffect(() => {
+    setQuery("");
+    setFilter("all");
+    setLeadId(null);
+  }, [view]);
+  const refresh = async () => {
+    setRefreshing(true);
+    try {
+      await load();
+    } catch (err) {
+      failed(err);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+  const select = async (id, showDetail = false) => {
     selectedRef.current = id;
     setSelectedId(id);
     setCampaign(null);
-    setError("");
-    try { await load(id); } catch (err) { setError(err.message); }
-  };
-
-  const readFile = async (event) => {
-    const current = ++fileGeneration.current;
-    const file = event.target.files?.[0];
-    setCsvText("");
-    setFilename("");
-    setError("");
-    if (!file) return;
-    if (!file.name.toLowerCase().endsWith(".csv") || file.size > 2 * 1024 * 1024) {
-      setError("Choose a CSV file up to 2 MB.");
-      event.target.value = "";
-      return;
+    setLeadId(null);
+    if (showDetail) {
+      setQuery("");
+      setFilter("all");
+      setDetailOpen(true);
+      onNavigate?.("campaigns");
     }
     try {
-      const text = new TextDecoder("utf-8", { fatal: true }).decode(await file.arrayBuffer());
-      if (current !== fileGeneration.current) return;
-      setCsvText(text);
-      setFilename(file.name);
-    } catch { setError("The CSV must use UTF-8 text encoding."); }
+      await load(id);
+    } catch (err) {
+      failed(err);
+    }
   };
-
-  const create = async (event) => {
-    event.preventDefault();
-    setBusy(true); setError(""); setImportErrors([]);
-    try {
-      const payload = await outreachRequest("campaigns", userRef.current, { ...form, csv_text: csvText });
-      setImportErrors(payload.import_errors);
-      selectedRef.current = payload.campaign.id;
-      setSelectedId(payload.campaign.id);
-      setCampaign(payload.campaign);
-      await load(payload.campaign.id);
-    } catch (err) { setError(err.message); }
-    finally { setBusy(false); }
+  const create = async (form) => {
+    const payload = await outreachRequest("campaigns", userRef.current, form);
+    generation.current += 1;
+    selectedRef.current = payload.campaign.id;
+    setSelectedId(payload.campaign.id);
+    setCampaign(payload.campaign);
+    setCampaigns((current) => [
+      payload.campaign,
+      ...current.filter((item) => item.id !== payload.campaign.id),
+    ]);
+    setImportErrors(payload.import_errors || []);
+    setWizard(false);
+    setDetailOpen(true);
+    onNavigate?.("campaigns");
+    load(payload.campaign.id).catch(failed);
   };
-
   const action = async (value) => {
-    setBusy(true); setError("");
+    setBusy(true);
+    setError("");
     try {
-      const payload = await outreachRequest(`campaigns/${selectedId}`, userRef.current, { action: value });
+      const payload = await outreachRequest(
+        `campaigns/${selectedId}`,
+        userRef.current,
+        { action: value },
+      );
       setCampaign(payload.campaign);
       await load();
-    } catch (err) { setError(err.message); }
-    finally { setBusy(false); }
+    } catch (err) {
+      failed(err);
+    } finally {
+      setBusy(false);
+    }
   };
+  const total = campaigns.reduce((sum, item) => sum + item.total, 0);
+  const attempted = campaigns.reduce(
+    (sum, item) =>
+      sum +
+      Object.entries(item.counts || {}).reduce(
+        (count, [status, amount]) =>
+          count + (status !== "queued" && status !== "skipped" ? amount : 0),
+        0,
+      ),
+    0,
+  );
+  const interested = campaigns.reduce((sum, item) => sum + item.interested, 0);
+  const running = campaigns.filter((item) => item.status === "running").length;
+  const sent = campaigns.reduce((sum, item) => sum + item.emails_sent, 0);
+  const scopedLeads = (campaign?.leads || []).filter((lead) =>
+    view === "leads"
+      ? lead.result?.outcome === "interested"
+      : view === "calls"
+        ? !["queued", "skipped"].includes(lead.status)
+        : true,
+  );
+  const leads = scopedLeads.filter(
+    (lead) =>
+      `${lead.restaurant_name} ${lead.phone} ${lead.result?.owner_name || ""} ${lead.result?.owner_email || ""}`
+        .toLowerCase()
+        .includes(query.toLowerCase()) &&
+      (filter === "all" || lead.status === filter),
+  );
+  const visibleCampaigns = campaigns.filter(
+    (item) =>
+      item.name.toLowerCase().includes(query.toLowerCase()) &&
+      (filter === "all" || item.status === filter),
+  );
+  const currentLead = campaign?.leads?.find((lead) => lead.id === leadId);
+  const newButton = (
+    <button
+      className="calling-button is-primary"
+      onClick={() => {
+        setImportErrors([]);
+        setWizard(true);
+      }}
+    >
+      <Plus size={17} />
+      New campaign
+    </button>
+  );
+  const scopeSelect = (
+    <label className="calling-scope">
+      <span>Campaign</span>
+      <select
+        aria-label="Select campaign"
+        value={selectedId}
+        onChange={(event) => select(event.target.value)}
+        disabled={!campaigns.length}
+      >
+        {!campaigns.length && <option value="">No campaigns yet</option>}
+        {campaigns.map((item) => (
+          <option key={item.id} value={item.id}>
+            {item.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+  const exportLeads = () =>
+    downloadCsv("vedora-interested-leads.csv", [
+      [
+        "restaurant",
+        "phone",
+        "owner",
+        "email",
+        "callback",
+        "follow_up_permission",
+        "summary",
+        "notification_status",
+      ],
+      ...leads.map((lead) => [
+        lead.restaurant_name,
+        lead.phone,
+        lead.result?.owner_name,
+        lead.result?.owner_email,
+        lead.result?.preferred_callback_time,
+        lead.result?.follow_up_permission ? "yes" : "no",
+        lead.result?.summary,
+        lead.notification_status,
+      ]),
+    ]);
+  const campaignTable = (items) => (
+    <div className="calling-table-scroll">
+      <table className="calling-table">
+        <thead>
+          <tr>
+            <th>Campaign</th>
+            <th>Status</th>
+            <th>Contacts</th>
+            <th>Interested</th>
+            <th>Progress</th>
+            <th>
+              <span className="sr-only">Open campaign</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item) => {
+            const finished = Object.entries(item.counts || {}).reduce(
+              (sum, [status, count]) =>
+                sum +
+                (terminal.has(status) || status === "skipped" ? count : 0),
+              0,
+            );
+            const progress = item.total
+              ? Math.round((finished / item.total) * 100)
+              : 0;
+            return (
+              <tr key={item.id}>
+                <td>
+                  <button
+                    className="calling-campaign-name"
+                    onClick={() => select(item.id, true)}
+                  >
+                    <span className="calling-table-icon">
+                      <AudioLines size={18} />
+                    </span>
+                    <span>
+                      <strong>{item.name}</strong>
+                      <small>Created {date(item.created_at)}</small>
+                    </span>
+                  </button>
+                </td>
+                <td>
+                  <Status value={item.status} />
+                </td>
+                <td>{item.total.toLocaleString()}</td>
+                <td>
+                  <span className="calling-interested-count">
+                    {item.interested}
+                  </span>
+                </td>
+                <td>
+                  <div className="calling-progress">
+                    <span>
+                      <i style={{ width: `${progress}%` }} />
+                    </span>
+                    <small>{progress}%</small>
+                  </div>
+                </td>
+                <td>
+                  <button
+                    className="calling-icon"
+                    aria-label={`Open ${item.name}`}
+                    onClick={() => select(item.id, true)}
+                  >
+                    <ArrowUpRight size={17} />
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+  const leadTable = (
+    <div className="calling-table-scroll">
+      <table className="calling-table">
+        <thead>
+          <tr>
+            <th>Business / contact</th>
+            <th>{view === "leads" ? "Owner" : "Call status"}</th>
+            <th>{view === "leads" ? "Follow-up" : "Outcome"}</th>
+            <th>{view === "leads" ? "Team handoff" : "Details"}</th>
+            <th>
+              <span className="sr-only">View conversation</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {leads.map((lead) => (
+            <tr key={lead.id}>
+              <td>
+                <strong>{lead.restaurant_name}</strong>
+                <small>{lead.phone}</small>
+              </td>
+              <td>
+                {view === "leads" ? (
+                  <>
+                    <strong>
+                      {lead.result?.owner_name || "Name not captured"}
+                    </strong>
+                    <small>
+                      {lead.result?.owner_email || "Email not captured"}
+                    </small>
+                  </>
+                ) : (
+                  <Status value={lead.status} />
+                )}
+              </td>
+              <td>
+                {view === "leads" ? (
+                  <>
+                    <span>
+                      {lead.result?.follow_up_permission
+                        ? "Permission granted"
+                        : "No permission"}
+                    </span>
+                    <small>
+                      {lead.result?.preferred_callback_time ||
+                        "No callback time captured"}
+                    </small>
+                  </>
+                ) : (
+                  <span className="calling-outcome">
+                    {lead.result
+                      ? label(lead.result.outcome)
+                      : lead.status === "completed"
+                        ? "No result captured"
+                        : "Awaiting result"}
+                  </span>
+                )}
+              </td>
+              <td>
+                {view === "leads" ? (
+                  <Status value={lead.notification_status} />
+                ) : (
+                  <button
+                    className="calling-text-button"
+                    onClick={() => setLeadId(lead.id)}
+                  >
+                    {lead.status === "needs_review"
+                      ? "Review call"
+                      : "View details"}
+                  </button>
+                )}
+              </td>
+              <td>
+                <button
+                  className="calling-icon"
+                  aria-label={`View ${lead.restaurant_name}`}
+                  onClick={() => setLeadId(lead.id)}
+                >
+                  <ArrowUpRight size={17} />
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 
+  if (authRequired)
+    return (
+      <section className="calling-content">
+        <EmptyState
+          title="Sign in to your calling workspace"
+          action={
+            <button className="calling-button is-primary" onClick={onSignIn}>
+              Sign in <ArrowRight size={16} />
+            </button>
+          }
+        >
+          Your saved session is no longer valid for this deployment.
+        </EmptyState>
+      </section>
+    );
   return (
-    <section className="ai-outreach" aria-label="VedoraEats AI outreach">
-      <header className="outreach-heading">
-        <div><p className="outreach-eyebrow">VEDORAEATS · UK RESTAURANTS</p><h2>Turn conversations into partnerships</h2>
-          <p>Upload your contacts. Let your AI explain the benefits, capture interest, and hand qualified owners to your team.</p></div>
-        <button className="outreach-button" onClick={() => load().catch((err) => setError(err.message))} disabled={busy}><RefreshCw size={16} />Refresh</button>
-      </header>
-      {error && <p className="outreach-message outreach-error" role="alert">{error}</p>}
-      {config?.configuration_errors?.length > 0 && <div className="outreach-message" role="status"><strong>Provider setup required before calling</strong><ul>{config.configuration_errors.map((item) => <li key={item}>{item}</li>)}</ul></div>}
-      <div className="outreach-layout">
-        <form className="outreach-panel outreach-form" onSubmit={create}>
-          <h3><Upload size={18} /> Create a campaign</h3>
-          <label>Campaign name<input required maxLength={150} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
-          <label>Verified VedoraEats benefits<textarea required rows={6} maxLength={12000} value={form.benefits} onChange={(e) => setForm({ ...form, benefits: e.target.value })} placeholder="Add the actual benefits and offer you want the AI to explain. Include confirmed pricing only if applicable." /></label>
-          <p className="outreach-help">The AI uses these facts and collects the owner's name, interest, email, preferred callback time, and permission for your team to follow up.</p>
-          <label>Team email for interested owners<input required type="email" maxLength={254} value={form.notification_email} onChange={(e) => setForm({ ...form, notification_email: e.target.value })} placeholder="partnerships@yourcompany.com" /></label>
-          <label>Twilio caller ID<select required value={form.caller_id} onChange={(e) => setForm({ ...form, caller_id: e.target.value })}><option value="">Select a number</option>{config?.caller_ids?.map((number) => <option key={number}>{number}</option>)}</select></label>
-          {config && !config.caller_ids.length && <p className="outreach-help">Add an active Twilio number to your account to create a campaign.</p>}
-          <div className="outreach-hours"><label>Call from<select value={form.start_hour} onChange={(e) => setForm({ ...form, start_hour: Number(e.target.value) })}>{Array.from({ length: 11 }, (_, i) => i + 9).map((hour) => <option value={hour} key={hour}>{String(hour).padStart(2, "0")}:00</option>)}</select></label>
-            <label>Call until<select value={form.end_hour} onChange={(e) => setForm({ ...form, end_hour: Number(e.target.value) })}>{Array.from({ length: 11 }, (_, i) => i + 10).map((hour) => <option value={hour} key={hour}>{String(hour).padStart(2, "0")}:00</option>)}</select></label></div>
-          <p className="outreach-help">Weekdays, Europe/London. Calls run one at a time per campaign, even after you close this page.</p>
-          <div className="outreach-upload"><label>Restaurant contacts CSV<input type="file" accept=".csv,text/csv" onChange={readFile} /></label>{filename && <span>{filename}</span>}<button type="button" className="outreach-text-button" onClick={downloadTemplate}>Download CSV template</button></div>
-          <p className="outreach-help">Required columns: <code>phone</code>, <code>restaurant_name</code>, <code>automated_call_consent</code>, <code>consent_evidence</code>. Optional: owner_name, email, city and other details. Use 020… / 07… or +44… numbers.</p>
-          <p className="outreach-consent">Include contacts with specific prior consent to automated marketing calls from VedoraEats. Set consent to “yes” and record when/how it was obtained. Contacts without evidence and previous opt-outs are skipped. <a href="https://ico.org.uk/for-organisations/direct-marketing-and-privacy-and-electronic-communications/direct-marketing-guidance/plan-direct-marketing/" target="_blank" rel="noreferrer">UK guidance</a></p>
-          <button type="submit" className="outreach-button outreach-primary" disabled={busy || !csvText || !form.caller_id || form.start_hour >= form.end_hour}>{busy ? "Working…" : "Import and review campaign"}</button>
-          <p className="outreach-help">Review imported contacts, then start the campaign.</p>
-        </form>
-        <div className="outreach-main">
-          <div className="outreach-panel"><h3><PhoneCall size={18} /> Campaigns</h3>
-            {!campaigns.length && <p className="outreach-empty">Your first restaurant partnership starts with a conversation. Import a CSV to get started.</p>}
-            <div className="outreach-campaign-list">{campaigns.map((item) => <button key={item.id} type="button" className={`outreach-campaign ${item.id === selectedId ? "selected" : ""}`} onClick={() => select(item.id)}><span><strong>{item.name}</strong><small>{item.total} contacts · {item.interested} interested</small></span><span className={`outreach-status status-${item.status}`}>{label(item.status)}</span></button>)}</div>
-          </div>
-          {importErrors.length > 0 && <div className="outreach-message"><strong>{importErrors.length} CSV rows excluded</strong><ul>{importErrors.slice(0, 20).map((item) => <li key={item.row}>Row {item.row}: {item.error}</li>)}</ul>{importErrors.length > 20 && <p>Showing the first 20 errors.</p>}</div>}
-          {selectedId && !campaign && <p role="status">Loading campaign…</p>}
-          {campaign && <div className="outreach-panel">
-            <div className="outreach-detail-heading"><div><h3>{campaign.name}</h3><p className="outreach-help">{label(campaign.status)} · {String(campaign.start_hour).padStart(2, "0")}:00–{String(campaign.end_hour).padStart(2, "0")}:00 London · weekdays</p></div>
-              {campaign.status === "running" ? <button className="outreach-button" onClick={() => action("pause")} disabled={busy}><Pause size={16} />Pause campaign</button> : ["draft", "paused"].includes(campaign.status) && <button className="outreach-button outreach-primary" onClick={() => action("start")} disabled={busy || !!config?.configuration_errors?.length || !campaign.counts.queued}><Play size={16} />{campaign.status === "paused" ? "Resume" : "Start calling"}</button>}
-            </div>
-            {campaign.error && <p className="outreach-message outreach-error">{campaign.error}</p>}
-            <div className="outreach-metrics"><div><strong>{campaign.counts.queued || 0}</strong><span>Waiting</span></div><div><strong>{campaign.interested}</strong><span>Interested</span></div><div><strong>{campaign.emails_sent}</strong><span>Emails accepted</span></div><div><strong>{campaign.counts.skipped || 0}</strong><span>Skipped</span></div></div>
-            <p className="outreach-help"><Mail size={14} /> Summaries go to {campaign.notification_email}. Pause stops new calls; an active conversation can finish. Provider acceptance does not confirm inbox delivery.</p>
-            <div className="outreach-table-wrap"><table><thead><tr><th>Restaurant</th><th>Call status</th><th>Owner response</th><th>Team email</th></tr></thead><tbody>{campaign.leads.map((lead) => <tr key={lead.id}><td><strong>{lead.restaurant_name}</strong><small>{lead.phone}</small></td><td><span className="outreach-status">{label(lead.status)}</span>{lead.error && <small>{lead.error}</small>}{lead.status === "needs_review" && <CallReview lead={lead} user={user} onReviewed={() => load()} onError={setError} />}</td><td>{lead.result ? <details><summary>{label(lead.result.outcome)}</summary><p>{lead.result.summary}</p>{lead.result.owner_name && <p>Owner: {lead.result.owner_name}</p>}{lead.result.owner_email && <p>{lead.result.owner_email}</p>}{lead.result.preferred_callback_time && <p>Callback: {lead.result.preferred_callback_time}</p>}<p>Follow-up permission: {lead.result.follow_up_permission ? "Yes" : "No"}</p></details> : lead.status === "completed" ? "No structured result captured" : "Awaiting result"}</td><td>{label(lead.notification_status)}</td></tr>)}</tbody></table></div>
-          </div>}
+    <section className="calling-content" aria-label="Company calling workspace">
+      <div className="calling-page-heading">
+        <div>
+          <span className="calling-eyebrow">
+            {view === "overview"
+              ? "YOUR OUTREACH, AT A GLANCE"
+              : `COMPANY OUTREACH / ${view === "settings" ? "CALLING SETUP" : view === "calls" ? "CALL HISTORY" : view.toUpperCase()}`}
+          </span>
+          <h1>{pageTitles[view][0]}</h1>
+          <p>{pageTitles[view][1]}</p>
+        </div>
+        <div className="calling-heading-actions">
+          <button
+            className="calling-icon calling-refresh"
+            disabled={refreshing || loading}
+            onClick={refresh}
+            aria-label="Refresh calling data"
+          >
+            <RefreshCw size={17} className={refreshing ? "spin" : ""} />
+          </button>
+          {view !== "settings" && newButton}
         </div>
       </div>
+      {error && (
+        <div className="calling-alert is-error" role="alert">
+          <span>{error}</span>
+          <button className="calling-text-button" onClick={refresh}>
+            Retry
+          </button>
+        </div>
+      )}
+      {loading ? (
+        <div className="calling-loading" role="status">
+          <LoaderCircle className="spin" size={23} />
+          Loading your calling workspace…
+        </div>
+      ) : !lastUpdated && error ? (
+        <div className="calling-panel">
+          <EmptyState
+            title="We couldn’t load your calling workspace"
+            action={
+              <button
+                className="calling-button"
+                onClick={refresh}
+                disabled={refreshing}
+              >
+                Try again <RefreshCw size={15} />
+              </button>
+            }
+          >
+            Check your connection and try again. Your campaigns will appear when
+            the service is available.
+          </EmptyState>
+        </div>
+      ) : (
+        <>
+          {view === "overview" && (
+            <>
+              <div className="calling-hero">
+                <div className="calling-hero-copy">
+                  <span className="calling-hero-label">
+                    <span />
+                    BUILT FOR YOUR NEXT CONNECTION
+                  </span>
+                  <h2>
+                    Your pitch.
+                    <br />
+                    More possibilities.
+                  </h2>
+                  <p>
+                    Upload a contact list. Let AI introduce your company,
+                    understand interest, and bring the right owners to your
+                    team.
+                  </p>
+                  <button
+                    className="calling-button is-lime"
+                    onClick={() => setWizard(true)}
+                  >
+                    {campaigns.length
+                      ? "Create a campaign"
+                      : "Create your first campaign"}
+                    <ArrowUpRight size={17} />
+                  </button>
+                  <span className="calling-hero-foot">
+                    <Phone size={13} />
+                    UK calling <i />
+                    Natural AI conversations <i />
+                    Team handoff
+                  </span>
+                </div>
+                <div className="calling-hero-art">
+                  <div className="calling-orbit orbit-one" />
+                  <div className="calling-orbit orbit-two" />
+                  <div className="calling-voice-card">
+                    <span>
+                      <span className="calling-voice-icon">
+                        <AudioLines size={22} />
+                      </span>
+                      <span>
+                        <strong>Made for conversation</strong>
+                        <small>AI outbound calling</small>
+                      </span>
+                    </span>
+                    <Wave large />
+                    <div>
+                      <span>Introduce</span>
+                      <ArrowRight size={12} />
+                      <span>Listen</span>
+                      <ArrowRight size={12} />
+                      <span>Connect</span>
+                    </div>
+                  </div>
+                  <div className="calling-art-tag">
+                    <Target size={15} />
+                    <span>
+                      Capture interest.
+                      <br />
+                      <strong>Make the next step clear.</strong>
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div className="calling-stats">
+                {[
+                  {
+                    icon: AudioLines,
+                    value: campaigns.length,
+                    title: "Total campaigns",
+                    detail: `${running} currently running`,
+                    tone: "mint",
+                  },
+                  {
+                    icon: PhoneCall,
+                    value: attempted,
+                    title: "Calls attempted",
+                    detail: `Across ${total.toLocaleString()} contacts`,
+                    tone: "blue",
+                  },
+                  {
+                    icon: Target,
+                    value: interested,
+                    title: "Interested owners",
+                    detail: "Captured from conversations",
+                    tone: "peach",
+                  },
+                  {
+                    icon: CheckCircle2,
+                    value: sent,
+                    title: "Team handoffs",
+                    detail: "Summaries accepted by provider",
+                    tone: "lilac",
+                  },
+                ].map(({ icon: Icon, value, title, detail, tone }) => (
+                  <article className="calling-stat" key={title}>
+                    <div>
+                      <span>{title}</span>
+                      <span className={`calling-stat-icon tone-${tone}`}>
+                        <Icon size={17} />
+                      </span>
+                    </div>
+                    <strong>{value.toLocaleString()}</strong>
+                    <small>{detail}</small>
+                  </article>
+                ))}
+              </div>
+              <div className="calling-overview-grid">
+                <div className="calling-panel">
+                  <header className="calling-panel-heading">
+                    <div>
+                      <h2>Your campaigns</h2>
+                      <p>Every list is a new set of possibilities.</p>
+                    </div>
+                    <button
+                      className="calling-text-button"
+                      onClick={() => {
+                        setDetailOpen(false);
+                        onNavigate?.("campaigns");
+                      }}
+                    >
+                      View all <ArrowRight size={15} />
+                    </button>
+                  </header>
+                  {campaigns.length ? (
+                    campaignTable(campaigns.slice(0, 4))
+                  ) : (
+                    <EmptyState
+                      icon={AudioLines}
+                      title={
+                        error
+                          ? "Campaigns could not be loaded"
+                          : "Your first conversation starts here"
+                      }
+                      action={
+                        !error && (
+                          <button
+                            className="calling-button"
+                            onClick={() => setWizard(true)}
+                          >
+                            <Plus size={16} />
+                            Create a campaign
+                          </button>
+                        )
+                      }
+                    >
+                      {error
+                        ? "Use Retry above to reconnect to your workspace."
+                        : "Add your pitch and contacts. Review everything before your AI makes the first call."}
+                    </EmptyState>
+                  )}
+                </div>
+                <aside className="calling-panel calling-how-it-works">
+                  <span className="calling-eyebrow">FROM LIST TO LEAD</span>
+                  <h2>
+                    A simple path to
+                    <br />
+                    your next partnership.
+                  </h2>
+                  <ol>
+                    {[
+                      [
+                        FileSpreadsheet,
+                        "Bring your contacts",
+                        "Upload a CSV of UK restaurant owners.",
+                      ],
+                      [
+                        AudioLines,
+                        "Let the conversation flow",
+                        "Your AI explains the offer and listens.",
+                      ],
+                      [
+                        Target,
+                        "Give your team the next step",
+                        "Interested-owner details, ready to follow up.",
+                      ],
+                    ].map(([Icon, title, text], index) => (
+                      <li key={title}>
+                        <span>
+                          <Icon size={18} />
+                        </span>
+                        <div>
+                          <small>0{index + 1}</small>
+                          <strong>{title}</strong>
+                          <p>{text}</p>
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                  <button
+                    className="calling-text-button"
+                    onClick={downloadTemplate}
+                  >
+                    Get the contact template <ArrowDownToLine size={15} />
+                  </button>
+                </aside>
+              </div>
+              {config?.configuration_errors?.length > 0 && (
+                <div className="calling-setup-reminder">
+                  <span>
+                    <Settings2 size={19} />
+                    <span>
+                      <strong>
+                        A few things to connect before your first call
+                      </strong>
+                      <small>
+                        You can prepare campaigns while your administrator
+                        finishes calling setup.
+                      </small>
+                    </span>
+                  </span>
+                  <button
+                    className="calling-button"
+                    onClick={() => onNavigate?.("settings")}
+                  >
+                    View calling setup <ArrowRight size={15} />
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+          {view === "campaigns" && (
+            <>
+              {detailOpen && selectedId ? (
+                <div className="calling-panel calling-campaign-detail">
+                  <header className="calling-panel-heading">
+                    <div>
+                      <button
+                        className="calling-text-button"
+                        onClick={() => {
+                          setDetailOpen(false);
+                          setImportErrors([]);
+                        }}
+                      >
+                        <ChevronLeft size={15} />
+                        All campaigns
+                      </button>
+                      <h2>{campaign?.name || "Loading campaign…"}</h2>
+                      {campaign && (
+                        <p>
+                          {campaign.caller_id} ·{" "}
+                          {String(campaign.start_hour).padStart(2, "0")}:00–
+                          {String(campaign.end_hour).padStart(2, "0")}:00 ·
+                          Weekdays, London
+                        </p>
+                      )}
+                    </div>
+                    {campaign && (
+                      <div className="calling-detail-actions">
+                        <Status value={campaign.status} />
+                        {campaign.status === "running" ? (
+                          <button
+                            className="calling-button"
+                            onClick={() => action("pause")}
+                            disabled={busy}
+                          >
+                            <Pause size={16} />
+                            Pause campaign
+                          </button>
+                        ) : (
+                          ["draft", "paused"].includes(campaign.status) && (
+                            <button
+                              className="calling-button is-primary"
+                              onClick={() => action("start")}
+                              disabled={
+                                busy ||
+                                !!config?.configuration_errors?.length ||
+                                !campaign.counts.queued ||
+                                campaign.counts.needs_review > 0
+                              }
+                            >
+                              <Play size={15} />
+                              {campaign.status === "paused"
+                                ? "Resume calling"
+                                : "Start calling"}
+                            </button>
+                          )
+                        )}
+                      </div>
+                    )}
+                  </header>
+                  {campaign && (
+                    <>
+                      <div className="calling-detail-stats">
+                        {[
+                          [campaign.total, "Contacts"],
+                          [campaign.counts.queued || 0, "Waiting to call"],
+                          [campaign.interested, "Interested"],
+                          [campaign.counts.skipped || 0, "Skipped"],
+                        ].map(([value, title]) => (
+                          <div key={title}>
+                            <strong>{value}</strong>
+                            <span>{title}</span>
+                          </div>
+                        ))}
+                      </div>
+                      {campaign.error && (
+                        <div className="calling-alert is-error">
+                          {campaign.error}
+                        </div>
+                      )}
+                      {campaign.counts.needs_review > 0 && (
+                        <div className="calling-alert">
+                          A call needs review before this campaign can resume.
+                          Open its details below to check it against Twilio.
+                        </div>
+                      )}
+                      {config?.configuration_errors?.length > 0 && (
+                        <div className="calling-alert">
+                          Calling setup is incomplete.{" "}
+                          <button
+                            className="calling-text-button"
+                            onClick={() => onNavigate?.("settings")}
+                          >
+                            View setup
+                          </button>
+                        </div>
+                      )}
+                      {importErrors.length > 0 && (
+                        <div className="calling-alert">
+                          <strong>
+                            {importErrors.length} CSV{" "}
+                            {importErrors.length === 1 ? "row" : "rows"}{" "}
+                            excluded
+                          </strong>
+                          <ul>
+                            {importErrors.slice(0, 20).map((item) => (
+                              <li key={item.row}>
+                                Row {item.row}: {item.error}
+                              </li>
+                            ))}
+                          </ul>
+                          {importErrors.length > 20 && (
+                            <p>Showing the first 20 errors.</p>
+                          )}
+                        </div>
+                      )}
+                      <div className="calling-campaign-pitch">
+                        <h3>Conversation brief</h3>
+                        <p>{campaign.benefits}</p>
+                      </div>
+                      <div className="calling-handoff-note">
+                        <ShieldCheck size={17} />
+                        <p>
+                          Interested owners who grant follow-up permission are
+                          sent to <strong>{campaign.notification_email}</strong>
+                          . Pausing stops new calls; an active conversation can
+                          finish.
+                        </p>
+                      </div>
+                      <div className="calling-panel-subheading">
+                        <h3>Campaign contacts</h3>
+                        <span>
+                          {campaign.total}{" "}
+                          {campaign.total === 1 ? "contact" : "contacts"}
+                        </span>
+                      </div>
+                      {leadTable}
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="calling-panel">
+                  <header className="calling-panel-heading">
+                    <div>
+                      <h2>
+                        All campaigns{" "}
+                        <span className="calling-count">
+                          {campaigns.length}
+                        </span>
+                      </h2>
+                      <p>
+                        Manage the conversations happening for your company.
+                      </p>
+                    </div>
+                  </header>
+                  <div className="calling-table-toolbar">
+                    <label className="calling-search">
+                      <Search size={17} />
+                      <input
+                        aria-label="Search campaigns"
+                        placeholder="Search campaigns…"
+                        value={query}
+                        onChange={(event) => setQuery(event.target.value)}
+                      />
+                    </label>
+                    <select
+                      aria-label="Filter campaigns by status"
+                      value={filter}
+                      onChange={(event) => setFilter(event.target.value)}
+                    >
+                      <option value="all">All statuses</option>
+                      {["draft", "running", "paused", "completed"].map(
+                        (status) => (
+                          <option key={status} value={status}>
+                            {label(status)}
+                          </option>
+                        ),
+                      )}
+                    </select>
+                  </div>
+                  {visibleCampaigns.length ? (
+                    campaignTable(visibleCampaigns)
+                  ) : (
+                    <EmptyState
+                      icon={AudioLines}
+                      title={
+                        campaigns.length
+                          ? "No matching campaigns"
+                          : "Make room for your first campaign"
+                      }
+                      action={
+                        campaigns.length ? (
+                          <button
+                            className="calling-button"
+                            onClick={() => {
+                              setQuery("");
+                              setFilter("all");
+                            }}
+                          >
+                            Clear filters
+                          </button>
+                        ) : (
+                          newButton
+                        )
+                      }
+                    >
+                      {campaigns.length
+                        ? "Try a different name or status."
+                        : "A pitch, a contact list, and a clear next step for your team."}
+                    </EmptyState>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+          {["contacts", "calls", "leads"].includes(view) && (
+            <div className="calling-panel">
+              <header className="calling-panel-heading">
+                <div>
+                  <h2>
+                    {view === "leads"
+                      ? "Interested owners"
+                      : view === "calls"
+                        ? "Campaign call history"
+                        : "Campaign contacts"}{" "}
+                    <span className="calling-count">{scopedLeads.length}</span>
+                  </h2>
+                  <p>
+                    {view === "leads"
+                      ? "Check follow-up permission before contacting an owner."
+                      : "Choose a campaign to explore its contacts and conversations."}
+                  </p>
+                </div>
+                {view === "leads" ? (
+                  <button
+                    className="calling-button"
+                    onClick={exportLeads}
+                    disabled={!leads.length}
+                  >
+                    <ArrowDownToLine size={16} />
+                    Export leads
+                  </button>
+                ) : view === "contacts" ? (
+                  <button className="calling-button" onClick={downloadTemplate}>
+                    <FileSpreadsheet size={16} />
+                    CSV template
+                  </button>
+                ) : null}
+              </header>
+              <div className="calling-table-toolbar">
+                {scopeSelect}
+                <label className="calling-search">
+                  <Search size={17} />
+                  <input
+                    aria-label="Search contacts"
+                    placeholder="Search business, owner, or number…"
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                  />
+                </label>
+                {view !== "leads" && (
+                  <select
+                    aria-label="Filter contacts by call status"
+                    value={filter}
+                    onChange={(event) => setFilter(event.target.value)}
+                  >
+                    <option value="all">All statuses</option>
+                    {[...new Set(scopedLeads.map((lead) => lead.status))].map(
+                      (status) => (
+                        <option key={status} value={status}>
+                          {label(status)}
+                        </option>
+                      ),
+                    )}
+                  </select>
+                )}
+              </div>
+              {selectedId && !campaign ? (
+                <div className="calling-loading" role="status">
+                  <LoaderCircle size={20} className="spin" />
+                  Loading campaign…
+                </div>
+              ) : leads.length ? (
+                leadTable
+              ) : (
+                <EmptyState
+                  icon={
+                    view === "leads"
+                      ? Target
+                      : view === "calls"
+                        ? PhoneCall
+                        : Users
+                  }
+                  title={
+                    query || filter !== "all"
+                      ? "No matching contacts"
+                      : view === "leads"
+                        ? "Your next partnership is a conversation away"
+                        : view === "calls"
+                          ? "Ready when your first call is"
+                          : "Your contact list starts here"
+                  }
+                  action={
+                    query || filter !== "all" ? (
+                      <button
+                        className="calling-button"
+                        onClick={() => {
+                          setQuery("");
+                          setFilter("all");
+                        }}
+                      >
+                        Clear filters
+                      </button>
+                    ) : !campaigns.length ? (
+                      newButton
+                    ) : (
+                      <button
+                        className="calling-button"
+                        onClick={() => select(selectedId, true)}
+                      >
+                        View campaign <ArrowRight size={15} />
+                      </button>
+                    )
+                  }
+                >
+                  {query || filter !== "all"
+                    ? "Try a different search or clear the filters."
+                    : view === "leads"
+                      ? "Interested owners will appear here once your AI captures their response."
+                      : view === "calls"
+                        ? "Start a campaign to see its call activity and captured outcomes here."
+                        : "Upload a CSV when you create a campaign to bring your contacts into the workspace."}
+                </EmptyState>
+              )}
+            </div>
+          )}
+          {view === "settings" && (
+            <div className="calling-settings-grid">
+              <section className="calling-panel">
+                <header className="calling-panel-heading">
+                  <div>
+                    <h2>Your company</h2>
+                    <p>The business behind every introduction.</p>
+                  </div>
+                  <Building2 size={21} />
+                </header>
+                <div className="calling-settings-body">
+                  <span className="calling-company-monogram">
+                    {company.slice(0, 1)}
+                  </span>
+                  <h3>{company}</h3>
+                  <p>
+                    {clientData?.website_url &&
+                    clientData.website_url !== "pending"
+                      ? clientData.website_url
+                      : "Add your website during company setup."}
+                  </p>
+                  <dl className="calling-result-details">
+                    <div>
+                      <dt>Contact number</dt>
+                      <dd>{clientData?.business_phone || "Not added"}</dd>
+                    </div>
+                    <div>
+                      <dt>Workspace account</dt>
+                      <dd>{user?.email}</dd>
+                    </div>
+                    <div>
+                      <dt>Calling market</dt>
+                      <dd>United Kingdom</dd>
+                    </div>
+                    <div>
+                      <dt>Calling schedule</dt>
+                      <dd>Weekdays · Europe/London</dd>
+                    </div>
+                  </dl>
+                  <button className="calling-button" onClick={onEditCompany}>
+                    Edit company details <ArrowUpRight size={15} />
+                  </button>
+                </div>
+              </section>
+              <section className="calling-panel">
+                <header className="calling-panel-heading">
+                  <div>
+                    <h2>Calling readiness</h2>
+                    <p>
+                      {!config
+                        ? "Configuration is unavailable."
+                        : config.configuration_errors?.length
+                          ? "Your administrator has a few connections to finish."
+                          : "The required provider settings are present."}
+                    </p>
+                  </div>
+                  <Settings2 size={21} />
+                </header>
+                <div className="calling-settings-body">
+                  {[
+                    ["Twilio", "Outbound phone calls", ["TWILIO"]],
+                    ["Ultravox", "AI voice conversations", ["ULTRAVOX"]],
+                    [
+                      "Team handoff",
+                      "Interested-owner notifications",
+                      ["SENDGRID", "FROM_EMAIL"],
+                    ],
+                    [
+                      "Call callbacks",
+                      "Secure conversation results",
+                      ["OUTREACH_TOOL_SECRET", "API_PUBLIC_BASE_URL"],
+                    ],
+                  ].map(([name, detail, keys]) => {
+                    const missing =
+                      !config ||
+                      config.configuration_errors?.some((message) =>
+                        keys.some((key) => message.includes(key)),
+                      );
+                    return (
+                      <div className="calling-provider" key={name}>
+                        <span className="calling-provider-icon">
+                          {name === "Twilio" ? (
+                            <PhoneCall size={19} />
+                          ) : name === "Ultravox" ? (
+                            <AudioLines size={19} />
+                          ) : name === "Team handoff" ? (
+                            <Target size={19} />
+                          ) : (
+                            <ShieldCheck size={19} />
+                          )}
+                        </span>
+                        <div>
+                          <strong>{name}</strong>
+                          <small>{detail}</small>
+                        </div>
+                        <Status
+                          value={
+                            !config
+                              ? "unknown"
+                              : missing
+                                ? "setup_required"
+                                : "configured"
+                          }
+                        />
+                      </div>
+                    );
+                  })}
+                  <div className="calling-number-section">
+                    <h3>Outbound numbers</h3>
+                    {config?.caller_ids?.length ? (
+                      config.caller_ids.map((number) => (
+                        <div className="calling-caller-number" key={number}>
+                          <Phone size={17} />
+                          <strong>{number}</strong>
+                          <span>Available caller ID</span>
+                        </div>
+                      ))
+                    ) : (
+                      <p>
+                        No active calling number is assigned to this account.
+                        Ask your administrator to assign a Twilio caller ID.
+                      </p>
+                    )}
+                  </div>
+                  <p className="calling-fine-print">
+                    Provider credentials and caller-number assignments are
+                    managed by your deployment administrator. “Configured”
+                    confirms that settings are present; it does not verify
+                    provider connectivity.
+                  </p>
+                  {config?.configuration_errors?.length > 0 && (
+                    <details className="calling-config-details">
+                      <summary>Administrator setup details</summary>
+                      <ul>
+                        {config.configuration_errors.map((message) => (
+                          <li key={message}>{message}</li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                </div>
+              </section>
+              <section className="calling-panel calling-settings-policy">
+                <ShieldCheck size={24} />
+                <div>
+                  <h3>Respect the person at the other end.</h3>
+                  <p>
+                    Campaigns use UK contacts with documented automated-call
+                    consent. Missing consent and previous opt-outs are skipped.
+                    The AI captures follow-up permission so your team knows the
+                    next step.
+                  </p>
+                </div>
+              </section>
+            </div>
+          )}
+          <div className="calling-sync">
+            <span className="calling-region-dot" />
+            {lastUpdated
+              ? `Updated ${lastUpdated.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })} · Refreshes every 15 seconds`
+              : "Waiting for calling data"}
+            <span>UK · Europe/London</span>
+          </div>
+        </>
+      )}
+      {wizard && (
+        <CampaignWizard
+          config={config}
+          company={company}
+          onClose={() => setWizard(false)}
+          onCreate={create}
+        />
+      )}
+      {currentLead && (
+        <LeadDrawer
+          lead={currentLead}
+          user={user}
+          onClose={() => setLeadId(null)}
+          onReviewed={refresh}
+        />
+      )}
     </section>
   );
 }

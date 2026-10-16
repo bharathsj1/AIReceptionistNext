@@ -1,16 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isLocalSetupEnabled, localBusinessReview, localResumeStage } from "../src/lib/localSetup.js";
-
-const local = { dev: true, enabled: "true", hostname: "127.0.0.1", apiBase: "/api" };
-
-test("payment bypass requires explicit local development and the local API proxy", () => {
-  assert.equal(isLocalSetupEnabled(local), true);
-  for (const change of [{ dev: false }, { enabled: "false" }, { enabled: undefined },
-    { hostname: "smartconnect4u.com" }, { apiBase: "https://api.example.com/api" }]) {
-    assert.equal(isLocalSetupEnabled({ ...local, ...change }), false);
-  }
-});
+import { localBusinessReview, localResumeStage } from "../src/lib/localSetup.js";
 
 test("website review uses source text and retains entered business details", () => {
   const content = "We offer delivery and catering for restaurants across London.\nOpening hours: Monday to Friday, 10:00–18:00.\nOur address is 12 Example Street, London.\nContact our owner at owner@example.com for restaurant partnerships.";
@@ -35,7 +25,7 @@ test("review respects field limits and never invents absent business facts", () 
   assert.equal(long.hours.length, 1000);
 });
 
-test("refresh resumes authenticated local setup and interrupted crawls can be retried", () => {
+test("refresh resumes authenticated company setup and interrupted crawls can be retried", () => {
   const saved = { isLoggedIn: true, user: { auth_token: "local-test-token" }, stage: "businessInfoReview" };
   assert.equal(localResumeStage(saved, "/login"), "businessInfoReview");
   assert.equal(localResumeStage({ ...saved, stage: "loading" }, "/signup"), "crawlForm");

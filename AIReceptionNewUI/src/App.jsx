@@ -1,39 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import API_URLS, { API_PROXY_BASE } from "./config/urls.js";
+import API_URLS from "./config/urls.js";
 import LandingScreen from "./screens/LandingScreen";
 import LoginScreen from "./screens/LoginScreen";
 import DashboardScreen from "./screens/DashboardScreen";
 import CrawlFormScreen from "./screens/CrawlFormScreen";
 import LoadingScreen from "./screens/LoadingScreen";
-import EmailCaptureScreen from "./screens/EmailCaptureScreen";
-import CompleteScreen from "./screens/CompleteScreen";
 import ResetPasswordScreen from "./screens/ResetPasswordScreen";
-import PaymentScreen from "./screens/PaymentScreen";
 import ManualBusinessInfoScreen from "./screens/ManualBusinessInfoScreen";
-import PaymentSuccessScreen from "./screens/PaymentSuccessScreen";
-import NumberSelectionScreen from "./screens/NumberSelectionScreen";
-import PricingPackages from "./components/PricingPackages";
 import CreateAccountScreen from "./screens/CreateAccountScreen";
 import SignupSurveyScreen from "./screens/SignupSurveyScreen";
 import BusinessDetailsScreen from "./screens/BusinessDetailsScreen";
 import BusinessTypeScreen from "./screens/BusinessTypeScreen";
-import ProjectsScreen from "./screens/ProjectsScreen";
 import BusinessReviewScreen from "./screens/BusinessReviewScreen";
 import PublicMeetingScreen from "./screens/PublicMeetingScreen";
 import PrivateCardScreen from "./screens/PrivateCardScreen";
-import AboutScreen from "./screens/AboutScreen";
-import ChatWidget from "./components/chat/ChatWidget";
 import Brand from "./components/Brand";
 import OnboardingProgress from "./components/OnboardingProgress";
-import { isLocalSetupEnabled, localBusinessReview, localResumeStage } from "./lib/localSetup";
+import { localBusinessReview, localResumeStage } from "./lib/localSetup";
 import { hasCurrentSession } from "./lib/authSession";
 
-const LOCAL_SETUP_ENABLED = isLocalSetupEnabled({
-  dev: import.meta.env.DEV,
-  enabled: import.meta.env.VITE_LOCAL_SKIP_PAYMENT,
-  hostname: window.location.hostname,
-  apiBase: API_PROXY_BASE,
-});
+// Company outreach uses account → company profile → dashboard setup.
+const DIRECT_WORKSPACE_SETUP = true;
 
 const STAGES = {
   LANDING: "landing",
@@ -60,12 +47,7 @@ const STAGES = {
   PRIVATE_CARD: "privateCard",
 };
 const ALLOWED_STAGE_VALUES = new Set(Object.values(STAGES));
-const TOOL_IDS = {
-  RECEPTIONIST: "ai_receptionist",
-  EMAIL: "email_manager",
-  SOCIAL: "social_media_manager",
-};
-const DEFAULT_TOOL_ID = TOOL_IDS.RECEPTIONIST;
+const DEFAULT_TOOL_ID = "ai_outreach";
 const TOOL_ID_ALIASES = {
   "ai receptionist": "ai_receptionist",
   "ai-receptionist": "ai_receptionist",
@@ -75,7 +57,6 @@ const TOOL_ID_ALIASES = {
   "social-media-manager": "social_media_manager",
 };
 const DASHBOARD_REQUEST_TIMEOUT_MS = 10000;
-const SUBSCRIPTION_REQUEST_TIMEOUT_MS = 4000;
 
 const fetchWithTimeout = async (resource, options = {}, timeoutMs = 8000) => {
   const controller = new AbortController();
@@ -110,11 +91,7 @@ const fetchJson = async (url, options = {}) => {
   return { res, data };
 };
 
-const fetchJsonWithTimeout = async (
-  url,
-  options = {},
-  timeoutMs = null,
-) => {
+const fetchJsonWithTimeout = async (url, options = {}, timeoutMs = null) => {
   const requestOptions = {
     ...options,
     headers: { Accept: "application/json", ...(options.headers || {}) },
@@ -289,7 +266,7 @@ export default function App() {
   });
   const [userProfile, setUserProfile] = useState(null);
   const [user, setUser] = useState(null);
-  const [countryCode, setCountryCode] = useState(null);
+  const [countryCode, setCountryCode] = useState("GB");
   const [countryName, setCountryName] = useState(null);
   const [fxRates, setFxRates] = useState({ USD: 1, CAD: null, GBP: null });
   const [callTranscript, setCallTranscript] = useState({
@@ -456,7 +433,7 @@ export default function App() {
       ],
       provision: [
         "Preparing your conversation style",
-        "Connecting your receptionist",
+        "Preparing your company brief",
         "Finishing your workspace setup",
       ],
     }),
@@ -465,62 +442,12 @@ export default function App() {
 
   const heroCtas = useMemo(
     () => [
-      "AI receptionist that never misses a visitor",
+      "AI calling that introduces your company",
       "Onboards your site in seconds",
       "Secure hand-offs to your team",
     ],
     [],
   );
-
-  useEffect(() => {
-    let cancelled = false;
-    const fetchGeo = async () => {
-      if (typeof window === "undefined") return;
-      try {
-        const res = await fetch("https://ipapi.co/json/");
-        if (!res.ok) throw new Error("Geo lookup failed");
-        const data = await res.json();
-        if (cancelled) return;
-        setCountryCode(data?.country_code || null);
-        setCountryName(data?.country_name || null);
-      } catch (err) {
-        console.warn("Unable to fetch geo location", err);
-        if (!cancelled) {
-          setCountryCode((prev) => prev || "GB");
-          setCountryName((prev) => prev || "United Kingdom");
-        }
-      }
-    };
-    fetchGeo();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    const fetchFx = async () => {
-      if (typeof window === "undefined") return;
-      try {
-        const res = await fetch("https://open.er-api.com/v6/latest/USD");
-        if (!res.ok) throw new Error("FX lookup failed");
-        const data = await res.json();
-        if (cancelled) return;
-        const rates = data?.rates || {};
-        setFxRates({
-          USD: 1,
-          CAD: rates.CAD || null,
-          GBP: rates.GBP || null,
-        });
-      } catch (err) {
-        console.warn("Unable to fetch FX rates", err);
-      }
-    };
-    fetchFx();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   // Detect reset token from query string so reset links land on the styled screen.
   useEffect(() => {
@@ -564,17 +491,14 @@ export default function App() {
     setStage(STAGES.LOADING);
 
     try {
-      const { res, data } = await fetchJson(
-        API_URLS.crawlKnowledgeBase,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          mode: "cors",
-          body: JSON.stringify({ url: normalizedUrl }),
+      const { res, data } = await fetchJson(API_URLS.crawlKnowledgeBase, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        mode: "cors",
+        body: JSON.stringify({ url: normalizedUrl }),
+      });
 
       if (!res.ok) {
         const errorText =
@@ -591,8 +515,10 @@ export default function App() {
           "Crawl API returned HTML instead of JSON. Please check /api routing.",
         );
       }
-      if (LOCAL_SETUP_ENABLED && !data?.pages?.length) {
-        throw new Error("No readable website pages were found. Check the address or add your business details manually.");
+      if (DIRECT_WORKSPACE_SETUP && !data?.pages?.length) {
+        throw new Error(
+          "No readable website pages were found. Check the address or add your business details manually.",
+        );
       }
 
       setCrawlData(data);
@@ -620,9 +546,10 @@ export default function App() {
       }
       let profile = null;
       try {
-        if (!LOCAL_SETUP_ENABLED) {
-          const { res: profileRes, data: profileJson } =
-            await fetchJson(API_URLS.businessProfile, {
+        if (!DIRECT_WORKSPACE_SETUP) {
+          const { res: profileRes, data: profileJson } = await fetchJson(
+            API_URLS.businessProfile,
+            {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               mode: "cors",
@@ -631,7 +558,8 @@ export default function App() {
                 website_url: websiteUrl,
                 pages: data?.pages || data?.data || data?.raw || [],
               }),
-            });
+            },
+          );
           if (profileRes.ok) {
             profile = profileJson?.profile || null;
           } else {
@@ -642,7 +570,7 @@ export default function App() {
         console.warn("Business profile extraction request failed", profileErr);
       }
       const defaults = buildReviewDefaults(websiteUrl, data);
-      const reviewInfo = LOCAL_SETUP_ENABLED
+      const reviewInfo = DIRECT_WORKSPACE_SETUP
         ? localBusinessReview(defaults, data)
         : mergeProfileIntoReview(defaults, profile);
       setManualBusinessInfo(reviewInfo);
@@ -656,7 +584,7 @@ export default function App() {
       setResponseMessage(
         error?.message || "Unable to send request. Please try again.",
       );
-      if (LOCAL_SETUP_ENABLED) setStage(STAGES.CRAWL_FORM);
+      if (DIRECT_WORKSPACE_SETUP) setStage(STAGES.CRAWL_FORM);
     }
     setShowLoader(false);
   };
@@ -796,7 +724,9 @@ export default function App() {
       }
 
       if (!hasCurrentSession(data)) {
-        throw new Error("The backend did not return a secure session. Configure AUTH_SESSION_SECRET on the Docker backend, then sign in again.");
+        throw new Error(
+          "The backend did not return a secure session. Configure AUTH_SESSION_SECRET on the Docker backend, then sign in again.",
+        );
       }
 
       const userEmail = data?.email || normalizedLoginEmail;
@@ -820,56 +750,21 @@ export default function App() {
       setSignupEmail(userEmail || "");
       setSignupName(displayName || "");
 
-      // Fetch dashboard/subscription context to decide where to resume.
+      // Load company context; outreach has no receptionist subscription gate.
       let userProfile = null;
       let clientProfile = null;
-      let dashboardPayload = null;
-      let hasActive = false;
-      let subscriptionCheckSucceeded = false;
       try {
-        const dashRes = await fetch(
+        const { res, data: profile } = await fetchJsonWithTimeout(
           `${API_URLS.dashboard}?email=${encodeURIComponent(userEmail)}`,
+          {},
+          DASHBOARD_REQUEST_TIMEOUT_MS,
         );
-        if (dashRes.ok) {
-          dashboardPayload = await dashRes.json().catch(() => ({}));
-          userProfile = dashboardPayload?.user || null;
-          clientProfile = dashboardPayload?.client || null;
-          if (Array.isArray(dashboardPayload?.subscriptions)) {
-            const normalizedSubs = normalizeToolSubscriptions(
-              dashboardPayload.subscriptions,
-            );
-            setToolSubscriptions(normalizedSubs);
-            hasActive = Object.values(normalizedSubs).some(
-              (entry) => entry?.active,
-            );
-          }
-        }
-
-        if (!hasActive && !LOCAL_SETUP_ENABLED) {
-          const subsRes = await fetch(
-            `${API_URLS.subscriptionsStatus}?email=${encodeURIComponent(userEmail)}`,
-          );
-          if (subsRes.ok) {
-            subscriptionCheckSucceeded = true;
-            const subsJson = await subsRes.json().catch(() => ({}));
-            const normalizedSubs = normalizeToolSubscriptions(
-              subsJson?.subscriptions ?? subsJson,
-            );
-            setToolSubscriptions(normalizedSubs);
-            if (typeof subsJson?.active === "boolean") {
-              hasActive = subsJson.active;
-            } else {
-              hasActive = Object.values(normalizedSubs).some(
-                (entry) => entry?.active,
-              );
-            }
-          } else if (!dashboardPayload?.subscriptions) {
-            setToolSubscriptions({});
-          }
+        if (res.ok) {
+          userProfile = profile?.user || null;
+          clientProfile = profile?.client || null;
         }
       } catch (profileErr) {
-        console.warn("Login profile/subscription checks failed", profileErr);
-        setToolSubscriptions({});
+        console.warn("Company profile could not be loaded", profileErr);
       }
 
       if (clientProfile) {
@@ -895,52 +790,31 @@ export default function App() {
         !websiteUrlFromProfile ||
         !String(websiteUrlFromProfile).trim() ||
         websiteUrlFromProfile === "pending";
-      const hasExistingProfile = Boolean(
-        userProfile || clientProfile || dashboardPayload?.client,
-      );
 
       setIsLoggedIn(true);
       setActiveTab("agents");
       setActiveTool(DEFAULT_TOOL_ID);
-      if (LOCAL_SETUP_ENABLED) {
-        let savedProfile = {};
-        try {
-          const data = typeof clientProfile?.website_data === "string" ? JSON.parse(clientProfile.website_data) : clientProfile?.website_data;
-          savedProfile = data?.business_profile || {};
-        } catch { /* An incomplete profile should resume setup. */ }
-        setActiveTool("dashboard_analytics");
-        setUrl(missingWebsite ? "" : websiteUrlFromProfile);
-        const nextStage = missingBiz ? STAGES.BUSINESS_DETAILS
-          : missingWebsite || !savedProfile.business_summary ? STAGES.CRAWL_FORM : STAGES.DASHBOARD;
-        setStage(nextStage);
-        if (nextStage === STAGES.DASHBOARD) window.history.replaceState({ stage: nextStage }, "", "/dashboard");
-        setStatus("idle");
-        setResponseMessage("");
-      } else if (hasActive) {
-        setUrl(websiteUrlFromProfile || "");
-        setStage(STAGES.DASHBOARD);
-        setStatus("success");
-        setResponseMessage("Logged in successfully.");
-      } else if (hasExistingProfile && !subscriptionCheckSucceeded) {
-        setUrl(websiteUrlFromProfile || "");
-        setStage(STAGES.DASHBOARD);
-        setStatus("success");
-        setResponseMessage("Logged in successfully.");
-      } else if (missingBiz) {
-        setStage(STAGES.BUSINESS_DETAILS);
-        setStatus("idle");
-        setResponseMessage("");
-      } else if (missingWebsite) {
-        setUrl("");
-        setStage(STAGES.CRAWL_FORM);
-        setStatus("idle");
-        setResponseMessage("");
-      } else {
-        setUrl(websiteUrlFromProfile || "");
-        setStage(STAGES.DASHBOARD);
-        setStatus("success");
-        setResponseMessage("Logged in successfully.");
+      let savedProfile = {};
+      try {
+        const profileData =
+          typeof clientProfile?.website_data === "string"
+            ? JSON.parse(clientProfile.website_data)
+            : clientProfile?.website_data;
+        savedProfile = profileData?.business_profile || {};
+      } catch {
+        /* Resume company setup if the profile is incomplete. */
       }
+      setUrl(missingWebsite ? "" : websiteUrlFromProfile);
+      const nextStage = missingBiz
+        ? STAGES.BUSINESS_DETAILS
+        : missingWebsite || !savedProfile.business_summary
+          ? STAGES.CRAWL_FORM
+          : STAGES.DASHBOARD;
+      setStage(nextStage);
+      if (nextStage === STAGES.DASHBOARD)
+        window.history.replaceState({ stage: nextStage }, "", "/dashboard");
+      setStatus("idle");
+      setResponseMessage("");
     } catch (error) {
       setStatus("error");
       setResponseMessage(error?.message || "Login failed");
@@ -1152,7 +1026,9 @@ export default function App() {
         return;
       }
       if (!hasCurrentSession(data)) {
-        throw new Error("The backend did not return a secure session. Configure AUTH_SESSION_SECRET on the Docker backend, then sign in again.");
+        throw new Error(
+          "The backend did not return a secure session. Configure AUTH_SESSION_SECRET on the Docker backend, then sign in again.",
+        );
       }
       setSignupName(name);
       setSignupEmail(email);
@@ -1212,8 +1088,11 @@ export default function App() {
       }
       setBusinessName(nameInput);
       setBusinessPhone(phoneInput);
-      if (data.client_id) setUser((current) => ({ ...current, client_id: data.client_id }));
-      setStage(LOCAL_SETUP_ENABLED ? STAGES.CRAWL_FORM : STAGES.BUSINESS_TYPE);
+      if (data.client_id)
+        setUser((current) => ({ ...current, client_id: data.client_id }));
+      setStage(
+        DIRECT_WORKSPACE_SETUP ? STAGES.CRAWL_FORM : STAGES.BUSINESS_TYPE,
+      );
     } catch (err) {
       const msg =
         err instanceof Error ? err.message : "Could not save business details.";
@@ -1335,8 +1214,8 @@ export default function App() {
       data: normalized,
     };
     setCrawlData(nextCrawlData);
-    if (LOCAL_SETUP_ENABLED) {
-      await finishLocalSetup(normalized);
+    if (DIRECT_WORKSPACE_SETUP) {
+      await finishCompanySetup(normalized);
       return;
     }
     try {
@@ -1433,8 +1312,8 @@ export default function App() {
     setBusinessName(normalized.businessName);
     if (normalized.businessPhone) setBusinessPhone(normalized.businessPhone);
 
-    if (LOCAL_SETUP_ENABLED) {
-      await finishLocalSetup(normalized);
+    if (DIRECT_WORKSPACE_SETUP) {
+      await finishCompanySetup(normalized);
       return;
     }
 
@@ -1510,7 +1389,7 @@ export default function App() {
     setStage(STAGES.PACKAGES);
   };
 
-  const finishLocalSetup = async (business) => {
+  const finishCompanySetup = async (business) => {
     const targetEmail = signupEmail || user?.email || email || loginEmail;
     setBusinessLoading(true);
     setBusinessError("");
@@ -1518,15 +1397,28 @@ export default function App() {
       const res = await fetch(API_URLS.clientsBusinessDetails, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: targetEmail, businessName: business.businessName,
-          businessPhone: business.businessPhone || businessPhone, websiteUrl: business.websiteUrl,
-          websiteData: business }),
+        body: JSON.stringify({
+          email: targetEmail,
+          businessName: business.businessName,
+          businessPhone: business.businessPhone || businessPhone,
+          websiteUrl: business.websiteUrl,
+          websiteData: business,
+        }),
       });
       const saved = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(saved.error || "Could not save your business details.");
-      setUser((current) => ({ ...current, client_id: saved.client_id || current?.client_id }));
-      setClientData((current) => ({ ...current, id: saved.client_id, business_name: business.businessName,
-        business_phone: business.businessPhone || businessPhone, website_url: business.websiteUrl }));
+      if (!res.ok)
+        throw new Error(saved.error || "Could not save your business details.");
+      setUser((current) => ({
+        ...current,
+        client_id: saved.client_id || current?.client_id,
+      }));
+      setClientData((current) => ({
+        ...current,
+        id: saved.client_id,
+        business_name: business.businessName,
+        business_phone: business.businessPhone || businessPhone,
+        website_url: business.websiteUrl,
+      }));
       setManualBusinessInfo(business);
       setUrl(business.websiteUrl || "");
       setSelectedPlan(null);
@@ -1535,7 +1427,11 @@ export default function App() {
       setStatus("success");
       setResponseMessage("Your business details are saved.");
       setStage(STAGES.DASHBOARD);
-      window.history.replaceState({ stage: STAGES.DASHBOARD }, "", "/dashboard");
+      window.history.replaceState(
+        { stage: STAGES.DASHBOARD },
+        "",
+        "/dashboard",
+      );
     } catch (err) {
       setBusinessError(err.message || "Could not save your business details.");
     } finally {
@@ -1608,7 +1504,9 @@ export default function App() {
     setLoginEmail(previousEmail);
     setStage(STAGES.LOGIN);
     setStatus("error");
-    setResponseMessage("Your session has expired. Sign in to connect to this deployment.");
+    setResponseMessage(
+      "Your session has expired. Sign in to connect to this deployment.",
+    );
     window.history.replaceState({ stage: STAGES.LOGIN }, "", "/login");
   };
 
@@ -1644,7 +1542,7 @@ export default function App() {
 
   const handleSelectPlan = (planId, options = {}) => {
     const { source } = options;
-    if (LOCAL_SETUP_ENABLED) {
+    if (DIRECT_WORKSPACE_SETUP) {
       setSelectedPlan(null);
       setStage(isLoggedIn ? STAGES.DASHBOARD : STAGES.SIGNUP);
       return;
@@ -1790,7 +1688,7 @@ export default function App() {
 
       setProvisionData((prev) => ({ ...(prev || {}), ...assignData }));
       setStatus("success");
-      setResponseMessage("Your AI receptionist is ready!");
+      setResponseMessage("Your calling workspace is ready!");
       setResponseLink(null);
 
       setUrl("");
@@ -2048,7 +1946,7 @@ export default function App() {
         }
       }
       setStatus("success");
-      setResponseMessage("Your AI receptionist is ready!");
+      setResponseMessage("Your calling workspace is ready!");
       setResponseLink(null);
       // Clear transient inputs for next run
       setUrl("");
@@ -2181,175 +2079,30 @@ export default function App() {
     async (emailAddress = null) => {
       const targetEmail =
         emailAddress || user?.email || email || signupEmail || loginEmail;
-      if (!targetEmail) {
-        setReceptionistUsage(null);
-        setSubscriptionsLoading(false);
-        return;
-      }
+      if (!targetEmail) return;
       setDashboardLoading(true);
-      setSubscriptionsLoading(true);
       try {
-        const dashPromise = fetchJsonWithTimeout(
+        const { res, data } = await fetchJsonWithTimeout(
           `${API_URLS.dashboard}?email=${encodeURIComponent(targetEmail)}`,
           {},
           DASHBOARD_REQUEST_TIMEOUT_MS,
         );
-        const subsPromise = fetchJsonWithTimeout(
-          `${API_URLS.subscriptionsStatus}?email=${encodeURIComponent(targetEmail)}`,
-          {},
-          SUBSCRIPTION_REQUEST_TIMEOUT_MS,
-        ).catch(() => null);
-
-        const { res: dashRes, data: dashData } = await dashPromise;
-
-        if (!dashRes.ok) {
-          const detail =
-            dashData?.error ||
-            dashData?.details ||
-            dashData?.raw ||
-            "Unable to load dashboard";
-          throw new Error(detail);
-        }
-        if (looksLikeHtml(dashData?.raw)) {
-          throw new Error(
-            "Dashboard API returned HTML instead of JSON. Check /api routing.",
-          );
-        }
-
-        let subscriptionPayload = dashData?.subscriptions;
-
-        const applySubscriptionPayload = (payload) => {
-          const normalizedSubs = normalizeToolSubscriptions(payload);
-          setToolSubscriptions(normalizedSubs);
-          const firstActiveTool =
-            Object.entries(normalizedSubs).find(
-              ([, entry]) => entry?.active,
-            )?.[0] || null;
-          setActiveTool((prev) => {
-            if (prev && normalizedSubs[prev]?.active) return prev;
-            if (firstActiveTool) return firstActiveTool;
-            return prev || DEFAULT_TOOL_ID;
-          });
-        };
-
-        if (subscriptionPayload !== undefined) {
-          applySubscriptionPayload(subscriptionPayload);
-          setSubscriptionsLoading(false);
-        } else {
-          const subsRes = await subsPromise;
-          if (subsRes?.res?.ok && !looksLikeHtml(subsRes?.data?.raw)) {
-            const subsJson = subsRes.data || null;
-            subscriptionPayload = subsJson?.subscriptions ?? subsJson;
-            if (subscriptionPayload !== undefined) {
-              applySubscriptionPayload(subscriptionPayload);
-            }
-          }
-          setSubscriptionsLoading(false);
-        }
-
-        setClientData(dashData?.client || null);
-        setUserProfile(dashData?.user || null);
-        if (dashData?.user) {
-          setUser((prev) => ({
-            ...(prev || {}),
-            ...dashData.user,
-          }));
-        }
-
-        setReceptionistUsage(
-          dashData?.receptionist_usage || dashData?.receptionistUsage || null,
-        );
-
-        setBookingSettings((prev) => ({
-          booking_enabled: Boolean(
-            (dashData?.client && dashData?.client?.booking_enabled) ||
-              prev.booking_enabled,
-          ),
-          booking_duration_minutes:
-            dashData?.client?.booking_duration_minutes ??
-            prev.booking_duration_minutes ??
-            30,
-          booking_buffer_minutes:
-            dashData?.client?.booking_buffer_minutes ??
-            prev.booking_buffer_minutes ??
-            5,
-        }));
-
-        const phones = dashData?.phone_numbers || [];
-        const normalizedPhones = Array.isArray(phones)
-          ? phones.map((p) =>
-              typeof p === "string"
-                ? { phone_number: p, twilio_phone_number: p }
-                : {
-                    ...p,
-                    phone_number: p.phone_number || p.twilio_phone_number,
-                    twilio_phone_number:
-                      p.twilio_phone_number || p.phone_number,
-                  },
-            )
-          : [];
-        setPhoneNumbers(normalizedPhones);
-        setProvisionData((prev) => ({
-          ...(prev || {}),
-          phone_numbers: normalizedPhones,
-          phone_number:
-            normalizedPhones?.[0]?.phone_number || prev?.phone_number,
-        }));
-
-        const callTemplate =
-          dashData?.ultravox_agent?.callTemplate ||
-          dashData?.agent?.callTemplate ||
-          {};
-        const derivedBusinessName =
-          dashData?.client?.business_name ||
-          dashData?.client?.name ||
-          businessName;
-        const derivedBusinessPhone =
-          dashData?.client?.business_phone || businessPhone;
-        if (derivedBusinessName) setBusinessName(derivedBusinessName);
-        if (derivedBusinessPhone) setBusinessPhone(derivedBusinessPhone);
-
-        setAgentDetails((prev) => ({
-          ...prev,
-          agentId: dashData?.client?.ultravox_agent_id || prev.agentId,
-          agentName:
-            dashData?.ultravox_agent?.name ||
-            dashData?.agent?.agent_name ||
-            prev.agentName,
-          systemPrompt:
-            callTemplate?.systemPrompt ||
-            dashData?.agent?.system_prompt ||
-            prev.systemPrompt,
-          voice:
-            callTemplate?.voice ||
-            callTemplate?.voiceId ||
-            dashData?.agent?.voice ||
-            prev.voice,
-          temperature:
-            typeof callTemplate?.temperature === "number"
-              ? callTemplate.temperature
-              : typeof dashData?.agent?.temperature === "number"
-                ? dashData.agent.temperature
-                : prev.temperature,
-          greeting:
-            callTemplate?.firstSpeakerSettings?.agent?.text ||
-            callTemplate?.greeting ||
-            dashData?.agent?.greeting ||
-            prev.greeting,
-          escalation:
-            callTemplate?.fallback ||
-            dashData?.agent?.escalation ||
-            prev.escalation,
-          faq: callTemplate?.faq || dashData?.agent?.faq || prev.faq,
-        }));
+        if (!res.ok || looksLikeHtml(data?.raw))
+          throw new Error(data?.error || "Unable to load company profile");
+        setClientData(data?.client || null);
+        setUserProfile(data?.user || null);
+        if (data?.client?.business_name)
+          setBusinessName(data.client.business_name);
+        if (data?.client?.business_phone)
+          setBusinessPhone(data.client.business_phone);
       } catch (error) {
-        console.error("Failed to load dashboard", error);
+        console.error("Failed to load company profile", error);
       } finally {
         setDashboardLoading(false);
         setSubscriptionsLoading(false);
       }
     },
-    [email, loginEmail, normalizeToolSubscriptions, signupEmail, user?.email],
+    [email, loginEmail, signupEmail, user?.email],
   );
 
   const handleAssignNumber = useCallback(async () => {
@@ -2703,9 +2456,7 @@ export default function App() {
   const loadUltravoxVoices = useCallback(async () => {
     setUltravoxVoicesLoading(true);
     try {
-      const { res, data } = await fetchJson(
-        API_URLS.ultravoxVoices,
-      );
+      const { res, data } = await fetchJson(API_URLS.ultravoxVoices);
       if (!res.ok) {
         throw new Error(
           data?.error ||
@@ -2823,7 +2574,9 @@ export default function App() {
     (payload) => {
       if (!hasCurrentSession(payload)) {
         setStatus("error");
-        setResponseMessage("The backend did not return a secure session. Configure AUTH_SESSION_SECRET on the Docker backend, then sign in again.");
+        setResponseMessage(
+          "The backend did not return a secure session. Configure AUTH_SESSION_SECRET on the Docker backend, then sign in again.",
+        );
         setStage(STAGES.LOGIN);
         return;
       }
@@ -3045,7 +2798,7 @@ export default function App() {
     ]);
     if (allowedSlugs.has(slug)) {
       setServiceSlug(slug || "receptionist");
-      setStage(STAGES.PROJECTS);
+      setStage(STAGES.LANDING);
     }
   }, []);
 
@@ -3059,10 +2812,16 @@ export default function App() {
       const path = (window.location.pathname || "").toLowerCase();
       if (saved.isLoggedIn && !hasCurrentSession(saved.user)) {
         setLoginEmail(saved.user?.email || saved.email || "");
-        if (!path.startsWith("/about") && !/^\/(meet|card)\//.test(path) && !resetFlowActiveRef.current) {
+        if (
+          !path.startsWith("/about") &&
+          !/^\/(meet|card)\//.test(path) &&
+          !resetFlowActiveRef.current
+        ) {
           setStage(STAGES.LOGIN);
           setStatus("error");
-          setResponseMessage("Your session has expired. Sign in to connect to this deployment.");
+          setResponseMessage(
+            "Your session has expired. Sign in to connect to this deployment.",
+          );
           window.history.replaceState({ stage: STAGES.LOGIN }, "", "/login");
         }
         return;
@@ -3075,11 +2834,17 @@ export default function App() {
         path.startsWith("/dashboard") ||
         /^\/meet\/[^/]+/.test(path) ||
         /^\/card\/[a-z0-9_-]+\/?$/.test(path);
-      const resumeStage = LOCAL_SETUP_ENABLED ? localResumeStage(saved, path) : null;
-      if (!resetFlowActiveRef.current && saved.stage && (!hasPathPriorityStage || resumeStage)) {
+      const resumeStage = DIRECT_WORKSPACE_SETUP
+        ? localResumeStage(saved, path)
+        : null;
+      if (
+        !resetFlowActiveRef.current &&
+        saved.stage &&
+        (!hasPathPriorityStage || resumeStage)
+      ) {
         setStage(resumeStage || saved.stage);
       }
-      if (LOCAL_SETUP_ENABLED) {
+      if (DIRECT_WORKSPACE_SETUP) {
         if (saved.businessName) setBusinessName(saved.businessName);
         if (saved.businessPhone) setBusinessPhone(saved.businessPhone);
         if (saved.url) setUrl(saved.url);
@@ -3127,7 +2892,7 @@ export default function App() {
     if (hasSession) {
       setStage(STAGES.DASHBOARD);
       setActiveTab("agents");
-      if (!LOCAL_SETUP_ENABLED) setActiveTool(DEFAULT_TOOL_ID);
+      if (!DIRECT_WORKSPACE_SETUP) setActiveTool(DEFAULT_TOOL_ID);
       return;
     }
 
@@ -3163,7 +2928,9 @@ export default function App() {
     if (stage === STAGES.DASHBOARD) return;
     setStage(STAGES.DASHBOARD);
     setActiveTab("agents");
-    setActiveTool(LOCAL_SETUP_ENABLED ? "dashboard_analytics" : DEFAULT_TOOL_ID);
+    setActiveTool(
+      DIRECT_WORKSPACE_SETUP ? "dashboard_analytics" : DEFAULT_TOOL_ID,
+    );
     if (typeof window !== "undefined") {
       const path = window.location.pathname || "";
       if (path !== "/dashboard") {
@@ -3184,32 +2951,7 @@ export default function App() {
     if (hasLoadedDashboardRef.current) return;
     hasLoadedDashboardRef.current = true;
     loadDashboard();
-    loadCallLogs();
-    loadAllCalls();
-    if (!LOCAL_SETUP_ENABLED) {
-      loadUltravoxVoices();
-      loadCalendarEvents();
-    }
-  }, [
-    hasActiveSubscription,
-    loadAllCalls,
-    loadCalendarEvents,
-    loadCallLogs,
-    loadDashboard,
-    loadUltravoxVoices,
-    stage,
-  ]);
-
-  useEffect(() => {
-    if (stage !== STAGES.PAYMENT_SUCCESS) return;
-    if (ultravoxVoices.length) return;
-    loadUltravoxVoices();
-  }, [loadUltravoxVoices, stage, ultravoxVoices.length]);
-
-  useEffect(() => {
-    if (stage !== STAGES.NUMBER_SELECT) return;
-    loadTwilioAvailableNumbers();
-  }, [loadTwilioAvailableNumbers, stage]);
+  }, [loadDashboard, stage]);
 
   useEffect(() => {
     if (selectedVoiceId) return;
@@ -3275,7 +3017,7 @@ export default function App() {
     try {
       const payload = {
         stage,
-        ...(LOCAL_SETUP_ENABLED ? { businessName, businessPhone, url } : {}),
+        ...(DIRECT_WORKSPACE_SETUP ? { businessName, businessPhone, url } : {}),
         isLoggedIn,
         user,
         email,
@@ -3325,11 +3067,6 @@ export default function App() {
   ]);
 
   useEffect(() => {
-    if (!calendarAccountEmail || !user?.email) return;
-    loadCalendarEvents(user.email);
-  }, [calendarAccountEmail, loadCalendarEvents, user?.email]);
-
-  useEffect(() => {
     if (!hasMountedHistoryRef.current) {
       window.history.replaceState({ stage }, "");
       hasMountedHistoryRef.current = true;
@@ -3366,11 +3103,20 @@ export default function App() {
       return;
     }
     if (
-      (hasActiveSubscription || LOCAL_SETUP_ENABLED) &&
-      (stage === STAGES.PACKAGES || stage === STAGES.PAYMENT)
+      (hasActiveSubscription || DIRECT_WORKSPACE_SETUP) &&
+      [
+        STAGES.PACKAGES,
+        STAGES.PAYMENT,
+        STAGES.PAYMENT_SUCCESS,
+        STAGES.NUMBER_SELECT,
+      ].includes(stage)
     ) {
       setSelectedPlan(null);
-      setStage(LOCAL_SETUP_ENABLED && !isLoggedIn ? STAGES.SIGNUP : STAGES.DASHBOARD);
+      setStage(
+        DIRECT_WORKSPACE_SETUP && !isLoggedIn
+          ? STAGES.SIGNUP
+          : STAGES.DASHBOARD,
+      );
     }
   }, [hasActiveSubscription, isLoggedIn, stage, validStages]);
 
@@ -3390,6 +3136,11 @@ export default function App() {
       body: JSON.stringify({ email: user.email }),
     }).catch(() => {});
   };
+
+  useEffect(() => {
+    if (stage !== STAGES.DASHBOARD)
+      document.title = `${stage === STAGES.LOGIN ? "Sign in" : stage === STAGES.LANDING ? "Company calling workspace" : "Company setup"} · Vedora Outreach`;
+  }, [stage]);
 
   useEffect(() => {
     const previous = document.body.style.overflow;
@@ -3449,6 +3200,12 @@ export default function App() {
   }, [stage]);
 
   useEffect(() => {
+    if ([STAGES.EMAIL_CAPTURE, STAGES.COMPLETE].includes(stage)) {
+      setStage(hasCurrentSession(user) ? STAGES.CRAWL_FORM : STAGES.LOGIN);
+    }
+  }, [stage, user]);
+
+  useEffect(() => {
     if (!ALLOWED_STAGE_VALUES.has(stage)) {
       setStage(STAGES.LANDING);
     }
@@ -3470,25 +3227,21 @@ export default function App() {
               type="button"
               className="sc-brand-button"
               onClick={handleGoHome}
-              aria-label="SmartConnect4u home"
+              aria-label="Vedora Outreach home"
             >
               <Brand />
             </button>
             <nav className="sc-header-links" aria-label="Main navigation">
               {isLandingStage ? (
                 <>
-                  <a href="#features">Product</a>
                   <a href="#how-it-works">How it works</a>
-                  <a href="#plans">Plans</a>
+                  <a href="#features">Calling workspace</a>
                 </>
               ) : (
                 <button type="button" onClick={handleGoHome}>
                   Back to home
                 </button>
               )}
-              <a href="/contact.html">
-                Let’s talk <span aria-hidden="true">↗</span>
-              </a>
             </nav>
             <div className="sc-header-actions">
               <button
@@ -3509,33 +3262,27 @@ export default function App() {
           </header>
         )}
         <main className={contentClassName} id="main-content" tabIndex={-1}>
-          <OnboardingProgress stage={stage} localSetup={LOCAL_SETUP_ENABLED} />
+          <OnboardingProgress
+            stage={stage}
+            localSetup={DIRECT_WORKSPACE_SETUP}
+          />
           {stage === STAGES.LANDING && (
             <LandingScreen
               onTry={goToSignup}
               onLogin={() => setStage(STAGES.LOGIN)}
-              onSelectPlan={handleSelectPlan}
-              onShowService={handleGoProjects}
-              geoCountryCode={countryCode}
-              fxRates={fxRates}
             />
           )}
           {stage === STAGES.PROJECTS && (
-            <ProjectsScreen
-              serviceSlug={serviceSlug}
-              onStartSignup={goToSignup}
+            <LandingScreen
+              onTry={goToSignup}
+              onLogin={() => setStage(STAGES.LOGIN)}
             />
           )}
-          {stage === STAGES.ABOUT && <AboutScreen />}
-          {stage === STAGES.PACKAGES && !LOCAL_SETUP_ENABLED && !hasActiveSubscription && (
-            <div className="shell-card screen-panel">
-              <PricingPackages
-                onSelectPackage={handleSelectPlan}
-                showCrawlSuccess
-                geoCountryCode={countryCode}
-                fxRates={fxRates}
-              />
-            </div>
+          {stage === STAGES.ABOUT && (
+            <LandingScreen
+              onTry={goToSignup}
+              onLogin={() => setStage(STAGES.LOGIN)}
+            />
           )}
 
           {stage === STAGES.BUSINESS_INFO_REVIEW && (
@@ -3544,7 +3291,7 @@ export default function App() {
                 initialData={manualBusinessInfo || {}}
                 onSubmit={handleBusinessReviewSubmit}
                 onBack={() => setStage(STAGES.CRAWL_FORM)}
-                localSetup={LOCAL_SETUP_ENABLED}
+                localSetup={DIRECT_WORKSPACE_SETUP}
                 loading={businessLoading}
                 error={businessError}
               />
@@ -3558,7 +3305,7 @@ export default function App() {
                 phone={businessPhone}
                 email={signupEmail || email}
                 onSubmit={handleManualBusinessSubmit}
-                localSetup={LOCAL_SETUP_ENABLED}
+                localSetup={DIRECT_WORKSPACE_SETUP}
                 loading={businessLoading}
                 error={businessError}
                 onBack={() => setStage(STAGES.CRAWL_FORM)}
@@ -3621,7 +3368,7 @@ export default function App() {
           {stage === STAGES.BUSINESS_DETAILS && (
             <div className="shell-card screen-panel">
               <BusinessDetailsScreen
-                localSetup={LOCAL_SETUP_ENABLED}
+                localSetup={DIRECT_WORKSPACE_SETUP}
                 userName={signupName}
                 name={businessName}
                 phone={businessPhone}
@@ -3672,66 +3419,12 @@ export default function App() {
 
           {stage === STAGES.DASHBOARD && (
             <DashboardScreen
-              localSetup={LOCAL_SETUP_ENABLED}
-              onSessionExpired={handleSessionExpired}
-              activeTab={activeTab}
-              setActiveTab={setActiveTab}
-              activeTool={activeTool}
-              setActiveTool={setActiveTool}
-              toolSubscriptions={toolSubscriptions}
-              subscriptionsLoading={subscriptionsLoading}
-              analyticsCalls={allCalls}
-              dateRange={dateRange}
-              dateRanges={dateRanges}
-              onRangeChange={(range) => {
-                setDateRange(range.label);
-                loadCallLogs(user?.email, range.days);
-              }}
-              aiNumber={aiNumber}
-              recentCalls={recentCalls}
-              callsPage={callsPage}
-              setCallsPage={setCallsPage}
               user={user}
-              agentDetails={agentDetails}
-              setAgentDetails={setAgentDetails}
-              handleGoHome={handleGoHome}
-              calendarStatus={calendarStatus}
-              calendarLoading={calendarLoading}
-              calendarEvents={calendarEvents}
-              calendarError={calendarError}
-              loadCalendarEvents={loadCalendarEvents}
-              handleCalendarDisconnect={handleCalendarDisconnect}
-              beginGoogleLogin={beginGoogleLogin}
-              status={status}
-              dashboardLoading={dashboardLoading}
-              calendarAccountEmail={calendarAccountEmail}
-              calendarDiagnostics={calendarDiagnostics}
-              ultravoxVoices={ultravoxVoices}
-              ultravoxVoicesLoading={ultravoxVoicesLoading}
-              onAgentSave={handleAgentSave}
-              agentSaveStatus={agentSaveStatus}
-              businessSaveStatus={businessSaveStatus}
-              onBusinessSave={handleBusinessSave}
               clientData={clientData}
-              manualBusinessInfo={manualBusinessInfo}
               userProfile={userProfile}
-              bookingSettings={bookingSettings}
-              bookingStatus={bookingStatus}
-              bookingTestStatus={bookingTestStatus}
-              setBookingSettings={setBookingSettings}
-              onBookingSave={handleBookingSettingsSave}
-              onTestBooking={handleTestBooking}
-              callTranscript={callTranscript}
-              onLoadTranscript={loadCallTranscript}
-              onRefreshCalls={loadCallLogs}
-              onRefreshDashboard={handleRefreshDashboardAll}
-              receptionistUsage={receptionistUsage}
-              assignNumberStatus={assignNumberStatus}
-              onAssignNumber={handleAssignNumber}
-              hasActiveSubscription={hasActiveSubscription}
+              onSessionExpired={handleSessionExpired}
               onResumeBusinessDetails={handleResumeBusinessDetails}
               onLogout={handleLogout}
-              geoCountryCode={countryCode}
             />
           )}
 
@@ -3743,7 +3436,7 @@ export default function App() {
                 responseMessage={responseMessage}
                 onSubmit={handleSubmit}
                 onUrlChange={setUrl}
-                onBack={() => setStage(STAGES.BUSINESS_TYPE)}
+                onBack={() => setStage(STAGES.BUSINESS_DETAILS)}
                 onSkipWebsite={() => setStage(STAGES.BUSINESS_INFO_MANUAL)}
               />
             </div>
@@ -3759,82 +3452,6 @@ export default function App() {
               />
             </div>
           )}
-
-          {stage === STAGES.EMAIL_CAPTURE && (
-            <EmailCaptureScreen
-              email={email}
-              status={status}
-              responseMessage={responseMessage}
-              onEmailChange={setEmail}
-              onSubmit={handleEmailSubmit}
-              onSendDifferentUrl={handleNewUrl}
-            />
-          )}
-
-          {stage === STAGES.COMPLETE && (
-            <CompleteScreen
-              status={status}
-              responseMessage={responseMessage}
-              responseLink={responseLink}
-              provisionData={provisionData}
-              email={email}
-              onGoHome={handleGoHome}
-              onGoToDashboard={handleGoToDashboard}
-              onStartCrawl={handleStartCrawlFlow}
-            />
-          )}
-
-          {stage === STAGES.PAYMENT && !LOCAL_SETUP_ENABLED &&
-            (!hasActiveSubscription ? (
-              <div className="shell-card screen-panel">
-                <PaymentScreen
-                  planId={selectedPlan}
-                  toolId={selectedTool || activeTool || DEFAULT_TOOL_ID}
-                  onBack={handlePaymentBack}
-                  onSubmit={handlePaymentSubmit}
-                  initialEmail={signupEmail || email}
-                  geoCountryCode={countryCode}
-                  fxRates={fxRates}
-                />
-              </div>
-            ) : (
-              <div className="shell-card screen-panel">
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-center text-sm text-white">
-                  You already have an active subscription. Returning to
-                  dashboard...
-                </div>
-              </div>
-            ))}
-          {stage === STAGES.PAYMENT_SUCCESS && !LOCAL_SETUP_ENABLED && (
-            <div className="shell-card screen-panel">
-              <PaymentSuccessScreen
-                paymentInfo={paymentInfo}
-                voices={ultravoxVoices}
-                selectedVoiceId={selectedVoiceId}
-                onSelectVoice={setSelectedVoiceId}
-                welcomeMessage={welcomeMessage}
-                onWelcomeMessageChange={setWelcomeMessage}
-                onContinue={handlePaymentSuccessContinue}
-              />
-            </div>
-          )}
-          {stage === STAGES.NUMBER_SELECT && !LOCAL_SETUP_ENABLED && (
-            <div className="shell-card screen-panel">
-              <NumberSelectionScreen
-                paymentInfo={paymentInfo}
-                availableNumbers={twilioAvailableNumbers}
-                numbersLoading={twilioNumbersLoading}
-                numbersError={twilioNumbersError}
-                numbersCountry={twilioNumbersCountry}
-                assignedNumber={twilioAssignedNumber}
-                selectedNumber={selectedTwilioNumber}
-                onSelectNumber={setSelectedTwilioNumber}
-                onRefreshNumbers={loadTwilioAvailableNumbers}
-                onContinue={handleNumberSelectionContinue}
-              />
-            </div>
-          )}
-          <ChatWidget />
         </main>
       </div>
     </div>
