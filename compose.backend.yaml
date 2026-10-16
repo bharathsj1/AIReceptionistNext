@@ -1,6 +1,67 @@
-# Compatibility overlay: compose.yaml now includes the backend by default.
+# Production overlay. compose.yaml provides the application services and
+# Docker-hosted Azurite; this file preserves the external PostgreSQL database
+# and connects the UI to the existing Cloudflare ingress network.
 services:
   ui:
-    depends_on:
-      backend:
-        condition: service_healthy
+    networks:
+      default: {}
+      production-ingress:
+        aliases:
+          - ai-receptionist
+
+  backend:
+    # Enforce PostgreSQL before the Functions host starts. This wrapper is kept
+    # in Compose so it also protects deployments that use an upstream prebuilt
+    # image without DATABASE_URL_FILE support.
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        test -s "$${DATABASE_URL_FILE}"
+        export DATABASE_URL="$$(cat "$${DATABASE_URL_FILE}")"
+        case "$${DATABASE_URL}" in
+          postgres://*|postgresql://*|postgresql+psycopg://*|postgresql+psycopg2://*) ;;
+          *) echo "Production requires a PostgreSQL DATABASE_URL" >&2; exit 1 ;;
+        esac
+        exec /opt/startup/start_nonappservice.sh
+    environment:
+      DATABASE_URL_FILE: /run/secrets/database_url
+      # Never let the production stack silently fall back to local SQLite.
+      REQUIRE_POSTGRES: "true"
+      DB_CONNECT_TIMEOUT: "30"
+    secrets:
+      - database_url
+
+  postgres:
+    profiles: ["local-db"]
+    image: postgres:16-alpine
+    env_file:
+      - .env.docker
+    environment:
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    stop_grace_period: 30s
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+
+networks:
+  production-ingress:
+    external: true
+    name: vedora-sandbox_default
+
+secrets:
+  postgres_password:
+    file: ./.secrets/postgres_password
+  database_url:
+    file: ./.secrets/neon_database_url

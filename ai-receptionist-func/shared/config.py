@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from typing import Optional
 
 
@@ -20,7 +21,34 @@ def get_database_url() -> str:
     Return the database URL for SQLAlchemy.
     Defaults to a local SQLite file for development if not provided.
     """
-    return os.getenv("DATABASE_URL") or os.getenv("POSTGRES_CONNECTION_STRING") or "sqlite:///./data/app.db"
+    database_url_file = (os.getenv("DATABASE_URL_FILE") or "").strip()
+    if database_url_file:
+        database_url = Path(database_url_file).read_text(encoding="utf-8").strip()
+        if not database_url:
+            raise ValueError("DATABASE_URL_FILE is empty")
+    else:
+        database_url = (
+            os.getenv("DATABASE_URL")
+            or os.getenv("POSTGRES_CONNECTION_STRING")
+            or "sqlite:///./data/app.db"
+        )
+
+    require_postgres = (os.getenv("REQUIRE_POSTGRES") or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    database_scheme = database_url.split(":", 1)[0].lower()
+    if require_postgres and database_scheme not in {
+        "postgres",
+        "postgresql",
+        "postgresql+psycopg",
+        "postgresql+psycopg2",
+    }:
+        raise ValueError("Production requires a PostgreSQL DATABASE_URL")
+
+    return database_url
 
 
 def get_google_oauth_settings() -> dict:

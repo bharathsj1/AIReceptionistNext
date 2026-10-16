@@ -17,5 +17,7 @@ __pycache__/
 .env*
 !.env.example
 !.env.docker.example
+.secrets/
+backups/
 
 .DS_Store
