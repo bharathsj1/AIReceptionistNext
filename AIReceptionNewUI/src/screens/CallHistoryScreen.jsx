@@ -123,6 +123,7 @@ export default function CallHistoryScreen({
         "business",
         "phone",
         "campaign",
+        "call_type",
         "started_at_utc",
         "ended_at_utc",
         "talk_time_seconds",
@@ -136,6 +137,7 @@ export default function CallHistoryScreen({
         call.restaurant_name,
         call.phone,
         call.campaign_name,
+        call.call_type || "ai",
         call.started_at,
         call.ended_at,
         call.duration_seconds,
@@ -359,7 +361,7 @@ export default function CallHistoryScreen({
                           </button>
                         </td>
                         <td className="call-history-campaign">
-                          {call.campaign_name}
+                          {call.call_type === "normal" ? "Normal call" : "AI call"} · {call.campaign_name}
                         </td>
                         <td className="call-history-date">
                           {callDate(call.started_at)}
@@ -433,7 +435,7 @@ export default function CallHistoryScreen({
                       </span>
                       <ArrowRight size={17} />
                     </button>
-                    <p>{call.campaign_name}</p>
+                    <p>{call.call_type === "normal" ? "Normal call" : "AI call"} · {call.campaign_name}</p>
                     <div className="call-history-card-time">
                       <span>{callDate(call.started_at)} · London</span>
                       <span>

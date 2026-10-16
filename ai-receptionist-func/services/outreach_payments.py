@@ -39,9 +39,9 @@ def options(db):
 
 
 @contextmanager
-def setup_lock(db):
+def setup_lock(db, setting_id="stripe_setup_lock", provider_name="Stripe"):
     """Serialize initial key selection and callback registration across workers."""
-    setting_id, token = "stripe_setup_lock", str(uuid4())
+    token = str(uuid4())
     if not db.get(OutreachBillingSetting, setting_id):
         db.add(OutreachBillingSetting(id=setting_id, status="idle"))
         try: db.commit()
@@ -51,7 +51,7 @@ def setup_lock(db):
         OutreachBillingSetting.created_at < datetime.utcnow() - timedelta(minutes=5))).update({
             "status": "locked", "provider_reference": token, "created_at": datetime.utcnow()}, synchronize_session=False)
     db.commit()
-    if not claimed: raise billing.BillingError("Stripe setup is already in progress. Wait and refresh before continuing.")
+    if not claimed: raise billing.BillingError(f"{provider_name} setup is already in progress. Wait and refresh before continuing.")
     try: yield
     finally:
         db.rollback()

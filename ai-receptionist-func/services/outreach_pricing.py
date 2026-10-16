@@ -72,7 +72,8 @@ def number_price(provider, number_type, admin=False):
         "multiplier": 1 if admin else 2}
 
 
-def call_price(phone, caller):
+def call_price(phone, caller, call_type="ai"):
+    if call_type not in {"ai", "normal"}: raise PricingError("Choose AI call or normal call")
     from services.outreach_service import twilio_client
     def fetch():
         item = twilio_client().pricing.v2.voice.numbers(phone).fetch(origination_number=caller)
@@ -80,6 +81,11 @@ def call_price(phone, caller):
         applicable = [p for p in prices if "ALL" in p.get("origination_prefixes", []) or any(caller.lstrip('+').startswith(prefix.lstrip('+')) for prefix in p.get("origination_prefixes", []))]
         if not applicable: raise PricingError("The destination has no supported call price")
         twilio = max(decimal_price(p.get("current_price")) for p in applicable) * gbp_conversion(item.price_unit)
+        if call_type == "normal":
+            browser = decimal_price(os.getenv("OUTREACH_TWILIO_BROWSER_COST_PER_MINUTE", "0.004"), True) * gbp_conversion(os.getenv("OUTREACH_TWILIO_BROWSER_COST_CURRENCY", "USD"))
+            return {"rate_gbp": str(2 * (twilio + browser)), "twilio_gbp": str(twilio), "browser_gbp": str(browser),
+                "ultravox_gbp": "0", "call_type": "normal", "markup_mode": "combined", "multiplier": 2,
+                "currency": "GBP", "billing_unit": "started_minute_per_leg"}
         uv_currency = os.getenv("OUTREACH_ULTRAVOX_COST_CURRENCY", "USD")
         uv = decimal_price(os.getenv("OUTREACH_ULTRAVOX_COST_PER_MINUTE", "0.05"), True) * gbp_conversion(uv_currency)
         mode = os.getenv("OUTREACH_CALL_MARKUP_MODE", "combined")
@@ -87,6 +93,6 @@ def call_price(phone, caller):
         total = 2 * (twilio + uv) if mode == "combined" else 2 * twilio
         return {"rate_gbp": str(total), "twilio_gbp": str(twilio), "ultravox_gbp": str(uv),
             "markup_mode": mode, "multiplier": 2, "currency": "GBP", "billing_unit": "started_minute"}
-    try: return cached(("call", phone, caller, os.getenv("OUTREACH_CALL_MARKUP_MODE", "combined")), fetch)
+    try: return cached(("call", phone, caller, call_type, os.getenv("OUTREACH_CALL_MARKUP_MODE", "combined")), fetch)
     except PricingError: raise
     except Exception: raise PricingError("Call pricing could not be verified. Try again before dialling.") from None

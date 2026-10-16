@@ -39,6 +39,16 @@
   gap: 18px;
   align-items: start;
 }
+.manual-call-type { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.manual-call-type legend { font-weight: 700; margin-bottom: 10px; }
+.manual-call-dialog .manual-call-type label { display: grid; grid-template-columns: 18px minmax(0,1fr); align-items: start; gap: 10px; border: 1px solid var(--call-line); border-radius: 12px; padding: 16px; cursor: pointer; }
+.manual-call-type label:has(input:checked) { border-color: var(--call-green); background: #edf5ef; }
+.manual-call-dialog .manual-call-type input[type="radio"] { width: 18px; height: 18px; min-height: 18px; padding: 0; margin: 5px 0 0; accent-color: var(--call-green); }
+.manual-call-type span { display: grid; gap: 6px; }
+.manual-call-type small { font-weight: 400; }
+.manual-browser-setup { display: grid; gap: 14px; padding: 18px; border: 1px solid var(--call-line); border-radius: 12px; }
+.manual-voice-controls { display: flex; gap: 12px; }
+@media (max-width: 590px) { .manual-call-type { grid-template-columns: 1fr; } }
 
 
 .manual-call-feedback {

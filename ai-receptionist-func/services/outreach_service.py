@@ -91,7 +91,7 @@ def parse_contacts(csv_text):
                 if phone in seen:
                     raise ValueError("Duplicate phone number in CSV")
                 seen.add(phone)
-                contacts.append({"phone": phone, "restaurant_name": row["restaurant_name"], "contact": row,
+                contacts.append({"phone": phone, "restaurant_name": row["restaurant_name"], "contact": {**row, "call_type": "ai"},
                                  "consent_evidence": row.get("consent_evidence") or None,
                                  "status": "queued", "error": None})
             except ValueError as exc:
@@ -306,10 +306,19 @@ def launch_call(db, campaign, lead):
         if lead.twilio_call_sid:
             return
         lead.status = "failed" if 400 <= (exc.status or 0) < 500 else "needs_review"
-        lead.error = "Twilio rejected the call" if lead.status == "failed" else "Twilio call creation is uncertain; check provider logs before continuing"
+        lead.error = f"Twilio rejected the call (code {exc.code or 'unknown'})" if lead.status == "failed" else "Twilio call creation is uncertain; check provider logs before continuing"
         campaign.status, campaign.error = "paused", lead.error
         if lead.status == "failed":
             lead.ended_at = datetime.utcnow()
+        log_event(db, lead, lead.status, lead.error)
+        db.commit()
+        if lead.status == "failed": billing.settle_call(db, lead.id, 0)
+    except requests.HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else 0
+        lead.status = "failed" if 400 <= status < 500 else "needs_review"
+        lead.error = f"Ultravox rejected the AI session (HTTP {status}). Check its API key, account balance and call settings." if lead.status == "failed" else "Ultravox session creation is uncertain; check provider logs before retrying"
+        campaign.status, campaign.error = "paused", lead.error
+        if lead.status == "failed": lead.ended_at = datetime.utcnow()
         log_event(db, lead, lead.status, lead.error)
         db.commit()
         if lead.status == "failed": billing.settle_call(db, lead.id, 0)
@@ -356,6 +365,12 @@ def apply_call_status(db, lead, sid, status, sequence=None, duration=None):
     db.refresh(lead)
 
     if status in TERMINAL and lead.status == status and duration is not None:
+        from shared.db import OutreachBrowserCall
+        browser = db.get(OutreachBrowserCall, lead.id)
+        if browser:
+            browser.child_duration = duration
+            ensure_conversation(db, lead).duration_seconds = duration
+            db.commit()
         from services.outreach_billing import settle_call
         settle_call(db, lead.id, duration)
 
@@ -454,6 +469,12 @@ def process_notifications(db, now):
 
 
 def process_campaign(db, campaign, now):
+    from shared.db import OutreachBrowserCall
+    browser = db.query(OutreachBrowserCall).join(OutreachLead, OutreachLead.id == OutreachBrowserCall.lead_id).filter(OutreachLead.campaign_id == campaign.id).first()
+    if browser:
+        from services.browser_calling import reconcile
+        reconcile(db, browser, now)
+        return
     active = db.query(OutreachLead).filter(OutreachLead.campaign_id == campaign.id, OutreachLead.status.in_(ACTIVE)).all()
     for lead in active:
         if lead.twilio_call_sid:

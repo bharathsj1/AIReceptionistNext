@@ -567,6 +567,10 @@ curl -X POST https://smartconnect4u.com/api/private-cards \
 
 ## Sales Dialer Setup
 
+For the current Outreach dashboard's AI/normal manual calling, see
+[Browser calling](../docs/browser-calling.md). The routes below describe the older
+sales dialer, which is separate from the current manual-call flow.
+
 ### API routes
 - `GET /api/voice/token` (auth required, role: `SalesRep` or `Admin`)
 - `POST /api/voice/twiml` (Twilio webhook for browser dialer routing)

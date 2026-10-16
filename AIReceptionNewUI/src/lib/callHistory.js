@@ -71,6 +71,7 @@ export function callDuration(value) {
   return `${hours ? `${hours}:` : ""}${hours ? String(Math.floor((seconds % 3600) / 60)).padStart(2, "0") : Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 export function transcriptState(call) {
+  if (call?.call_type === "normal") return ["Normal call · no AI transcript", "empty"];
   const status = call?.transcript_status || "pending";
   if (status === "partial") return ["Partial transcript", "partial"];
   if (status === "ready") return ["Transcript ready", "ready"];
@@ -88,6 +89,7 @@ export function conversationText(call, transcript) {
     `Started (Europe/London): ${callDate(call.started_at)}`,
     `Talk time: ${callDuration(call.duration_seconds)}`,
     `Call status: ${callStatus(call.status)}`,
+    `Call type: ${call.call_type === "normal" ? "Normal call" : "AI call"}`,
     `Outcome: ${readable(call.result?.outcome)}`,
     `Transcript: ${transcript.is_final ? "Final" : "Partial · may be incomplete"}`,
     `Twilio reference: ${call.twilio_call_sid || "Not captured"}`,

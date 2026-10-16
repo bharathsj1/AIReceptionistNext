@@ -58,7 +58,7 @@ def billing_order(req):
 def billing_call_quote(req):
     def action(db, actor):
         body = body_for(req)
-        return {"quote": billing.create_call_quote(db, actor, body.get("phone"), body.get("caller_id"))}
+        return {"quote": billing.create_call_quote(db, actor, body.get("phone"), body.get("caller_id"), body.get("call_type", "ai"))}
     return handle(req, action)
 
 

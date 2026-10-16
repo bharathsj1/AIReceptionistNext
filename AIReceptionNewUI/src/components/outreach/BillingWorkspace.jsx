@@ -25,12 +25,13 @@ export function WalletSummary({ billing, onOpen }) {
   </section>;
 }
 
-export function CallPriceCard({ quote, wallet, admin, loading, error, onAddBalance }) {
-  if (admin) return <div className="billing-call-price"><ShieldCheck size={20}/><div><strong>Platform admin · no wallet charge</strong><p>Twilio and Ultravox usage is billed directly to your provider accounts.</p></div></div>;
+export function CallPriceCard({ quote, wallet, admin, loading, error, onAddBalance, callType = "ai" }) {
+  if (admin) return <div className="billing-call-price"><ShieldCheck size={20}/><div><strong>Platform admin · no wallet charge</strong><p>{callType === "normal" ? "Twilio browser and destination usage is billed directly to your provider account. Ultravox is not used." : "Twilio and Ultravox usage is billed directly to your provider accounts."}</p></div></div>;
   const available = wallet?.available_pence || 0;
   return <div className="billing-call-price" aria-live="polite"><Wallet size={20}/><div>
     <strong>{loading ? "Checking the current call price…" : quote ? `${minuteRate(quote.rate_gbp)} per started minute` : "Enter a UK number to see its call price"}</strong>
     {quote && <p>{Number(quote.credits_per_minute).toFixed(2)} credits/min · Final charge rounded up to the nearest penny.</p>}
+    {callType === "normal" && <p>Includes the browser connection and destination call at 2× Twilio cost. Each leg is charged for its own started minutes; no Ultravox charge.</p>}
     <p>{available.toLocaleString("en-GB")} credits ({gbp(available)}) available. Funds are reserved before dialling and unused funds are released after the call. Calls stop at the duration your balance covers, up to 10 minutes.</p>
     {error && <p className="calling-inline-warning">{error}</p>}
     {(!available || (quote && available < quote.minimum_pence) || wallet?.frozen) && <><p className="calling-inline-warning">{wallet?.frozen ? "This wallet needs payment review. Contact support." : "Add balance before making this call."}</p><button type="button" className="calling-button" onClick={onAddBalance}>Open wallet</button></>}

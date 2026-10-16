@@ -576,6 +576,18 @@ class OutreachLead(Base):
     __table_args__ = (UniqueConstraint("campaign_id", "phone", name="uq_outreach_campaign_phone"),)
 
 
+class OutreachBrowserCall(Base):
+    __tablename__ = "outreach_browser_calls"
+    lead_id = Column(String, ForeignKey("outreach_leads.id"), primary_key=True)
+    actor_email = Column(String, nullable=False)
+    status = Column(String, nullable=False, default="waiting")
+    parent_sid = Column(String, unique=True, nullable=True)
+    parent_duration = Column(Integer, nullable=True)
+    child_duration = Column(Integer, nullable=True)
+    expires_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
 class OutreachConversation(Base):
     __tablename__ = "outreach_conversations"
 

@@ -352,6 +352,8 @@ export default function ConversationDrawer({
                   <span />
                   {loading
                     ? "Loading conversation…"
+                    : call.call_type === "normal"
+                      ? "Normal call · no AI transcript"
                     : transcript?.is_final
                       ? messages.length
                         ? "Saved transcript"
@@ -457,7 +459,7 @@ export default function ConversationDrawer({
                 <div className="conversation-empty">
                   <MessageSquareText size={29} />
                   <h3>
-                    {transcript?.status === "not_started"
+                    {call.call_type === "normal" ? "Normal phone call" : transcript?.status === "not_started"
                       ? "This contact hasn’t been called yet"
                       : transcript?.status === "empty"
                         ? "No spoken conversation was captured"
@@ -466,7 +468,7 @@ export default function ConversationDrawer({
                           : "The transcript is being prepared"}
                   </h3>
                   <p>
-                    {transcript?.status === "not_started"
+                    {call.call_type === "normal" ? "You spoke through the browser using Twilio. Call status, duration and activity are saved. Recording and AI transcripts are not enabled for normal calls." : transcript?.status === "not_started"
                       ? "A call record and transcript will appear after calling starts."
                       : !call.ultravox_call_id
                         ? "No Ultravox conversation is linked to this attempt. Call status and any saved owner response are still available."
@@ -494,8 +496,9 @@ export default function ConversationDrawer({
               <div className="calling-result-summary">
                 <h3>Conversation summary</h3>
                 <p>
-                  {call.result?.summary ||
-                    "No structured owner response was captured for this attempt. Check the transcript and call status for the available conversation details."}
+                  {call.result?.summary || (call.call_type === "normal"
+                    ? "You spoke directly with the contact. Normal calls save call details and activity without an AI summary or transcript."
+                    : "No structured owner response was captured for this attempt. Check the transcript and call status for the available conversation details.")}
                 </p>
               </div>
               <dl className="calling-result-details">

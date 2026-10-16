@@ -77,3 +77,8 @@ test("history labels preserve the distinction between partial, empty and unavail
   );
   assert.equal(transcriptState({})[0], "Awaiting transcript");
 });
+
+test("normal calls never imply that an AI transcript is pending", () => {
+  assert.equal(transcriptState({ call_type: "normal", transcript_status: "pending" })[0], "Normal call · no AI transcript");
+  assert.match(conversationText({ call_type: "normal", restaurant_name: "Bistro", phone: "+442079460018" }, { messages: [], is_final: true }), /Call type: Normal call/);
+});

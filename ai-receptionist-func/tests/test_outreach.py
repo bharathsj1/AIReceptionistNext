@@ -120,6 +120,21 @@ class OutreachTests(unittest.TestCase):
             with self.subTest(csv=csv_text[:30]), self.assertRaises(ValueError):
                 service.parse_contacts(csv_text)
 
+    def test_definitive_ultravox_rejection_does_not_dial_or_keep_wallet_hold(self):
+        campaign = self.campaign()
+        campaign.status = "running"
+        lead = self.db.query(OutreachLead).filter_by(campaign_id=campaign.id).one()
+        response = requests.Response(); response.status_code = 401
+        with patch.object(service.requests, "post") as post, patch.object(service, "twilio_client") as provider, patch("services.outreach_billing.settle_call") as settle:
+            post.return_value.raise_for_status.side_effect = requests.HTTPError("private upstream response", response=response)
+            service.launch_call(self.db, campaign, lead)
+        self.assertEqual(lead.status, "failed")
+        self.assertIn("Ultravox", lead.error)
+        self.assertIn("HTTP 401", lead.error)
+        self.assertNotIn("private upstream", lead.error)
+        provider.assert_not_called()
+        settle.assert_called_once_with(self.db, lead.id, 0)
+
     def test_caller_id_must_belong_to_tenant(self):
         with self.assertRaises(ValueError):
             service.create_campaign(self.db, 2, self.body)

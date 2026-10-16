@@ -25,6 +25,7 @@ from services.outreach_history import (call_payload, ensure_conversation, iso, l
 from services.manual_outreach import ManualCallConflict, start_manual_call
 from shared.db import OutreachCallEvent, OutreachConversation
 from services import outreach_billing as billing
+from services import browser_calling
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,7 @@ def outreach_config(req):
         return response(req, {"caller_ids": caller_numbers(db, actor.client_id),
                               "numbers": [number_payload(n) for n in own_numbers(db, actor.client_id)],
                               "number_error": number_error, "configuration_errors": configuration_errors(db),
+                              "normal_configuration_errors": browser_calling.configuration_errors(db),
                               "from_email": outreach_from_email(),
                               "notification_email": actor.email,
                               "billing": {"is_platform_admin": billing.is_platform_admin(actor),
@@ -88,9 +90,14 @@ def outreach_manual_call(req):
         body = body_for(req)
         body["notification_email"] = str(body.get("notification_email") or "").strip() or actor.email
         campaign, lead, created = start_manual_call(db, actor.client_id, body, actor=actor)
+        from services.browser_calling import connection_payload, prepare
+        browser = None
+        if (lead.contact or {}).get("call_type") == "normal":
+            prepare(db, campaign, lead)
+            browser = connection_payload(db, actor, lead)
         conversation = db.get(OutreachConversation, lead.id)
         return response(req, {"call": call_payload(lead, campaign, conversation),
-            "campaign_id": campaign.id, "created": created}, 201 if created else 200)
+            "campaign_id": campaign.id, "created": created, "browser": browser}, 201 if created else 200)
     except billing.BillingError as exc:
         db.rollback()
         return response(req, {"error": str(exc)}, exc.status)

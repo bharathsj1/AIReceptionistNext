@@ -73,15 +73,17 @@ def credit_wallet(db, client_id, amount, reference, kind="topup", order=None, re
 def quote_payload(quote):
     return {"id": quote.id, "phone": quote.phone, "caller_id": quote.caller_id, "rate_gbp": quote.rate_gbp,
         "credits_per_minute": str(Decimal(quote.rate_gbp) * 100), "currency": "GBP",
-        "billing_unit": "started_minute", "minimum_pence": pricing.pence(quote.rate_gbp),
+        "call_type": quote.details.get("call_type", "ai"),
+        "billing_unit": quote.details.get("billing_unit", "started_minute"), "minimum_pence": pricing.pence(quote.rate_gbp),
         "expires_at": quote.expires_at.isoformat() + "Z"}
 
 
-def create_call_quote(db, actor, phone, caller):
+def create_call_quote(db, actor, phone, caller, call_type="ai"):
     from services.outreach_service import normalize_uk_phone, caller_numbers
     phone = normalize_uk_phone(phone)
     if caller not in caller_numbers(db, actor.client_id): raise BillingError("Choose a calling number owned by your account", 400)
-    details = pricing.call_price(phone, caller)
+    if call_type not in {"ai", "normal"}: raise BillingError("Choose AI call or normal call", 400)
+    details = {**pricing.call_price(phone, caller, call_type), "call_type": call_type}
     quote = OutreachCallQuote(id=str(uuid4()), client_id=actor.client_id, actor_email=actor.email.lower(),
         phone=phone, caller_id=caller, rate_gbp=details["rate_gbp"], details=details,
         expires_at=datetime.utcnow() + timedelta(minutes=5))
@@ -91,7 +93,7 @@ def create_call_quote(db, actor, phone, caller):
     return result
 
 
-def bind_campaign(db, campaign_id, actor, quote_id, phone, caller, commit=True):
+def bind_campaign(db, campaign_id, actor, quote_id, phone, caller, commit=True, call_type="ai"):
     if not actor: raise BillingError("A signed-in billing identity is required", 401)
     campaign = db.get(OutreachCampaign, campaign_id)
     if not campaign or campaign.client_id != actor.client_id:
@@ -103,7 +105,7 @@ def bind_campaign(db, campaign_id, actor, quote_id, phone, caller, commit=True):
             raise BillingError("Stripe is in test mode. Test payments cannot fund live calls.", 402)
         quote = db.query(OutreachCallQuote).filter_by(id=quote_id, client_id=actor.client_id,
             actor_email=actor.email.lower(), phone=phone, caller_id=caller).first()
-        if not quote or quote.expires_at <= datetime.utcnow():
+        if not quote or quote.expires_at <= datetime.utcnow() or quote.details.get("call_type", "ai") != call_type:
             raise BillingError("Review a current call price before starting")
         rate = quote.rate_gbp
         funds = db.get(OutreachWallet, actor.client_id)
@@ -118,6 +120,7 @@ def bind_campaign(db, campaign_id, actor, quote_id, phone, caller, commit=True):
 
 
 def reserve_call(db, campaign, lead):
+    call_type = (lead.contact or {}).get("call_type", "ai")
     existing = db.get(OutreachCallCharge, lead.id)
     if existing:
         if existing.status not in {"reserved", "exempt"}: raise BillingError("This call already has a settled billing record")
@@ -129,7 +132,7 @@ def reserve_call(db, campaign, lead):
     admin = context.admin_exempt and context.actor_email == PLATFORM_ADMIN_EMAIL
     if admin:
         row = OutreachCallCharge(lead_id=lead.id, client_id=campaign.client_id, actor_email=context.actor_email,
-            admin_exempt=True, rate_gbp="0", rate_details={}, reserved_pence=0, charged_pence=0,
+            admin_exempt=True, rate_gbp="0", rate_details={"call_type": call_type}, reserved_pence=0, charged_pence=0,
             max_duration_seconds=600, status="exempt")
         db.add(row)
         try: db.commit()
@@ -137,7 +140,7 @@ def reserve_call(db, campaign, lead):
         return db.get(OutreachCallCharge, lead.id)
     if stripe_api_key(db).startswith("sk_test_"):
         raise BillingError("Stripe is in test mode. Test payments cannot fund live calls.", 402)
-    details = pricing.call_price(lead.phone, campaign.caller_id)
+    details = {**pricing.call_price(lead.phone, campaign.caller_id, call_type), "call_type": call_type}
     rate = pricing.decimal_price(details["rate_gbp"])
     if not context.max_rate_gbp or rate > Decimal(context.max_rate_gbp):
         raise BillingError("This destination costs more than the approved rate. Review its price and resume the campaign.")
@@ -171,7 +174,17 @@ def settle_call(db, lead_id, duration):
     if isinstance(duration, bool) or not str(duration).isdigit(): raise BillingError("Invalid billable duration", 400)
     seconds = int(duration)
     if seconds < 0: raise BillingError("Invalid billable duration", 400)
-    cost = 0 if row.admin_exempt else min(row.reserved_pence, pricing.pence(Decimal(row.rate_gbp) * math.ceil(seconds / 60)))
+    normal = row.rate_details.get("call_type") == "normal"
+    if normal:
+        from shared.db import OutreachBrowserCall
+        browser = db.get(OutreachBrowserCall, lead_id)
+        if not browser or browser.parent_duration is None or browser.child_duration is None: return
+        seconds = browser.child_duration
+        cost = 0 if row.admin_exempt else min(row.reserved_pence, pricing.pence(2 * (
+            Decimal(row.rate_details["twilio_gbp"]) * math.ceil(seconds / 60) +
+            Decimal(row.rate_details["browser_gbp"]) * math.ceil(browser.parent_duration / 60))))
+    else:
+        cost = 0 if row.admin_exempt else min(row.reserved_pence, pricing.pence(Decimal(row.rate_gbp) * math.ceil(seconds / 60)))
     updated = db.query(OutreachCallCharge).filter_by(lead_id=lead_id).filter(
         OutreachCallCharge.status.in_(["reserved", "exempt"])).update({"status": "settled", "charged_pence": cost,
             "duration_seconds": seconds, "settled_at": datetime.utcnow()}, synchronize_session=False)
@@ -180,7 +193,7 @@ def settle_call(db, lead_id, duration):
             "balance_pence": OutreachWallet.balance_pence - cost,
             "reserved_pence": OutreachWallet.reserved_pence - row.reserved_pence}, synchronize_session=False)
         db.add(OutreachWalletEntry(id=f"call:{lead_id}", client_id=row.client_id, kind="call", amount_pence=-cost,
-            reference=lead_id, description=f"AI call · {seconds}s · £{row.rate_gbp}/started minute"))
+            reference=lead_id, description=f"{'Normal' if normal else 'AI'} call · {seconds}s · £{row.rate_gbp}/started minute"))
     db.commit(); db.expire_all()
 
 

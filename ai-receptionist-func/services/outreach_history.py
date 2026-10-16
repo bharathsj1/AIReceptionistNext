@@ -209,7 +209,9 @@ def sync_pending_conversations(db, limit=10):
 
 
 def transcript_status(lead, record):
-    if not lead.started_at:
+    if (lead.contact or {}).get("call_type") == "normal":
+        status = "not_applicable"
+    elif not lead.started_at:
         status = "not_started"
     elif not lead.ultravox_call_id:
         status = "unavailable" if lead.status in TERMINAL | {"needs_review"} else "pending"
@@ -229,6 +231,7 @@ def transcript_payload(lead, record):
 
 def call_payload(lead, campaign, conversation=None):
     return {"id": lead.id, "campaign_id": campaign.id, "campaign_name": campaign.name,
+            "call_type": (lead.contact or {}).get("call_type", "ai"),
             "restaurant_name": lead.restaurant_name, "phone": lead.phone, "caller_id": campaign.caller_id,
             "status": lead.status, "error": lead.error, "result": lead.result,
             "started_at": iso(lead.started_at), "ended_at": iso(lead.ended_at),
