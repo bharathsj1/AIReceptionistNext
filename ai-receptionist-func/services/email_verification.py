@@ -4,8 +4,6 @@ import math
 import os
 import re
 import secrets
-import smtplib
-import ssl
 from datetime import datetime, timedelta
 from email.message import EmailMessage
 
@@ -14,9 +12,9 @@ from sqlalchemy import case, or_
 from sqlalchemy.exc import IntegrityError
 
 from crm_shared import _auth_session_secret
-from shared.config import get_smtp_settings
 from shared.db import OutreachEmailVerification
 from services.outreach_service import outreach_from_email, valid_email
+from services import outreach_smtp as smtp_delivery
 
 TTL_SECONDS = 600
 RESEND_SECONDS = 60
@@ -39,13 +37,17 @@ def identity(actor, email=None):
     return actor.client_id, subject, address
 
 
-def delivery_available():
-    smtp = get_smtp_settings()
+def delivery_available(db=None):
+    try:
+        smtp = smtp_delivery.smtp_settings(db)
+    except smtp_delivery.MailConfigurationError:
+        return False
     smtp_ready = bool(smtp.get("host") and (not smtp.get("username") or smtp.get("password")))
     return bool(valid_email(outreach_from_email()) and (smtp_ready or os.getenv("SENDGRID_API_KEY")))
 
 
 def status_payload(db, actor, now=None):
+    from services.outreach_billing import is_platform_admin
     now = now or datetime.utcnow()
     key = identity(actor)
     state = db.get(OutreachEmailVerification, key)
@@ -56,7 +58,7 @@ def status_payload(db, actor, now=None):
         "verified_at": state.verified_at.isoformat() + "Z" if state and state.verified_at else None,
         "challenge_pending": bool(state and state.status == "sent" and state.expires_at > now and state.failed_attempts < ATTEMPT_LIMIT),
         "resend_after_seconds": max(0, math.ceil((retry_at - now).total_seconds())),
-        "delivery_configured": delivery_available()}
+        "delivery_configured": delivery_available(db), "is_platform_admin": is_platform_admin(actor)}
 
 
 def hash_code(key, salt, code):
@@ -67,26 +69,18 @@ def hash_code(key, salt, code):
     return hmac.digest(secret.encode(), payload.encode(), "sha256").hex()
 
 
-def send_verification_email(email, code):
+def send_verification_email(email, code, db=None):
     message = EmailMessage()
     message["From"] = outreach_from_email()
     message["To"] = email
     message["Subject"] = "Your Vedora Outreach verification code"
     message.set_content(f"Your verification code is:\n\n{code}\n\nThis code expires in 10 minutes.\n"
                         "If you did not request this code, you can ignore this email.")
-    smtp = get_smtp_settings()
+    smtp = smtp_delivery.smtp_settings(db)
+    if db is not None and db.get(smtp_delivery.OutreachEmailSetting, "smtp"):
+        message.replace_header("From", smtp["from_email"])
     if smtp.get("host") and (not smtp.get("username") or smtp.get("password")):
-        port = smtp.get("port") or 587
-        context = ssl.create_default_context()
-        if port == 465:
-            connection = smtplib.SMTP_SSL(smtp["host"], port, timeout=10, context=context)
-        else:
-            connection = smtplib.SMTP(smtp["host"], port, timeout=10)
-        with connection as server:
-            if port != 465 and smtp.get("use_tls", True):
-                server.starttls(context=context)
-            if smtp.get("username"):
-                server.login(smtp["username"], smtp["password"])
+        with smtp_delivery.smtp_connection(smtp) as server:
             server.send_message(message)
         return
     response = requests.post("https://api.sendgrid.com/v3/mail/send", timeout=15,
@@ -100,7 +94,7 @@ def send_verification_email(email, code):
 def send_code(db, actor, email=None, now=None):
     now = now or datetime.utcnow()
     key = identity(actor, email)
-    if not delivery_available():
+    if not delivery_available(db):
         raise VerificationError("Email delivery is not configured. Configure SMTP or SendGrid to send verification codes.", 503)
     code, salt = f"{secrets.randbelow(1_000_000):06d}", secrets.token_hex(16)
     digest = hash_code(key, salt, code)
@@ -132,12 +126,13 @@ def send_code(db, actor, email=None, now=None):
         raise VerificationError("Please wait before requesting another verification code", 429,
                                 max(1, math.ceil((retry_at - now).total_seconds())))
     try:
-        send_verification_email(key[2], code)
-    except Exception:
+        send_verification_email(key[2], code, db=db)
+    except Exception as exc:
+        smtp_delivery.log_failure(exc)
         db.rollback()
         state_query.filter_by(code_hash=digest, status="sending").update({"status": "failed"}, synchronize_session=False)
         db.commit()
-        raise VerificationError("Could not confirm delivery of the code. Wait a minute before requesting a new one.", 503, RESEND_SECONDS) from None
+        raise VerificationError(smtp_delivery.failure_message(exc), 503, RESEND_SECONDS) from None
     state_query.filter_by(code_hash=digest, status="sending").update({"status": "sent"}, synchronize_session=False)
     db.commit()
     db.expire_all()

@@ -158,6 +158,17 @@ timelines are not invented. Audio recording is not enabled by this feature.
 
 ### Signed-in email verification
 
+The sole platform administrator can open **Calling setup → Email delivery settings**
+to validate and save SMTP credentials. The check opens a TLS connection, logs in,
+and checks `MAIL FROM` for `support@vedoraeats.com`; it does not send a message.
+Use port 587 for STARTTLS or 465 for implicit TLS. Settings are encrypted in
+`outreach_email_settings` using `AUTH_SESSION_SECRET` and override environment SMTP
+settings for verification emails. Passwords are never returned by the settings API.
+Request an actual verification code after saving to check delivery to the inbox.
+SMTP authentication, sender, recipient and connection failures have distinct safe
+messages; logs contain only the exception category and SMTP status, never the code
+or provider response. Cooldowns and verification attempt limits still apply.
+
 - `GET /api/outreach/email-verification`: signed-in address, verification status,
   pending challenge, resend countdown and mail-delivery readiness.
 - `POST /api/outreach/email-verification/send`: optional `email`, which must match

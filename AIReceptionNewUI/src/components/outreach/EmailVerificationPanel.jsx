@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { BadgeCheck, LoaderCircle, MailCheck } from "lucide-react";
 import { outreachRequest } from "../../lib/api/outreach";
 import { authToken, SignInRequiredError } from "../../lib/authSession";
+import EmailDeliverySettings from "./EmailDeliverySettings";
 import "./EmailVerificationPanel.css";
 
 export default function EmailVerificationPanel({ user, onAuthRequired }) {
@@ -81,6 +82,10 @@ export default function EmailVerificationPanel({ user, onAuthRequired }) {
         {status?.is_email_verified ? <span className="calling-email-badge is-verified"><BadgeCheck size={18} />Verified</span>
           : <span className="calling-email-badge"><MailCheck size={18} />{loading ? "Checking…" : status ? "Not verified" : "Unavailable"}</span>}
       </div>
+      {status?.is_platform_admin && <EmailDeliverySettings user={user} onAuthRequired={onAuthRequired} onSaved={() => {
+        setStatus((current) => ({ ...current, delivery_configured: true }));
+        setError("");
+      }} />}
       {loading ? <p role="status">Checking verification status…</p> : status && !status.is_email_verified && <>
         <p>Confirm that you can receive emails at your signed-in address.</p>
         {!status.delivery_configured && <p className="calling-alert">Email delivery is not configured. Your administrator needs to configure SMTP or SendGrid to send verification codes.</p>}

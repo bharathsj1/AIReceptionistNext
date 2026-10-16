@@ -8,4 +8,13 @@
 .calling-email-code input { width: 190px; max-width: 100%; min-height: 48px; padding: 10px 14px; border: 1px solid var(--call-line); border-radius: 10px; font: inherit; letter-spacing: 0.1em; background: var(--call-white, white); }
 .calling-email-notice { color: #245941; font-weight: 600; }
 .calling-email-verification .calling-email-notice { margin-top: 16px; line-height: 1.65; }
+.calling-email-settings { margin: 20px 0; padding: 18px; background: var(--call-white, white); border: 1px solid var(--call-line); border-radius: 12px; }
+.calling-email-settings summary { cursor: pointer; font-weight: 700; font-size: var(--call-text-body); }
+.calling-email-settings summary span { display: block; margin-top: 5px; font-size: var(--call-text-small); font-weight: 500; }
+.calling-email-settings p { margin: 14px 0; font-size: var(--call-text-small); }
+.calling-email-settings fieldset { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding: 0; margin: 18px 0; border: 0; min-width: 0; }
+.calling-email-settings legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.calling-email-settings label { display: grid; gap: 8px; font-size: var(--call-text-small); font-weight: 650; min-width: 0; }
+.calling-email-settings input, .calling-email-settings select { width: 100%; box-sizing: border-box; min-height: 48px; padding: 10px 12px; border: 1px solid var(--call-line); border-radius: 8px; background: var(--call-white, white); color: inherit; font: inherit; }
+@media (max-width: 600px) { .calling-email-settings fieldset { grid-template-columns: 1fr; } .calling-email-settings button { width: 100%; } }
 @media (max-width: 480px) { .calling-email-code label, .calling-email-code input, .calling-email-code button { width: 100%; } }

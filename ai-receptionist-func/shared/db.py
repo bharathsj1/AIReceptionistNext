@@ -699,6 +699,13 @@ class OutreachBillingSetting(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
+class OutreachEmailSetting(Base):
+    __tablename__ = "outreach_email_settings"
+    id = Column(String, primary_key=True)
+    encrypted_value = Column(Text, nullable=False)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
 class OutreachEmailVerification(Base):
     __tablename__ = "outreach_email_verifications"
 
