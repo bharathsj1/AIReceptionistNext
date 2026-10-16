@@ -99,6 +99,8 @@ def bind_campaign(db, campaign_id, actor, quote_id, phone, caller, commit=True):
     admin = is_platform_admin(actor)
     rate = None
     if not admin:
+        if stripe_api_key(db).startswith("sk_test_"):
+            raise BillingError("Stripe is in test mode. Test payments cannot fund live calls.", 402)
         quote = db.query(OutreachCallQuote).filter_by(id=quote_id, client_id=actor.client_id,
             actor_email=actor.email.lower(), phone=phone, caller_id=caller).first()
         if not quote or quote.expires_at <= datetime.utcnow():
@@ -133,6 +135,8 @@ def reserve_call(db, campaign, lead):
         try: db.commit()
         except IntegrityError: db.rollback()
         return db.get(OutreachCallCharge, lead.id)
+    if stripe_api_key(db).startswith("sk_test_"):
+        raise BillingError("Stripe is in test mode. Test payments cannot fund live calls.", 402)
     details = pricing.call_price(lead.phone, campaign.caller_id)
     rate = pricing.decimal_price(details["rate_gbp"])
     if not context.max_rate_gbp or rate > Decimal(context.max_rate_gbp):
@@ -189,15 +193,23 @@ def encryption():
 def webhook_secret(db):
     configured = os.getenv("OUTREACH_STRIPE_WEBHOOK_SECRET", "").strip()
     if configured: return configured
-    record = db.get(OutreachBillingSetting, "stripe_webhook")
+    return stored_secret(db, "stripe_webhook")
+
+
+def stored_secret(db, setting_id):
+    record = db.get(OutreachBillingSetting, setting_id)
     if record and record.status == "configured" and record.encrypted_value:
         try: return encryption().decrypt(record.encrypted_value.encode()).decode()
         except Exception: return ""
     return ""
 
 
+def stripe_api_key(db):
+    return os.getenv("STRIPE_SECRET_KEY", "").strip() or stored_secret(db, "stripe_api_key")
+
+
 def billing_ready(db):
-    return bool(os.getenv("STRIPE_SECRET_KEY") and webhook_secret(db) and get_public_api_base().startswith("https://"))
+    return bool(stripe_api_key(db) and webhook_secret(db) and get_public_api_base().startswith("https://"))
 
 
 def billing_payload(db, actor):
@@ -214,7 +226,8 @@ def billing_payload(db, actor):
         except Exception: pass
     return {"is_platform_admin": admin, "role": "platform_admin" if admin else "customer",
         "wallet": wallet_payload(db, actor.client_id), "stripe_configured": billing_ready(db),
-        "stripe_key_present": bool(os.getenv("STRIPE_SECRET_KEY")), "provider_balance": provider_balance,
+        "stripe_key_present": bool(stripe_api_key(db)), "provider_balance": provider_balance,
+        "stripe_test_mode": stripe_api_key(db).startswith("sk_test_"),
         "number_markup": 2, "call_markup_mode": os.getenv("OUTREACH_CALL_MARKUP_MODE", "combined"),
         "topup_amounts_pence": list(TOPUP_AMOUNTS),
         "ledger": [{"id": e.id, "kind": e.kind, "amount_pence": e.amount_pence,

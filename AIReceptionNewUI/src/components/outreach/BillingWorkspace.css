@@ -13,6 +13,13 @@
 .billing-topup,.billing-admin-setup { padding:0 28px 28px; }
 .billing-topup h3,.billing-admin-setup h3 { margin-bottom:14px; }
 .billing-topup p,.billing-admin-setup p { color:var(--call-muted);margin-top:14px; }
+.billing-stripe-form { display:grid;gap:18px;margin:20px 0;max-width:680px; }
+.billing-stripe-form > label { display:grid;gap:8px;font-weight:600; }
+.billing-stripe-form input[type="password"] { box-sizing:border-box;width:100%;padding:14px 16px;border:1px solid var(--call-line);border-radius:10px;background:white;font:inherit;color:var(--call-ink); }
+.billing-stripe-form small { color:var(--call-muted);font-size:var(--call-text-small);font-weight:400;line-height:1.7; }
+.billing-stripe-form > button { justify-self:start; }
+.billing-stripe-account { display:grid;gap:10px;padding:20px;border-radius:12px;background:#f2f5ed;overflow-wrap:anywhere; }
+.billing-stripe-account > span { color:var(--call-muted); }
 .billing-amounts { display:flex;flex-wrap:wrap;gap:12px;margin-bottom:20px; }
 .billing-amounts button { display:grid;gap:4px;min-width:120px;text-align:left; }
 .billing-amounts small { font-size:var(--call-text-small);font-weight:500; }

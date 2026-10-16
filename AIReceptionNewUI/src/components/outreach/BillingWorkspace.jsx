@@ -56,6 +56,10 @@ export default function BillingWorkspace({ user, onAuthRequired, onChanged }) {
   const [busy, setBusy] = useState("");
   const [cancelOrder, setCancelOrder] = useState(null);
   const [reviews, setReviews] = useState([]);
+  const [stripeKey, setStripeKey] = useState("");
+  const [stripePublishableKey, setStripePublishableKey] = useState("");
+  const [stripeAccount, setStripeAccount] = useState(null);
+  const [confirmStripe, setConfirmStripe] = useState(false);
   const cancelRef = useRef(null);
   useDialogFocus(cancelRef, Boolean(cancelOrder), () => { if (!inFlight.current) setCancelOrder(null); });
   const request = useRef(null);
@@ -77,7 +81,7 @@ export default function BillingWorkspace({ user, onAuthRequired, onChanged }) {
       try {
         if (returning) {
           const result = await outreachRequest(`billing/orders/${encodeURIComponent(returning)}`, user);
-          if (live) setNotice(result.order.status === "completed" ? "Payment confirmed. Your purchase is ready." : `Payment status: ${result.order.status.replaceAll("_", " ")}. Funds are only added after Stripe confirms payment.`);
+          if (live) setNotice(result.order.status === "completed" ? "Payment confirmed. Your purchase is ready." : result.order.status === "test_completed" ? "Test payment verified. No spendable credits or live Twilio number were created." : `Payment status: ${result.order.status.replaceAll("_", " ")}. Funds are only added after Stripe confirms payment.`);
         }
         if (live) await load();
       } catch (err) { if (live) failed(err); }
@@ -110,6 +114,21 @@ export default function BillingWorkspace({ user, onAuthRequired, onChanged }) {
     try {await outreachRequest("billing/admin/connect-stripe",user,{});await load();setNotice("Stripe billing is connected. Payment callbacks are signed and stored securely.");}
     catch(err){failed(err);}finally{inFlight.current=false;setBusy("");}
   };
+  const configureKey = async (save = false) => {
+    if (inFlight.current || (save && (!confirmStripe || !stripeAccount))) return;
+    inFlight.current = true; setBusy("stripe-key"); setError("");
+    try {
+      const result = await outreachRequest("billing/admin/stripe-key", user, {
+        secret_key: stripeKey, publishable_key: stripePublishableKey, ...(save ? { confirm_account: true, account_id: stripeAccount?.account_id } : {}),
+      });
+      setStripeAccount(result.account);
+      if (result.account.saved) {
+        setStripeKey(""); setStripePublishableKey(""); setConfirmStripe(false); await load();
+        setNotice("Stripe credentials saved securely. Select Connect Stripe billing to enable signed payment callbacks.");
+      }
+    } catch (err) { failed(err); }
+    finally { inFlight.current = false; setBusy(""); }
+  };
   const cancel = async () => {
     if (inFlight.current || !cancelOrder) return;
     inFlight.current = true;setBusy("cancel");setError("");
@@ -120,6 +139,7 @@ export default function BillingWorkspace({ user, onAuthRequired, onChanged }) {
   const admin = data.is_platform_admin;
   return <div className="billing-workspace">
     {error && <p className="calling-alert is-error" role="alert">{error}</p>}{notice && <p className="calling-alert" role="status">{notice}</p>}
+    {data.stripe_test_mode && <p className="calling-alert" role="status"><strong>Stripe test mode.</strong> Checkout uses test payments. Successful test payments do not add spendable credits or buy real Twilio numbers.{admin ? " Your admin calls still use your provider balances directly." : " Customer calls remain unavailable in test mode."}</p>}
     <section className="calling-panel billing-panel">
       <header className="calling-panel-heading"><div><span className="calling-eyebrow">{admin ? "PLATFORM ADMIN" : "YOUR CALLING BUDGET"}</span><h2>{admin ? "Provider billing" : "Your credit wallet"}</h2><p>{admin ? "Your account uses provider balances directly." : "Add funds securely through Stripe. Credits appear only after payment is confirmed."}</p></div><Wallet size={25}/></header>
       <div className="billing-balance-grid">
@@ -127,8 +147,15 @@ export default function BillingWorkspace({ user, onAuthRequired, onChanged }) {
         <div><span>Reserved for calls</span><strong>{admin ? "Exempt" : gbp(data.wallet.reserved_pence)}</strong><small>Unused reserved funds return when the provider confirms the call has ended.</small></div>
       </div>
       {data.wallet.frozen && <p className="calling-alert is-error">This wallet is frozen following a payment dispute. Contact support before making more calls.</p>}
-      {!admin && <div className="billing-topup"><h3>Add balance</h3><div className="billing-amounts" role="group" aria-label="Top-up amount">{data.topup_amounts_pence.map(value=><button key={value} aria-pressed={amount===value} disabled={Boolean(busy) || Boolean(request.current)} className={`calling-button ${amount===value?"is-primary":""}`} onClick={()=>setAmount(value)}>{gbp(value)}<small>{value.toLocaleString("en-GB")} credits</small></button>)}</div><button className="calling-button is-primary" disabled={Boolean(busy)||!data.stripe_configured} onClick={topup}>{busy==="topup"?<LoaderCircle size={18} className="spin"/>:<CreditCard size={18}/>}Pay {gbp(request.current?.amount_pence || amount)} with Stripe <ExternalLink size={16}/></button>{!data.stripe_configured&&<p className="calling-inline-warning">Payments await platform setup. No payment has been taken.</p>}<p>Wallet funds pay for calls. Number rental is a separate monthly Stripe subscription.</p></div>}
-      {admin && <div className="billing-admin-setup"><h3>Stripe payment collection</h3><p>{data.stripe_configured ? "Connected · customers pay VedoraEats through signed Stripe checkout." : data.stripe_key_present ? "Stripe credentials are present. Connect the signed payment callback to enable customer checkout." : "Add STRIPE_SECRET_KEY to the backend deployment before connecting Stripe."}</p>{!data.stripe_configured&&<button className="calling-button is-primary" disabled={Boolean(busy)||!data.stripe_key_present} onClick={connect}>{busy==="connect"?"Connecting…":"Connect Stripe billing"}</button>}<p>Stripe receipts do not automatically top up Twilio. Keep your provider accounts funded so paid customer purchases and calls can be fulfilled.</p></div>}
+      {!admin && <div className="billing-topup"><h3>Add balance</h3><div className="billing-amounts" role="group" aria-label="Top-up amount">{data.topup_amounts_pence.map(value=><button key={value} aria-pressed={amount===value} disabled={Boolean(busy) || Boolean(request.current)} className={`calling-button ${amount===value?"is-primary":""}`} onClick={()=>setAmount(value)}>{gbp(value)}<small>{value.toLocaleString("en-GB")} credits</small></button>)}</div><button className="calling-button is-primary" disabled={Boolean(busy)||!data.stripe_configured} onClick={topup}>{busy==="topup"?<LoaderCircle size={18} className="spin"/>:<CreditCard size={18}/>}{data.stripe_test_mode?"Test checkout":"Pay"} {gbp(request.current?.amount_pence || amount)} with Stripe <ExternalLink size={16}/></button>{!data.stripe_configured&&<p className="calling-inline-warning">Payments await platform setup. No payment has been taken.</p>}<p>Wallet funds pay for calls. Number rental is a separate monthly Stripe subscription.</p></div>}
+      {admin && <div className="billing-admin-setup"><h3>Stripe payment collection</h3><p>{data.stripe_configured ? "Connected · customers pay VedoraEats through signed Stripe checkout." : data.stripe_key_present ? "Stripe credentials are present. Connect the signed payment callback to enable customer checkout." : "Connect the Stripe account that will receive customer payments. Only your platform admin account can configure this."}</p>
+        {!data.stripe_key_present && <form className="billing-stripe-form" onSubmit={event=>{event.preventDefault();configureKey(Boolean(stripeAccount));}}>
+          <label>Stripe secret key<input type="password" name="stripe-api-secret" autoComplete="off" spellCheck={false} required maxLength={208} disabled={Boolean(busy)} value={stripeKey} placeholder="sk_live_… or sk_test_…" onChange={event=>{setStripeKey(event.target.value);setStripeAccount(null);setConfirmStripe(false);}}/><small>Enter the key directly here. It is encrypted on the backend and never saved in browser storage or returned by the API.</small></label>
+          <label>Stripe publishable key (optional)<input type="password" name="stripe-publishable-key" autoComplete="off" spellCheck={false} maxLength={208} disabled={Boolean(busy)} value={stripePublishableKey} placeholder="pk_live_… or pk_test_…" onChange={event=>{setStripePublishableKey(event.target.value);setStripeAccount(null);setConfirmStripe(false);}}/><small>Hosted Stripe Checkout only requires the secret key. If supplied, the publishable key must use the same live or test mode.</small></label>
+          {stripeAccount && <div className="billing-stripe-account" role="status"><strong>{stripeAccount.business_name}</strong><span>{stripeAccount.account_id} · {stripeAccount.mode === "live" ? "Live payments — real customer charges" : "Test mode — no live payments"}</span><label className="calling-checkbox"><input type="checkbox" checked={confirmStripe} disabled={Boolean(busy)} onChange={event=>setConfirmStripe(event.target.checked)}/><span>I confirm this is the Stripe account that should receive VedoraEats payments.</span></label></div>}
+          <button className="calling-button is-primary" disabled={Boolean(busy)||!stripeKey||(Boolean(stripeAccount)&&!confirmStripe)}>{busy==="stripe-key"?"Checking…":stripeAccount?"Save Stripe credentials":"Validate Stripe account"}</button>
+        </form>}
+        {!data.stripe_configured&&data.stripe_key_present&&<button className="calling-button is-primary" disabled={Boolean(busy)} onClick={connect}>{busy==="connect"?"Connecting…":"Connect Stripe billing"}</button>}<p>Stripe receipts do not automatically top up Twilio. Keep your provider accounts funded so paid customer purchases and calls can be fulfilled.</p></div>}
     </section>
     <section className="calling-panel billing-panel"><header className="calling-panel-heading"><div><h2>How pricing works</h2><p>See the price before you pay or dial.</p></div></header><div className="billing-pricing-grid"><article><strong>Phone number</strong><p>2× Twilio’s number rental price, billed monthly through Stripe. Provisioning starts after confirmed payment.</p></article><article><strong>AI conversations</strong><p>{data.call_markup_mode==="twilio_only"?"2× the current Twilio outbound rate.":"2× the combined Twilio and Ultravox usage rate."} Destination-specific GBP prices are shown before calls. Usage is billed per started minute, with the final charge rounded up to a penny.</p></article><article><strong>Stay within your balance</strong><p>Credits are reserved before each call. The call duration is capped by your available balance, up to 10 minutes. Calls cannot start without enough credits for one minute.</p></article></div></section>
     <section className="calling-panel billing-panel"><header className="calling-panel-heading"><div><h2>Payments & number subscriptions</h2><p>Track checkout, provisioning, refunds, and monthly renewal.</p></div><button className="calling-button" onClick={()=>load().catch(failed)}><RefreshCw size={16}/>Refresh</button></header><div className="billing-order-list">{data.orders.length?data.orders.map(order=><article key={order.id}><div><strong>{order.kind==="number"?order.phone_number:"Wallet top-up"}</strong><span>{gbp(order.amount_pence)}{order.kind==="number"?" / month":""} · {order.status.replaceAll("_"," ")}</span>{order.paid_until&&<small>Paid until {new Date(order.paid_until).toLocaleDateString("en-GB")}{order.cancel_requested?" · Renewal cancelled":""}</small>}{order.error&&<p className="calling-inline-warning">{order.error}</p>}</div><div className="billing-order-actions">{order.checkout_url&&<button className="calling-button" disabled={Boolean(busy)} onClick={()=>{try{stripeRedirect(order.checkout_url);}catch(err){failed(err);}}}>Continue checkout</button>}<button className="calling-button" disabled={Boolean(busy)} onClick={()=>checkOrder(order)}>Check status</button>{order.kind==="number"&&order.status==="completed"&&!order.cancel_requested&&<button className="calling-text-button" disabled={Boolean(busy)} onClick={()=>setCancelOrder(order)}>Cancel renewal</button>}</div></article>):<p className="numbers-empty">Your payments will appear here.</p>}</div></section>

@@ -84,6 +84,11 @@ def billing_connect_stripe(req):
     return handle(req, payments.connect_stripe)
 
 
+@app.route(route="outreach/billing/admin/stripe-key", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def billing_configure_stripe_key(req):
+    return handle(req, lambda db, actor: {"account": payments.configure_stripe_key(db, actor, body_for(req))})
+
+
 @app.route(route="outreach/billing/admin/overview", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def billing_admin_overview(req):
     def action(db, actor):

@@ -91,6 +91,7 @@ export function BuyNumberDialog({ user, initialPurchase, onClose, onChanged, onA
   const [error, setError] = useState("");
   const [operation, setOperation] = useState(initialPurchase || null);
   const [uncertain, setUncertain] = useState(false);
+  const [testCheckout, setTestCheckout] = useState(initialPurchase?.status === "test_completed");
   const request = useRef(null);
   const inFlight = useRef(false);
   const searchVersion = useRef(0);
@@ -99,7 +100,7 @@ export function BuyNumberDialog({ user, initialPurchase, onClose, onChanged, onA
     setLoading(true); setError(""); setSelected(null); setConfirmed(false);
     try {
       const data = await outreachRequest(`numbers/available?${new URLSearchParams({ number_type: kind, contains })}`, user);
-      if (version === searchVersion.current) setItems(data.items);
+      if (version === searchVersion.current) { setItems(data.items); setTestCheckout(Boolean(data.test_checkout_only)); }
     } catch (err) { if (version === searchVersion.current) setError(err.message); if (err instanceof SignInRequiredError) onAuthRequired(err); }
     finally { if (version === searchVersion.current) setLoading(false); }
   };
@@ -123,12 +124,14 @@ export function BuyNumberDialog({ user, initialPurchase, onClose, onChanged, onA
   };
   const unresolved = uncertain || ["purchasing", "needs_review", "checkout_open", "checkout_review", "pending", "paid", "provisioning"].includes(operation?.status);
   const completed = operation?.status === "completed";
+  const testCompleted = operation?.status === "test_completed";
   return <NumberDialog title="Buy a UK number" subtitle="Choose a dedicated number for calls and SMS." busy={busy} onClose={onClose} footer={<>
     <button className="calling-button" disabled={busy} onClick={onClose}>Close</button>
-    {completed ? <span className="number-success"><CheckCircle2 size={18} /> Ready to use</span> : operation?.status === "failed" ? <button className="calling-button" onClick={() => { setOperation(null); request.current = null; search(); }}>Search again</button> : <button className="calling-button is-primary" disabled={busy || (!unresolved && (!selected || !confirmed || loading))} onClick={purchase}>{busy ? <LoaderCircle className="spin" size={17} /> : <Plus size={17} />}{busy ? "Checking…" : unresolved ? "Check purchase status" : selected?.payment_required ? "Continue to Stripe" : "Purchase number"}</button>}
+    {completed ? <span className="number-success"><CheckCircle2 size={18} /> Ready to use</span> : testCompleted ? <span className="number-success">Test only · no number purchased</span> : operation?.status === "failed" ? <button className="calling-button" onClick={() => { setOperation(null); request.current = null; search(); }}>Search again</button> : <button className="calling-button is-primary" disabled={busy || (!unresolved && (!selected || !confirmed || loading))} onClick={purchase}>{busy ? <LoaderCircle className="spin" size={17} /> : <Plus size={17} />}{busy ? "Checking…" : unresolved ? "Check purchase status" : testCheckout ? "Continue to test checkout" : selected?.payment_required ? "Continue to Stripe" : "Purchase number"}</button>}
   </>}>
     {error && <p className="calling-alert is-error" role="alert">{error}</p>}
-    {operation ? <div className="number-purchase-result" role="status"><h3>{completed ? "Your number is ready" : operation.status === "failed" ? "The purchase was rejected" : "Check this purchase before continuing"}</h3><strong>{operation.phone_number}</strong><p>{money(operation.monthly_price, operation.currency)} / month, plus usage and taxes</p>{operation.error && <p className="calling-alert">{operation.error}</p>}</div> : <>
+    {operation ? <div className="number-purchase-result" role="status"><h3>{completed ? "Your number is ready" : testCompleted ? "Test payment verified" : operation.status === "failed" ? "The purchase was rejected" : "Check this purchase before continuing"}</h3><strong>{operation.phone_number}</strong><p>{money(operation.monthly_price, operation.currency)} / month{testCompleted ? " · Test mode" : ", plus usage and taxes"}</p>{operation.error && <p className="calling-alert">{operation.error}</p>}</div> : <>
+      {testCheckout && <p className="calling-alert"><strong>Test checkout only.</strong> A successful test payment will not purchase a real Twilio number or add live calling credits.</p>}
       {uncertain && <p className="calling-alert">The response was interrupted. Check the same request to find out whether the purchase completed.</p>}
       <fieldset className="number-purchase-fields" disabled={busy || uncertain}>
         <form className="number-search" onSubmit={(event) => { event.preventDefault(); search(); }}>

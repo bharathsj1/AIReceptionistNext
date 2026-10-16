@@ -726,8 +726,15 @@ subscription before outbound use.
 
 Deployment setup:
 
-- Set `STRIPE_SECRET_KEY`, stable `AUTH_SESSION_SECRET`, public HTTPS
-  `API_PUBLIC_BASE_URL` and `PUBLIC_APP_URL`; keep secrets server-side.
+- Set stable `AUTH_SESSION_SECRET`, public HTTPS `API_PUBLIC_BASE_URL` and
+  `PUBLIC_APP_URL`. Configure `STRIPE_SECRET_KEY` in the backend environment, or
+  use the admin-only form in **Billing & wallet** when no key is configured.
+  The form first validates the receiving Stripe account with a read-only request;
+  the administrator confirms its account ID/business name and live/test mode
+  before saving. The key is encrypted in the persistent database and is never
+  returned by an API or written to browser storage. Live accounts must have
+  charges enabled. Once billing is initialized, changing its receiving account
+  through this bootstrap form is blocked to protect existing payments.
 - In **Billing & wallet**, the sole platform admin clicks **Connect Stripe billing**.
   This registers the dedicated `/api/outreach/billing/stripe-webhook` endpoint,
   pinned to Stripe API `2024-06-20`, and encrypts its signing secret in SQLite.
@@ -735,12 +742,19 @@ Deployment setup:
   Customer checkout remains unavailable until signed callbacks are configured.
 - Retain the existing website's separate Stripe callback/subscriptions. Outreach
   callbacks only handle orders carrying their own `vedora_outreach` metadata.
-- Stripe credentials may be test or live; callback mode must match. Use test-mode
-  Stripe and mocked providers for validation, never charge real cards to test.
+- Stripe credentials may be test or live; callback mode must match. In test mode,
+  successful payments are recorded as `test_completed` without issuing spendable
+  credits or provisioning real Twilio numbers. Customer calls and number
+  entitlement are blocked even if an old wallet has funds. Admin calls remain
+  exempt and use real provider balances. The UI identifies test mode explicitly.
+  Use test-mode Stripe and mocked providers for validation; never charge real
+  cards to test. A matching-mode publishable key can be stored with the secret
+  key, although hosted Checkout does not require a publishable key.
 - Keep the persistent database and signing secret backed up together. Review
   provisioning/refund/release exceptions in the administrator billing view.
 
 Billing endpoints are under `/api/outreach/billing`: summary, `topups`,
 `orders/{id}`, `call-quotes`, `campaigns/{id}/quote`, `numbers/{id}/cancel`,
+`admin/stripe-key` (validate, then confirm initial credentials),
 `admin/connect-stripe`, `admin/overview`, and the signed `stripe-webhook`.
 All customer reads and actions use the authenticated account's `client_id`.

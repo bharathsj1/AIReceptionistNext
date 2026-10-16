@@ -47,7 +47,7 @@ REAL_CALL_PRICE = pricing.call_price
 
 class OutreachBillingTests(unittest.TestCase):
     def setUp(self):
-        self.env = patch.dict(os.environ, {**SETTINGS, 'STRIPE_SECRET_KEY': 'sk_test_unit',
+        self.env = patch.dict(os.environ, {**SETTINGS, 'STRIPE_SECRET_KEY': 'sk_live_unit',
             'OUTREACH_STRIPE_WEBHOOK_SECRET': 'whsec_unit', 'OUTREACH_USD_GBP_RATE': '0.75',
             'PUBLIC_APP_URL': 'https://example.com', 'OUTREACH_CALL_MARKUP_MODE': 'combined'})
         self.env.start(); self.addCleanup(self.env.stop)
@@ -190,14 +190,14 @@ class OutreachBillingTests(unittest.TestCase):
 
     def test_dispute_is_resolved_from_provider_charge_and_freezes_wallet(self):
         order=self.topup();self.paid_session(order);payments.fulfill_order(self.db,order)
-        payments.handle_webhook(self.db,{'type':'charge.dispute.created','livemode':False,'data':{'object':{'id':'dp_unit','charge':'ch_unit'}}})
+        payments.handle_webhook(self.db,{'type':'charge.dispute.created','livemode':True,'data':{'object':{'id':'dp_unit','charge':'ch_unit'}}})
         self.assertTrue(billing.wallet_payload(self.db,1)['frozen'])
 
     def test_unsigned_webhook_and_wrong_live_mode_are_rejected(self):
         req=func.HttpRequest('POST','https://example.com/api/outreach/billing/stripe-webhook',params={},body=b'{}')
         with patch.object(api,'SessionLocal',self.Session):
             self.assertEqual(api.billing_stripe_webhook(req).status_code,400)
-        with self.assertRaises(billing.BillingError): payments.handle_webhook(self.db,{'type':'checkout.session.completed','livemode':True,'data':{'object':{}}})
+        with self.assertRaises(billing.BillingError): payments.handle_webhook(self.db,{'type':'checkout.session.completed','livemode':False,'data':{'object':{}}})
 
     def test_checkout_is_server_scoped_idempotent_and_exact_gbp_amount(self):
         body={'request_id':str(uuid4()),'amount_pence':1000}
@@ -426,7 +426,7 @@ class OutreachBillingTests(unittest.TestCase):
 
     def test_signed_paid_webhook_fulfills_once_through_http_boundary(self):
         order=self.topup();self.paid_session(order)
-        event={'id':'evt_unit','object':'event','type':'checkout.session.completed','livemode':False,'data':{'object':{'id':order.stripe_session_id,'object':'checkout.session'}}}
+        event={'id':'evt_unit','object':'event','type':'checkout.session.completed','livemode':True,'data':{'object':{'id':order.stripe_session_id,'object':'checkout.session'}}}
         payload=json.dumps(event).encode();timestamp=int(time.time())
         signature=hmac.new(b'whsec_unit',str(timestamp).encode()+b'.'+payload,hashlib.sha256).hexdigest()
         req=func.HttpRequest('POST','https://example.com/api/outreach/billing/stripe-webhook',params={},
@@ -461,6 +461,120 @@ class OutreachBillingTests(unittest.TestCase):
         calls.launch_call(self.db,campaign,lead)
         self.assertEqual(lead.status,'queued-provider');self.assertIsNone(lead.error)
         self.provider.calls.create.assert_called_once()
+
+
+
+    def stripe_setup(self):
+        key='sk_live_'+('z'*32)
+        account={'id':'acct_verified','charges_enabled':True,'business_profile':{'name':'VedoraEats'}}
+        mocked=self.stub(payments.stripe.Account,'retrieve',return_value=payments.stripe.StripeObject.construct_from(account,None))
+        return key,mocked
+
+    def test_only_signed_platform_admin_can_validate_or_save_stripe_key(self):
+        key,provider=self.stripe_setup()
+        for actor in [ACTOR,replace(ADMIN,scope='client_user')]:
+            self.assertEqual(self.request(api.billing_configure_stripe_key,actor=actor,method='POST',body={'secret_key':key})[0],403)
+        provider.assert_not_called()
+        self.assertIsNone(self.db.get(OutreachBillingSetting,'stripe_api_key'))
+
+    def test_stripe_key_validation_is_read_only_and_does_not_echo_secret(self):
+        key,provider=self.stripe_setup()
+        with patch.dict(os.environ,{'STRIPE_SECRET_KEY':'','OUTREACH_STRIPE_WEBHOOK_SECRET':''}):
+            result=payments.configure_stripe_key(self.db,ADMIN,{'secret_key':key})
+            self.assertEqual(result['business_name'],'VedoraEats');self.assertEqual(result['mode'],'live')
+            self.assertFalse(result['saved']);self.assertNotIn(key,json.dumps(result))
+            self.assertIsNone(self.db.get(OutreachBillingSetting,'stripe_api_key'))
+            self.assertFalse(billing.billing_ready(self.db))
+        self.checkout.assert_not_called();self.webhook_create.assert_not_called()
+
+    def test_confirmed_key_is_encrypted_and_used_after_database_session_restart(self):
+        key,provider=self.stripe_setup()
+        with patch.dict(os.environ,{'STRIPE_SECRET_KEY':'','OUTREACH_STRIPE_WEBHOOK_SECRET':''}):
+            result=payments.configure_stripe_key(self.db,ADMIN,{'secret_key':key,'confirm_account':True,'account_id':'acct_verified'})
+            self.assertTrue(result['saved'])
+            row=self.db.get(OutreachBillingSetting,'stripe_api_key');self.assertNotIn(key,row.encrypted_value)
+            self.assertEqual(row.provider_reference,'acct_verified');self.db.close();self.db=self.Session()
+            self.assertEqual(payments.options(self.db)['api_key'],key)
+            self.assertFalse(billing.billing_ready(self.db))
+            payments.connect_stripe(self.db,ADMIN)
+            self.assertEqual(self.webhook_create.call_args.kwargs['api_key'],key)
+            self.assertTrue(billing.billing_ready(self.db))
+            summary=billing.billing_payload(self.db,ACTOR)
+            self.assertNotIn(key,json.dumps(summary));self.assertNotIn('whsec_created',json.dumps(summary))
+            # Both checkout and signed-event mode checks use the persisted key.
+            topup=self.topup();self.assertEqual(self.checkout.call_args.kwargs['api_key'],key)
+            payments.handle_webhook(self.db,{'type':'checkout.session.completed','livemode':True,'data':{'object':{'id':'unrelated'}}})
+
+    def test_wrong_account_confirmation_never_saves_key(self):
+        key,provider=self.stripe_setup()
+        with patch.dict(os.environ,{'STRIPE_SECRET_KEY':'','OUTREACH_STRIPE_WEBHOOK_SECRET':''}):
+            with self.assertRaises(billing.BillingError):
+                payments.configure_stripe_key(self.db,ADMIN,{'secret_key':key,'confirm_account':True,'account_id':'acct_wrong'})
+            self.assertIsNone(self.db.get(OutreachBillingSetting,'stripe_api_key'))
+
+    def test_invalid_key_or_disabled_live_account_is_rejected_without_secret_leaks(self):
+        key,provider=self.stripe_setup()
+        with patch.dict(os.environ,{'STRIPE_SECRET_KEY':'','OUTREACH_STRIPE_WEBHOOK_SECRET':''}):
+            for invalid in ['pk_live_'+('x'*32),'bad','sk_live_short',key+'\n']:
+                with self.assertRaises(billing.BillingError): payments.configure_stripe_key(self.db,ADMIN,{'secret_key':invalid})
+            provider.assert_not_called()
+            provider.side_effect=Exception('provider message containing '+key)
+            with self.assertRaises(billing.BillingError) as error:payments.configure_stripe_key(self.db,ADMIN,{'secret_key':key})
+            self.assertNotIn(key,str(error.exception))
+            provider.side_effect=None;provider.return_value['charges_enabled']=False
+            with self.assertRaises(billing.BillingError):payments.configure_stripe_key(self.db,ADMIN,{'secret_key':key})
+            self.assertIsNone(self.db.get(OutreachBillingSetting,'stripe_api_key'))
+
+    def test_existing_billing_cannot_be_redirected_to_another_stripe_account(self):
+        key,provider=self.stripe_setup()
+        with self.assertRaises(billing.BillingError):payments.configure_stripe_key(self.db,ADMIN,{'secret_key':key})
+        provider.assert_not_called()
+        self.topup()
+        with patch.dict(os.environ,{'STRIPE_SECRET_KEY':'','OUTREACH_STRIPE_WEBHOOK_SECRET':''}):
+            with self.assertRaises(billing.BillingError):payments.configure_stripe_key(self.db,ADMIN,{'secret_key':key})
+        provider.assert_not_called()
+
+    def test_missing_key_cannot_leave_a_partial_webhook_setup(self):
+        with patch.dict(os.environ,{'STRIPE_SECRET_KEY':'','OUTREACH_STRIPE_WEBHOOK_SECRET':''}):
+            with self.assertRaises(billing.BillingError):payments.connect_stripe(self.db,ADMIN)
+            self.assertIsNone(self.db.get(OutreachBillingSetting,'stripe_webhook'))
+        self.webhook_create.assert_not_called()
+
+
+
+    def test_publishable_key_is_saved_with_the_secret_and_must_match_mode(self):
+        key,provider=self.stripe_setup()
+        with patch.dict(os.environ,{'STRIPE_SECRET_KEY':'','OUTREACH_STRIPE_WEBHOOK_SECRET':''}):
+            with self.assertRaises(billing.BillingError):payments.configure_stripe_key(self.db,ADMIN,{'secret_key':key,'publishable_key':'pk_test_'+('x'*32)})
+            provider.assert_not_called()
+            publishable='pk_live_'+('x'*32)
+            result=payments.configure_stripe_key(self.db,ADMIN,{'secret_key':key,'publishable_key':publishable,'confirm_account':True,'account_id':'acct_verified'})
+            self.assertTrue(result['saved']);self.assertEqual(billing.stored_secret(self.db,'stripe_publishable_key'),publishable)
+            self.assertNotIn(publishable,json.dumps(result))
+
+
+
+    def test_test_payments_never_credit_wallet_or_purchase_real_twilio_number(self):
+        with patch.dict(os.environ,{'STRIPE_SECRET_KEY':'sk_test_unit'}):
+            topup=self.topup();self.paid_session(topup);payments.fulfill_order(self.db,topup)
+            self.assertEqual(topup.status,'test_completed')
+            self.assertEqual(billing.wallet_payload(self.db,1)['balance_pence'],0)
+            self.assertEqual(self.db.query(OutreachWalletEntry).count(),0)
+            self.checkout.return_value['id']='cs_test_number'
+            rental,_=self.rental();self.paid_session(rental);payments.fulfill_order(self.db,rental)
+            self.assertEqual(rental.status,'test_completed')
+            self.provider.incoming_phone_numbers.create.assert_not_called()
+            self.assertFalse(payments.number_entitled(self.db,1,BUY))
+
+    def test_test_mode_blocks_customer_call_even_if_old_wallet_has_credits(self):
+        campaign,lead,quote,actor=self.campaign(balance=100)
+        billing.bind_campaign(self.db,campaign.id,actor,quote.id,DEST,CALLER)
+        with patch.dict(os.environ,{'STRIPE_SECRET_KEY':'sk_test_unit'}):
+            with self.assertRaises(billing.BillingError):billing.bind_campaign(self.db,campaign.id,actor,quote.id,DEST,CALLER)
+            calls.launch_call(self.db,campaign,lead)
+        self.assertEqual(campaign.status,'paused');self.post.assert_not_called()
+        self.provider.calls.create.assert_not_called()
+        self.assertEqual(billing.wallet_payload(self.db,1)['reserved_pence'],0)
 
 
 if __name__ == '__main__': unittest.main()
