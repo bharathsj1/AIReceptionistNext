@@ -205,7 +205,9 @@ def stored_secret(db, setting_id):
 
 
 def stripe_api_key(db):
-    return os.getenv("STRIPE_SECRET_KEY", "").strip() or stored_secret(db, "stripe_api_key")
+    # A sole-admin-confirmed initial setup takes precedence over an unused
+    # deployment default. Once orders/callbacks exist, changing it is blocked.
+    return stored_secret(db, "stripe_api_key") or os.getenv("STRIPE_SECRET_KEY", "").strip()
 
 
 def billing_ready(db):

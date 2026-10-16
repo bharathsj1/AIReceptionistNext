@@ -734,7 +734,11 @@ Deployment setup:
   before saving. The key is encrypted in the persistent database and is never
   returned by an API or written to browser storage. Live accounts must have
   charges enabled. Once billing is initialized, changing its receiving account
-  through this bootstrap form is blocked to protect existing payments.
+  through this bootstrap form is blocked to protect existing payments. Before
+  orders/callbacks exist, **Set keys for initial setup** can select the intended
+  account over an unused deployment default. The confirmed, encrypted database
+  key takes precedence over that default. Key saving and callback registration
+  share a database lease to prevent conflicting concurrent setup operations.
 - In **Billing & wallet**, the sole platform admin clicks **Connect Stripe billing**.
   This registers the dedicated `/api/outreach/billing/stripe-webhook` endpoint,
   pinned to Stripe API `2024-06-20`, and encrypts its signing secret in SQLite.

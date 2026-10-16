@@ -577,4 +577,24 @@ class OutreachBillingTests(unittest.TestCase):
         self.assertEqual(billing.wallet_payload(self.db,1)['reserved_pence'],0)
 
 
+
+    def test_unused_deployment_default_can_be_selected_over_before_billing_starts(self):
+        key,provider=self.stripe_setup()
+        with patch.dict(os.environ,{'STRIPE_SECRET_KEY':'sk_live_unused_deployment_default','OUTREACH_STRIPE_WEBHOOK_SECRET':''}):
+            result=payments.configure_stripe_key(self.db,ADMIN,{'secret_key':key,'confirm_account':True,'account_id':'acct_verified'})
+            self.assertTrue(result['saved']);self.assertEqual(billing.stripe_api_key(self.db),key)
+            payments.connect_stripe(self.db,ADMIN)
+            self.assertEqual(self.webhook_create.call_args.kwargs['api_key'],key)
+
+    def test_setup_lock_prevents_key_and_webhook_configuration_racing(self):
+        key,provider=self.stripe_setup()
+        with patch.dict(os.environ,{'STRIPE_SECRET_KEY':'','OUTREACH_STRIPE_WEBHOOK_SECRET':''}):
+            with payments.setup_lock(self.db):
+                with self.assertRaises(billing.BillingError):payments.configure_stripe_key(self.db,ADMIN,{'secret_key':key,'confirm_account':True,'account_id':'acct_verified'})
+                with self.assertRaises(billing.BillingError):payments.connect_stripe(self.db,ADMIN)
+            self.assertIsNone(self.db.get(OutreachBillingSetting,'stripe_api_key'))
+            self.assertIsNone(self.db.get(OutreachBillingSetting,'stripe_webhook'))
+        self.webhook_create.assert_not_called()
+
+
 if __name__ == '__main__': unittest.main()

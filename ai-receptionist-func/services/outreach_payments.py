@@ -3,9 +3,11 @@ import hashlib
 import json
 import os
 import re
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from decimal import Decimal
 from urllib.parse import urlparse
+from uuid import uuid4
 
 import stripe
 from sqlalchemy import or_
@@ -36,14 +38,38 @@ def options(db):
     return {"api_key": key, "stripe_version": API_VERSION, "max_network_retries": 0}
 
 
+@contextmanager
+def setup_lock(db):
+    """Serialize initial key selection and callback registration across workers."""
+    setting_id, token = "stripe_setup_lock", str(uuid4())
+    if not db.get(OutreachBillingSetting, setting_id):
+        db.add(OutreachBillingSetting(id=setting_id, status="idle"))
+        try: db.commit()
+        except IntegrityError: db.rollback()
+    claimed = db.query(OutreachBillingSetting).filter_by(id=setting_id).filter(or_(
+        OutreachBillingSetting.status != "locked",
+        OutreachBillingSetting.created_at < datetime.utcnow() - timedelta(minutes=5))).update({
+            "status": "locked", "provider_reference": token, "created_at": datetime.utcnow()}, synchronize_session=False)
+    db.commit()
+    if not claimed: raise billing.BillingError("Stripe setup is already in progress. Wait and refresh before continuing.")
+    try: yield
+    finally:
+        db.rollback()
+        db.query(OutreachBillingSetting).filter_by(id=setting_id, provider_reference=token).update({"status": "idle"}, synchronize_session=False)
+        db.commit()
+
+
+def require_initial_setup(db):
+    if db.get(OutreachBillingSetting, "stripe_api_key"):
+        raise billing.BillingError("Stripe credentials already exist. Credential replacement requires deployment administrator review.")
+    if billing.webhook_secret(db) or db.get(OutreachBillingSetting, "stripe_webhook") or db.query(OutreachPaymentOrder.id).first():
+        raise billing.BillingError("Billing was already initialized. Restore its original deployment credentials instead of changing Stripe accounts.")
+
+
 def configure_stripe_key(db, actor, body):
     if not billing.is_platform_admin(actor):
         raise billing.BillingError("Only the platform admin can configure Stripe", 403)
-    if billing.stripe_api_key(db) or db.get(OutreachBillingSetting, "stripe_api_key"):
-        raise billing.BillingError("Stripe credentials already exist. Credential replacement requires deployment administrator review.")
-    # Never switch the receiving account after orders or callbacks exist.
-    if billing.webhook_secret(db) or db.get(OutreachBillingSetting, "stripe_webhook") or db.query(OutreachPaymentOrder.id).first():
-        raise billing.BillingError("Billing was already initialized. Restore its original deployment credentials instead of changing Stripe accounts.")
+    require_initial_setup(db)
     key = body.get("secret_key")
     if not isinstance(key, str) or not re.fullmatch(r"sk_(?:live|test)_[A-Za-z0-9]{20,200}", key):
         raise billing.BillingError("Enter a valid Stripe secret key, starting with sk_live_ or sk_test_.", 400)
@@ -69,16 +95,19 @@ def configure_stripe_key(db, actor, body):
         return result  # Read-only preview. Nothing is stored until the admin confirms.
     if body.get("account_id") != account_id:
         raise billing.BillingError("Review and confirm this Stripe account before saving", 409)
-    row = OutreachBillingSetting(id="stripe_api_key", encrypted_value=cipher.encrypt(key.encode()).decode(),
-        provider_reference=account_id, status="configured")
-    db.add(row)
-    if publishable:
-        db.add(OutreachBillingSetting(id="stripe_publishable_key", encrypted_value=cipher.encrypt(publishable.encode()).decode(),
-            provider_reference=account_id, status="configured"))
-    try: db.commit()
-    except IntegrityError:
-        db.rollback()
-        raise billing.BillingError("Stripe setup was changed by another request. Refresh before continuing.") from None
+    with setup_lock(db):
+        db.expire_all()
+        require_initial_setup(db)
+        row = OutreachBillingSetting(id="stripe_api_key", encrypted_value=cipher.encrypt(key.encode()).decode(),
+            provider_reference=account_id, status="configured")
+        db.add(row)
+        if publishable:
+            db.add(OutreachBillingSetting(id="stripe_publishable_key", encrypted_value=cipher.encrypt(publishable.encode()).decode(),
+                provider_reference=account_id, status="configured"))
+        try: db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise billing.BillingError("Stripe setup was changed by another request. Refresh before continuing.") from None
     return {**result, "saved": True}
 
 
@@ -92,6 +121,11 @@ def checkout_origin():
 
 def connect_stripe(db, actor):
     if not billing.is_platform_admin(actor): raise billing.BillingError("Only the platform admin can connect Stripe", 403)
+    with setup_lock(db):
+        return _connect_stripe(db, actor)
+
+
+def _connect_stripe(db, actor):
     request_options = options(db)  # Missing credentials must not leave a partial setup record.
     if billing.webhook_secret(db): return {"configured": True}
     url = get_public_api_base().rstrip("/") + "/api/outreach/billing/stripe-webhook"
