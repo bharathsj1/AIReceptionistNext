@@ -3,10 +3,8 @@ name: Backend Docker checks
 on:
   push:
     branches: [main]
-    paths: ["ai-receptionist-func/**", "ai-smartconnect4u-jitsi/**", "scripts/**", "compose*.yaml", "AIReceptionNewUI/Dockerfile", "AIReceptionNewUI/docker/**", ".github/workflows/backend-docker.yml"]
   pull_request:
     branches: [main]
-    paths: ["ai-receptionist-func/**", "ai-smartconnect4u-jitsi/**", "scripts/**", "compose*.yaml", "AIReceptionNewUI/Dockerfile", "AIReceptionNewUI/docker/**", ".github/workflows/backend-docker.yml"]
   workflow_dispatch:
 
 permissions:
