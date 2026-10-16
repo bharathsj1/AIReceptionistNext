@@ -1285,6 +1285,14 @@ export default function AIOutreachScreen({
                     );
                   })}
                   <div className="calling-number-section">
+                    <h3>Lead summary emails</h3>
+                    <dl className="calling-result-details">
+                      <div><dt>From</dt><dd>{config?.from_email || "Unavailable"}</dd></div>
+                      <div><dt>Default recipient</dt><dd>{config?.notification_email || "Unavailable"}</dd></div>
+                    </dl>
+                    <p>New campaigns and manual calls use this recipient by default. You can change it when preparing a call.</p>
+                  </div>
+                  <div className="calling-number-section">
                     <h3>Outbound numbers</h3>
                     {config?.caller_ids?.length ? (
                       config.caller_ids.map((number) => (

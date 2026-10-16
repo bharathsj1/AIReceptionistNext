@@ -13,7 +13,8 @@ from twilio.request_validator import RequestValidator
 from crm_shared import resolve_actor_from_session
 from function_app import app
 from services.outreach_service import (ACTIVE, configuration_errors, caller_numbers, create_campaign,
-    TERMINAL, campaign_payload, apply_call_status, save_result, tool_token, twilio_client, process_outreach)
+    TERMINAL, campaign_payload, apply_call_status, save_result, tool_token, twilio_client, process_outreach,
+    outreach_from_email, default_notification_email)
 from shared.config import get_public_api_base
 from shared.db import OutreachCampaign, OutreachLead, SessionLocal
 from utils.cors import build_cors_headers
@@ -65,6 +66,8 @@ def outreach_config(req):
         return response(req, {"caller_ids": caller_numbers(db, actor.client_id),
                               "numbers": [number_payload(n) for n in own_numbers(db, actor.client_id)],
                               "number_error": number_error, "configuration_errors": configuration_errors(),
+                              "from_email": outreach_from_email(),
+                              "notification_email": default_notification_email(db, actor.client_id),
                               "timezone": "Europe/London", "country": "GB"})
     finally:
         db.close()

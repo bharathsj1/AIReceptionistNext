@@ -25,6 +25,7 @@ def start_manual_call(db, client_id, body, now=None):
     phone = outreach.normalize_uk_phone(body.get("phone"))
     details = {key: str(body.get(key) or "").strip() for key in (
         "restaurant_name", "benefits", "notification_email", "caller_id", "consent_evidence")}
+    details["notification_email"] = details["notification_email"] or outreach.default_notification_email(db, client_id)
     if not details["restaurant_name"] or len(details["restaurant_name"]) > 150:
         raise ValueError("Provide a business name of up to 150 characters")
     if not details["benefits"] or len(details["benefits"]) > 12000:

@@ -21,7 +21,7 @@ from twilio.rest import Client as TwilioClient
 from twilio.twiml.voice_response import VoiceResponse
 
 from shared.config import get_public_api_base
-from shared.db import OutreachCampaign, OutreachLead, OutreachSuppression, PhoneNumber, SessionLocal
+from shared.db import Client, OutreachCampaign, OutreachLead, OutreachSuppression, PhoneNumber, SessionLocal
 from services.outreach_history import ensure_conversation, log_event, iso
 
 logger = logging.getLogger(__name__)
@@ -54,6 +54,15 @@ def normalize_uk_phone(value):
 
 def valid_email(value):
     return isinstance(value, str) and len(value) <= 254 and bool(re.fullmatch(r"[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+", value))
+
+
+def outreach_from_email():
+    return os.getenv("FROM_EMAIL", "").strip() or "support@vedoraeats.com"
+
+
+def default_notification_email(db, client_id):
+    client = db.get(Client, client_id)
+    return str(client.email if client else "").strip()
 
 
 def parse_contacts(csv_text):
@@ -102,8 +111,10 @@ def parse_contacts(csv_text):
 
 
 def configuration_errors():
-    required = ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "ULTRAVOX_API_KEY", "OUTREACH_TOOL_SECRET", "SENDGRID_API_KEY", "FROM_EMAIL")
+    required = ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "ULTRAVOX_API_KEY", "OUTREACH_TOOL_SECRET", "SENDGRID_API_KEY")
     errors = [f"Configure {key}" for key in required if not os.getenv(key)]
+    if not valid_email(outreach_from_email()):
+        errors.append("Configure a valid FROM_EMAIL")
     if not get_public_api_base().startswith("https://"):
         errors.append("API_PUBLIC_BASE_URL must be a public HTTPS origin for provider callbacks")
     return errors
@@ -125,7 +136,7 @@ def caller_numbers(db, client_id):
 def create_campaign(db, client_id, body):
     name = str(body.get("name") or "").strip()
     benefits = str(body.get("benefits") or "").strip()
-    email = str(body.get("notification_email") or "").strip()
+    email = str(body.get("notification_email") or "").strip() or default_notification_email(db, client_id)
     caller = str(body.get("caller_id") or "").strip()
     if not name or len(name) > 150 or not benefits or len(benefits) > 12000:
         raise ValueError("Provide a campaign name (up to 150 characters) and verified benefits (up to 12,000 characters)")
@@ -368,6 +379,9 @@ def save_result(db, lead, body):
 
 
 def send_lead_email(campaign, lead):
+    sender = outreach_from_email()
+    if not valid_email(sender):
+        raise ValueError("Configure a valid FROM_EMAIL")
     result = lead.result or {}
     text = "\n".join([
         "Interested VedoraEats restaurant owner", f"Campaign: {campaign.name}", f"Restaurant: {lead.restaurant_name}",
@@ -380,7 +394,7 @@ def send_lead_email(campaign, lead):
     response = requests.post("https://api.sendgrid.com/v3/mail/send",
         headers={"Authorization": f"Bearer {os.environ['SENDGRID_API_KEY']}"},
         json={"personalizations": [{"to": [{"email": campaign.notification_email}]}],
-              "from": {"email": os.environ["FROM_EMAIL"]}, "subject": "VedoraEats: interested restaurant owner",
+              "from": {"email": sender}, "subject": "VedoraEats: interested restaurant owner",
               "content": [{"type": "text/plain", "value": text}]}, timeout=15)
     # A definitive rejection can be retried; 5xx/network failures may have accepted the email.
     return response.status_code

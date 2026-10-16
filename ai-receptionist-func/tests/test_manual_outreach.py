@@ -86,6 +86,11 @@ class ManualOutreachTests(unittest.TestCase):
         self.assertEqual(self.post.call_count, 1)
         self.assertEqual(self.client.calls.create.call_count, 1)
 
+    def test_manual_call_defaults_recipient_to_its_account_owner(self):
+        campaign, _, _ = self.start(notification_email="")
+        self.assertEqual(campaign.notification_email, "owner@example.com")
+        self.assertNotEqual(campaign.notification_email, "other@example.com")
+
     def test_reusing_request_for_a_different_number_is_rejected(self):
         self.start()
         with self.assertRaises(manual.ManualCallConflict):

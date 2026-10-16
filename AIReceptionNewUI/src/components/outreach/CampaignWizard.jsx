@@ -47,7 +47,7 @@ export default function CampaignWizard({ config, onClose, onCreate, company }) {
   const [form, setForm] = useState({
     name: "",
     benefits: "",
-    notification_email: "",
+    notification_email: config?.notification_email || "",
     caller_id: config?.caller_ids?.[0] || "",
     start_hour: 10,
     end_hour: 17,

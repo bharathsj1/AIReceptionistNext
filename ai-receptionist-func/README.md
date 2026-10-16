@@ -60,8 +60,13 @@ all its current and future campaigns. Importing it again cannot clear an opt-out
   existing inbound receptionist agents are unaffected.
 - `OUTREACH_TOOL_SECRET`: separate random secret for per-contact HMAC tool
   authentication. Generate a strong random value and retain it while calls are active.
-- `SENDGRID_API_KEY`, `FROM_EMAIL`: SendGrid mail-send credentials and a verified
-  sender identity. Email is never reported as sent when credentials are missing.
+- `SENDGRID_API_KEY`: SendGrid mail-send credentials. `FROM_EMAIL` overrides the
+  default sender `support@vedoraeats.com`; the chosen sender must be verified in
+  SendGrid. Email is never reported as sent when credentials are missing.
+  New campaigns and manual calls default their notification recipient to the
+  signed-in tenant's account owner (`bharath.sj1@gmail.com` for Bharath's account).
+  An explicitly entered campaign recipient is preserved. Existing campaigns keep
+  their saved recipient. Calling setup displays both email defaults.
 - `API_PUBLIC_BASE_URL`: public HTTPS origin **without `/api`**, reachable from
   Twilio and Ultravox, for example `https://api.example.com`. Localhost does not
   work for live callbacks; use a development tunnel and set its HTTPS origin.

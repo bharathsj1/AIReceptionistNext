@@ -11,7 +11,7 @@ export default function ManualCallDialog({ user, config, campaigns, defaultCampa
   const [form, setForm] = useState({
     phone: "", restaurant_name: "", consent_evidence: "", consent_confirmed: false,
     benefits: defaultCampaign?.benefits || "",
-    notification_email: defaultCampaign?.notification_email || user?.email || "",
+    notification_email: defaultCampaign?.notification_email || config?.notification_email || user?.email || "",
     caller_id: config?.caller_ids?.includes(defaultCallerId) ? defaultCallerId : config?.caller_ids?.includes(defaultCampaign?.caller_id)
       ? defaultCampaign.caller_id : config?.caller_ids?.[0] || "",
   });

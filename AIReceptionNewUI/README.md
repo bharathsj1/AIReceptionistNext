@@ -45,6 +45,13 @@ an inactive draft for review. Calling starts only after the explicit start actio
 and the existing backend checks. Automated interested-owner notifications remain
 part of campaign handoff; there is no standalone mail interface.
 
+Lead-summary email defaults appear in Calling setup. The sender is
+`support@vedoraeats.com` unless the backend `FROM_EMAIL` setting overrides it.
+The campaign and manual-call forms prefill the owning account's email, including
+`bharath.sj1@gmail.com` for Bharath's workspace. A chosen recipient can be edited
+before creating the campaign; existing campaigns retain their saved address.
+SendGrid credentials and verification of the sender are still required.
+
 Conversation text is fetched through authenticated outreach routes and saved in
 SQLite on the backend's persistent Docker volume. The background worker fetches
 transcripts without the browser open; opening an older call also requests a
