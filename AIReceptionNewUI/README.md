@@ -19,8 +19,12 @@ requires no additional AI provider. Login and backend authorization still apply.
 - **Campaigns:** search and filter campaigns, inspect the brief and imported
   contacts, and start, pause, or resume calling.
 - **Contacts:** campaign-scoped calling lists with search and status filters.
-- **Call history:** campaign-scoped call attempts, captured outcomes, summaries,
-  and manual review for uncertain provider calls.
+- **Call history:** all account-owned calls across campaigns, with search, campaign,
+  date, call-status and owner-response filters, pagination and CSV page export.
+  Desktop tables become contact cards on phones. Each call opens a transcript,
+  summary/details and activity timeline. Spoken turns have AI/contact labels and
+  available time offsets, search highlighting and plain-text transcript download.
+  Partial, missing and unavailable transcripts are explicitly distinguished.
 - **Interested leads:** captured owner details, follow-up permissions, callback
   preferences, notification state, and CSV export of the filtered view.
 - **Calling setup:** company profile, assigned caller IDs, and provider settings
@@ -32,6 +36,14 @@ team notification address, and weekday London calling hours. Importing creates
 an inactive draft for review. Calling starts only after the explicit start action
 and the existing backend checks. Automated interested-owner notifications remain
 part of campaign handoff; there is no standalone mail interface.
+
+Conversation text is fetched through authenticated outreach routes and saved in
+SQLite on the backend's persistent Docker volume. The background worker fetches
+transcripts without the browser open; opening an older call also requests a
+backfill. History refreshes with the workspace; an open unfinished conversation
+checks for updates every 30 seconds. A summary is never substituted for a missing
+transcript. Older provider messages can only be recovered while Ultravox still
+has them. Detailed event timelines start with the new logging implementation.
 
 `src/screens/CallingWorkspace.css` owns the responsive workspace styles.
 `OutreachLanding.css` styles the calling-focused landing page. Account and

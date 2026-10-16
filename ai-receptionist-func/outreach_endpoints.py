@@ -3,7 +3,8 @@ import hmac
 import json
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from urllib.parse import parse_qs
 
 import azure.functions as func
@@ -16,13 +17,18 @@ from services.outreach_service import (ACTIVE, configuration_errors, caller_numb
 from shared.config import get_public_api_base
 from shared.db import OutreachCampaign, OutreachLead, SessionLocal
 from utils.cors import build_cors_headers
+from sqlalchemy import or_
+from sqlalchemy.orm import defer
+from services.outreach_history import (call_payload, ensure_conversation, iso, log_event,
+    sync_conversation, sync_pending_conversations, transcript_payload)
+from shared.db import OutreachCallEvent, OutreachConversation
 
 logger = logging.getLogger(__name__)
 
 
 def response(req, payload, status=200):
     return func.HttpResponse(json.dumps(payload), status_code=status, mimetype="application/json",
-                             headers=build_cors_headers(req, ["GET", "POST"]))
+                             headers={**build_cors_headers(req, ["GET", "POST"]), "Cache-Control": "no-store"})
 
 
 def actor_for(req):
@@ -146,7 +152,10 @@ def outreach_status(req):
         if values.get("To") != lead.phone or values.get("From") != campaign.caller_id:
             return response(req, {"error": "Call numbers do not match this contact"}, 403)
         sequence = int(values["SequenceNumber"]) if "SequenceNumber" in values else None
-        apply_call_status(db, lead, values.get("CallSid"), values.get("CallStatus"), sequence)
+        duration = int(values["CallDuration"]) if "CallDuration" in values else None
+        if duration is not None and not 0 <= duration <= 86400:
+            raise ValueError("Invalid call duration")
+        apply_call_status(db, lead, values.get("CallSid"), values.get("CallStatus"), sequence, duration)
         return response(req, {"ok": True})
     except ValueError as exc:
         db.rollback()
@@ -187,6 +196,7 @@ def outreach_review(req):
             lead.error = "Reconciled with Twilio by account owner"
         elif body.get("confirmed_no_active_call") is True:
             lead.status, lead.ended_at, lead.error = "canceled", datetime.utcnow(), "Account owner checked provider logs and skipped this contact; no redial"
+            log_event(db, lead, "canceled", lead.error)
         else:
             raise ValueError("Provide a Twilio Call SID or confirm that provider logs show no active call")
         db.commit()
@@ -228,3 +238,110 @@ def outreach_result(req):
 @app.timer_trigger(schedule="0 * * * * *", arg_name="timer", run_on_startup=False, use_monitor=True)
 def outreach_worker(timer: func.TimerRequest):
     process_outreach()
+
+
+@app.route(route="outreach/calls", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def outreach_calls(req):
+    if req.method == "OPTIONS":
+        return response(req, {})
+    actor = actor_for(req)
+    if not actor:
+        return response(req, {"error": "Sign in as an account owner to view call history"}, 401)
+    db = SessionLocal()
+    try:
+        page, page_size = int(req.params.get("page", "1")), int(req.params.get("page_size", "25"))
+        if not 1 <= page <= 1000000 or not 1 <= page_size <= 100:
+            raise ValueError("Invalid call history page")
+        query = db.query(OutreachLead, OutreachCampaign, OutreachConversation).join(
+            OutreachCampaign, OutreachCampaign.id == OutreachLead.campaign_id).outerjoin(
+            OutreachConversation, OutreachConversation.lead_id == OutreachLead.id).filter(
+            OutreachCampaign.client_id == actor.client_id,
+            or_(OutreachLead.started_at.isnot(None), OutreachLead.twilio_call_sid.isnot(None), OutreachLead.ultravox_call_id.isnot(None)))
+        campaign_id = req.params.get("campaign_id")
+        if campaign_id:
+            query = query.filter(OutreachCampaign.id == campaign_id)
+        status = req.params.get("status")
+        if status:
+            if status not in ACTIVE | TERMINAL | {"needs_review"}:
+                raise ValueError("Unknown call status")
+            query = query.filter(OutreachLead.status == status)
+        outcome = req.params.get("outcome")
+        if outcome:
+            from services.outreach_service import OUTCOMES
+            if outcome not in OUTCOMES | {"uncaptured"}:
+                raise ValueError("Unknown call outcome")
+            value = OutreachLead.result["outcome"].as_string()
+            query = query.filter(value.is_(None) if outcome == "uncaptured" else value == outcome)
+        search = req.params.get("q", "").strip()
+        if len(search) > 200:
+            raise ValueError("Search must be at most 200 characters")
+        if search:
+            escaped = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            terms = [OutreachLead.restaurant_name, OutreachLead.phone, OutreachCampaign.name,
+                     OutreachLead.result["owner_name"].as_string(), OutreachLead.result["owner_email"].as_string(),
+                     OutreachLead.twilio_call_sid, OutreachLead.ultravox_call_id]
+            query = query.filter(or_(*(term.ilike(f"%{escaped}%", escape="\\") for term in terms)))
+        dates = {}
+        for key in ("from", "to"):
+            if req.params.get(key):
+                try:
+                    dates[key] = datetime.strptime(req.params[key], "%Y-%m-%d")
+                except ValueError as exc:
+                    raise ValueError("Use YYYY-MM-DD for call history dates") from exc
+        if "from" in dates and "to" in dates and dates["from"] > dates["to"]:
+            raise ValueError("The end date must not be before the start date")
+        for key, value in dates.items():
+            boundary = (value + timedelta(days=1) if key == "to" else value).replace(
+                tzinfo=ZoneInfo("Europe/London")).astimezone(timezone.utc).replace(tzinfo=None)
+            query = query.filter(OutreachLead.started_at < boundary if key == "to" else OutreachLead.started_at >= boundary)
+        total = query.count()
+        stats = {"total": total, "completed": query.filter(OutreachLead.status == "completed").count(),
+                 "interested": query.filter(OutreachLead.result["outcome"].as_string() == "interested").count(),
+                 "with_transcript": query.filter(OutreachConversation.message_count > 0).count()}
+        # List queries return transcript metadata only. Full dialogue is fetched for one call.
+        rows = query.options(defer(OutreachConversation.messages)).order_by(
+            OutreachLead.started_at.desc(), OutreachLead.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
+        return response(req, {"items": [call_payload(lead, campaign, conversation) for lead, campaign, conversation in rows],
+            "total": total, "page": page, "page_size": page_size, "stats": stats})
+    except (ValueError, OverflowError) as exc:
+        return response(req, {"error": str(exc)}, 400)
+    finally:
+        db.close()
+
+
+@app.route(route="outreach/leads/{lead_id}/conversation", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def outreach_conversation(req):
+    if req.method == "OPTIONS":
+        return response(req, {})
+    actor = actor_for(req)
+    if not actor:
+        return response(req, {"error": "Sign in as an account owner to view conversations"}, 401)
+    db = SessionLocal()
+    try:
+        pair = db.query(OutreachLead, OutreachCampaign).join(OutreachCampaign,
+            OutreachCampaign.id == OutreachLead.campaign_id).filter(
+            OutreachLead.id == req.route_params.get("lead_id"), OutreachCampaign.client_id == actor.client_id).first()
+        if not pair:
+            return response(req, {"error": "Conversation not found"}, 404)
+        lead, campaign = pair
+        record = ensure_conversation(db, lead)
+        db.commit()
+        # Opening an older call also backfills its transcript. Cached final transcripts
+        # need no provider access and remain readable during a provider outage.
+        record = sync_conversation(db, lead, force=req.params.get("refresh") == "true")
+        db.refresh(lead)
+        events = db.query(OutreachCallEvent).filter_by(lead_id=lead.id).order_by(
+            OutreachCallEvent.occurred_at, OutreachCallEvent.id).all()
+        return response(req, {"call": call_payload(lead, campaign, record), "transcript": transcript_payload(lead, record),
+            "events": [{"id": event.id, "event": event.event, "detail": event.detail, "at": iso(event.occurred_at)} for event in events]})
+    finally:
+        db.close()
+
+
+@app.timer_trigger(schedule="15 * * * * *", arg_name="timer", run_on_startup=False, use_monitor=True)
+def outreach_conversation_worker(timer: func.TimerRequest):
+    db = SessionLocal()
+    try:
+        sync_pending_conversations(db)
+    finally:
+        db.close()

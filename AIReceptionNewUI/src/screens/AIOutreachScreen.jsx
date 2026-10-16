@@ -20,11 +20,11 @@ import {
   ShieldCheck,
   Target,
   Users,
-  X,
 } from "lucide-react";
 import { outreachRequest } from "../lib/api/outreach";
 import { hasCurrentSession, SignInRequiredError } from "../lib/authSession";
-import { useDialogFocus } from "../components/ui/useDialogFocus";
+import ConversationDrawer from "../components/outreach/ConversationDrawer";
+import CallHistoryScreen from "./CallHistoryScreen";
 import CampaignWizard, {
   downloadCsv,
   downloadTemplate,
@@ -65,7 +65,7 @@ const pageTitles = {
   ],
   calls: [
     "Every conversation, accounted for.",
-    "See call outcomes and the context your team needs.",
+    "Search every call, see its outcome, and read the conversation transcript.",
   ],
   leads: [
     "Meet your next partnerships.",
@@ -109,152 +109,6 @@ function Wave({ large = false }) {
       ].map((height, i) => (
         <i key={i} style={{ height: large ? height : height / 2 }} />
       ))}
-    </div>
-  );
-}
-
-function CallReview({ lead, user, onReviewed }) {
-  const [sid, setSid] = useState("");
-  const [checked, setChecked] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  return (
-    <form
-      className="calling-review-form"
-      onSubmit={async (event) => {
-        event.preventDefault();
-        setBusy(true);
-        setError("");
-        try {
-          await outreachRequest(`leads/${lead.id}/review`, user, {
-            call_sid: sid.trim(),
-            confirmed_no_active_call: checked,
-          });
-          await onReviewed();
-        } catch (err) {
-          setError(err.message);
-        } finally {
-          setBusy(false);
-        }
-      }}
-    >
-      <h4>Verify this call</h4>
-      <p>Check the provider logs before continuing this campaign.</p>
-      <label>
-        Twilio Call SID
-        <input
-          value={sid}
-          onChange={(event) => setSid(event.target.value)}
-          placeholder="CA…"
-        />
-      </label>
-      <label className="calling-checkbox">
-        <input
-          type="checkbox"
-          checked={checked}
-          onChange={(event) => setChecked(event.target.checked)}
-        />
-        <span>
-          I checked the logs and there is no active call. Skip this contact if
-          no SID is provided.
-        </span>
-      </label>
-      {error && (
-        <p role="alert" className="calling-inline-warning">
-          {error}
-        </p>
-      )}
-      <button
-        className="calling-button"
-        disabled={busy || (!sid.trim() && !checked)}
-      >
-        {busy ? "Verifying…" : "Resolve call review"}
-      </button>
-    </form>
-  );
-}
-
-function LeadDrawer({ lead, user, onClose, onReviewed }) {
-  const ref = useRef(null);
-  useDialogFocus(ref, true, onClose);
-  const result = lead.result;
-  return (
-    <div
-      className="calling-dialog-backdrop"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <section
-        className="calling-dialog calling-lead-drawer"
-        ref={ref}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="lead-detail-title"
-        tabIndex={-1}
-      >
-        <header className="calling-dialog-heading">
-          <div>
-            <span className="calling-eyebrow">CONVERSATION DETAILS</span>
-            <h2 id="lead-detail-title">{lead.restaurant_name}</h2>
-          </div>
-          <button
-            className="calling-icon"
-            aria-label="Close conversation details"
-            onClick={onClose}
-          >
-            <X size={20} />
-          </button>
-        </header>
-        <div className="calling-drawer-content">
-          <Status value={lead.status} />
-          <a className="calling-phone-link" href={`tel:${lead.phone}`}>
-            {lead.phone}
-          </a>
-          <div className="calling-result-summary">
-            <h3>Conversation summary</h3>
-            <p>
-              {result?.summary ||
-                (lead.status === "completed"
-                  ? "No structured result was captured for this call."
-                  : "A conversation summary will appear when a result is captured.")}
-            </p>
-          </div>
-          <dl className="calling-result-details">
-            {[
-              ["Owner", result?.owner_name],
-              ["Email", result?.owner_email],
-              ["Outcome", result ? label(result.outcome) : "Awaiting result"],
-              ["Preferred callback", result?.preferred_callback_time],
-              [
-                "Follow-up permission",
-                result
-                  ? result.follow_up_permission
-                    ? "Granted"
-                    : "Not granted"
-                  : "Not captured",
-              ],
-              ["Team notification", label(lead.notification_status)],
-              ["Call reference", lead.twilio_call_sid],
-            ].map(([key, value]) => (
-              <div key={key}>
-                <dt>{key}</dt>
-                <dd>{value || "Not captured"}</dd>
-              </div>
-            ))}
-          </dl>
-          {lead.error && <p className="calling-alert">{lead.error}</p>}
-          {lead.status === "needs_review" && (
-            <CallReview lead={lead} user={user} onReviewed={onReviewed} />
-          )}
-        </div>
-        <footer className="calling-dialog-footer">
-          <button className="calling-button" onClick={onClose}>
-            Close details
-          </button>
-          <span>Summaries are captured by your AI caller.</span>
-        </footer>
-      </section>
     </div>
   );
 }
@@ -1157,7 +1011,15 @@ export default function AIOutreachScreen({
               )}
             </>
           )}
-          {["contacts", "calls", "leads"].includes(view) && (
+          {view === "calls" && (
+            <CallHistoryScreen
+              user={user}
+              campaigns={campaigns}
+              refreshKey={lastUpdated?.getTime()}
+              onAuthRequired={failed}
+            />
+          )}
+          {["contacts", "leads"].includes(view) && (
             <div className="calling-panel">
               <header className="calling-panel-heading">
                 <div>
@@ -1452,7 +1314,8 @@ export default function AIOutreachScreen({
         />
       )}
       {currentLead && (
-        <LeadDrawer
+        <ConversationDrawer
+          key={currentLead.id}
           lead={currentLead}
           user={user}
           onClose={() => setLeadId(null)}

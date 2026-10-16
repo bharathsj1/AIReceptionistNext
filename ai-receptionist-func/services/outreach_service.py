@@ -22,6 +22,7 @@ from twilio.twiml.voice_response import VoiceResponse
 
 from shared.config import get_public_api_base
 from shared.db import OutreachCampaign, OutreachLead, OutreachSuppression, PhoneNumber, CallerNumber, SessionLocal
+from services.outreach_history import ensure_conversation, log_event, iso
 
 logger = logging.getLogger(__name__)
 ACTIVE = {"preparing", "queued-provider", "initiated", "ringing", "in-progress"}
@@ -158,7 +159,10 @@ def campaign_payload(db, campaign, include_leads=False):
         payload["leads"] = [{"id": lead.id, "phone": lead.phone, "restaurant_name": lead.restaurant_name,
                             "status": lead.status, "error": lead.error, "result": lead.result,
                             "notification_status": lead.notification_status,
-                            "twilio_call_sid": lead.twilio_call_sid} for lead in leads]
+                            "twilio_call_sid": lead.twilio_call_sid, "ultravox_call_id": lead.ultravox_call_id,
+                            "started_at": iso(lead.started_at), "ended_at": iso(lead.ended_at),
+                            "campaign_id": campaign.id, "campaign_name": campaign.name,
+                            "caller_id": campaign.caller_id} for lead in leads]
     return payload
 
 
@@ -225,6 +229,9 @@ def launch_call(db, campaign, lead):
     claimed = db.query(OutreachLead).filter_by(id=lead.id, status="queued").filter(
         OutreachLead.consent_evidence.isnot(None), ~OutreachLead.campaign_id.in_(suppressed_campaigns)).update(
             {"status": "preparing", "started_at": datetime.utcnow()}, synchronize_session=False)
+    if claimed:
+        ensure_conversation(db, lead)
+        log_event(db, lead, "preparing")
     db.commit()
     if not claimed:
         return
@@ -232,6 +239,7 @@ def launch_call(db, campaign, lead):
     try:
         payload = {"systemPrompt": call_prompt(campaign, lead), "medium": {"twilio": {}},
                    "firstSpeakerSettings": {"user": {}}, "maxDuration": "600s", "joinTimeout": "120s",
+                   "retentionPolicy": "retain",
                    "selectedTools": [result_tool(lead), {"toolName": "hangUp"}],
                    "metadata": {"outreachCampaignId": campaign.id, "outreachLeadId": lead.id}}
         if campaign.voice:
@@ -243,10 +251,13 @@ def launch_call(db, campaign, lead):
         if not data.get("callId") or not str(data.get("joinUrl", "")).startswith("wss://"):
             raise ValueError("Ultravox did not return a call ID and secure stream URL")
         lead.ultravox_call_id = data["callId"]
+        log_event(db, lead, "voice_session_created")
         db.commit()
         db.refresh(campaign)
         if campaign.status != "running":
             lead.status, lead.error = "canceled", "Campaign paused before dialing"
+            lead.ended_at = datetime.utcnow()
+            log_event(db, lead, "canceled", lead.error)
             db.commit()
             return
         twiml = VoiceResponse()
@@ -260,6 +271,7 @@ def launch_call(db, campaign, lead):
         db.query(OutreachLead).filter_by(id=lead.id).update({"twilio_call_sid": call.sid}, synchronize_session=False)
         db.query(OutreachLead).filter_by(id=lead.id, status="preparing").update(
             {"status": "queued-provider"}, synchronize_session=False)
+        log_event(db, lead, "call_accepted")
         db.commit()
         db.refresh(lead)
     except TwilioRestException as exc:
@@ -269,6 +281,9 @@ def launch_call(db, campaign, lead):
         lead.status = "failed" if 400 <= (exc.status or 0) < 500 else "needs_review"
         lead.error = "Twilio rejected the call" if lead.status == "failed" else "Twilio call creation is uncertain; check provider logs before continuing"
         campaign.status, campaign.error = "paused", lead.error
+        if lead.status == "failed":
+            lead.ended_at = datetime.utcnow()
+        log_event(db, lead, lead.status, lead.error)
         db.commit()
     except Exception:
         logger.exception("Outreach provider request failed for lead %s", lead.id)
@@ -278,10 +293,11 @@ def launch_call(db, campaign, lead):
             return
         lead.status, lead.error = "needs_review", "Provider request failed or timed out; check provider logs before continuing"
         campaign.status, campaign.error = "paused", lead.error
+        log_event(db, lead, "needs_review", lead.error)
         db.commit()
 
 
-def apply_call_status(db, lead, sid, status, sequence=None):
+def apply_call_status(db, lead, sid, status, sequence=None, duration=None):
     if status not in ACTIVE | TERMINAL or not sid:
         raise ValueError("Invalid call status")
     if lead.twilio_call_sid and lead.twilio_call_sid != sid:
@@ -298,7 +314,16 @@ def apply_call_status(db, lead, sid, status, sequence=None):
         or_(OutreachLead.twilio_call_sid.is_(None), OutreachLead.twilio_call_sid == sid))
     if sequence is not None:
         query = query.filter(OutreachLead.callback_sequence < sequence)
-    query.update(update, synchronize_session=False)
+    previous = lead.status
+    changed = query.update(update, synchronize_session=False)
+    if changed:
+        if previous != status:
+            log_event(db, lead, status)
+        conversation = ensure_conversation(db, lead)
+        if duration is not None and status in TERMINAL:
+            conversation.duration_seconds = duration
+        if status in TERMINAL and not conversation.is_final:
+            conversation.next_sync_at = datetime.utcnow()
     db.commit()
     db.refresh(lead)
 
@@ -329,6 +354,7 @@ def save_result(db, lead, body):
     if lead.notification_status in {"sending", "sent", "failed", "needs_review"} and result["outcome"] != "do_not_call":
         return
     lead.result = result
+    log_event(db, lead, "result_saved", result["outcome"])
     if lead.notification_status not in {"sending", "sent"}:
         lead.notification_status = "pending" if result["outcome"] == "interested" and result["follow_up_permission"] else "none"
     db.commit()
@@ -404,6 +430,7 @@ def process_campaign(db, campaign, now):
         elif lead.started_at and lead.started_at < now - timedelta(minutes=5):
             lead.status, lead.error = "needs_review", "Interrupted call creation; reconcile provider logs before continuing"
             campaign.status, campaign.error = "paused", lead.error
+            log_event(db, lead, "needs_review", lead.error)
             db.commit()
             return
         else:

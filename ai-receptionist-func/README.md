@@ -2,7 +2,7 @@
 
 ## VedoraEats AI outreach
 
-Dashboard -> **AI outreach** imports a UTF-8 restaurant CSV, creates a reviewable
+Dashboard -> **Campaigns** imports a UTF-8 restaurant CSV, creates a reviewable
 draft, and starts sequential Twilio calls connected to Ultravox conversations.
 Enter verified VedoraEats benefits and your team's notification email in the
 campaign form. The agent identifies itself as an AI assistant, asks for the owner,
@@ -97,8 +97,45 @@ campaign after reviewing all uncertain contacts. Missed status callbacks for
 known call IDs are reconciled by polling Twilio. Duplicate/out-of-order callbacks
 cannot regress a terminal call. Duplicate tool delivery cannot resend an accepted email.
 
+### Durable call history and transcripts
+
+**Call history** lists every attempted outreach contact across the account's
+campaigns, including unanswered, failed and uncertain attempts. It supports
+25-row pages (maximum 100), search, campaign, status, outcome, and inclusive
+Europe/London date filters. Start/end timestamps use UTC in the API; the UI
+shows London time. Talk duration uses a provider measurement, never the elapsed
+preparation/ringing interval. Missing measurements remain unknown.
+
+`outreach_conversations` persists normalized spoken messages, timing, sync state
+and provider errors. `outreach_call_events` records call preparation, voice-session
+creation, provider status changes, owner-result changes, and manual review. Normal
+`init_db()` creates the new tables without replacing existing call records. Rebuild
+and restart the backend and UI containers to enable the feature.
+
+An independent timer processes pending transcripts every minute. It also backfills
+completed campaigns, uses bounded batches/backoff and retries, and does not hold up
+the calling worker. Opening a conversation can fetch an uncached transcript on demand;
+refreshes are throttled and locked per conversation. Saved final transcripts are
+served from the local database, even when Ultravox is unavailable. Empty final
+transcripts can be explicitly rechecked. A shorter or failed provider response
+never replaces saved dialogue. Empty provider responses are allowed time to settle
+before being classified as having no spoken transcript.
+
+The integration uses the [Ultravox call messages API](https://docs.ultravox.ai/api-reference/calls/calls-messages-list)
+with `mode=in_call` and every cursor page. Only spoken AI/contact messages are
+saved; system/tool messages and tool payloads are excluded. Next-page URLs are
+not followed with provider credentials: only the cursor is extracted and sent to
+the configured provider origin. Newly created sessions request retained provider
+data so the transcript can be collected. Calls made before this feature are
+backfilled only if provider messages remain available; missing historical event
+timelines are not invented. Audio recording is not enabled by this feature.
+
 ### API and validation
 
+- `GET /api/outreach/calls` (optional `q`, `campaign_id`, `status`, `outcome`,
+  `from`/`to` as `YYYY-MM-DD`, `page`, `page_size`; returns filtered totals and metadata)
+- `GET /api/outreach/leads/{id}/conversation` (saved/spoken messages, call metadata
+  and activity; optional `refresh=true` to recheck the provider when not final)
 - `GET /api/outreach/config`
 - `GET|POST /api/outreach/campaigns` (POST: `name`, `benefits`,
   `notification_email`, `caller_id`, `csv_text`, optional `start_hour`, `end_hour`, `voice`)
@@ -110,6 +147,9 @@ cannot regress a terminal call. Duplicate tool delivery cannot resend an accepte
 
 The campaign UI uses the existing login bearer token. Data and caller IDs are
 scoped to the resolved account, and another account's campaign/contact returns 404.
+Conversation/history responses use `Cache-Control: no-store`; transcript reads
+require a signed account-owner/manager session and never accept a browser-supplied
+Ultravox call ID as proof of access.
 
 Run `DATABASE_URL=sqlite:///:memory: python -m unittest discover -s tests -v` from
 this directory, and `npm run build` / `npm run typecheck` from `AIReceptionNewUI`.

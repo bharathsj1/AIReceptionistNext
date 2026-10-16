@@ -17,7 +17,7 @@ from twilio.request_validator import RequestValidator
 
 from crm_shared import CRMActor, issue_auth_session_token
 from services import outreach_service as service
-from shared.db import Base, CallerNumber, Client, OutreachCampaign, OutreachLead, OutreachSuppression
+from shared.db import Base, CallerNumber, Client, OutreachCampaign, OutreachLead, OutreachSuppression, OutreachCallEvent
 
 HEADER = "phone,restaurant_name,automated_call_consent,consent_evidence,city\n"
 CSV = HEADER + '020 7946 0018,"The Bistro, London",yes,Owner opted in to VedoraEats automated calls on 2026-10-01,London\n'
@@ -146,6 +146,9 @@ class OutreachTests(unittest.TestCase):
             self.assertEqual(payload["firstSpeakerSettings"], {"user": {}})
             self.assertIn("AI assistant", payload["systemPrompt"])
             self.assertEqual(lead.status, "queued-provider")
+            self.assertEqual(payload["retentionPolicy"], "retain")
+            events = self.db.query(OutreachCallEvent).filter_by(lead_id=lead.id).order_by(OutreachCallEvent.id).all()
+            self.assertEqual([event.event for event in events], ["preparing", "voice_session_created", "call_accepted"])
 
     def test_timeout_pauses_without_redial(self):
         campaign = self.campaign()

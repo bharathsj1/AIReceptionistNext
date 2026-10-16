@@ -1,0 +1,314 @@
+.call-history-intro {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  color: #849378;
+  font-size: 11px;
+}
+.call-history-intro > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  line-height: 1.8;
+}
+.call-history-intro > span:last-child {
+  color: #89a275;
+  font-size: 10px;
+}
+.call-history-stats {
+  margin-top: 18px;
+}
+.call-history-filters {
+  display: grid;
+  gap: 16px;
+  padding: 0 23px 22px;
+}
+.call-history-filters .calling-search {
+  min-width: 0;
+}
+.call-history-selects {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr 1fr 0.85fr 0.85fr;
+  gap: 12px;
+}
+.call-history-selects label {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  color: #87967a;
+  font-size: 10px;
+}
+.call-history-selects select,
+.call-history-selects input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #e2e9d9;
+  border-radius: 7px;
+  color: #748368;
+  background: #fff;
+  min-height: 39px;
+  padding: 9px 10px;
+  font: inherit;
+  font-size: 11px;
+  text-transform: capitalize;
+}
+.call-history-selects input {
+  text-transform: none;
+}
+.call-history-filters > button {
+  justify-self: start;
+}
+.call-history-table {
+  min-width: 1050px;
+}
+.call-history-table th,
+.call-history-table td {
+  padding-inline: 17px;
+}
+.call-history-business {
+  border: 0;
+  padding: 0;
+  background: none;
+  text-align: left;
+  color: inherit;
+}
+.call-history-business > strong {
+  display: block;
+  white-space: normal;
+  min-width: 140px;
+  max-width: 200px;
+  line-height: 1.6;
+}
+.call-history-campaign {
+  white-space: normal;
+  min-width: 135px;
+  max-width: 210px;
+  color: #6d7f60 !important;
+  font-size: 11px;
+  line-height: 1.7;
+}
+.call-history-date {
+  font-size: 10px;
+  color: #6f7f63 !important;
+}
+.call-history-duration {
+  font-variant-numeric: tabular-nums;
+}
+.call-history-outcome {
+  text-transform: capitalize;
+  font-size: 10px;
+  color: #97a28a;
+}
+.call-history-outcome.outcome-interested {
+  color: #729755;
+  font-weight: 550;
+}
+.call-history-outcome.outcome-do_not_call {
+  color: #b28d77;
+}
+.call-history-transcript {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: #94a184;
+  font-size: 10px;
+}
+.call-history-transcript.transcript-ready {
+  color: #6d9456;
+}
+.call-history-transcript.transcript-unavailable {
+  color: #b2996e;
+}
+.call-history-transcript:hover {
+  text-decoration: underline;
+}
+.call-history-error {
+  margin: 0 23px 18px;
+}
+.call-history-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 23px;
+  border-top: 1px solid #e9eee0;
+  font-size: 10px;
+  color: #96a18a;
+}
+.call-history-pagination > div {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.call-history-pagination .calling-button {
+  min-height: 32px;
+  padding: 7px 10px;
+  font-size: 10px;
+}
+.call-history-note {
+  color: #96a38b;
+  font-size: 10px;
+  line-height: 1.9;
+  margin-top: 16px !important;
+}
+@media (max-width: 1100px) {
+  .call-history-selects {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .call-history-intro {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+}
+@media (max-width: 590px) {
+  .call-history-selects {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .call-history-selects label:first-child {
+    grid-column: 1/-1;
+  }
+  .call-history-filters {
+    padding-inline: 17px;
+  }
+  .call-history-pagination {
+    flex-direction: column;
+    align-items: flex-start;
+    padding-inline: 17px;
+  }
+  .call-history-pagination > div {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .call-history-intro {
+    font-size: 10px;
+  }
+  .call-history-intro > span:last-child {
+    font-size: 9px;
+  }
+  .call-history .calling-panel-heading {
+    flex-wrap: wrap;
+  }
+  .call-history-note {
+    font-size: 9px;
+  }
+}
+
+.call-history .call-history-stats {
+  margin-block: 14px 20px;
+}
+.call-history-stats .calling-stat {
+  padding: 13px 16px;
+}
+.call-history-stats .calling-stat > strong {
+  font-size: 25px;
+  margin-block: 3px 4px;
+}
+.call-history-stats .calling-stat > div {
+  font-size: 11px;
+}
+.call-history-stats .calling-stat > small {
+  font-size: 9px;
+}
+.call-history-stats .calling-stat-icon {
+  width: 25px;
+  height: 25px;
+}
+.call-history .calling-panel-heading {
+  padding-block: 19px 16px;
+}
+.call-history-filters {
+  gap: 12px;
+  padding-bottom: 18px;
+}
+
+.call-history-mobile {
+  display: none;
+}
+@media (max-width: 590px) {
+  .call-history-desktop {
+    display: none;
+  }
+  .call-history-mobile {
+    display: grid;
+  }
+  .call-history-card {
+    padding: 20px 17px;
+    border-top: 1px solid #e7eddf;
+  }
+  .call-history-card-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    text-align: left;
+    color: #769061;
+  }
+  .call-history-card-heading strong {
+    display: block;
+    font-size: 13px;
+    font-weight: 550;
+    color: #596f48;
+  }
+  .call-history-card-heading small {
+    display: block;
+    margin-top: 5px;
+    font-size: 10px;
+    color: #8a9d78;
+  }
+  .call-history-card > p {
+    font-size: 10px;
+    color: #98a58c;
+    margin-top: 12px;
+    line-height: 1.7;
+  }
+  .call-history-card-time {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 10px;
+    color: #869976;
+    font-size: 9px;
+  }
+  .call-history-card-status {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 15px;
+  }
+  .call-history-card-status .call-history-outcome {
+    font-size: 9px;
+  }
+  .call-history-card-transcript {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    width: 100%;
+    margin-top: 16px;
+    padding: 12px 0 0;
+    background: none;
+    border: 0;
+    border-top: 1px solid #edf1e5;
+    color: #92a47e;
+    font-size: 9px;
+  }
+  .call-history-card-transcript.transcript-ready {
+    color: #769958;
+  }
+  .call-history-card-transcript > span:last-child {
+    margin-left: auto;
+    font-size: 8px;
+    color: #93a47d;
+  }
+}

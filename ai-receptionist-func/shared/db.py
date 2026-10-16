@@ -576,6 +576,36 @@ class OutreachLead(Base):
     __table_args__ = (UniqueConstraint("campaign_id", "phone", name="uq_outreach_campaign_phone"),)
 
 
+class OutreachConversation(Base):
+    __tablename__ = "outreach_conversations"
+
+    lead_id = Column(String, ForeignKey("outreach_leads.id"), primary_key=True)
+    messages = Column(JSON, nullable=False, default=list)
+    status = Column(String, nullable=False, default="pending", index=True)
+    is_final = Column(Boolean, nullable=False, default=False)
+    joined_at = Column(DateTime, nullable=True)
+    provider_ended_at = Column(DateTime, nullable=True)
+    end_reason = Column(String, nullable=True)
+    duration_seconds = Column(Float, nullable=True)
+    message_count = Column(Integer, nullable=False, default=0)
+    synced_at = Column(DateTime, nullable=True)
+    checked_at = Column(DateTime, nullable=True)
+    next_sync_at = Column(DateTime, nullable=True, index=True)
+    locked_until = Column(DateTime, nullable=True)
+    sync_attempts = Column(Integer, nullable=False, default=0)
+    error = Column(Text, nullable=True)
+
+
+class OutreachCallEvent(Base):
+    __tablename__ = "outreach_call_events"
+
+    id = Column(Integer, primary_key=True)
+    lead_id = Column(String, ForeignKey("outreach_leads.id"), nullable=False, index=True)
+    event = Column(String, nullable=False)
+    detail = Column(Text, nullable=True)
+    occurred_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
 class OutreachSuppression(Base):
     __tablename__ = "outreach_suppressions"
 
