@@ -1,7 +1,7 @@
 name: Deploy Docker after checks
 on:
   workflow_run:
-    workflows: ["Backend Docker checks"]
+    workflows: ["Backend Docker checks", "UI Docker checks"]
     types: [completed]
     branches: [main]
 permissions:
