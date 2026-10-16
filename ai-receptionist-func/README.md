@@ -27,22 +27,17 @@ Download the header-only template from the dashboard. Required columns:
 | --- | --- |
 | `phone` | UK landline/mobile in `020…`, `07…`, `+44…` or `0044…` format |
 | `restaurant_name` | Restaurant being contacted |
-| `automated_call_consent` | `yes`, `true` or `1` only where specific consent was obtained |
-| `consent_evidence` | Record of when/how the subscriber consented to VedoraEats automated marketing calls |
 
 Optional columns include `owner_name`, `email`, `city` and additional business
 details. Quoted cells and UTF-8 BOMs are supported. Limits: 2 MB, 5,000 rows,
 30 columns and 2,000 characters per cell. Invalid rows and duplicate normalized
 numbers are reported during import. Non-UK numbers, premium-rate, personal
 numbering and pager destinations are excluded, including Crown Dependency
-numbers sharing +44. Valid contacts without consent evidence remain visible as
-skipped. CSV owner details are context; the agent must confirm contact details.
+numbers sharing +44. CSV owner details are context; the agent must confirm contact details.
 
-UK automated marketing calls require prior consent specifically covering the
-organisation and automated calls, including calls to businesses. General
-marketing or live-call consent is insufficient. See [ICO guidance](https://ico.org.uk/for-organisations/direct-marketing-and-privacy-and-electronic-communications/direct-marketing-guidance/plan-direct-marketing/).
-The CSV records operator-supplied evidence; this feature does not independently
-verify that consent. Opt-outs are stored per account and suppress that number in
+The website no longer collects consent evidence or uses it as a call gate.
+Historical evidence is retained when supplied; removing this gate does not
+fabricate evidence or requeue previously skipped rows. Opt-outs are stored per account and suppress that number in
 all its current and future campaigns. Importing it again cannot clear an opt-out.
 
 ### Server configuration
@@ -64,7 +59,7 @@ all its current and future campaigns. Importing it again cannot clear an opt-out
   default sender `support@vedoraeats.com`; the chosen sender must be verified in
   SendGrid. Email is never reported as sent when credentials are missing.
   New campaigns and manual calls default their notification recipient to the
-  signed-in tenant's account owner (`bharath.sj1@gmail.com` for Bharath's account).
+  signed-in user's email from the authenticated session, including manager logins.
   An explicitly entered campaign recipient is preserved. Existing campaigns keep
   their saved recipient. Calling setup displays both email defaults.
 - `API_PUBLIC_BASE_URL`: public HTTPS origin **without `/api`**, reachable from
@@ -143,15 +138,14 @@ timelines are not invented. Audio recording is not enabled by this feature.
   and activity; optional `refresh=true` to recheck the provider when not final)
 - `GET /api/outreach/config`
 - `POST /api/outreach/manual-calls` (`request_id`: UUID, `phone`,
-  `restaurant_name`, `benefits`, `notification_email`, `caller_id`,
-  `consent_confirmed: true`, `consent_evidence`). Creates a one-contact manual
+  `restaurant_name`, `benefits`, `notification_email`, `caller_id`). Creates a one-contact manual
   campaign and immediately uses the existing Twilio/Ultravox launch path; no CSV
   is needed. Returns `{call, campaign_id, created}` with 201 for a new attempt or
   200 for an idempotent replay. Request IDs are scoped to the signed-in account;
   retries and concurrent delivery cannot redial the same request. Reusing an ID
   with different details returns 409. Provider uncertainty remains `needs_review`.
   Checks assigned caller IDs, opt-outs, active/uncertain attempts for that number,
-  configuration, consent and weekday 09:00–20:00 Europe/London hours. The existing
+  configuration and weekday 09:00–20:00 Europe/London hours. The existing
   worker reconciles the call, and history/transcripts/notifications use the same
   storage and callbacks. No database migration is required.
 - `GET|POST /api/outreach/campaigns` (POST: `name`, `benefits`,
@@ -161,6 +155,31 @@ timelines are not invented. Audio recording is not enabled by this feature.
   `confirmed_no_active_call: true`)
 - `POST /api/outreach/leads/{id}/status` (Twilio signature)
 - `POST /api/outreach/leads/{id}/result` (per-contact `X-Outreach-Token`)
+
+### Signed-in email verification
+
+- `GET /api/outreach/email-verification`: signed-in address, verification status,
+  pending challenge, resend countdown and mail-delivery readiness.
+- `POST /api/outreach/email-verification/send`: optional `email`, which must match
+  the signed-in address. Sends a six-digit code to that address only.
+- `POST /api/outreach/email-verification/verify`: `code` and optional matching `email`.
+
+The restaurant portal's account-settings flow is adapted here; no cross-product
+tokens, account databases or credentials are shared. `outreach_email_verifications`
+is created automatically on the existing Docker database. Records are scoped to
+tenant, signed-in identity and normalized email. Codes use salted HMAC hashes with
+the existing session signing secret; plaintext codes never appear in API responses
+or logs. Codes expire after 10 minutes, are single-use, and allow five attempts.
+Resends invalidate older codes, enforce 60 seconds between sends and permit three
+sends per 10 minutes. Atomic updates enforce limits across concurrent processes;
+send intent is saved before mail delivery, with no automatic provider retry.
+Verified status survives restarts. Changing the signed-in email requires a new
+verification. The flow does not change login, calling or notification permissions.
+
+OTP mail uses existing `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`
+and `SMTP_USE_TLS` settings when available (SSL on port 465, STARTTLS otherwise
+when enabled). It otherwise uses `SENDGRID_API_KEY`. Both use the configured
+Outreach sender. Missing mail configuration returns 503, never a simulated code.
 
 The campaign UI uses the existing login bearer token. Data and caller IDs are
 scoped to the resolved account, and another account's campaign/contact returns 404.

@@ -14,7 +14,7 @@ from crm_shared import resolve_actor_from_session
 from function_app import app
 from services.outreach_service import (ACTIVE, configuration_errors, caller_numbers, create_campaign,
     TERMINAL, campaign_payload, apply_call_status, save_result, tool_token, twilio_client, process_outreach,
-    outreach_from_email, default_notification_email)
+    outreach_from_email)
 from shared.config import get_public_api_base
 from shared.db import OutreachCampaign, OutreachLead, SessionLocal
 from utils.cors import build_cors_headers
@@ -67,7 +67,7 @@ def outreach_config(req):
                               "numbers": [number_payload(n) for n in own_numbers(db, actor.client_id)],
                               "number_error": number_error, "configuration_errors": configuration_errors(),
                               "from_email": outreach_from_email(),
-                              "notification_email": default_notification_email(db, actor.client_id),
+                              "notification_email": actor.email,
                               "timezone": "Europe/London", "country": "GB"})
     finally:
         db.close()
@@ -82,7 +82,9 @@ def outreach_manual_call(req):
         return response(req, {"error": "Sign in as an account owner to start a call"}, 401)
     db = SessionLocal()
     try:
-        campaign, lead, created = start_manual_call(db, actor.client_id, body_for(req))
+        body = body_for(req)
+        body["notification_email"] = str(body.get("notification_email") or "").strip() or actor.email
+        campaign, lead, created = start_manual_call(db, actor.client_id, body)
         conversation = db.get(OutreachConversation, lead.id)
         return response(req, {"call": call_payload(lead, campaign, conversation),
             "campaign_id": campaign.id, "created": created}, 201 if created else 200)
@@ -106,7 +108,9 @@ def outreach_campaigns(req):
     db = SessionLocal()
     try:
         if req.method == "POST":
-            campaign, errors = create_campaign(db, actor.client_id, body_for(req))
+            body = body_for(req)
+            body["notification_email"] = str(body.get("notification_email") or "").strip() or actor.email
+            campaign, errors = create_campaign(db, actor.client_id, body)
             return response(req, {"campaign": campaign_payload(db, campaign, True), "import_errors": errors}, 201)
         campaigns = db.query(OutreachCampaign).filter_by(client_id=actor.client_id).order_by(OutreachCampaign.created_at.desc()).limit(100).all()
         return response(req, {"items": [campaign_payload(db, c) for c in campaigns]})

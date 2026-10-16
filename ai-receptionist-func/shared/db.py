@@ -606,6 +606,23 @@ class OutreachCallEvent(Base):
     occurred_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
+class OutreachEmailVerification(Base):
+    __tablename__ = "outreach_email_verifications"
+
+    client_id = Column(Integer, ForeignKey("clients.id"), primary_key=True)
+    subject = Column(String, primary_key=True)
+    email = Column(String, primary_key=True)
+    verified_at = Column(DateTime, nullable=True)
+    code_hash = Column(String, nullable=True)
+    code_salt = Column(String, nullable=True)
+    expires_at = Column(DateTime, nullable=True)
+    status = Column(String, nullable=False, default="idle")
+    failed_attempts = Column(Integer, nullable=False, default=0)
+    send_count = Column(Integer, nullable=False, default=0)
+    window_started_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    next_send_at = Column(DateTime, nullable=True)
+
+
 class TenantPhoneNumber(Base):
     __tablename__ = "tenant_phone_numbers"
     sid = Column(String, primary_key=True)

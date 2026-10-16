@@ -25,6 +25,7 @@ import { outreachRequest } from "../lib/api/outreach";
 import { hasCurrentSession, SignInRequiredError } from "../lib/authSession";
 import ConversationDrawer from "../components/outreach/ConversationDrawer";
 import ManualCallDialog from "../components/outreach/ManualCallDialog";
+import EmailVerificationPanel from "../components/outreach/EmailVerificationPanel";
 import NumbersWorkspace, { DashboardNumbers, BuyNumberDialog, SmsDialog } from "../components/outreach/NumbersWorkspace";
 import CallHistoryScreen from "./CallHistoryScreen";
 import CampaignWizard, {
@@ -1309,6 +1310,7 @@ export default function AIOutreachScreen({
                       </p>
                     )}
                   </div>
+                  <EmailVerificationPanel key={user?.email} user={user} onAuthRequired={failed} />
                   <p className="calling-fine-print">
                     Provider credentials and caller-number assignments are
                     managed by your deployment administrator. “Configured”
@@ -1332,8 +1334,7 @@ export default function AIOutreachScreen({
                 <div>
                   <h3>Respect the person at the other end.</h3>
                   <p>
-                    Campaigns use UK contacts with documented automated-call
-                    consent. Missing consent and previous opt-outs are skipped.
+                    Campaigns use UK contacts. Previous opt-outs are skipped.
                     The AI captures follow-up permission so your team knows the
                     next step.
                   </p>
@@ -1352,6 +1353,7 @@ export default function AIOutreachScreen({
       )}
       {wizard && (
         <CampaignWizard
+          user={user}
           config={config}
           company={company}
           onClose={() => setWizard(false)}

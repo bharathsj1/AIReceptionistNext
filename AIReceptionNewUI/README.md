@@ -18,7 +18,7 @@ requires no additional AI provider. Login and backend authorization still apply.
 - **Overview:** aggregate campaign, attempted-call, interest, and handoff counts.
 - **Dial a number:** available from the workspace toolbar. Enter one UK business
   number and name, reuse a campaign pitch or enter your own, choose an assigned
-  caller ID and team email, and record automated-call consent. “Start AI call now”
+  caller ID and team email. “Start AI call now”
   starts a single Twilio/Ultravox call without a CSV or starting another campaign's
   contacts. It is saved as a one-contact “Manual call” campaign with the usual
   history, conversation, transcript and handoff. Manual calls use weekday
@@ -47,10 +47,20 @@ part of campaign handoff; there is no standalone mail interface.
 
 Lead-summary email defaults appear in Calling setup. The sender is
 `support@vedoraeats.com` unless the backend `FROM_EMAIL` setting overrides it.
-The campaign and manual-call forms prefill the owning account's email, including
-`bharath.sj1@gmail.com` for Bharath's workspace. A chosen recipient can be edited
+The campaign and manual-call forms prefill the signed-in user's email. This also
+applies to managers; the account owner's address is not substituted. A chosen recipient can be edited
 before creating the campaign; existing campaigns retain their saved address.
 SendGrid credentials and verification of the sender are still required.
+
+Calling setup includes **Your email verification**, matching the restaurant
+portal's send-code/verify-code flow. It verifies only the signed-in address using
+a six-digit code, expires codes after 10 minutes, and saves verification across
+refreshes. Resend has a 60-second cooldown and a maximum of three sends per 10
+minutes; a code permits five attempts and can be used once. SMTP is preferred
+when configured, with SendGrid as an alternative. No code is returned by the API.
+Verification is an account-settings action and does not add a login or calling gate.
+CSV imports require only `phone` and `restaurant_name`; the consent form and
+consent-based call gate have been removed. Existing opt-outs remain blocked.
 
 Conversation text is fetched through authenticated outreach routes and saved in
 SQLite on the backend's persistent Docker volume. The background worker fetches

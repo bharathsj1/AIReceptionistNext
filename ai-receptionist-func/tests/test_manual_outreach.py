@@ -33,8 +33,7 @@ class ManualOutreachTests(unittest.TestCase):
         self.db.commit()
         self.body = {"request_id": str(uuid4()), "phone": "020 7946 0018", "restaurant_name": "The Willow Kitchen",
             "benefits": "Confirmed company benefits.", "caller_id": "+442079460000",
-            "notification_email": "team@example.com", "consent_confirmed": True,
-            "consent_evidence": "Owner agreed to automated calls on 2026-10-01"}
+            "notification_email": "team@example.com"}
         uv = Mock()
         uv.json.return_value = {"callId": "uv-manual-call", "joinUrl": "wss://api.ultravox.ai/join/test"}
         self.client = Mock()
@@ -86,10 +85,16 @@ class ManualOutreachTests(unittest.TestCase):
         self.assertEqual(self.post.call_count, 1)
         self.assertEqual(self.client.calls.create.call_count, 1)
 
-    def test_manual_call_defaults_recipient_to_its_account_owner(self):
-        campaign, _, _ = self.start(notification_email="")
-        self.assertEqual(campaign.notification_email, "owner@example.com")
-        self.assertNotEqual(campaign.notification_email, "other@example.com")
+    def test_manual_api_defaults_recipient_to_signed_in_manager(self):
+        from dataclasses import replace
+        actor = replace(ACTOR, email="manager@example.com", scope="client_user", role="manager", client_user_id="7")
+        start = manual.start_manual_call
+        with patch.object(endpoints, "actor_for", return_value=actor), patch.object(endpoints, "SessionLocal", self.Session), \
+             patch.object(endpoints, "start_manual_call", side_effect=lambda db, client_id, body: start(db, client_id, body, now=NOW)):
+            result = endpoints.outreach_manual_call(self.request(body={**self.body, "notification_email": ""}))
+        self.assertEqual(result.status_code, 201)
+        campaign = self.db.get(OutreachCampaign, json.loads(result.get_body())["campaign_id"])
+        self.assertEqual(campaign.notification_email, "manager@example.com")
 
     def test_reusing_request_for_a_different_number_is_rejected(self):
         self.start()
@@ -100,8 +105,7 @@ class ManualOutreachTests(unittest.TestCase):
     def test_bad_inputs_never_contact_providers(self):
         for updates in ({"request_id": "bad"}, {"phone": "+14165550123"}, {"phone": "09012345678"},
                         {"restaurant_name": ""}, {"restaurant_name": "x" * 151}, {"benefits": ""},
-                        {"notification_email": "bad"}, {"consent_confirmed": "true"},
-                        {"consent_evidence": ""}, {"consent_evidence": "x" * 2001}, {"caller_id": "+442079460099"}):
+                        {"notification_email": "bad"}, {"caller_id": "+442079460099"}):
             with self.subTest(updates=updates), self.assertRaises(ValueError):
                 self.start(**updates)
         self.assertEqual(self.db.query(OutreachLead).count(), 0)

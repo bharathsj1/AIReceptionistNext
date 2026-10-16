@@ -1,0 +1,11 @@
+.calling-email-verification { border-top: 1px solid var(--call-line); margin-top: 24px; padding-top: 24px; }
+.calling-email-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.calling-email-heading p { overflow-wrap: anywhere; }
+.calling-email-badge { display: inline-flex; align-items: center; gap: 7px; padding: 7px 12px; border-radius: 999px; background: #fff2db; color: #805515; font-size: var(--call-text-small); font-weight: 700; }
+.calling-email-badge.is-verified { background: #e8f4eb; color: #245941; }
+.calling-email-code { display: flex; align-items: flex-end; gap: 12px; margin-top: 20px; flex-wrap: wrap; }
+.calling-email-code label { display: grid; gap: 8px; font-size: var(--call-text-body); font-weight: 650; }
+.calling-email-code input { width: 190px; max-width: 100%; min-height: 48px; padding: 10px 14px; border: 1px solid var(--call-line); border-radius: 10px; font: inherit; letter-spacing: 0.1em; background: var(--call-white, white); }
+.calling-email-notice { color: #245941; font-weight: 600; }
+.calling-email-verification .calling-email-notice { margin-top: 16px; line-height: 1.65; }
+@media (max-width: 480px) { .calling-email-code label, .calling-email-code input, .calling-email-code button { width: 100%; } }

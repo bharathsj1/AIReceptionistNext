@@ -36,18 +36,16 @@ export function downloadTemplate() {
       "owner_name",
       "email",
       "city",
-      "automated_call_consent",
-      "consent_evidence",
     ],
   ]);
 }
 
-export default function CampaignWizard({ config, onClose, onCreate, company }) {
+export default function CampaignWizard({ user, config, onClose, onCreate, company }) {
   const [step, setStep] = useState(0);
   const [form, setForm] = useState({
     name: "",
     benefits: "",
-    notification_email: config?.notification_email || "",
+    notification_email: user?.email || config?.notification_email || "",
     caller_id: config?.caller_ids?.[0] || "",
     start_hour: 10,
     end_hour: 17,
@@ -264,9 +262,7 @@ export default function CampaignWizard({ config, onClose, onCreate, company }) {
               <div className="calling-csv-guide">
                 <strong>A few details for a good introduction</strong>
                 <p>
-                  Required: <code>phone</code>, <code>restaurant_name</code>,{" "}
-                  <code>automated_call_consent</code>,{" "}
-                  <code>consent_evidence</code>.
+                  Required: <code>phone</code> and <code>restaurant_name</code>.
                 </p>
                 <p>
                   Optional: owner_name, email, city, and any other context. UK
@@ -274,10 +270,7 @@ export default function CampaignWizard({ config, onClose, onCreate, company }) {
                 </p>
               </div>
               <p className="calling-fine-print">
-                Upload contacts with specific prior consent to automated
-                marketing calls from VedoraEats. Use “yes” for consent and
-                record when and how it was obtained. Contacts without evidence
-                and previous opt-outs are skipped.
+                Previously opted-out contacts are skipped automatically.
               </p>
             </div>
           )}

@@ -39,23 +39,8 @@
   gap: 18px;
   align-items: start;
 }
-.manual-call-dialog .manual-call-consent {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  font-weight: 400;
-  color: var(--call-ink);
-  line-height: 1.7;
-}
-.calling-form-fields .manual-call-consent input[type="checkbox"] {
-  flex: 0 0 20px;
-  width: 20px;
-  height: 20px;
-  margin-top: 4px;
-  padding: 0;
-  min-height: 20px;
-  accent-color: var(--call-green);
-}
+
+
 .manual-call-feedback {
   padding-inline: 28px;
 }

@@ -92,14 +92,19 @@ class OutreachTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual([error["row"] for error in errors], [3, 4])
 
-    def test_missing_consent_is_skipped_not_dialled(self):
-        campaign = self.campaign(HEADER + "02079460018,Bistro,no,,London\n")
+    def test_minimal_csv_without_consent_fields_can_be_called(self):
+        campaign = self.campaign("phone,restaurant_name\n02079460018,Bistro\n")
         lead = self.db.query(OutreachLead).filter_by(campaign_id=campaign.id).one()
-        self.assertEqual(lead.status, "skipped")
+        self.assertEqual(lead.status, "queued")
+        self.assertIsNone(lead.consent_evidence)
+        campaign.status = "running"
+        self.db.commit()
         with patch.object(service, "twilio_client") as provider, patch.object(service.requests, "post") as post:
+            post.return_value.json.return_value = {"callId": "uv-test", "joinUrl": "wss://example.com/join"}
+            provider.return_value.calls.create.return_value.sid = SID
             service.launch_call(self.db, campaign, lead)
-            provider.assert_not_called()
-            post.assert_not_called()
+            provider.return_value.calls.create.assert_called_once()
+            post.assert_called_once()
 
     def test_malformed_headers_and_csv_limits(self):
         for csv_text in ["phone,name\n02079460018,Bistro", HEADER + '"unfinished', CSV + "x" * service.MAX_CSV_BYTES]:
@@ -115,26 +120,31 @@ class OutreachTests(unittest.TestCase):
             with self.subTest(updates=updates), self.assertRaises(ValueError):
                 service.create_campaign(self.db, 1, {**self.body, **updates})
 
-    def test_summary_email_uses_support_sender_and_scoped_owner_recipient_by_default(self):
-        self.db.get(Client, 1).email = "bharath.sj1@gmail.com"
-        self.db.commit()
-        campaign = service.create_campaign(self.db, 1, {**self.body, "notification_email": ""})[0]
-        self.assertEqual(campaign.notification_email, "bharath.sj1@gmail.com")
-        self.assertEqual(service.default_notification_email(self.db, 2), "other@example.com")
-        self.assertEqual(service.default_notification_email(self.db, 999), "")
+    def test_summary_email_uses_support_sender_and_saved_campaign_recipient(self):
+        campaign = service.create_campaign(self.db, 1, {**self.body, "notification_email": "recipient@example.com"})[0]
         lead = self.lead(campaign)
         with patch.dict(os.environ, {"FROM_EMAIL": ""}), patch.object(service.requests, "post", return_value=Mock(status_code=202)) as post:
             self.assertEqual(service.send_lead_email(campaign, lead), 202)
         payload = post.call_args.kwargs["json"]
         self.assertEqual(payload["from"]["email"], "support@vedoraeats.com")
-        self.assertEqual(payload["personalizations"][0]["to"], [{"email": "bharath.sj1@gmail.com"}])
+        self.assertEqual(payload["personalizations"][0]["to"], [{"email": "recipient@example.com"}])
 
     def test_config_exposes_email_defaults_for_signed_in_account_only(self):
-        with patch.object(endpoints, "actor_for", return_value=ACTOR), patch.object(endpoints, "SessionLocal", self.Session), patch.dict(os.environ, {"FROM_EMAIL": ""}):
+        from dataclasses import replace
+        actor = replace(ACTOR, email="manager@example.com", scope="client_user", client_user_id="7", role="manager")
+        with patch.object(endpoints, "actor_for", return_value=actor), patch.object(endpoints, "SessionLocal", self.Session), patch.dict(os.environ, {"FROM_EMAIL": ""}):
             response = endpoints.outreach_config(self.request(path="config"))
         payload = json.loads(response.get_body())
         self.assertEqual(payload["from_email"], "support@vedoraeats.com")
-        self.assertEqual(payload["notification_email"], "owner@example.com")
+        self.assertEqual(payload["notification_email"], "manager@example.com")
+
+    def test_new_campaign_defaults_to_signed_in_user_not_account_owner(self):
+        from dataclasses import replace
+        actor = replace(ACTOR, email="manager@example.com", scope="client_user", client_user_id="7", role="manager")
+        with patch.object(endpoints, "actor_for", return_value=actor), patch.object(endpoints, "SessionLocal", self.Session):
+            response = endpoints.outreach_campaigns(self.request("POST", body={**self.body, "notification_email": ""}))
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(json.loads(response.get_body())["campaign"]["notification_email"], "manager@example.com")
 
     def test_default_sender_does_not_hide_missing_sendgrid_or_invalid_override(self):
         with patch.dict(os.environ, {"FROM_EMAIL": "", "SENDGRID_API_KEY": ""}):

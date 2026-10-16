@@ -24,16 +24,13 @@ def start_manual_call(db, client_id, body, now=None):
         raise ValueError("A valid call request ID is required") from exc
     phone = outreach.normalize_uk_phone(body.get("phone"))
     details = {key: str(body.get(key) or "").strip() for key in (
-        "restaurant_name", "benefits", "notification_email", "caller_id", "consent_evidence")}
-    details["notification_email"] = details["notification_email"] or outreach.default_notification_email(db, client_id)
+        "restaurant_name", "benefits", "notification_email", "caller_id")}
     if not details["restaurant_name"] or len(details["restaurant_name"]) > 150:
         raise ValueError("Provide a business name of up to 150 characters")
     if not details["benefits"] or len(details["benefits"]) > 12000:
         raise ValueError("Provide verified benefits of up to 12,000 characters")
     if not outreach.valid_email(details["notification_email"]):
         raise ValueError("Provide a valid team notification email")
-    if body.get("consent_confirmed") is not True or not details["consent_evidence"] or len(details["consent_evidence"]) > 2000:
-        raise ValueError("Confirm automated-call consent and provide its evidence (up to 2,000 characters)")
 
     fingerprint = hashlib.sha256(json.dumps({**details, "phone": phone}, sort_keys=True).encode()).hexdigest()
     # A stable primary key makes repeated/concurrent delivery the same request,
@@ -74,7 +71,7 @@ def start_manual_call(db, client_id, body, now=None):
         voice=os.getenv("OUTREACH_ULTRAVOX_VOICE") or None, start_hour=9, end_hour=20, status="running")
     lead = OutreachLead(id=str(uuid5(NAMESPACE_URL, f"vedora-manual-lead:{campaign_id}")),
         campaign_id=campaign.id, position=0, phone=phone, restaurant_name=details["restaurant_name"],
-        consent_evidence=details["consent_evidence"], status="queued",
+        status="queued",
         contact={"source": "manual", "request_fingerprint": fingerprint, "restaurant_name": details["restaurant_name"]})
     try:
         db.add(campaign)

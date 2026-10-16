@@ -155,7 +155,7 @@ export default function LandingScreen({ onTry, onLogin }) {
               FileSpreadsheet,
               "01",
               "Bring your contacts.",
-              "Upload your UK restaurant contacts from a CSV. Check the import and consent details before calling.",
+              "Upload your UK restaurant contacts from a CSV. Check the imported details before calling.",
             ],
             [
               AudioLines,

@@ -21,7 +21,7 @@ from twilio.rest import Client as TwilioClient
 from twilio.twiml.voice_response import VoiceResponse
 
 from shared.config import get_public_api_base
-from shared.db import Client, OutreachCampaign, OutreachLead, OutreachSuppression, PhoneNumber, SessionLocal
+from shared.db import OutreachCampaign, OutreachLead, OutreachSuppression, PhoneNumber, SessionLocal
 from services.outreach_history import ensure_conversation, log_event, iso
 
 logger = logging.getLogger(__name__)
@@ -60,19 +60,14 @@ def outreach_from_email():
     return os.getenv("FROM_EMAIL", "").strip() or "support@vedoraeats.com"
 
 
-def default_notification_email(db, client_id):
-    client = db.get(Client, client_id)
-    return str(client.email if client else "").strip()
-
-
 def parse_contacts(csv_text):
     if not isinstance(csv_text, str) or len(csv_text.encode("utf-8")) > MAX_CSV_BYTES:
         raise ValueError("CSV must be UTF-8 and no larger than 2 MB")
     reader = csv.DictReader(io.StringIO(csv_text.lstrip("\ufeff")), strict=True)
     fields = [str(field or "").strip().lower() for field in (reader.fieldnames or [])]
-    required = {"phone", "restaurant_name", "automated_call_consent", "consent_evidence"}
+    required = {"phone", "restaurant_name"}
     if not required.issubset(fields):
-        raise ValueError("CSV needs phone, restaurant_name, automated_call_consent and consent_evidence columns")
+        raise ValueError("CSV needs phone and restaurant_name columns")
     if len(fields) != len(set(fields)) or len(fields) > 30:
         raise ValueError("Use unique CSV headers and at most 30 columns")
     reader.fieldnames = fields
@@ -96,11 +91,9 @@ def parse_contacts(csv_text):
                 if phone in seen:
                     raise ValueError("Duplicate phone number in CSV")
                 seen.add(phone)
-                consent = row["automated_call_consent"].lower() in {"true", "yes", "1"} and bool(row["consent_evidence"])
                 contacts.append({"phone": phone, "restaurant_name": row["restaurant_name"], "contact": row,
-                                 "consent_evidence": row["consent_evidence"] if consent else None,
-                                 "status": "queued" if consent else "skipped",
-                                 "error": None if consent else "Specific consent to VedoraEats automated marketing calls is missing"})
+                                 "consent_evidence": row.get("consent_evidence") or None,
+                                 "status": "queued", "error": None})
             except ValueError as exc:
                 errors.append({"row": row_number, "error": str(exc)})
     except csv.Error as exc:
@@ -136,7 +129,7 @@ def caller_numbers(db, client_id):
 def create_campaign(db, client_id, body):
     name = str(body.get("name") or "").strip()
     benefits = str(body.get("benefits") or "").strip()
-    email = str(body.get("notification_email") or "").strip() or default_notification_email(db, client_id)
+    email = str(body.get("notification_email") or "").strip()
     caller = str(body.get("caller_id") or "").strip()
     if not name or len(name) > 150 or not benefits or len(benefits) > 12000:
         raise ValueError("Provide a campaign name (up to 150 characters) and verified benefits (up to 12,000 characters)")
@@ -245,7 +238,7 @@ def launch_call(db, campaign, lead):
     suppressed_campaigns = db.query(OutreachCampaign.id).join(OutreachSuppression,
         OutreachSuppression.client_id == OutreachCampaign.client_id).filter(OutreachSuppression.phone == lead.phone)
     claimed = db.query(OutreachLead).filter_by(id=lead.id, status="queued").filter(
-        OutreachLead.consent_evidence.isnot(None), ~OutreachLead.campaign_id.in_(suppressed_campaigns)).update(
+        ~OutreachLead.campaign_id.in_(suppressed_campaigns)).update(
             {"status": "preparing", "started_at": datetime.utcnow()}, synchronize_session=False)
     if claimed:
         ensure_conversation(db, lead)
@@ -473,8 +466,8 @@ def process_campaign(db, campaign, now):
         db.commit()
         return
     db.refresh(lead)
-    if not lead.consent_evidence or db.get(OutreachSuppression, (campaign.client_id, lead.phone)):
-        lead.status, lead.error = "skipped", "Consent missing or number opted out"
+    if db.get(OutreachSuppression, (campaign.client_id, lead.phone)):
+        lead.status, lead.error = "skipped", "Number opted out"
         db.commit()
         return
     db.refresh(campaign)

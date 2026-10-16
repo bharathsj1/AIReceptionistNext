@@ -9,9 +9,9 @@ import "./ManualCallDialog.css";
 export default function ManualCallDialog({ user, config, campaigns, defaultCampaign, defaultCallerId, onClose, onStarted, onConversation, onAuthRequired }) {
   const [template, setTemplate] = useState(defaultCampaign?.id || "");
   const [form, setForm] = useState({
-    phone: "", restaurant_name: "", consent_evidence: "", consent_confirmed: false,
+    phone: "", restaurant_name: "",
     benefits: defaultCampaign?.benefits || "",
-    notification_email: defaultCampaign?.notification_email || config?.notification_email || user?.email || "",
+    notification_email: user?.email || config?.notification_email || "",
     caller_id: config?.caller_ids?.includes(defaultCallerId) ? defaultCallerId : config?.caller_ids?.includes(defaultCampaign?.caller_id)
       ? defaultCampaign.caller_id : config?.caller_ids?.[0] || "",
   });
@@ -36,7 +36,6 @@ export default function ManualCallDialog({ user, config, campaigns, defaultCampa
     const campaign = campaigns.find((item) => item.id === event.target.value);
     if (campaign) setForm((value) => ({ ...value,
       benefits: campaign.benefits,
-      notification_email: campaign.notification_email,
       caller_id: config?.caller_ids?.includes(campaign.caller_id) ? campaign.caller_id : value.caller_id,
     }));
   };
@@ -135,13 +134,6 @@ export default function ManualCallDialog({ user, config, campaigns, defaultCampa
                     <small>Interested-owner details go here when follow-up is permitted.</small>
                   </label>
                 </div>
-                <label>Automated-call consent evidence
-                  <input required maxLength={2000} placeholder="When and how this contact agreed to your AI calls" value={form.consent_evidence} onChange={update("consent_evidence")} />
-                </label>
-                <label className="manual-call-consent">
-                  <input required type="checkbox" checked={form.consent_confirmed} onChange={update("consent_confirmed")} />
-                  <span>This contact agreed to automated marketing calls from our company.</span>
-                </label>
                 <p className="calling-fine-print">Available Monday to Friday, 09:00–20:00 London time. The AI speaks to the contact; you can follow the saved conversation in call history.</p>
               </fieldset>
               <div className="manual-call-feedback" ref={feedbackRef} aria-live="polite">

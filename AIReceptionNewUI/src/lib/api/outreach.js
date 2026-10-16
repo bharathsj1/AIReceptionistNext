@@ -14,6 +14,7 @@ export async function outreachRequest(path, user, body) {
   if (!response.ok) {
     const error = new Error(payload.error || "Outreach request failed");
     error.status = response.status;
+    error.payload = payload;
     throw error;
   }
   return payload;
