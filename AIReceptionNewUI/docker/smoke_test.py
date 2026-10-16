@@ -22,7 +22,7 @@ for attempt in range(30):
     try:
         if all(request(path)[0] == 200 for path in ("/healthz", "/api/probe", "/api/meetings")):
             break
-    except (URLError, TimeoutError):
+    except (URLError, TimeoutError, ConnectionError):
         pass
     time.sleep(1)
 else:
