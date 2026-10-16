@@ -606,6 +606,99 @@ class OutreachCallEvent(Base):
     occurred_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
+class OutreachWallet(Base):
+    __tablename__ = "outreach_wallets"
+    client_id = Column(Integer, ForeignKey("clients.id"), primary_key=True)
+    balance_pence = Column(Integer, nullable=False, default=0)
+    reserved_pence = Column(Integer, nullable=False, default=0)
+    frozen = Column(Boolean, nullable=False, default=False)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class OutreachWalletEntry(Base):
+    __tablename__ = "outreach_wallet_entries"
+    id = Column(String, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
+    kind = Column(String, nullable=False)
+    amount_pence = Column(Integer, nullable=False)
+    reference = Column(String, nullable=False)
+    description = Column(String, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class OutreachPaymentOrder(Base):
+    __tablename__ = "outreach_payment_orders"
+    id = Column(String, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
+    actor_email = Column(String, nullable=False)
+    kind = Column(String, nullable=False)
+    amount_pence = Column(Integer, nullable=False)
+    currency = Column(String, nullable=False, default="gbp")
+    details = Column(JSON, nullable=False, default=dict)
+    status = Column(String, nullable=False, default="pending")
+    stripe_session_id = Column(String, unique=True, nullable=True)
+    stripe_payment_intent_id = Column(String, unique=True, nullable=True)
+    stripe_subscription_id = Column(String, unique=True, nullable=True)
+    stripe_customer_id = Column(String, nullable=True)
+    checkout_url = Column(Text, nullable=True)
+    refund_id = Column(String, unique=True, nullable=True)
+    refunded_pence = Column(Integer, nullable=False, default=0)
+    paid_until = Column(DateTime, nullable=True)
+    cancel_requested = Column(Boolean, nullable=False, default=False)
+    provider_purchase_id = Column(String, nullable=True)
+    error = Column(Text, nullable=True)
+    locked_until = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class OutreachCallQuote(Base):
+    __tablename__ = "outreach_call_quotes"
+    id = Column(String, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
+    actor_email = Column(String, nullable=False)
+    phone = Column(String, nullable=False)
+    caller_id = Column(String, nullable=False)
+    rate_gbp = Column(String, nullable=False)
+    details = Column(JSON, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+
+
+class OutreachCampaignBilling(Base):
+    __tablename__ = "outreach_campaign_billing"
+    campaign_id = Column(String, ForeignKey("outreach_campaigns.id"), primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    actor_email = Column(String, nullable=False)
+    admin_exempt = Column(Boolean, nullable=False, default=False)
+    max_rate_gbp = Column(String, nullable=True)
+
+
+class OutreachCallCharge(Base):
+    __tablename__ = "outreach_call_charges"
+    lead_id = Column(String, ForeignKey("outreach_leads.id"), primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
+    actor_email = Column(String, nullable=False)
+    admin_exempt = Column(Boolean, nullable=False, default=False)
+    rate_gbp = Column(String, nullable=False)
+    rate_details = Column(JSON, nullable=False, default=dict)
+    reserved_pence = Column(Integer, nullable=False, default=0)
+    charged_pence = Column(Integer, nullable=False, default=0)
+    max_duration_seconds = Column(Integer, nullable=False)
+    duration_seconds = Column(Integer, nullable=True)
+    status = Column(String, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    settled_at = Column(DateTime, nullable=True)
+
+
+class OutreachBillingSetting(Base):
+    __tablename__ = "outreach_billing_settings"
+    id = Column(String, primary_key=True)
+    encrypted_value = Column(Text, nullable=True)
+    provider_reference = Column(String, nullable=True)
+    status = Column(String, nullable=False, default="pending")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
 class OutreachEmailVerification(Base):
     __tablename__ = "outreach_email_verifications"
 

@@ -10,6 +10,7 @@ import {
   Settings2,
   Target,
   Users,
+  Wallet,
   X,
 } from "lucide-react";
 import Brand from "../components/Brand";
@@ -23,6 +24,7 @@ const navigation = [
   { id: "contacts", label: "Contacts", icon: Users },
   { id: "calls", label: "Call history", icon: PhoneCall },
   { id: "numbers", label: "Numbers & SMS", icon: PhoneCall },
+  { id: "billing", label: "Billing & wallet", icon: Wallet },
   { id: "leads", label: "Interested leads", icon: Target },
 ];
 
@@ -34,7 +36,7 @@ export default function DashboardScreen({
   onSessionExpired,
   onResumeBusinessDetails,
 }) {
-  const [view, setView] = useState("overview");
+  const [view, setView] = useState(() => new URLSearchParams(window.location.search).has("billing_order") ? "billing" : "overview");
   const [menuOpen, setMenuOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(
     () => window.matchMedia("(max-width: 960px)").matches,

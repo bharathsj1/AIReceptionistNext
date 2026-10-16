@@ -26,6 +26,7 @@ import { hasCurrentSession, SignInRequiredError } from "../lib/authSession";
 import ConversationDrawer from "../components/outreach/ConversationDrawer";
 import ManualCallDialog from "../components/outreach/ManualCallDialog";
 import EmailVerificationPanel from "../components/outreach/EmailVerificationPanel";
+import BillingWorkspace, { WalletSummary, CampaignPriceDialog } from "../components/outreach/BillingWorkspace";
 import NumbersWorkspace, { DashboardNumbers, BuyNumberDialog, SmsDialog } from "../components/outreach/NumbersWorkspace";
 import CallHistoryScreen from "./CallHistoryScreen";
 import CampaignWizard, {
@@ -54,6 +55,7 @@ const date = (value) =>
       })
     : "—";
 const pageTitles = {
+  billing: ["Your balance. Your control.", "Manage calling credits, payments, and monthly number subscriptions."],
   numbers: ["Your numbers. Your connections.", "Manage your account’s calling numbers and send text messages."],
   overview: [
     "Every call starts an opportunity.",
@@ -138,6 +140,7 @@ export default function AIOutreachScreen({
   const [importErrors, setImportErrors] = useState([]);
   const [wizard, setWizard] = useState(false);
   const [manualDial, setManualDial] = useState(false);
+  const [priceApproval, setPriceApproval] = useState(null);
   const [manualCaller, setManualCaller] = useState("");
   const [smsFrom, setSmsFrom] = useState(null);
   const [buyNumber, setBuyNumber] = useState(false);
@@ -245,15 +248,21 @@ export default function AIOutreachScreen({
     onNavigate?.("campaigns");
     load(payload.campaign.id).catch(failed);
   };
-  const action = async (value) => {
+  const action = async (value, quoteId = null) => {
     setBusy(true);
     setError("");
     try {
+      if (value === "start" && !config?.billing?.is_platform_admin && !quoteId) {
+        const data = await outreachRequest(`billing/campaigns/${selectedId}/quote`, userRef.current);
+        setPriceApproval({ ...data.quote, campaign_id: selectedId });
+        return;
+      }
       const payload = await outreachRequest(
-        `campaigns/${selectedId}`,
+        `campaigns/${priceApproval?.campaign_id || selectedId}`,
         userRef.current,
-        { action: value },
+        { action: value, ...(quoteId ? { quote_id: quoteId } : {}) },
       );
+      setPriceApproval(null);
       setCampaign(payload.campaign);
       await load();
     } catch (err) {
@@ -550,7 +559,7 @@ export default function AIOutreachScreen({
           >
             <RefreshCw size={17} className={refreshing ? "spin" : ""} />
           </button>
-          {!["settings", "numbers"].includes(view) && newButton}
+          {!["settings", "numbers", "billing"].includes(view) && newButton}
           {view !== "settings" && (
             <button className="calling-button" onClick={() => dialFrom("")} disabled={loading}>
               <PhoneCall size={17} />
@@ -594,6 +603,7 @@ export default function AIOutreachScreen({
         <>
           {view === "overview" && (
             <>
+              <WalletSummary billing={config?.billing} onOpen={() => onNavigate?.("billing")} />
               <DashboardNumbers
                 numbers={config?.numbers || []}
                 error={config?.number_error}
@@ -1057,6 +1067,7 @@ export default function AIOutreachScreen({
               onAuthRequired={failed}
             />
           )}
+          {view === "billing" && <BillingWorkspace user={user} onAuthRequired={failed} onChanged={numbersChanged} />}
           {["contacts", "leads"].includes(view) && (
             <div className="calling-panel">
               <header className="calling-panel-heading">
@@ -1367,6 +1378,7 @@ export default function AIOutreachScreen({
           campaigns={campaigns}
           defaultCampaign={campaign}
           defaultCallerId={manualCaller}
+          onAddBalance={() => { setManualDial(false); onNavigate?.("billing"); }}
           onClose={() => setManualDial(false)}
           onStarted={() => { load().catch(failed); }}
           onConversation={(call) => {
@@ -1384,6 +1396,10 @@ export default function AIOutreachScreen({
         <BuyNumberDialog user={user} initialPurchase={purchaseToReview} onClose={() => setBuyNumber(false)}
           onChanged={numbersChanged} onAuthRequired={failed} />
       )}
+      {priceApproval && <CampaignPriceDialog quote={priceApproval} billing={config?.billing} busy={busy} error={error}
+        onClose={() => { if (!busy) setPriceApproval(null); }}
+        onApprove={() => action("start", priceApproval.id)}
+        onAddBalance={() => { setPriceApproval(null); onNavigate?.("billing"); }} />}
       {currentLead && (
         <ConversationDrawer
           key={currentLead.id}

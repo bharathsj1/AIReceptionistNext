@@ -1,3 +1,4 @@
+from endpoint_imports import function_app_module
 import importlib.util
 import json
 import os
@@ -34,7 +35,7 @@ def load_endpoints():
     fake.app = func.FunctionApp()
     spec = importlib.util.spec_from_file_location("outreach_test_endpoints", Path(__file__).resolve().parents[1] / "outreach_endpoints.py")
     module = importlib.util.module_from_spec(spec)
-    with patch.dict(sys.modules, {"function_app": fake}):
+    with function_app_module(fake):
         spec.loader.exec_module(module)
     return module
 
@@ -44,6 +45,11 @@ endpoints = load_endpoints()
 
 class OutreachTests(unittest.TestCase):
     def setUp(self):
+        # These tests isolate call lifecycle behavior; billing guards have their own suite.
+        for target, kwargs in [("services.outreach_payments.number_entitled", {"return_value": True}),
+                ("services.outreach_billing.bind_campaign", {}),
+                ("services.outreach_billing.reserve_call", {"return_value": type("Reservation", (), {"max_duration_seconds": 600})()})]:
+            stub = patch(target, **kwargs); stub.start(); self.addCleanup(stub.stop)
         self.environment = patch.dict(os.environ, SETTINGS)
         self.environment.start()
         self.engine = create_engine("sqlite:///:memory:")

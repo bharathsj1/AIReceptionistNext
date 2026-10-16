@@ -21,6 +21,11 @@ NOW = datetime(2026, 10, 16, 11, tzinfo=timezone.utc)
 
 class ManualOutreachTests(unittest.TestCase):
     def setUp(self):
+        # These tests isolate call lifecycle behavior; billing guards have their own suite.
+        for target, kwargs in [("services.outreach_payments.number_entitled", {"return_value": True}),
+                ("services.outreach_billing.bind_campaign", {}),
+                ("services.outreach_billing.reserve_call", {"return_value": type("Reservation", (), {"max_duration_seconds": 600})()})]:
+            stub = patch(target, **kwargs); stub.start(); self.addCleanup(stub.stop)
         self.environment = patch.dict(os.environ, SETTINGS)
         self.environment.start()
         self.engine = create_engine("sqlite:///:memory:")
@@ -90,7 +95,7 @@ class ManualOutreachTests(unittest.TestCase):
         actor = replace(ACTOR, email="manager@example.com", scope="client_user", role="manager", client_user_id="7")
         start = manual.start_manual_call
         with patch.object(endpoints, "actor_for", return_value=actor), patch.object(endpoints, "SessionLocal", self.Session), \
-             patch.object(endpoints, "start_manual_call", side_effect=lambda db, client_id, body: start(db, client_id, body, now=NOW)):
+             patch.object(endpoints, "start_manual_call", side_effect=lambda db, client_id, body, **kwargs: start(db, client_id, body, now=NOW, **kwargs)):
             result = endpoints.outreach_manual_call(self.request(body={**self.body, "notification_email": ""}))
         self.assertEqual(result.status_code, 201)
         campaign = self.db.get(OutreachCampaign, json.loads(result.get_body())["campaign_id"])
@@ -180,7 +185,7 @@ class ManualOutreachTests(unittest.TestCase):
     def test_api_returns_same_record_on_replay_and_visible_in_history(self):
         start = manual.start_manual_call
         with patch.object(endpoints, "actor_for", return_value=ACTOR), patch.object(endpoints, "SessionLocal", self.Session), \
-             patch.object(endpoints, "start_manual_call", side_effect=lambda db, client_id, body: start(db, client_id, body, now=NOW)):
+             patch.object(endpoints, "start_manual_call", side_effect=lambda db, client_id, body, **kwargs: start(db, client_id, body, now=NOW, **kwargs)):
             first = endpoints.outreach_manual_call(self.request())
             second = endpoints.outreach_manual_call(self.request())
             self.assertEqual((first.status_code, second.status_code), (201, 200))

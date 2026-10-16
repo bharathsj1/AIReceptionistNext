@@ -1,3 +1,4 @@
+from endpoint_imports import function_app_module
 import importlib.util
 import json
 import os
@@ -25,7 +26,7 @@ def load_file(name, path):
 
 fake_app = types.ModuleType("function_app")
 fake_app.app = func.FunctionApp()
-with patch.dict(sys.modules, {"function_app": fake_app}):
+with function_app_module(fake_app):
     endpoints = load_file("test_storage_endpoints", ROOT / "ai-receptionist-func/storage_endpoints.py")
 configuration = load_file("test_configure_docker", ROOT / "scripts/configure_docker.py")
 

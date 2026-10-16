@@ -1,3 +1,4 @@
+from endpoint_imports import function_app_module
 import importlib.util
 import json
 import os
@@ -26,7 +27,7 @@ def load_module(name, filename):
     fake = types.ModuleType('function_app'); fake.app = func.FunctionApp()
     spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parents[1] / filename)
     module = importlib.util.module_from_spec(spec)
-    with patch.dict(sys.modules, {'function_app': fake}): spec.loader.exec_module(module)
+    with function_app_module(fake): spec.loader.exec_module(module)
     return module
 
 
@@ -45,6 +46,9 @@ def provider_number(phone=BUY, sid=None, account=None, friendly=''):
 
 class TenantTelephonyTests(unittest.TestCase):
     def setUp(self):
+        # Provider idempotency/ownership is tested separately from paid billing authorization.
+        for target in ["services.outreach_payments.require_paid_purchase", "services.outreach_payments.number_entitled"]:
+            stub = patch(target, return_value=True); stub.start(); self.addCleanup(stub.stop)
         self.environment = patch.dict(os.environ, SETTINGS); self.environment.start()
         self.engine = create_engine('sqlite:///:memory:'); Base.metadata.create_all(self.engine)
         self.Session = sessionmaker(bind=self.engine); self.db = self.Session()
@@ -217,12 +221,12 @@ class TenantTelephonyTests(unittest.TestCase):
         self.assertEqual(self.api(endpoints.purchase_account_number, method='OPTIONS', actor=None)[0], 200)
         self.provider.incoming_phone_numbers.create.assert_not_called()
 
-    def test_cross_tenant_messages_and_purchases_are_hidden_and_buying_requires_owner(self):
+    def test_cross_tenant_messages_and_purchases_are_hidden_and_signed_members_need_billing(self):
         row = service.purchase_number(self.db, 1, self.purchase)
-        other = SimpleNamespace(client_id=2, role='admin', scope='primary_user')
+        other = SimpleNamespace(client_id=2, role='admin', scope='primary_user', email='other@example.com')
         self.assertEqual(self.api(endpoints.account_number_purchase, routes={'purchase_id': row.id}, actor=other)[0], 404)
-        member = SimpleNamespace(client_id=1, role='manager', scope='client_user')
-        self.assertEqual(self.api(endpoints.purchase_account_number, method='POST', body=self.purchase, actor=member)[0], 403)
+        member = SimpleNamespace(client_id=1, role='manager', scope='client_user', email='manager@example.com')
+        self.assertEqual(self.api(endpoints.purchase_account_number, method='POST', body=self.purchase, actor=member)[0], 503)
         sms = service.send_sms(self.db, 1, self.sms)
         self.assertEqual(self.api(endpoints.account_message, routes={'message_id': sms.id}, actor=other)[0], 404)
         self.assertEqual(self.api(endpoints.account_messages, actor=other)[1]['items'], [])
@@ -231,9 +235,10 @@ class TenantTelephonyTests(unittest.TestCase):
     def test_unresolved_purchase_can_be_found_after_refresh_only_by_its_account(self):
         self.provider.incoming_phone_numbers.create.side_effect = requests.Timeout()
         purchase = service.purchase_number(self.db, 1, self.purchase)
-        mine = self.api(endpoints.account_number_purchases)[1]['items']
+        admin = SimpleNamespace(client_id=1, role='admin', scope='primary_user', email=service.RESERVED_OWNER)
+        mine = self.api(endpoints.account_number_purchases, actor=admin)[1]['items']
         self.assertEqual(mine[0]['id'], purchase.id)
-        other = SimpleNamespace(client_id=2, role='admin', scope='primary_user')
+        other = SimpleNamespace(client_id=2, role='admin', scope='primary_user', email='other@example.com')
         self.assertEqual(self.api(endpoints.account_number_purchases, actor=other)[1]['items'], [])
 
     def test_callback_requires_signature_account_and_matching_numbers(self):

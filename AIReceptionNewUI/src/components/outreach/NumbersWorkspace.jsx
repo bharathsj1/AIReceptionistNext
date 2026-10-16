@@ -5,6 +5,7 @@ import { SignInRequiredError } from "../../lib/authSession";
 import { callDate, readable } from "../../lib/callHistory";
 import { useDialogFocus } from "../ui/useDialogFocus";
 import "./NumbersWorkspace.css";
+import { stripeRedirect } from "./BillingWorkspace";
 
 const money = (amount, currency) => new Intl.NumberFormat("en-GB", { style: "currency", currency }).format(Number(amount));
 const pending = (status) => ["preparing", "accepted", "queued", "sending", "sent"].includes(status);
@@ -111,6 +112,7 @@ export function BuyNumberDialog({ user, initialPurchase, onClose, onChanged, onA
       const data = operation ? await outreachRequest(`numbers/purchases/${operation.id}`, user)
         : await outreachRequest("numbers/purchase", user, request.current);
       setOperation(data.purchase); setUncertain(false);
+      if (data.purchase.checkout_url) stripeRedirect(data.purchase.checkout_url);
       if (data.purchase.status === "completed") onChanged();
     } catch (err) {
       setError(err.message);
@@ -119,11 +121,11 @@ export function BuyNumberDialog({ user, initialPurchase, onClose, onChanged, onA
       else setUncertain(true);
     } finally { setBusy(false); inFlight.current = false; }
   };
-  const unresolved = uncertain || ["purchasing", "needs_review"].includes(operation?.status);
+  const unresolved = uncertain || ["purchasing", "needs_review", "checkout_open", "checkout_review", "pending", "paid", "provisioning"].includes(operation?.status);
   const completed = operation?.status === "completed";
   return <NumberDialog title="Buy a UK number" subtitle="Choose a dedicated number for calls and SMS." busy={busy} onClose={onClose} footer={<>
     <button className="calling-button" disabled={busy} onClick={onClose}>Close</button>
-    {completed ? <span className="number-success"><CheckCircle2 size={18} /> Ready to use</span> : operation?.status === "failed" ? <button className="calling-button" onClick={() => { setOperation(null); request.current = null; search(); }}>Search again</button> : <button className="calling-button is-primary" disabled={busy || (!unresolved && (!selected || !confirmed || loading))} onClick={purchase}>{busy ? <LoaderCircle className="spin" size={17} /> : <Plus size={17} />}{busy ? "Checking…" : unresolved ? "Check purchase status" : "Purchase number"}</button>}
+    {completed ? <span className="number-success"><CheckCircle2 size={18} /> Ready to use</span> : operation?.status === "failed" ? <button className="calling-button" onClick={() => { setOperation(null); request.current = null; search(); }}>Search again</button> : <button className="calling-button is-primary" disabled={busy || (!unresolved && (!selected || !confirmed || loading))} onClick={purchase}>{busy ? <LoaderCircle className="spin" size={17} /> : <Plus size={17} />}{busy ? "Checking…" : unresolved ? "Check purchase status" : selected?.payment_required ? "Continue to Stripe" : "Purchase number"}</button>}
   </>}>
     {error && <p className="calling-alert is-error" role="alert">{error}</p>}
     {operation ? <div className="number-purchase-result" role="status"><h3>{completed ? "Your number is ready" : operation.status === "failed" ? "The purchase was rejected" : "Check this purchase before continuing"}</h3><strong>{operation.phone_number}</strong><p>{money(operation.monthly_price, operation.currency)} / month, plus usage and taxes</p>{operation.error && <p className="calling-alert">{operation.error}</p>}</div> : <>
@@ -142,7 +144,7 @@ export function BuyNumberDialog({ user, initialPurchase, onClose, onChanged, onA
           {!loading && !items.length && <p>No matching numbers are available. Try another type or search.</p>}
         </div>
         {selected && <label className="number-purchase-consent"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span>I confirm purchasing <strong>{selected.phone_number}</strong> at <strong>{money(selected.monthly_price, selected.currency)} per month</strong>, plus usage and taxes.</span></label>}
-        <p className="calling-fine-print">Twilio charges recur while you keep the number. Availability and price are checked again at purchase. Some UK numbers require an approved regulatory bundle and address for your account.</p>
+      <p className="calling-fine-print">{(selected?.payment_required ?? items[0]?.payment_required) ? "Pay VedoraEats through Stripe before the number is purchased from Twilio. This is a monthly subscription at 2× the provider rental price. If provisioning fails, the subscription is cancelled and a full refund is requested. Availability is not reserved during checkout." : "Platform admin purchases use the Twilio balance directly."} Some UK numbers require an approved regulatory bundle and address for your account.</p>
       </fieldset>
     </>}
   </NumberDialog>;

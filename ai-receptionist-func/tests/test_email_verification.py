@@ -1,3 +1,4 @@
+from endpoint_imports import function_app_module
 import importlib.util
 import json
 import os
@@ -28,7 +29,7 @@ def load_endpoints():
     fake = types.ModuleType("function_app"); fake.app = func.FunctionApp()
     spec = importlib.util.spec_from_file_location("verification_test_endpoints", Path(__file__).resolve().parents[1] / "email_verification_endpoints.py")
     module = importlib.util.module_from_spec(spec)
-    with patch.dict(sys.modules, {"function_app": fake}):
+    with function_app_module(fake):
         spec.loader.exec_module(module)
     return module
 

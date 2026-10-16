@@ -60,9 +60,10 @@ def own_numbers(db, client_id):
 
 
 def require_number(db, client_id, phone, capability):
+    from services.outreach_payments import number_entitled
     row = db.query(TenantPhoneNumber).filter_by(client_id=client_id, phone_number=phone,
         is_active=True, account_sid=os.getenv('TWILIO_ACCOUNT_SID', '')).first()
-    if not row or not reserved_allowed(db, client_id, phone):
+    if not row or not reserved_allowed(db, client_id, phone) or not number_entitled(db, client_id, phone):
         raise ValueError('Choose a number purchased for your account')
     if not getattr(row, f'{capability}_enabled'):
         raise ValueError(f'This number does not support {capability.upper()}')
@@ -176,7 +177,9 @@ def reconcile_purchase(db, row):
     return row
 
 
-def purchase_number(db, client_id, body):
+def purchase_number(db, client_id, body, billing_order_id=None, admin_actor=None):
+    from services.outreach_payments import require_paid_purchase
+    require_paid_purchase(db, client_id, body, billing_order_id, admin_actor)
     key = request_key(client_id, 'number', body.get('request_id'))
     phone = normalize_uk_phone(body.get('phone_number'))
     kind = body.get('number_type')
@@ -209,7 +212,7 @@ def purchase_number(db, client_id, body):
         db.commit()
     except IntegrityError:
         db.rollback()
-        return purchase_number(db, client_id, body)
+        return purchase_number(db, client_id, body, billing_order_id, admin_actor)
     try:
         purchased = provider.incoming_phone_numbers.create(phone_number=phone,
             friendly_name=f'Outreach purchase {key}', **kwargs)

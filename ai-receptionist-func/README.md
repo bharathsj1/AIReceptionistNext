@@ -606,9 +606,9 @@ conflicting assignments require administrator review, rather than being silently
 transferred. Additional numbers must be bought through the account purchase flow.
 
 All account routes require a signed session and scope data using its resolved
-`client_id`; an email/query/body claim cannot select another account. Only the
-primary account owner can search/purchase numbers. Existing account managers can
-use their account's assigned numbers. Legacy `/clients/provision`,
+`client_id`; an email/query/body claim cannot select another account. Every successfully authenticated account user can search/purchase numbers,
+with payments and ownership scoped to their resolved account. Managers can use
+the account's assigned numbers and shared wallet. Legacy `/clients/provision`,
 `/clients/assign-number`, `/twilio/available-numbers`, `/voice-token`,
 `/voice-outbound` and `/call-history` return 410. `/active-phone-numbers` now uses
 the authenticated account number list. Shared/default caller-number seeding and
@@ -643,12 +643,104 @@ For UK stock requiring approved identities, configure server-only
 `{"owner@example.com":{"bundle_sid":"BU...","address_sid":"AD..."}}`.
 Use valid approved Twilio SIDs for that customer. Browser-supplied regulatory SIDs
 and global address/bundle defaults are not accepted. Twilio can reject purchases
-until that customer's regulatory requirements are satisfied. Prices and recurring
-charges shown in the UI are Twilio charges; application Stripe payments are not
-required and this does not create a customer billing system.
+until that customer's regulatory requirements are satisfied. Customer rental prices shown in the UI are twice the current Twilio quote,
+converted to GBP and rounded up to a penny. A paid monthly Stripe subscription
+is required before Twilio provisioning. The platform administrator uses the
+provider balance directly.
 
 Unresolved purchases can also be recovered after a refresh through
 `GET /api/outreach/numbers/purchases`. The Numbers & SMS page lists the account's
 pending/failed purchases and opens their saved status for review without buying
 again. Available-number capability checks accept Twilio's uppercase `SMS` keys
 as well as the lowercase keys returned by purchased-number resources.
+
+
+## Stripe payments, calling credits, and sole platform administrator
+
+`bharath.sj1@gmail.com` is the only platform administrator. The exemption requires
+that exact email from a validated **primary-user session**; a workspace `admin`
+role, browser email, query parameter or submitted `admin_exempt` flag cannot grant
+it. Other users, including workspace owners, use their account's GBP wallet.
+Admin calls debit the configured Twilio/Ultravox provider accounts directly and
+create an exempt call audit record. Twilio and Ultravox remain separate providers;
+Stripe receipts do not automatically fund either provider account.
+
+Customer number flow:
+
+1. Search UK stock; the server gets current Twilio rental pricing and quotes **2x**
+   that cost in GBP, rounded up to the nearest penny. The UI confirms monthly
+   renewal. Address/bundle references remain account-scoped server settings.
+2. Save a tenant-scoped durable payment order, then create a monthly Stripe
+   Checkout subscription using the order's fixed idempotency key. No Twilio
+   purchase occurs here. A checkout does not reserve Twilio inventory.
+3. A strictly signed callback, authenticated status check, or reconciliation worker
+   retrieves the saved Stripe session, matching amount, currency, order metadata,
+   mode, paid status, active subscription and paid invoice. Only then may the
+   private Twilio purchase service run with a paid-order reference.
+4. Provisioning persists its own provider intent and operation tag before buying.
+   Duplicate callbacks/refreshes cannot buy twice. Uncertain outcomes are held for
+   reconciliation. Definitive provisioning failure cancels the subscription and
+   requests an idempotent full refund; pending refunds remain visible for review.
+5. Monthly renewals require a current paid invoice before extending service.
+   Cancelling renewal retains access to the end of the paid period. Unpaid/ended
+   periods block outbound use and trigger retryable subscription cancellation and
+   provider release; a released number may be unrecoverable.
+
+Customer calling flow:
+
+- Wallets begin at **zero**. Stripe Checkout top-ups are £10, £25, £50 or £100;
+  **1 credit = 1p**. A redirect/success URL never credits funds. Only server-verified
+  paid GBP card payments create an idempotent ledger credit. Canonical refunds
+  reverse credits once; disputes freeze spending. A refunded spent wallet may
+  have a negative accounting balance, which blocks new calls.
+- Before a manual call or campaign starts, the server quotes the exact destination
+  using Twilio v2 Voice Numbers Pricing and the configured Ultravox per-minute
+  cost. Quotes expire after five minutes and belong to the signed-in account,
+  initiating email, destination and caller number.
+- Default customer call rate is **2x (Twilio + Ultravox)**. Set
+  `OUTREACH_CALL_MARKUP_MODE=twilio_only` if the commercial policy is 2x Twilio
+  alone. Ultravox defaults to its published USD 0.05/min standard rate; set
+  `OUTREACH_ULTRAVOX_COST_PER_MINUTE` and `_CURRENCY` for a different provider plan.
+  Currency conversion uses ECB rates with a seven-day freshness limit, or an
+  explicit server-managed `OUTREACH_<CURRENCY>_GBP_RATE`. There is no invented FX
+  or provider-price fallback.
+- A campaign's approved quote becomes its rate ceiling. Each next contact gets a
+  fresh route quote; a higher rate pauses for approval. No price approval or no
+  credits means no Ultravox or Twilio call is created.
+- Before provider I/O, an atomic reservation holds enough funds for the affordable
+  whole minutes (maximum ten). Both Twilio `time_limit` and Ultravox `maxDuration`
+  receive that limit. Competing calls cannot spend reserved funds.
+- Verified Twilio connected duration settles usage per **started minute**, with the
+  total GBP charge rounded up once to the nearest penny and capped by the hold.
+  Unused funds are released. A zero-duration call costs zero; an unknown outcome
+  keeps its reservation until provider confirmation. Signed callbacks, provider
+  polling, and explicit SID reconciliation settle once and keep the audit ledger.
+
+Docker migration adds `outreach_wallets`, `outreach_wallet_entries`,
+`outreach_payment_orders`, `outreach_call_quotes`, `outreach_campaign_billing`,
+`outreach_call_charges`, and `outreach_billing_settings` through `init_db()` on the
+persistent SQLite database. Existing contacts, calls and transcripts remain.
+Existing campaigns must be started again by a signed-in user to record their
+billing identity and approved price; pre-billing non-admin numbers require a paid
+subscription before outbound use.
+
+Deployment setup:
+
+- Set `STRIPE_SECRET_KEY`, stable `AUTH_SESSION_SECRET`, public HTTPS
+  `API_PUBLIC_BASE_URL` and `PUBLIC_APP_URL`; keep secrets server-side.
+- In **Billing & wallet**, the sole platform admin clicks **Connect Stripe billing**.
+  This registers the dedicated `/api/outreach/billing/stripe-webhook` endpoint,
+  pinned to Stripe API `2024-06-20`, and encrypts its signing secret in SQLite.
+  Alternatively configure `OUTREACH_STRIPE_WEBHOOK_SECRET` for that exact endpoint.
+  Customer checkout remains unavailable until signed callbacks are configured.
+- Retain the existing website's separate Stripe callback/subscriptions. Outreach
+  callbacks only handle orders carrying their own `vedora_outreach` metadata.
+- Stripe credentials may be test or live; callback mode must match. Use test-mode
+  Stripe and mocked providers for validation, never charge real cards to test.
+- Keep the persistent database and signing secret backed up together. Review
+  provisioning/refund/release exceptions in the administrator billing view.
+
+Billing endpoints are under `/api/outreach/billing`: summary, `topups`,
+`orders/{id}`, `call-quotes`, `campaigns/{id}/quote`, `numbers/{id}/cancel`,
+`admin/connect-stripe`, `admin/overview`, and the signed `stripe-webhook`.
+All customer reads and actions use the authenticated account's `client_id`.

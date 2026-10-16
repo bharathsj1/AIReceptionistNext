@@ -115,11 +115,12 @@ def configuration_errors():
 
 def caller_numbers(db, client_id):
     from services.tenant_telephony import reserved_allowed
+    from services.outreach_payments import number_entitled
     from shared.db import TenantPhoneNumber
     phones = db.query(PhoneNumber).filter_by(client_id=client_id, is_active=True).all()
     managed = {row.phone_number: row for row in db.query(TenantPhoneNumber).all()}
     return sorted({p.twilio_phone_number for p in phones
-        if reserved_allowed(db, client_id, p.twilio_phone_number)
+        if reserved_allowed(db, client_id, p.twilio_phone_number) and number_entitled(db, client_id, p.twilio_phone_number)
         and (p.twilio_phone_number not in managed or (
             managed[p.twilio_phone_number].client_id == client_id
             and managed[p.twilio_phone_number].account_sid == os.getenv('TWILIO_ACCOUNT_SID')
@@ -234,6 +235,18 @@ def twilio_client():
 
 
 def launch_call(db, campaign, lead):
+    from services import outreach_billing as billing
+    db.refresh(lead)
+    if lead.status != "queued" or db.query(OutreachSuppression).filter_by(client_id=campaign.client_id, phone=lead.phone).first():
+        return
+    try:
+        charge = billing.reserve_call(db, campaign, lead)
+    except (billing.BillingError, ValueError) as exc:
+        db.rollback()
+        campaign.status, campaign.error = "paused", str(exc)
+        lead.error = str(exc)
+        db.commit()
+        return
     # Commit intent BEFORE any external call; uncertain outcomes require manual review, never redial.
     suppressed_campaigns = db.query(OutreachCampaign.id).join(OutreachSuppression,
         OutreachSuppression.client_id == OutreachCampaign.client_id).filter(OutreachSuppression.phone == lead.phone)
@@ -245,11 +258,13 @@ def launch_call(db, campaign, lead):
         log_event(db, lead, "preparing")
     db.commit()
     if not claimed:
+        db.refresh(lead)
+        if lead.status == "queued": billing.settle_call(db, lead.id, 0)
         return
     db.refresh(lead)
     try:
         payload = {"systemPrompt": call_prompt(campaign, lead), "medium": {"twilio": {}},
-                   "firstSpeakerSettings": {"user": {}}, "maxDuration": "600s", "joinTimeout": "120s",
+                   "firstSpeakerSettings": {"user": {}}, "maxDuration": f"{charge.max_duration_seconds}s", "joinTimeout": "120s",
                    "retentionPolicy": "retain",
                    "selectedTools": [result_tool(lead), {"toolName": "hangUp"}],
                    "metadata": {"outreachCampaignId": campaign.id, "outreachLeadId": lead.id}}
@@ -270,11 +285,12 @@ def launch_call(db, campaign, lead):
             lead.ended_at = datetime.utcnow()
             log_event(db, lead, "canceled", lead.error)
             db.commit()
+            billing.settle_call(db, lead.id, 0)
             return
         twiml = VoiceResponse()
         twiml.connect().stream(url=data["joinUrl"])
         call = twilio_client().calls.create(to=lead.phone, from_=campaign.caller_id, twiml=str(twiml),
-                                           timeout=30, time_limit=600,
+                                           timeout=30, time_limit=charge.max_duration_seconds,
                                            status_callback=f"{get_public_api_base()}/api/outreach/leads/{lead.id}/status",
                                            status_callback_event=["initiated", "ringing", "answered", "completed"],
                                            status_callback_method="POST")
@@ -296,6 +312,7 @@ def launch_call(db, campaign, lead):
             lead.ended_at = datetime.utcnow()
         log_event(db, lead, lead.status, lead.error)
         db.commit()
+        if lead.status == "failed": billing.settle_call(db, lead.id, 0)
     except Exception:
         logger.exception("Outreach provider request failed for lead %s", lead.id)
         db.rollback()
@@ -337,6 +354,10 @@ def apply_call_status(db, lead, sid, status, sequence=None, duration=None):
             conversation.next_sync_at = datetime.utcnow()
     db.commit()
     db.refresh(lead)
+
+    if status in TERMINAL and lead.status == status and duration is not None:
+        from services.outreach_billing import settle_call
+        settle_call(db, lead.id, duration)
 
 
 def save_result(db, lead, body):
@@ -437,7 +458,7 @@ def process_campaign(db, campaign, now):
                 call = twilio_client().calls(lead.twilio_call_sid).fetch()
                 db.refresh(lead)
                 if call.status in TERMINAL:
-                    apply_call_status(db, lead, call.sid, call.status)
+                    apply_call_status(db, lead, call.sid, call.status, duration=int(call.duration) if str(call.duration).isdigit() else None)
             except Exception:
                 logger.exception("Outreach status reconciliation failed for lead %s", lead.id)
                 return
@@ -479,6 +500,32 @@ def process_outreach():
     db = SessionLocal()
     now = datetime.utcnow()
     try:
+        from services.outreach_payments import process_order
+        from shared.db import OutreachPaymentOrder, OutreachCallCharge
+        for payment in db.query(OutreachPaymentOrder).filter(or_(
+            OutreachPaymentOrder.status.in_(["pending", "checkout_review", "checkout_open", "paid", "provisioning", "needs_review", "refund_pending", "release_pending"]),
+            (OutreachPaymentOrder.kind == "number") & (OutreachPaymentOrder.status == "completed")
+        )).order_by(OutreachPaymentOrder.updated_at).limit(25).all():
+            try:
+                process_order(db, payment)
+                payment.updated_at = datetime.utcnow(); db.commit()
+            except Exception:
+                db.rollback()
+                logger.warning("Outreach payment %s needs reconciliation", payment.id)
+                payment.updated_at = datetime.utcnow(); db.commit()
+        # A missed terminal webhook must not leave a known call's wallet hold forever.
+        held = db.query(OutreachCallCharge).join(OutreachLead, OutreachLead.id == OutreachCallCharge.lead_id).filter(
+            OutreachCallCharge.status.in_(["reserved", "exempt"]), OutreachLead.twilio_call_sid.isnot(None),
+            OutreachLead.status.in_(TERMINAL)).limit(25).all()
+        for charge in held:
+            lead = db.get(OutreachLead, charge.lead_id)
+            try:
+                call = twilio_client().calls(lead.twilio_call_sid).fetch()
+                if call.from_ == db.get(OutreachCampaign, lead.campaign_id).caller_id and call.to == lead.phone and call.status in TERMINAL and str(call.duration).isdigit():
+                    from services.outreach_billing import settle_call
+                    settle_call(db, lead.id, int(call.duration))
+            except Exception:
+                db.rollback()
         # Reconcile active calls even on paused campaigns, so pending summaries can be delivered.
         campaigns = db.query(OutreachCampaign).filter(OutreachCampaign.status.in_(["running", "paused"])).limit(50).all()
         for campaign in campaigns:

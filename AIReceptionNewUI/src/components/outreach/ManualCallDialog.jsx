@@ -5,8 +5,9 @@ import { SignInRequiredError } from "../../lib/authSession";
 import { callStatus } from "../../lib/callHistory";
 import { useDialogFocus } from "../ui/useDialogFocus";
 import "./ManualCallDialog.css";
+import { CallPriceCard } from "./BillingWorkspace";
 
-export default function ManualCallDialog({ user, config, campaigns, defaultCampaign, defaultCallerId, onClose, onStarted, onConversation, onAuthRequired }) {
+export default function ManualCallDialog({ user, config, campaigns, defaultCampaign, defaultCallerId, onClose, onStarted, onConversation, onAuthRequired, onAddBalance }) {
   const [template, setTemplate] = useState(defaultCampaign?.id || "");
   const [form, setForm] = useState({
     phone: "", restaurant_name: "",
@@ -16,6 +17,10 @@ export default function ManualCallDialog({ user, config, campaigns, defaultCampa
       ? defaultCampaign.caller_id : config?.caller_ids?.[0] || "",
   });
   const [busy, setBusy] = useState(false);
+  const [quote, setQuote] = useState(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [quoteError, setQuoteError] = useState("");
+  const [quoteVersion, setQuoteVersion] = useState(0);
   const [uncertain, setUncertain] = useState(false);
   const [error, setError] = useState("");
   const [call, setCall] = useState(null);
@@ -25,6 +30,25 @@ export default function ManualCallDialog({ user, config, campaigns, defaultCampa
   const request = useRef(null);
   const close = () => { if (!inFlight.current) onClose(); };
   useDialogFocus(dialogRef, true, close);
+  useEffect(() => {
+    let active = true;
+    setQuote(null); setQuoteError("");
+    if (config?.billing?.is_platform_admin || !form.caller_id || form.phone.replace(/\D/g, "").length < 10) { setQuoteLoading(false); return; }
+    setQuoteLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const data = await outreachRequest("billing/call-quotes", user, { phone: form.phone, caller_id: form.caller_id });
+        if (active) setQuote(data.quote);
+      } catch (err) { if (active) setQuoteError(err.message); if (err instanceof SignInRequiredError) onAuthRequired(err); }
+      finally { if (active) setQuoteLoading(false); }
+    }, 500);
+    return () => { active = false; clearTimeout(timer); };
+  }, [form.phone, form.caller_id, config?.billing?.is_platform_admin, quoteVersion]);
+  useEffect(() => {
+    if (!quote || busy || uncertain || call) return;
+    const timer = setTimeout(() => setQuoteVersion(value => value + 1), Math.max(1000, new Date(quote.expires_at).getTime() - Date.now() - 5000));
+    return () => clearTimeout(timer);
+  }, [quote, busy, uncertain, call]);
   useEffect(() => {
     if (error) feedbackRef.current?.scrollIntoView({ block: "nearest" });
   }, [error]);
@@ -45,7 +69,7 @@ export default function ManualCallDialog({ user, config, campaigns, defaultCampa
     inFlight.current = true;
     setBusy(true);
     setError("");
-    request.current ||= { ...form, request_id: crypto.randomUUID() };
+    request.current ||= { ...form, quote_id: quote?.id, request_id: crypto.randomUUID() };
     let response;
     try {
       response = await outreachRequest("manual-calls", user, request.current);
@@ -55,6 +79,7 @@ export default function ManualCallDialog({ user, config, campaigns, defaultCampa
       } else if (err.status >= 400 && err.status < 500) {
         request.current = null;
         setUncertain(false);
+        setQuoteVersion(value => value + 1);
       } else {
         // Keep the exact request identity and payload. Checking after a timeout
         // retrieves this attempt instead of placing a second call.
@@ -134,6 +159,7 @@ export default function ManualCallDialog({ user, config, campaigns, defaultCampa
                     <small>Interested-owner details go here when follow-up is permitted.</small>
                   </label>
                 </div>
+                <CallPriceCard quote={quote} wallet={config?.billing?.wallet} admin={config?.billing?.is_platform_admin} loading={quoteLoading} error={quoteError} onAddBalance={onAddBalance} />
                 <p className="calling-fine-print">Available Monday to Friday, 09:00–20:00 London time. The AI speaks to the contact; you can follow the saved conversation in call history.</p>
               </fieldset>
               <div className="manual-call-feedback" ref={feedbackRef} aria-live="polite">
@@ -145,7 +171,7 @@ export default function ManualCallDialog({ user, config, campaigns, defaultCampa
             </div>
             <footer className="calling-dialog-footer">
               <button type="button" className="calling-button" onClick={close} disabled={busy}>{uncertain ? "Close" : "Cancel"}</button>
-              <button type="submit" className="calling-button is-primary" disabled={busy || (!uncertain && (!config?.caller_ids?.length || configurationErrors.length > 0))}>
+              <button type="submit" className="calling-button is-primary" disabled={busy || (!uncertain && (!config?.caller_ids?.length || configurationErrors.length > 0 || (!config?.billing?.is_platform_admin && (!quote || config?.billing?.wallet?.frozen || (config?.billing?.wallet?.available_pence || 0) < quote.minimum_pence))))}>
                 {busy ? <LoaderCircle className="spin" size={17} /> : <PhoneCall size={17} />}
                 {busy ? "Connecting…" : uncertain ? "Check call request" : "Start AI call now"}
               </button>

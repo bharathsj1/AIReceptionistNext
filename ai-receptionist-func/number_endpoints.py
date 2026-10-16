@@ -8,6 +8,7 @@ from twilio.request_validator import RequestValidator
 from function_app import app
 from outreach_endpoints import actor_for, body_for, response
 from services import tenant_telephony as telephony
+from services import outreach_billing as billing, outreach_payments as payments
 from shared.config import get_public_api_base
 from shared.db import SessionLocal, NumberPurchase, OutreachSms
 
@@ -23,6 +24,9 @@ def handle(req, action, owner_only=False):
     db = SessionLocal()
     try:
         return action(db, actor)
+    except billing.BillingError as exc:
+        db.rollback()
+        return response(req, {'error': str(exc)}, exc.status)
     except telephony.TelephonyConflict as exc:
         db.rollback()
         return response(req, {'error': str(exc)}, 409)
@@ -46,31 +50,41 @@ def account_numbers(req):
 
 @app.route(route='outreach/numbers/available', methods=['GET', 'OPTIONS'], auth_level=func.AuthLevel.ANONYMOUS)
 def available_account_numbers(req):
-    return handle(req, lambda db, actor: response(req, telephony.available_numbers(db, actor.client_id,
-        req.params.get('number_type', 'mobile'), req.params.get('contains', ''))), owner_only=True)
+    return handle(req, lambda db, actor: response(req, payments.available_numbers(db, actor,
+        req.params.get('number_type', 'mobile'), req.params.get('contains', ''))))
 
 
 @app.route(route='outreach/numbers/purchase', methods=['POST', 'OPTIONS'], auth_level=func.AuthLevel.ANONYMOUS)
 def purchase_account_number(req):
     return handle(req, lambda db, actor: response(req,
-        {'purchase': telephony.purchase_payload(telephony.purchase_number(db, actor.client_id, body_for(req)))}), owner_only=True)
+        {'purchase': payments.number_checkout(db, actor, body_for(req))}))
 
 
 @app.route(route='outreach/numbers/purchases/{purchase_id}', methods=['GET', 'OPTIONS'], auth_level=func.AuthLevel.ANONYMOUS)
 def account_number_purchase(req):
     def action(db, actor):
+        order = db.query(payments.OutreachPaymentOrder).filter_by(id=req.route_params.get('purchase_id'), client_id=actor.client_id, kind='number').first()
+        if order:
+            return response(req, {'purchase': payments.order_payload(payments.process_order(db, order))})
         row = db.query(NumberPurchase).filter_by(id=req.route_params.get('purchase_id'), client_id=actor.client_id).first()
         if not row:
             return response(req, {'error': 'Purchase not found'}, 404)
         return response(req, {'purchase': telephony.purchase_payload(telephony.reconcile_purchase(db, row))})
-    return handle(req, action, owner_only=True)
+    return handle(req, action)
 
 
 @app.route(route='outreach/numbers/purchases', methods=['GET', 'OPTIONS'], auth_level=func.AuthLevel.ANONYMOUS)
 def account_number_purchases(req):
-    return handle(req, lambda db, actor: response(req, {'items': [telephony.purchase_payload(row) for row in
-        db.query(NumberPurchase).filter_by(client_id=actor.client_id).filter(NumberPurchase.status != 'completed')
-        .order_by(NumberPurchase.created_at.desc()).limit(20).all()]}))
+    def action(db, actor):
+        rows = db.query(payments.OutreachPaymentOrder).filter_by(client_id=actor.client_id, kind='number').filter(
+            payments.OutreachPaymentOrder.status.notin_(['completed', 'cancelled', 'refunded', 'expired'])).order_by(
+                payments.OutreachPaymentOrder.created_at.desc()).limit(20).all()
+        items = [payments.order_payload(row) for row in rows]
+        if billing.is_platform_admin(actor):
+            items += [telephony.purchase_payload(row) for row in db.query(NumberPurchase).filter_by(client_id=actor.client_id).filter(
+                NumberPurchase.status != 'completed').order_by(NumberPurchase.created_at.desc()).limit(20).all()]
+        return response(req, {'items': items})
+    return handle(req, action)
 
 
 @app.route(route='outreach/messages', methods=['GET', 'POST', 'OPTIONS'], auth_level=func.AuthLevel.ANONYMOUS)

@@ -17,7 +17,7 @@ class ManualCallConflict(ValueError):
     pass
 
 
-def start_manual_call(db, client_id, body, now=None):
+def start_manual_call(db, client_id, body, now=None, actor=None):
     try:
         request_id = str(UUID(str(body.get("request_id", ""))))
     except ValueError as exc:
@@ -78,6 +78,8 @@ def start_manual_call(db, client_id, body, now=None):
         db.flush()
         db.add(lead)
         db.flush()
+        from services.outreach_billing import bind_campaign
+        bind_campaign(db, campaign.id, actor, body.get("quote_id"), phone, details["caller_id"], commit=False)
         log_event(db, lead, "manual_requested", "Call initiated manually from the workspace")
         db.commit()
     except IntegrityError:

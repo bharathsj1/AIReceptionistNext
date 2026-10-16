@@ -19,6 +19,11 @@ from test_outreach import ACTOR, CSV, SETTINGS, SID, endpoints
 
 class OutreachHistoryTests(unittest.TestCase):
     def setUp(self):
+        # These tests isolate call lifecycle behavior; billing guards have their own suite.
+        for target, kwargs in [("services.outreach_payments.number_entitled", {"return_value": True}),
+                ("services.outreach_billing.bind_campaign", {}),
+                ("services.outreach_billing.reserve_call", {"return_value": type("Reservation", (), {"max_duration_seconds": 600})()})]:
+            stub = patch(target, **kwargs); stub.start(); self.addCleanup(stub.stop)
         self.environment = patch.dict(os.environ, SETTINGS)
         self.environment.start()
         self.engine = create_engine("sqlite:///:memory:")

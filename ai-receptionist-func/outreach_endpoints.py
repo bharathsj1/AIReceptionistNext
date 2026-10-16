@@ -24,6 +24,7 @@ from services.outreach_history import (call_payload, ensure_conversation, iso, l
     sync_conversation, sync_pending_conversations, transcript_payload)
 from services.manual_outreach import ManualCallConflict, start_manual_call
 from shared.db import OutreachCallEvent, OutreachConversation
+from services import outreach_billing as billing
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ def response(req, payload, status=200):
 
 def actor_for(req):
     actor = resolve_actor_from_session(req)
-    return actor if actor and actor.role in {"admin", "manager"} else None
+    return actor
 
 
 def body_for(req):
@@ -68,6 +69,8 @@ def outreach_config(req):
                               "number_error": number_error, "configuration_errors": configuration_errors(),
                               "from_email": outreach_from_email(),
                               "notification_email": actor.email,
+                              "billing": {"is_platform_admin": billing.is_platform_admin(actor),
+                                          "wallet": billing.wallet_payload(db, actor.client_id)},
                               "timezone": "Europe/London", "country": "GB"})
     finally:
         db.close()
@@ -84,10 +87,13 @@ def outreach_manual_call(req):
     try:
         body = body_for(req)
         body["notification_email"] = str(body.get("notification_email") or "").strip() or actor.email
-        campaign, lead, created = start_manual_call(db, actor.client_id, body)
+        campaign, lead, created = start_manual_call(db, actor.client_id, body, actor=actor)
         conversation = db.get(OutreachConversation, lead.id)
         return response(req, {"call": call_payload(lead, campaign, conversation),
             "campaign_id": campaign.id, "created": created}, 201 if created else 200)
+    except billing.BillingError as exc:
+        db.rollback()
+        return response(req, {"error": str(exc)}, exc.status)
     except ManualCallConflict as exc:
         db.rollback()
         return response(req, {"error": str(exc)}, 409)
@@ -134,7 +140,8 @@ def outreach_campaign(req):
         if not campaign:
             return response(req, {"error": "Campaign not found"}, 404)
         if req.method == "POST":
-            action = body_for(req).get("action")
+            body = body_for(req)
+            action = body.get("action")
             if action == "start":
                 errors = configuration_errors()
                 if errors:
@@ -147,6 +154,8 @@ def outreach_campaign(req):
                     return response(req, {"error": "Resolve uncertain calls against Twilio logs before resuming"}, 409)
                 if not db.query(OutreachLead).filter_by(campaign_id=campaign.id, status="queued").first():
                     return response(req, {"error": "No eligible contacts remain"}, 409)
+                next_lead = db.query(OutreachLead).filter_by(campaign_id=campaign.id, status="queued").order_by(OutreachLead.position).first()
+                billing.bind_campaign(db, campaign.id, actor, body.get("quote_id"), next_lead.phone, campaign.caller_id)
                 campaign.status, campaign.error = "running", None
             elif action == "pause":
                 if campaign.status != "running":
@@ -156,6 +165,9 @@ def outreach_campaign(req):
                 raise ValueError("Action must be start or pause")
             db.commit()
         return response(req, {"campaign": campaign_payload(db, campaign, True)})
+    except billing.BillingError as exc:
+        db.rollback()
+        return response(req, {"error": str(exc)}, exc.status)
     except ValueError as exc:
         db.rollback()
         return response(req, {"error": str(exc)}, 400)
@@ -232,7 +244,8 @@ def outreach_review(req):
                 raise ValueError("Call timestamp does not match this attempt")
             if call.status not in TERMINAL:
                 raise ValueError("The provider call is still active; wait for it to finish")
-            apply_call_status(db, lead, sid, call.status)
+            apply_call_status(db, lead, sid, call.status,
+                duration=int(call.duration) if str(call.duration).isdigit() else None)
             lead.error = "Reconciled with Twilio by account owner"
         elif body.get("confirmed_no_active_call") is True:
             lead.status, lead.ended_at, lead.error = "canceled", datetime.utcnow(), "Account owner checked provider logs and skipped this contact; no redial"
