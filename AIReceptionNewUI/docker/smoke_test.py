@@ -20,13 +20,13 @@ def request(path, data=None, headers=None):
 
 for attempt in range(30):
     try:
-        if request("/healthz")[0] == 200:
+        if all(request(path)[0] == 200 for path in ("/healthz", "/api/probe", "/api/meetings")):
             break
     except (URLError, TimeoutError):
         pass
     time.sleep(1)
 else:
-    raise SystemExit("Nginx did not become healthy")
+    raise SystemExit("Nginx and mock upstreams did not become ready")
 
 assert request("/healthz")[2] == b"ok\n"
 status, headers, index = request("/")
