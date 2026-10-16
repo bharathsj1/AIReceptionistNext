@@ -3,10 +3,8 @@ name: UI Docker checks
 on:
   push:
     branches: [main]
-    paths: ["AIReceptionNewUI/**", "scripts/**", "compose.yaml", ".github/workflows/ui-docker.yml"]
   pull_request:
     branches: [main]
-    paths: ["AIReceptionNewUI/**", "scripts/**", "compose.yaml", ".github/workflows/ui-docker.yml"]
   workflow_dispatch:
 
 permissions:
