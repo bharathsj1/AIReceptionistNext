@@ -169,6 +169,15 @@ SMTP authentication, sender, recipient and connection failures have distinct saf
 messages; logs contain only the exception category and SMTP status, never the code
 or provider response. Cooldowns and verification attempt limits still apply.
 
+To reuse the working VedoraEats website SMTP settings without entering its password
+again, run `python scripts/reuse_vedora_smtp.py` from this repository on the Docker
+host. It reads only the SMTP fields from `vedora-sandbox-api`, validates them from
+`aireceptionist-backend-1`, then stores them encrypted in the Outreach database.
+The source is unchanged; no email is sent, and secrets never appear in command-line
+arguments, output or temporary files. Both container names can be overridden with
+`--source-container` / `--destination-container`. Send a verification code in the
+dashboard afterward to check inbox delivery.
+
 - `GET /api/outreach/email-verification`: signed-in address, verification status,
   pending challenge, resend countdown and mail-delivery readiness.
 - `POST /api/outreach/email-verification/send`: optional `email`, which must match
