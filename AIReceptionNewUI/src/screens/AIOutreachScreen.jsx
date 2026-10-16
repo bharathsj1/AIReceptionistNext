@@ -24,6 +24,8 @@ import {
 import { outreachRequest } from "../lib/api/outreach";
 import { hasCurrentSession, SignInRequiredError } from "../lib/authSession";
 import ConversationDrawer from "../components/outreach/ConversationDrawer";
+import ManualCallDialog from "../components/outreach/ManualCallDialog";
+import NumbersWorkspace, { DashboardNumbers, BuyNumberDialog, SmsDialog } from "../components/outreach/NumbersWorkspace";
 import CallHistoryScreen from "./CallHistoryScreen";
 import CampaignWizard, {
   downloadCsv,
@@ -51,6 +53,7 @@ const date = (value) =>
       })
     : "—";
 const pageTitles = {
+  numbers: ["Your numbers. Your connections.", "Manage your account’s calling numbers and send text messages."],
   overview: [
     "Every call starts an opportunity.",
     "Your campaigns, conversations, and next steps. All in one place.",
@@ -133,6 +136,12 @@ export default function AIOutreachScreen({
   const [busy, setBusy] = useState(false);
   const [importErrors, setImportErrors] = useState([]);
   const [wizard, setWizard] = useState(false);
+  const [manualDial, setManualDial] = useState(false);
+  const [manualCaller, setManualCaller] = useState("");
+  const [smsFrom, setSmsFrom] = useState(null);
+  const [buyNumber, setBuyNumber] = useState(false);
+  const [purchaseToReview, setPurchaseToReview] = useState(null);
+  const [manualRecord, setManualRecord] = useState(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [leadId, setLeadId] = useState(null);
   const [query, setQuery] = useState("");
@@ -190,6 +199,7 @@ export default function AIOutreachScreen({
     setQuery("");
     setFilter("all");
     setLeadId(null);
+    setManualRecord(null);
   }, [view]);
   const refresh = async () => {
     setRefreshing(true);
@@ -284,7 +294,9 @@ export default function AIOutreachScreen({
       item.name.toLowerCase().includes(query.toLowerCase()) &&
       (filter === "all" || item.status === filter),
   );
-  const currentLead = campaign?.leads?.find((lead) => lead.id === leadId);
+  const currentLead = manualRecord || campaign?.leads?.find((lead) => lead.id === leadId);
+  const dialFrom = (number) => { setManualCaller(number); setManualDial(true); };
+  const numbersChanged = () => { load().catch(failed); };
   const newButton = (
     <button
       className="calling-button is-primary"
@@ -537,7 +549,13 @@ export default function AIOutreachScreen({
           >
             <RefreshCw size={17} className={refreshing ? "spin" : ""} />
           </button>
-          {view !== "settings" && newButton}
+          {!["settings", "numbers"].includes(view) && newButton}
+          {view !== "settings" && (
+            <button className="calling-button" onClick={() => dialFrom("")} disabled={loading}>
+              <PhoneCall size={17} />
+              Dial a number
+            </button>
+          )}
         </div>
       </div>
       {error && (
@@ -575,6 +593,13 @@ export default function AIOutreachScreen({
         <>
           {view === "overview" && (
             <>
+              <DashboardNumbers
+                numbers={config?.numbers || []}
+                error={config?.number_error}
+                onCall={dialFrom}
+                onMessage={setSmsFrom}
+                onManage={() => onNavigate?.("numbers")}
+              />
               <div className="calling-hero">
                 <div className="calling-hero-copy">
                   <span className="calling-hero-label">
@@ -1019,6 +1044,18 @@ export default function AIOutreachScreen({
               onAuthRequired={failed}
             />
           )}
+          {view === "numbers" && (
+            <NumbersWorkspace
+              user={user}
+              numbers={config?.numbers || []}
+              refreshKey={lastUpdated?.getTime()}
+              onCall={dialFrom}
+              onMessage={setSmsFrom}
+              onBuy={() => { setPurchaseToReview(null); setBuyNumber(true); }}
+              onReviewPurchase={(purchase) => { setPurchaseToReview(purchase); setBuyNumber(true); }}
+              onAuthRequired={failed}
+            />
+          )}
           {["contacts", "leads"].includes(view) && (
             <div className="calling-panel">
               <header className="calling-panel-heading">
@@ -1313,12 +1350,36 @@ export default function AIOutreachScreen({
           onCreate={create}
         />
       )}
+      {manualDial && (
+        <ManualCallDialog
+          user={user}
+          config={config}
+          campaigns={campaigns}
+          defaultCampaign={campaign}
+          defaultCallerId={manualCaller}
+          onClose={() => setManualDial(false)}
+          onStarted={() => { load().catch(failed); }}
+          onConversation={(call) => {
+            setManualDial(false);
+            setManualRecord(call);
+          }}
+          onAuthRequired={failed}
+        />
+      )}
+      {smsFrom !== null && (
+        <SmsDialog user={user} numbers={config?.numbers || []} initialFrom={smsFrom}
+          onClose={() => setSmsFrom(null)} onChanged={numbersChanged} onAuthRequired={failed} />
+      )}
+      {buyNumber && (
+        <BuyNumberDialog user={user} initialPurchase={purchaseToReview} onClose={() => setBuyNumber(false)}
+          onChanged={numbersChanged} onAuthRequired={failed} />
+      )}
       {currentLead && (
         <ConversationDrawer
           key={currentLead.id}
           lead={currentLead}
           user={user}
-          onClose={() => setLeadId(null)}
+          onClose={() => { setLeadId(null); setManualRecord(null); }}
           onReviewed={refresh}
         />
       )}

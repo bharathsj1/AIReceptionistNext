@@ -756,7 +756,7 @@ export default function App() {
       try {
         const { res, data: profile } = await fetchJsonWithTimeout(
           `${API_URLS.dashboard}?email=${encodeURIComponent(userEmail)}`,
-          {},
+          { headers: { Authorization: `Bearer ${data.auth_token}` } },
           DASHBOARD_REQUEST_TIMEOUT_MS,
         );
         if (res.ok) {
@@ -2084,7 +2084,7 @@ export default function App() {
       try {
         const { res, data } = await fetchJsonWithTimeout(
           `${API_URLS.dashboard}?email=${encodeURIComponent(targetEmail)}`,
-          {},
+          { headers: { Authorization: `Bearer ${user?.auth_token || user?.authToken || ""}` } },
           DASHBOARD_REQUEST_TIMEOUT_MS,
         );
         if (!res.ok || looksLikeHtml(data?.raw))
@@ -2102,7 +2102,7 @@ export default function App() {
         setSubscriptionsLoading(false);
       }
     },
-    [email, loginEmail, signupEmail, user?.email],
+    [email, loginEmail, signupEmail, user?.email, user?.auth_token, user?.authToken],
   );
 
   const handleAssignNumber = useCallback(async () => {

@@ -17,7 +17,7 @@ from twilio.request_validator import RequestValidator
 
 from crm_shared import CRMActor, issue_auth_session_token
 from services import outreach_service as service
-from shared.db import Base, CallerNumber, Client, OutreachCampaign, OutreachLead, OutreachSuppression, OutreachCallEvent
+from shared.db import Base, PhoneNumber, Client, OutreachCampaign, OutreachLead, OutreachSuppression, OutreachCallEvent
 
 HEADER = "phone,restaurant_name,automated_call_consent,consent_evidence,city\n"
 CSV = HEADER + '020 7946 0018,"The Bistro, London",yes,Owner opted in to VedoraEats automated calls on 2026-10-01,London\n'
@@ -52,7 +52,7 @@ class OutreachTests(unittest.TestCase):
         self.db = self.Session()
         self.db.add_all([Client(id=1, email="owner@example.com", website_url="https://example.com"),
                          Client(id=2, email="other@example.com", website_url="https://example.com"),
-                         CallerNumber(client_id=1, phone_number="+442079460000", is_active=True)])
+                         PhoneNumber(client_id=1, twilio_phone_number="+442079460000", twilio_sid="PN" + "1" * 32, is_active=True)])
         self.db.commit()
         self.body = {"name": "VedoraEats", "benefits": "Verified benefits supplied by the business.",
                      "notification_email": "partnerships@example.com", "caller_id": "+442079460000", "csv_text": CSV}

@@ -27,6 +27,7 @@ import {
 import "./ConversationDrawer.css";
 
 const eventLabels = {
+  manual_requested: "Call started manually",
   preparing: "Preparing call",
   voice_session_created: "AI conversation created",
   call_accepted: "Twilio call reference saved",

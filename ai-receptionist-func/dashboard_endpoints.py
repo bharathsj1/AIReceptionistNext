@@ -5,10 +5,12 @@ from typing import Optional
 
 import azure.functions as func
 from function_app import app
+from crm_shared import resolve_actor_from_session
 from onboarding_endpoints import get_twilio_client
 from datetime import datetime, timedelta, timezone
 from services.ultravox_service import get_ultravox_agent, get_ultravox_call_messages
 from services.receptionist_usage_service import build_receptionist_usage_summary
+from services.tenant_telephony import reserved_allowed
 from shared.config import get_required_setting
 from shared.db import (
     Call,
@@ -174,21 +176,22 @@ def dashboard_get(req: func.HttpRequest) -> func.HttpResponse:
     Returns client, user, ultravoX agent info, and phone numbers for the given email.
     """
     cors = build_cors_headers(req, ["GET", "OPTIONS"])
+    cors["Cache-Control"] = "no-store"
     if req.method == "OPTIONS":
         return func.HttpResponse("", status_code=204, headers=cors)
 
-    email = req.params.get("email")
-    if not email:
+    actor = resolve_actor_from_session(req)
+    if not actor:
         return func.HttpResponse(
-            json.dumps({"error": "email is required"}),
-            status_code=400,
+            json.dumps({"error": "Sign in to view your company profile"}),
+            status_code=401,
             mimetype="application/json",
             headers=cors,
         )
 
     try:
         payload = _with_db_retry(
-            lambda db: _build_dashboard_payload(db, email)
+            lambda db: _build_dashboard_payload(db, actor.email)
         )
         return func.HttpResponse(
             json.dumps(payload),
@@ -219,6 +222,7 @@ def _build_dashboard_payload(db, email: str) -> dict:
         phone_list = [
             {"phone_number": p.twilio_phone_number, "twilio_sid": p.twilio_sid}
             for p in phone_numbers
+            if reserved_allowed(db, client.id, p.twilio_phone_number)
         ]
 
     agent_info = None

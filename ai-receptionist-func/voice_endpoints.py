@@ -40,10 +40,6 @@ API_HEADERS = {
     "Access-Control-Allow-Headers": "Content-Type",
 }
 LOCAL_SETTINGS_PATH = os.path.join(os.path.dirname(__file__), "local.settings.json")
-DEFAULT_CLIENT_CALLER_NUMBERS = [
-    ("+16473702063", "(647) 370-2063"),
-    ("+16479311798", "(647) 931-1798"),
-]
 
 
 def _json_response(payload: dict, status_code: int = 200) -> func.HttpResponse:
@@ -191,28 +187,6 @@ def _extract_request_email(req: func.HttpRequest) -> str:
     ).strip()
     return _normalize_email(form_email)
 
-
-def _ensure_default_client_caller_numbers(db, client_id: int) -> None:
-    existing = {
-        _normalize_e164(row.phone_number)
-        for row in db.query(CallerNumber).filter(CallerNumber.client_id == client_id).all()
-    }
-    changed = False
-    for phone_number, friendly_name in DEFAULT_CLIENT_CALLER_NUMBERS:
-        normalized = _normalize_e164(phone_number)
-        if not normalized or normalized in existing:
-            continue
-        row = CallerNumber(
-            client_id=client_id,
-            phone_number=normalized,
-            friendly_name=friendly_name,
-            is_active=True,
-        )
-        db.add(row)
-        existing.add(normalized)
-        changed = True
-    if changed:
-        db.flush()
 
 
 def _list_client_caller_number_items(db, client_id: int) -> list[dict]:
@@ -381,22 +355,16 @@ def _list_allowed_numbers_for_request(
     twilio_client: Client,
     fallback_number: str,
 ) -> list[dict]:
-    email = _extract_request_email(req)
-    if email:
-        db = SessionLocal()
-        try:
-            client = _resolve_client_by_email(db, email)
-            if client:
-                _ensure_default_client_caller_numbers(db, client.id)
-                db.commit()
-                items = _list_client_caller_number_items(db, client.id)
-                if items:
-                    return items
-        except Exception:
-            db.rollback()
-        finally:
-            db.close()
-    return _list_active_numbers(twilio_client, fallback_number)
+    from crm_shared import resolve_actor_from_session
+    from services.outreach_service import caller_numbers
+    actor = resolve_actor_from_session(req)
+    if not actor:
+        return []
+    db = SessionLocal()
+    try:
+        return [{"phone_number": n, "friendly_name": n} for n in caller_numbers(db, actor.client_id)]
+    finally:
+        db.close()
 
 
 def _resolve_selected_from_number(req: func.HttpRequest, client: Client, fallback_number: str) -> tuple[str, Optional[str]]:
@@ -555,231 +523,29 @@ def hello(req: func.HttpRequest) -> func.HttpResponse:
 @app.function_name(name="VoiceToken")
 @app.route(route="voice-token", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def voice_token(req: func.HttpRequest) -> func.HttpResponse:
-    if req.method == "OPTIONS":
-        return func.HttpResponse(status_code=204, headers=API_HEADERS)
-
-    identity = (req.params.get("identity") or "web_user").strip()
-    if not _is_valid_identity(identity):
-        return _json_response(
-            {
-                "error": (
-                    "Invalid identity. Use 1-121 chars with letters, numbers, or underscore only."
-                )
-            },
-            status_code=400,
-        )
-
-    account_sid = _get_setting("TWILIO_ACCOUNT_SID")
-    api_key_sid = _get_setting("TWILIO_API_KEY")
-    api_key_secret = _get_setting("TWILIO_API_SECRET")
-    twiml_app_sid = _get_setting("TWILIO_TWIML_APP_SID")
-
-    if not all([account_sid, api_key_sid, api_key_secret, twiml_app_sid]):
-        return _json_response(
-            {
-                "error": (
-                    "Missing client-call config. Set TWILIO_ACCOUNT_SID, TWILIO_API_KEY, "
-                    "TWILIO_API_SECRET, and TWILIO_TWIML_APP_SID."
-                )
-            },
-            status_code=500,
-        )
-
-    token = AccessToken(
-        account_sid=account_sid,
-        signing_key_sid=api_key_sid,
-        secret=api_key_secret,
-        identity=identity,
-        ttl=3600,
-    )
-    token.add_grant(VoiceGrant(outgoing_application_sid=twiml_app_sid))
-    jwt_token = token.to_jwt()
-    token_value = jwt_token.decode("utf-8") if isinstance(jwt_token, bytes) else jwt_token
-
-    return _json_response({"token": token_value, "identity": identity, "expires_in": 3600})
+    """Shared legacy dialler routes are retired in the calling workspace."""
+    return _json_response({"error": "Use signed-in outreach calling and history routes"},
+        status_code=204 if req.method == "OPTIONS" else 410)
 
 
 @app.function_name(name="VoiceOutbound")
 @app.route(route="voice-outbound", methods=["GET", "POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def voice_outbound(req: func.HttpRequest) -> func.HttpResponse:
-    if req.method == "OPTIONS":
-        return func.HttpResponse(status_code=204, headers=API_HEADERS)
-
-    to_number = _get_form_param(req, "To")
-    fallback_from = _get_setting("TWILIO_FROM_NUMBER") or _get_setting("TWILIO_CALLER_ID")
-
-    response = VoiceResponse()
-    client = _build_rest_client()
-    if not client:
-        response.say("Twilio credentials are missing.", voice="alice", language="en-US")
-        response.hangup()
-        return _xml_response(str(response), status_code=200)
-
-    from_number, from_error = _resolve_selected_from_number(req, client, fallback_from)
-    if from_error:
-        response.say(from_error, voice="alice", language="en-US")
-        response.hangup()
-        return _xml_response(str(response), status_code=200)
-
-    if not _is_e164(to_number):
-        response.say("Invalid destination number.", voice="alice", language="en-US")
-        response.hangup()
-        return _xml_response(str(response), status_code=200)
-
-    if not _is_e164(from_number):
-        response.say("Calling service is not configured correctly.", voice="alice", language="en-US")
-        response.hangup()
-        return _xml_response(str(response), status_code=200)
-
-    dial = response.dial(caller_id=from_number, answer_on_bridge=True)
-    dial.number(to_number)
-    return _xml_response(str(response), status_code=200)
+    """Shared legacy dialler routes are retired in the calling workspace."""
+    return _json_response({"error": "Use signed-in outreach calling and history routes"},
+        status_code=204 if req.method == "OPTIONS" else 410)
 
 
 @app.function_name(name="CallHistory")
 @app.route(route="call-history", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def call_history(req: func.HttpRequest) -> func.HttpResponse:
-    if req.method == "OPTIONS":
-        return func.HttpResponse(status_code=204, headers=API_HEADERS)
-
-    client = _build_rest_client()
-    if not client:
-        return _json_response(
-            {
-                "error": (
-                    "Missing Twilio credentials for history. Set TWILIO_ACCOUNT_SID and either "
-                    "(TWILIO_API_KEY + TWILIO_API_SECRET) or TWILIO_AUTH_TOKEN."
-                )
-            },
-            status_code=500,
-        )
-
-    limit = _get_limit(req)
-    status_filter = (req.params.get("status") or "all").strip().lower()
-    query = (req.params.get("q") or "").strip().lower()
-    period = (req.params.get("period") or "all").strip().lower()
-    start_date = (req.params.get("start_date") or "").strip()
-    end_date = (req.params.get("end_date") or "").strip()
-
-    if period not in SUPPORTED_PERIODS:
-        return _json_response(
-            {"error": "Invalid period. Use all, today, this_week, this_month, or custom."},
-            status_code=400,
-        )
-
-    start_bound, end_bound, bounds_error = _resolve_period_bounds(period, start_date, end_date)
-    if bounds_error:
-        return _json_response({"error": bounds_error}, status_code=400)
-
-    try:
-        calls = client.calls.list(limit=limit)
-    except TwilioRestException as exc:
-        return _json_response(
-            {"error": "Twilio API error while loading call history", "details": str(exc)},
-            status_code=502,
-        )
-    except Exception as exc:  # pragma: no cover - defensive guard for runtime failures
-        return _json_response({"error": "Failed to load call history", "details": str(exc)}, status_code=500)
-
-    default_from = _get_setting("TWILIO_FROM_NUMBER") or _get_setting("TWILIO_CALLER_ID")
-    items = [_call_to_payload(call, default_from_number=default_from) for call in calls]
-
-    if query:
-        items = [
-            item
-            for item in items
-            if query in item["to"].lower() or query in item["from"].lower() or query in (item["status"] or "")
-        ]
-
-    if status_filter == "missed":
-        items = [item for item in items if item["is_missed"]]
-    elif status_filter == "completed":
-        items = [item for item in items if item["is_completed"]]
-    elif status_filter != "all":
-        items = [item for item in items if item["status"] == status_filter]
-
-    if start_bound or end_bound:
-        filtered_items = []
-        for item in items:
-            call_time = _call_event_time(item)
-            if not call_time:
-                continue
-            if start_bound and call_time < start_bound:
-                continue
-            if end_bound and call_time >= end_bound:
-                continue
-            filtered_items.append(item)
-        items = filtered_items
-
-    total_minutes = round(sum(item["duration_seconds"] for item in items) / 60, 2)
-    missed_count = sum(1 for item in items if item["is_missed"])
-    completed_count = sum(1 for item in items if item["is_completed"])
-
-    summary = {
-        "total_calls": len(items),
-        "completed_calls": completed_count,
-        "missed_calls": missed_count,
-        "total_minutes": total_minutes,
-    }
-
-    filters = {
-        "status": status_filter,
-        "q": query,
-        "period": period,
-        "start_date": start_date or None,
-        "end_date": end_date or None,
-    }
-    return _json_response({"summary": summary, "filters": filters, "calls": items})
+    """Shared legacy dialler routes are retired in the calling workspace."""
+    return _json_response({"error": "Use signed-in outreach calling and history routes"},
+        status_code=204 if req.method == "OPTIONS" else 410)
 
 
 @app.function_name(name="ActivePhoneNumbers")
 @app.route(route="active-phone-numbers", methods=["GET", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def active_phone_numbers(req: func.HttpRequest) -> func.HttpResponse:
-    if req.method == "OPTIONS":
-        return func.HttpResponse(status_code=204, headers=API_HEADERS)
-
-    resolved_country = _resolve_country_code(req)
-    default_from = _get_setting("TWILIO_FROM_NUMBER") or _get_setting("TWILIO_CALLER_ID")
-    email = _extract_request_email(req)
-
-    if email:
-        db = SessionLocal()
-        try:
-            client_record = _resolve_client_by_email(db, email)
-            if client_record:
-                _ensure_default_client_caller_numbers(db, client_record.id)
-                db.commit()
-                items = _list_client_caller_number_items(db, client_record.id)
-                selected = _select_number_for_country(items, resolved_country, default_from)
-                return _json_response(
-                    {
-                        "items": items,
-                        "selected": selected,
-                        "resolved_country": resolved_country,
-                        "source": "caller_numbers_table",
-                    }
-                )
-        except Exception as exc:  # pragma: no cover
-            db.rollback()
-            return _json_response(
-                {"error": "Failed to load caller numbers", "details": str(exc)},
-                status_code=500,
-            )
-        finally:
-            db.close()
-
-    client = _build_rest_client()
-    if not client:
-        return _json_response(
-            {
-                "error": (
-                    "Missing Twilio credentials. Set TWILIO_ACCOUNT_SID and either "
-                    "(TWILIO_API_KEY + TWILIO_API_SECRET) or TWILIO_AUTH_TOKEN."
-                )
-            },
-            status_code=500,
-        )
-
-    items = _list_active_numbers(client, default_from)
-    selected = _select_number_for_country(items, resolved_country, default_from)
-    return _json_response({"items": items, "selected": selected, "resolved_country": resolved_country, "source": "twilio"})
+    from number_endpoints import account_numbers
+    return account_numbers(req)

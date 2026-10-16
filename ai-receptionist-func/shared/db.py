@@ -606,6 +606,47 @@ class OutreachCallEvent(Base):
     occurred_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
+class TenantPhoneNumber(Base):
+    __tablename__ = "tenant_phone_numbers"
+    sid = Column(String, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
+    phone_number = Column(String, nullable=False, unique=True)
+    account_sid = Column(String, nullable=False)
+    voice_enabled = Column(Boolean, nullable=False, default=False)
+    sms_enabled = Column(Boolean, nullable=False, default=False)
+    number_type = Column(String, nullable=False, default="mobile")
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class NumberPurchase(Base):
+    __tablename__ = "outreach_number_purchases"
+    id = Column(String, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
+    phone_number = Column(String, nullable=False)
+    number_type = Column(String, nullable=False)
+    monthly_price = Column(String, nullable=False)
+    currency = Column(String, nullable=False)
+    status = Column(String, nullable=False, default="purchasing")
+    number_sid = Column(String, nullable=True)
+    error = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class OutreachSms(Base):
+    __tablename__ = "outreach_sms"
+    id = Column(String, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
+    from_number = Column(String, nullable=False)
+    to_number = Column(String, nullable=False)
+    body = Column(Text, nullable=False)
+    status = Column(String, nullable=False, default="preparing")
+    message_sid = Column(String, unique=True, nullable=True)
+    error = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class OutreachSuppression(Base):
     __tablename__ = "outreach_suppressions"
 

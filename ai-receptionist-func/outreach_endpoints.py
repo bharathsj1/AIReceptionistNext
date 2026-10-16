@@ -21,6 +21,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import defer
 from services.outreach_history import (call_payload, ensure_conversation, iso, log_event,
     sync_conversation, sync_pending_conversations, transcript_payload)
+from services.manual_outreach import ManualCallConflict, start_manual_call
 from shared.db import OutreachCallEvent, OutreachConversation
 
 logger = logging.getLogger(__name__)
@@ -54,8 +55,40 @@ def outreach_config(req):
         return response(req, {"error": "Sign in as an account owner to manage AI outreach"}, 401)
     db = SessionLocal()
     try:
-        return response(req, {"caller_ids": caller_numbers(db, actor.client_id), "configuration_errors": configuration_errors(),
+        from services.tenant_telephony import ensure_reserved_number, own_numbers, number_payload
+        number_error = None
+        try:
+            ensure_reserved_number(db, actor.client_id)
+        except Exception:
+            db.rollback()
+            number_error = "Could not verify the assigned Twilio number. Refresh to check again."
+        return response(req, {"caller_ids": caller_numbers(db, actor.client_id),
+                              "numbers": [number_payload(n) for n in own_numbers(db, actor.client_id)],
+                              "number_error": number_error, "configuration_errors": configuration_errors(),
                               "timezone": "Europe/London", "country": "GB"})
+    finally:
+        db.close()
+
+
+@app.route(route="outreach/manual-calls", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def outreach_manual_call(req):
+    if req.method == "OPTIONS":
+        return response(req, {})
+    actor = actor_for(req)
+    if not actor:
+        return response(req, {"error": "Sign in as an account owner to start a call"}, 401)
+    db = SessionLocal()
+    try:
+        campaign, lead, created = start_manual_call(db, actor.client_id, body_for(req))
+        conversation = db.get(OutreachConversation, lead.id)
+        return response(req, {"call": call_payload(lead, campaign, conversation),
+            "campaign_id": campaign.id, "created": created}, 201 if created else 200)
+    except ManualCallConflict as exc:
+        db.rollback()
+        return response(req, {"error": str(exc)}, 409)
+    except ValueError as exc:
+        db.rollback()
+        return response(req, {"error": str(exc)}, 400)
     finally:
         db.close()
 

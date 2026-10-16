@@ -22,6 +22,7 @@ const navigation = [
   { id: "campaigns", label: "Campaigns", icon: AudioLines },
   { id: "contacts", label: "Contacts", icon: Users },
   { id: "calls", label: "Call history", icon: PhoneCall },
+  { id: "numbers", label: "Numbers & SMS", icon: PhoneCall },
   { id: "leads", label: "Interested leads", icon: Target },
 ];
 

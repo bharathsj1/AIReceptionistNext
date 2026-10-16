@@ -1,0 +1,51 @@
+.dashboard-numbers { display: flex; justify-content: space-between; gap: 20px; padding: 22px 24px; margin-bottom: 24px; align-items: center; }
+.dashboard-numbers > div { min-width: 0; flex: 1; }
+.dashboard-numbers p { color: var(--call-muted); margin-top: 10px; }
+.dashboard-number { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding-top: 14px; }
+.dashboard-number > strong { font-size: 1.375rem; letter-spacing: .02em; }
+.dashboard-number > span { color: var(--call-muted); font-size: var(--call-text-small); }
+.dashboard-number > div { display: flex; gap: 10px; margin-left: auto; flex-wrap: wrap; }
+.numbers-workspace { display: grid; gap: 24px; }
+.owned-number-list { padding: 0 24px 24px; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 18px; }
+.owned-number-card { padding: 22px; border: 1px solid var(--call-line); border-radius: 10px; background: #fafcf7; }
+.owned-number-card > div:first-child { display: flex; align-items: center; gap: 14px; }
+.owned-number-card strong { display: block; font-size: 1.375rem; overflow-wrap: anywhere; }
+.owned-number-card div > span { display: block; color: var(--call-muted); font-size: var(--call-text-small); margin-top: 5px; text-transform: capitalize; }
+.number-capabilities, .number-card-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
+.number-capabilities > span { padding: 3px 9px; background: #edf4e9; border-radius: 5px; color: var(--call-green) !important; }
+.numbers-empty { padding: 12px 24px 30px; color: var(--call-muted); }
+.sms-history { padding-inline: 24px; }
+.sms-history article { border-top: 1px solid var(--call-line); padding-block: 20px; }
+.sms-history header { display: flex; justify-content: space-between; gap: 16px; align-items: center; }
+.sms-history p { margin-block: 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.sms-history small { color: var(--call-muted); font-size: var(--call-text-small); }
+.calling-dialog.telephony-dialog { max-width: 740px; display: flex; flex-direction: column; overflow: hidden; }
+.telephony-dialog .calling-dialog-heading, .telephony-dialog .calling-dialog-footer { flex-shrink: 0; }
+.telephony-dialog .calling-dialog-heading p { margin-top: 8px; color: var(--call-muted); }
+.telephony-dialog-body { padding: 22px 28px; overflow-y: auto; overscroll-behavior: contain; min-height: 0; }
+.number-purchase-fields, .sms-compose-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
+.number-search { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin-bottom: 20px; }
+.number-search label { display: grid; gap: 7px; flex: 1 1 160px; font-size: var(--call-text-small); font-weight: 600; }
+.number-search :is(input,select) { width: 100%; min-height: 46px; font: inherit; font-size: var(--call-text-body); padding: 10px; border: 1px solid var(--call-line); border-radius: 7px; color: var(--call-ink); background: white; }
+.available-number-list { display: grid; gap: 10px; }
+.available-number { display: flex; align-items: center; gap: 12px; padding: 15px; border: 1px solid var(--call-line); border-radius: 8px; cursor: pointer; }
+.available-number.is-selected { border-color: var(--call-green); background: #f0f6ea; }
+.available-number input, .number-purchase-consent input { flex: 0 0 20px; width: 20px; height: 20px; accent-color: var(--call-green); }
+.available-number > span:first-of-type { flex: 1; min-width: 0; }
+.available-number strong { font-size: var(--call-text-lead); overflow-wrap: anywhere; }
+.available-number small { display: block; color: var(--call-muted); font-size: var(--call-text-small); margin-top: 4px; }
+.available-number > span:last-child { text-align: right; font-weight: 600; }
+.number-purchase-consent { display: flex; align-items: start; gap: 12px; padding-block: 22px; line-height: 1.7; }
+.number-purchase-consent input { margin-top: 4px; }
+.number-purchase-result, .sms-result { display: grid; gap: 14px; }
+.number-purchase-result > strong { font-size: 1.5rem; }
+.number-success { display: flex; align-items: center; gap: 8px; color: var(--call-green); font-weight: 600; }
+.sms-result-body { white-space: pre-wrap; overflow-wrap: anywhere; background: #f2f7ed; border-radius: 8px; padding: 18px; }
+.sms-result > .calling-status { justify-self: start; }
+@media (max-width: 1100px) { .dashboard-numbers { align-items: start; flex-direction: column; } .dashboard-number > div { margin-left: 0; } .numbers-workspace .calling-panel-heading { flex-wrap: wrap; } }
+@media (max-width: 590px) { .dashboard-numbers { padding: 20px; } .dashboard-number { gap: 10px; } .dashboard-number > strong { font-size: 1.25rem; } .dashboard-number > div { margin-top: 6px; } .owned-number-list { padding-inline: 17px; } .owned-number-card { padding: 18px; } .owned-number-card strong { font-size: 1.25rem; } .telephony-dialog-body { padding: 20px; } .telephony-dialog .calling-dialog-footer { flex-wrap: wrap; } .telephony-dialog .calling-dialog-footer button { white-space: normal; flex: 1 1 auto; } .available-number { flex-wrap: wrap; } .available-number > span:last-child { flex-basis: 100%; text-align: left; margin-left: 32px; } .sms-history { padding-inline: 17px; } .sms-history header { flex-wrap: wrap; } }
+.number-purchase-notice { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; padding: 18px 24px; margin: 0 24px 20px; border: 1px solid #e6d8b8; background: #faf6e8; border-radius: 8px; }
+.number-purchase-notice > div { flex: 1; min-width: 0; }
+.number-purchase-notice p { color: var(--call-muted); margin-top: 6px; overflow-wrap: anywhere; }
+.telephony-dialog .sms-compose-fields { padding: 0; }
+@media (max-width: 360px) { .calling-workspace .calling-region { display: none; } }

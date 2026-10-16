@@ -13,7 +13,7 @@ from sqlalchemy.orm import sessionmaker
 from services import outreach_history as history
 from services import outreach_service as service
 from shared import db as database
-from shared.db import Base, Client, CallerNumber, OutreachCallEvent, OutreachCampaign, OutreachConversation, OutreachLead
+from shared.db import Base, Client, PhoneNumber, OutreachCallEvent, OutreachCampaign, OutreachConversation, OutreachLead
 from test_outreach import ACTOR, CSV, SETTINGS, SID, endpoints
 
 
@@ -27,7 +27,7 @@ class OutreachHistoryTests(unittest.TestCase):
         self.db = self.Session()
         self.db.add_all([Client(id=1, email="owner@example.com", website_url="https://example.com"),
                          Client(id=2, email="other@example.com", website_url="https://example.com"),
-                         CallerNumber(client_id=1, phone_number="+442079460000", is_active=True)])
+                         PhoneNumber(client_id=1, twilio_phone_number="+442079460000", twilio_sid="PN" + "1" * 32, is_active=True)])
         self.db.commit()
         self.now = datetime(2026, 10, 16, 12)
         self.body = {"name": "Partnerships", "benefits": "Verified offer", "notification_email": "team@example.com",

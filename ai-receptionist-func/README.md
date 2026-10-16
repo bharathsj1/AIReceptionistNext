@@ -137,6 +137,18 @@ timelines are not invented. Audio recording is not enabled by this feature.
 - `GET /api/outreach/leads/{id}/conversation` (saved/spoken messages, call metadata
   and activity; optional `refresh=true` to recheck the provider when not final)
 - `GET /api/outreach/config`
+- `POST /api/outreach/manual-calls` (`request_id`: UUID, `phone`,
+  `restaurant_name`, `benefits`, `notification_email`, `caller_id`,
+  `consent_confirmed: true`, `consent_evidence`). Creates a one-contact manual
+  campaign and immediately uses the existing Twilio/Ultravox launch path; no CSV
+  is needed. Returns `{call, campaign_id, created}` with 201 for a new attempt or
+  200 for an idempotent replay. Request IDs are scoped to the signed-in account;
+  retries and concurrent delivery cannot redial the same request. Reusing an ID
+  with different details returns 409. Provider uncertainty remains `needs_review`.
+  Checks assigned caller IDs, opt-outs, active/uncertain attempts for that number,
+  configuration, consent and weekday 09:00–20:00 Europe/London hours. The existing
+  worker reconciles the call, and history/transcripts/notifications use the same
+  storage and callbacks. No database migration is required.
 - `GET|POST /api/outreach/campaigns` (POST: `name`, `benefits`,
   `notification_email`, `caller_id`, `csv_text`, optional `start_hour`, `end_hour`, `voice`)
 - `GET|POST /api/outreach/campaigns/{id}` (POST: `action: start|pause`)
@@ -551,3 +563,68 @@ curl -X POST https://smartconnect4u.com/api/private-cards \
 - Dialer resolves caller IDs from tenant active Twilio numbers (`phone_numbers.is_active = true`).
 - Country is inferred from request headers (`cf-ipcountry`, `x-country-code`, etc.), with query/env fallback.
 - If multiple active caller IDs exist, frontend shows a caller ID dropdown and sends selected `callerId` to backend.
+
+## Account-owned number purchasing and SMS
+
+`tenant_phone_numbers` holds exclusive Twilio number ownership and capabilities.
+`outreach_number_purchases` and `outreach_sms` persist intent before external
+mutations, retain provider references and prevent retries from repeating purchases
+or SMS sends. Existing calls and customer records are retained; `init_db()` creates
+these new tables automatically on the persistent Docker database.
+
+The explicitly approved number `+447861937466` (`PNc4cdbbe58f3b6a52c573f048046213c2`)
+is reserved for `bharath.sj1@gmail.com`. The provider account is configured privately
+through `TWILIO_ACCOUNT_SID`. The first signed configuration/number read for
+that owner performs a read-only Twilio verification of the number, resource SID and
+configured provider account before saving the assignment.
+Other accounts cannot list, claim, send from or dial using that number. Existing
+conflicting assignments require administrator review, rather than being silently
+transferred. Additional numbers must be bought through the account purchase flow.
+
+All account routes require a signed session and scope data using its resolved
+`client_id`; an email/query/body claim cannot select another account. Only the
+primary account owner can search/purchase numbers. Existing account managers can
+use their account's assigned numbers. Legacy `/clients/provision`,
+`/clients/assign-number`, `/twilio/available-numbers`, `/voice-token`,
+`/voice-outbound` and `/call-history` return 410. `/active-phone-numbers` now uses
+the authenticated account number list. Shared/default caller-number seeding and
+account-wide number fallback are removed. `/dashboard` also requires a signed
+session and returns private, uncached company information.
+
+Routes:
+
+- `GET /api/outreach/numbers`: owned active numbers and voice/SMS capabilities.
+- `GET /api/outreach/numbers/available?number_type=mobile|local&contains=...`:
+  available UK numbers with both capabilities and live monthly price/currency.
+- `POST /api/outreach/numbers/purchase`: `request_id` UUID, `phone_number`,
+  `number_type`, `monthly_price`, `currency`, `confirm_purchase: true`.
+- `GET /api/outreach/numbers/purchases/{id}`: scoped purchase status/reconciliation.
+- `GET|POST /api/outreach/messages`: list recent account messages or send with
+  `request_id` UUID, `from_number`, `to_number` (UK) and `body` (1–1,600 characters).
+- `GET /api/outreach/messages/{id}`: scoped saved message/provider delivery status.
+- `POST /api/outreach/messages/{id}/status`: Twilio-signed status callback; validates
+  account, sender, recipient and provider reference, and prevents status regression.
+
+Purchases recheck provider stock, both capabilities, the confirmed price and
+exclusive ownership. They never reuse a number belonging to another customer.
+Interrupted purchases reconcile only a provider number with the operation's
+unique friendly-name tag; they never blindly repeat the purchase. SMS sends also
+persist intent and require explicit review after uncertain outcomes, never auto-
+resending. Public HTTPS deployments attach signed SMS status callbacks. Local HTTP
+sends omit callbacks and use authenticated provider-status polling after Twilio
+returns a message reference. SMS content/history remains private to its account.
+
+For UK stock requiring approved identities, configure server-only
+`OUTREACH_NUMBER_REGULATORY_SETTINGS` as JSON keyed by the primary owner's email:
+`{"owner@example.com":{"bundle_sid":"BU...","address_sid":"AD..."}}`.
+Use valid approved Twilio SIDs for that customer. Browser-supplied regulatory SIDs
+and global address/bundle defaults are not accepted. Twilio can reject purchases
+until that customer's regulatory requirements are satisfied. Prices and recurring
+charges shown in the UI are Twilio charges; application Stripe payments are not
+required and this does not create a customer billing system.
+
+Unresolved purchases can also be recovered after a refresh through
+`GET /api/outreach/numbers/purchases`. The Numbers & SMS page lists the account's
+pending/failed purchases and opens their saved status for review without buying
+again. Available-number capability checks accept Twilio's uppercase `SMS` keys
+as well as the lowercase keys returned by purchased-number resources.

@@ -11,6 +11,10 @@ export async function outreachRequest(path, user, body) {
   });
   if (response.status === 401) throw new SignInRequiredError();
   const payload = await response.json();
-  if (!response.ok) throw new Error(payload.error || "Outreach request failed");
+  if (!response.ok) {
+    const error = new Error(payload.error || "Outreach request failed");
+    error.status = response.status;
+    throw error;
+  }
   return payload;
 }

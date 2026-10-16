@@ -21,7 +21,7 @@ from twilio.rest import Client as TwilioClient
 from twilio.twiml.voice_response import VoiceResponse
 
 from shared.config import get_public_api_base
-from shared.db import OutreachCampaign, OutreachLead, OutreachSuppression, PhoneNumber, CallerNumber, SessionLocal
+from shared.db import OutreachCampaign, OutreachLead, OutreachSuppression, PhoneNumber, SessionLocal
 from services.outreach_history import ensure_conversation, log_event, iso
 
 logger = logging.getLogger(__name__)
@@ -110,9 +110,16 @@ def configuration_errors():
 
 
 def caller_numbers(db, client_id):
+    from services.tenant_telephony import reserved_allowed
+    from shared.db import TenantPhoneNumber
     phones = db.query(PhoneNumber).filter_by(client_id=client_id, is_active=True).all()
-    callers = db.query(CallerNumber).filter_by(client_id=client_id, is_active=True).all()
-    return sorted({p.twilio_phone_number for p in phones} | {p.phone_number for p in callers})
+    managed = {row.phone_number: row for row in db.query(TenantPhoneNumber).all()}
+    return sorted({p.twilio_phone_number for p in phones
+        if reserved_allowed(db, client_id, p.twilio_phone_number)
+        and (p.twilio_phone_number not in managed or (
+            managed[p.twilio_phone_number].client_id == client_id
+            and managed[p.twilio_phone_number].account_sid == os.getenv('TWILIO_ACCOUNT_SID')
+            and managed[p.twilio_phone_number].is_active and managed[p.twilio_phone_number].voice_enabled))})
 
 
 def create_campaign(db, client_id, body):

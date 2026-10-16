@@ -47,4 +47,5 @@ import live_handoff  # noqa
 import private_cards_endpoints  # noqa
 import voice_endpoints  # noqa
 import outreach_endpoints  # noqa
+import number_endpoints  # noqa
 import storage_endpoints  # noqa

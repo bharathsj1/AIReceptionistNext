@@ -16,6 +16,14 @@ requires no additional AI provider. Login and backend authorization still apply.
 ## Calling workspace
 
 - **Overview:** aggregate campaign, attempted-call, interest, and handoff counts.
+- **Dial a number:** available from the workspace toolbar. Enter one UK business
+  number and name, reuse a campaign pitch or enter your own, choose an assigned
+  caller ID and team email, and record automated-call consent. “Start AI call now”
+  starts a single Twilio/Ultravox call without a CSV or starting another campaign's
+  contacts. It is saved as a one-contact “Manual call” campaign with the usual
+  history, conversation, transcript and handoff. Manual calls use weekday
+  09:00–20:00 London hours. After an interrupted response, “Check call request”
+  retrieves the original attempt instead of placing another call.
 - **Campaigns:** search and filter campaigns, inspect the brief and imported
   contacts, and start, pause, or resume calling.
 - **Contacts:** campaign-scoped calling lists with search and status filters.
@@ -142,3 +150,26 @@ Compatible dependency updates were applied during container preparation.
 the legacy Next.js dependency and Vite/Tailwind build tools. Resolving these
 requires broader dependency upgrades. Node dependencies are not copied into
 the Nginx runtime image, and the Next.js server is not started.
+
+## Account-owned numbers and SMS
+
+The overview displays the signed-in account's purchased number, with **Make a
+call** and **Send SMS** actions. **Numbers & SMS** lists only that account's numbers,
+shows voice/SMS capabilities, and includes recent outbound messages with delivery
+status. SMS creation is explicit and retries reuse the same durable request.
+Local sends can poll Twilio for status; public HTTPS deployments also receive
+signed delivery callbacks.
+
+The existing `+447861937466` number is reserved exclusively for the primary account
+`bharath.sj1@gmail.com`. On that account's first configuration load, the backend
+verifies its approved Twilio number SID/account and records the assignment. Other
+accounts start without this number and must purchase their own. Numbers are never
+adopted from general Twilio inventory or granted from shared caller-ID defaults.
+
+**Buy a number** searches UK local/mobile stock supporting voice and SMS, displays
+the current account-specific monthly quote, and requires the user to select a
+number and confirm recurring charges. The backend rechecks price, availability
+and ownership before making the Twilio purchase. Regulatory requirements are
+resolved using the individual account's approved configuration. Usage, taxes and
+monthly number rental are billed by the deployment's configured Twilio account;
+there is no application payment/subscription checkout.

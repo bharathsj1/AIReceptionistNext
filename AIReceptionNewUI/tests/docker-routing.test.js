@@ -47,3 +47,20 @@ test("a token rejected by the new backend leads to sign-in, with no alternate-ho
   await assert.rejects(outreachRequest("config", { auth_token: "old-deployment-token" }), SignInRequiredError);
   assert.equal(calls, 1);
 });
+
+test("manual call validation errors keep their status so the form can be corrected", async (t) => {
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    assert.equal(url, "/api/outreach/manual-calls");
+    assert.equal(options.method, "POST");
+    return new Response(JSON.stringify({ error: "This number has opted out" }), { status: 409 });
+  });
+  await assert.rejects(outreachRequest("manual-calls", { auth_token: "test-token" }, { phone: "02079460018" }),
+    (error) => error.status === 409 && error.message === "This number has opted out");
+});
+
+test("manual call transport failure propagates without an automatic retry", async (t) => {
+  let requests = 0;
+  t.mock.method(globalThis, "fetch", async () => { requests += 1; throw new TypeError("Network interrupted"); });
+  await assert.rejects(outreachRequest("manual-calls", { auth_token: "test-token" }, { request_id: "same-attempt" }), TypeError);
+  assert.equal(requests, 1);
+});
