@@ -24,6 +24,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from services import outreach_billing as billing, outreach_payments as payments, outreach_pricing as pricing
 from services import outreach_service as calls, manual_outreach as manual, tenant_telephony as numbers
+from services import outreach_agents as agents
 from shared.db import (Base, Client, PhoneNumber, OutreachCampaign, OutreachLead, OutreachSuppression,
     OutreachWallet, OutreachWalletEntry, OutreachPaymentOrder, OutreachCallQuote, OutreachCampaignBilling,
     OutreachCallCharge, OutreachBillingSetting, NumberPurchase, TenantPhoneNumber)
@@ -71,6 +72,7 @@ class OutreachBillingTests(unittest.TestCase):
         self.stub(numbers, 'twilio_client', return_value=self.provider)
         self.stub(calls, 'twilio_client', return_value=self.provider)
         self.stub(pricing, 'call_price', return_value=RATE.copy())
+        self.stub(agents, 'sync_agent', return_value='00000000-0000-4000-8000-000000000001')
         self.post = self.stub(calls.requests, 'post')
         self.post.return_value.json.return_value = {'callId':'uv-unit', 'joinUrl':'wss://example.com/join'}
         self.checkout = self.stub(payments.stripe.checkout.Session, 'create', return_value={'id':'cs_unit', 'url':'https://checkout.stripe.com/c/pay/unit'})

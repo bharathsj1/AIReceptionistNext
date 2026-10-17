@@ -21,6 +21,8 @@ NOW = datetime(2026, 10, 16, 11, tzinfo=timezone.utc)
 
 class ManualOutreachTests(unittest.TestCase):
     def setUp(self):
+        agent = patch("services.outreach_agents.sync_agent", return_value="00000000-0000-4000-8000-000000000001")
+        agent.start(); self.addCleanup(agent.stop)
         # These tests isolate call lifecycle behavior; billing guards have their own suite.
         for target, kwargs in [("services.outreach_payments.number_entitled", {"return_value": True}),
                 ("services.outreach_billing.bind_campaign", {}),
@@ -74,7 +76,7 @@ class ManualOutreachTests(unittest.TestCase):
         self.assertEqual((campaign.start_hour, campaign.end_hour), (0, 24))
         self.assertEqual(self.db.query(OutreachLead).count(), 1)
         self.assertEqual(self.client.calls.create.call_args.kwargs["to"], lead.phone)
-        self.assertIn("Confirmed company benefits.", self.post.call_args.kwargs["json"]["systemPrompt"])
+        self.assertIn("Confirmed company benefits.", self.post.call_args.kwargs["json"]["templateContext"]["outreach_context"])
         events = self.db.query(OutreachCallEvent).filter_by(lead_id=lead.id).all()
         self.assertIn("manual_requested", [event.event for event in events])
 

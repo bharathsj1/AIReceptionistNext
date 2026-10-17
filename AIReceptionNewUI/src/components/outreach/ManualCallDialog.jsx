@@ -11,7 +11,7 @@ export default function ManualCallDialog({ user, config, campaigns, defaultCampa
   const [template, setTemplate] = useState(defaultCampaign?.id || "");
   const [form, setForm] = useState({
     phone: "", restaurant_name: "", call_type: "ai",
-    benefits: defaultCampaign?.benefits || "",
+    benefits: defaultCampaign?.benefits || config?.company_pitch || "",
     notification_email: user?.email || config?.notification_email || "",
     caller_id: config?.caller_ids?.includes(defaultCallerId) ? defaultCallerId : config?.caller_ids?.includes(defaultCampaign?.caller_id)
       ? defaultCampaign.caller_id : config?.caller_ids?.[0] || "",
@@ -182,6 +182,7 @@ export default function ManualCallDialog({ user, config, campaigns, defaultCampa
   };
   const failed = call && ["failed", "needs_review", "canceled", "skipped"].includes(call.status);
   const configurationErrors = (normal ? config?.normal_configuration_errors || [] : config?.configuration_errors || []).filter(value => !(normal && browserReady && value.includes("Connect browser calling")));
+  if (!normal && config?.agent && config.agent.status !== "ready") configurationErrors.push(config.agent.status === "needs_business_details" ? "Save your company summary or website review in Calling setup to prepare your AI agent" : "Your company's AI agent is being prepared. Check Calling setup for its current status");
   return (
     <div className="calling-dialog-backdrop" onClick={(event) => { if (event.target === event.currentTarget) close(); }}>
       <section className="calling-dialog manual-call-dialog" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="manual-call-title" tabIndex={-1}>

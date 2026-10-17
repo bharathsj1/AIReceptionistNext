@@ -48,6 +48,8 @@ endpoints = load_endpoints()
 
 class OutreachTests(unittest.TestCase):
     def setUp(self):
+        agent = patch("services.outreach_agents.sync_agent", return_value="00000000-0000-4000-8000-000000000001")
+        agent.start(); self.addCleanup(agent.stop)
         # These tests isolate call lifecycle behavior; billing guards have their own suite.
         for target, kwargs in [("services.outreach_payments.number_entitled", {"return_value": True}),
                 ("services.outreach_billing.bind_campaign", {}),
@@ -263,9 +265,9 @@ class OutreachTests(unittest.TestCase):
             self.assertEqual(args["time_limit"], 600)
             payload = post.call_args.kwargs["json"]
             self.assertEqual(payload["firstSpeakerSettings"], {"user": {}})
-            self.assertIn("AI assistant", payload["systemPrompt"])
+            self.assertIn("AI assistant", payload["templateContext"]["outreach_context"])
             self.assertEqual(lead.status, "queued-provider")
-            self.assertEqual(payload["retentionPolicy"], "retain")
+            self.assertEqual(payload["retentionPolicy"], "CALL_RETENTION_POLICY_RETAIN")
             events = self.db.query(OutreachCallEvent).filter_by(lead_id=lead.id).order_by(OutreachCallEvent.id).all()
             self.assertEqual([event.event for event in events], ["preparing", "voice_session_created", "call_accepted"])
 

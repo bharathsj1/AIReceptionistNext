@@ -44,7 +44,7 @@ export default function CampaignWizard({ user, config, onClose, onCreate, compan
   const [step, setStep] = useState(0);
   const [form, setForm] = useState({
     name: "",
-    benefits: "",
+    benefits: config?.company_pitch || "",
     notification_email: user?.email || config?.notification_email || "",
     caller_id: config?.caller_ids?.[0] || "",
   });

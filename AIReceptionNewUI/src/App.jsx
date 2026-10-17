@@ -538,7 +538,7 @@ export default function App() {
       try {
         await fetch(API_URLS.clientsBusinessDetails, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${user?.auth_token || user?.authToken || ""}` },
           body: JSON.stringify(payload),
         });
       } catch (persistErr) {
@@ -1073,7 +1073,7 @@ export default function App() {
       }
       const res = await fetch(API_URLS.clientsBusinessDetails, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${user?.auth_token || user?.authToken || ""}` },
         body: JSON.stringify({
           email: targetEmail,
           businessName: nameInput,
@@ -1135,7 +1135,7 @@ export default function App() {
 
       const res = await fetch(API_URLS.clientsBusinessDetails, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${user?.auth_token || user?.authToken || ""}` },
         body: JSON.stringify({
           email: targetEmail,
           businessName: normalizedName || businessName,
@@ -1221,7 +1221,7 @@ export default function App() {
     try {
       await fetch(API_URLS.clientsBusinessDetails, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${user?.auth_token || user?.authToken || ""}` },
         body: JSON.stringify({
           email: emailAddress,
           businessName: normalized.businessName,
@@ -1320,7 +1320,7 @@ export default function App() {
     try {
       await fetch(API_URLS.clientsBusinessDetails, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${user?.auth_token || user?.authToken || ""}` },
         body: JSON.stringify({
           email: emailAddress,
           businessName: normalized.businessName,
@@ -1396,7 +1396,7 @@ export default function App() {
     try {
       const res = await fetch(API_URLS.clientsBusinessDetails, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${user?.auth_token || user?.authToken || ""}` },
         body: JSON.stringify({
           email: targetEmail,
           businessName: business.businessName,
@@ -2255,7 +2255,7 @@ export default function App() {
         }
         const res = await fetch(API_URLS.clientsBusinessDetails, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${user?.auth_token || user?.authToken || ""}` },
           mode: "cors",
           body: JSON.stringify(payload),
         });

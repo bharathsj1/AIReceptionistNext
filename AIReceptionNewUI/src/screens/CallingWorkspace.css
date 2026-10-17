@@ -1,5 +1,6 @@
 /* Shared reading scale: supporting details 14px, body 16px, section titles 20px.
    Relative units preserve browser text-size preferences on every viewport. */
+.calling-agent-status { display: grid; gap: 12px; margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--call-line); }
 .calling-workspace,
 .calling-dialog-backdrop {
   --call-text-small: 0.875rem;

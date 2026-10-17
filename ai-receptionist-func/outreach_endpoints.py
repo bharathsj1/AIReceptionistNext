@@ -65,7 +65,14 @@ def outreach_config(req):
         except Exception:
             db.rollback()
             number_error = "Could not verify the assigned Twilio number. Refresh to check again."
+        from services.outreach_agents import queue_agent, agent_payload, company_facts
+        from shared.db import Client
+        agent = queue_agent(db, db.get(Client, actor.client_id))
+        facts = company_facts(db.get(Client, actor.client_id))
+        company_pitch = "\n\n".join(value for value in (facts["profile"]["business_summary"], facts["profile"]["business_services"]) if value)[:12000]
         return response(req, {"caller_ids": caller_numbers(db, actor.client_id),
+                              "agent": agent_payload(agent),
+                              "company_pitch": company_pitch,
                               "numbers": [number_payload(n) for n in own_numbers(db, actor.client_id)],
                               "number_error": number_error, "configuration_errors": configuration_errors(db),
                               "normal_configuration_errors": browser_calling.configuration_errors(db),
@@ -76,6 +83,25 @@ def outreach_config(req):
                               "timezone": "Europe/London", "country": "GB"})
     finally:
         db.close()
+
+
+@app.route(route="outreach/agent", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def outreach_agent_sync(req):
+    if req.method == "OPTIONS": return response(req, {})
+    actor = actor_for(req)
+    if not actor: return response(req, {"error": "Sign in to connect your company's agent"}, 401)
+    db = SessionLocal()
+    try:
+        from services.outreach_agents import sync_agent, agent_payload, AgentError
+        from shared.db import Client, OutreachAgent
+        client = db.get(Client, actor.client_id)
+        if not client or actor.scope != "primary_user" or client.email.lower() != actor.email.lower():
+            return response(req, {"error": "Company owner access required"}, 403)
+        sync_agent(db, client.id, force=True)
+        return response(req, {"agent": agent_payload(db.get(OutreachAgent, client.id))})
+    except ValueError as exc:
+        db.rollback(); return response(req, {"error": str(exc)}, 409 if isinstance(exc, billing.BillingError) else 503)
+    finally: db.close()
 
 
 @app.route(route="outreach/manual-calls", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)

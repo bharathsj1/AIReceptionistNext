@@ -137,6 +137,7 @@ export default function AIOutreachScreen({
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [agentBusy, setAgentBusy] = useState(false);
   const [importErrors, setImportErrors] = useState([]);
   const [wizard, setWizard] = useState(false);
   const [manualDial, setManualDial] = useState(false);
@@ -1228,6 +1229,18 @@ export default function AIOutreachScreen({
                   <button className="calling-button" onClick={onEditCompany}>
                     Edit company details <ArrowUpRight size={15} />
                   </button>
+                  <div className="calling-agent-status">
+                    <h3>Your AI calling agent</h3>
+                    <p>{config?.agent?.status === "ready" ? "Connected to your company. Saved business details and the selected pitch guide each AI call." : config?.agent?.status === "needs_business_details" ? "Save a company summary or review your website details to create your AI calling agent." : "Your AI agent is being prepared from your saved company information."}</p>
+                    {config?.agent?.agent_id && <p><strong>Agent ID:</strong> <span style={{overflowWrap:"anywhere"}}>{config.agent.agent_id}</span></p>}
+                    {config?.agent?.error && <p className="calling-alert is-error" role="alert">{config.agent.error}</p>}
+                    <button className="calling-button" disabled={agentBusy || !config || config.agent?.status === "needs_business_details"} onClick={async () => {
+                      setAgentBusy(true); setError("");
+                      try { await outreachRequest("agent", userRef.current, {}); await load(); }
+                      catch (err) { failed(err); }
+                      finally { setAgentBusy(false); }
+                    }}>{agentBusy ? "Connecting agent…" : config?.agent?.status === "ready" ? "Check agent connection" : "Connect AI agent"}</button>
+                  </div>
                 </div>
               </section>
               <section className="calling-panel">

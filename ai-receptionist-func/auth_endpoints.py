@@ -29,7 +29,7 @@ from services.ultravox_service import (
     list_ultravox_tools,
 )
 from services.prompt_registry_service import generate_prompt_record
-from crm_shared import issue_auth_session_token
+from crm_shared import issue_auth_session_token, _extract_auth_session_token, _verify_auth_session_token
 
 logger = logging.getLogger(__name__)
 
@@ -209,6 +209,9 @@ def _extract_knowledge_text(raw: Any) -> Optional[str]:
         value = raw.get(key)
         if isinstance(value, str) and value.strip():
             return value.strip()
+    pages = raw.get("pages")
+    if isinstance(pages, list):
+        return "\n\n".join(str(page.get("content") or "") for page in pages[:10] if isinstance(page, dict))[:24000].strip() or None
     return None
 
 
@@ -1671,7 +1674,17 @@ def client_business_details(req: func.HttpRequest) -> func.HttpResponse:
     website_url = (body or {}).get("websiteUrl")
     website_data = (body or {}).get("websiteData")
     profile = _normalize_business_profile(website_data)
-    website_payload = {"business_profile": profile} if profile else None
+    website_payload = {"business_profile": profile} if profile and any(profile.values()) else {}
+    knowledge = _extract_knowledge_text(website_data)
+    if knowledge: website_payload["knowledge_text"] = knowledge[:24000]
+
+    # Initial signup sessions may not have a client_id yet. Verify the signed
+    # email and scope before allowing company data to queue a provider agent.
+    claims = _verify_auth_session_token(_extract_auth_session_token(req))
+    if not claims:
+        return func.HttpResponse(json.dumps({"error": "Sign in to save company details"}), status_code=401, mimetype="application/json", headers=cors)
+    if claims.get("email") != email or claims.get("scope") != "primary_user":
+        return func.HttpResponse(json.dumps({"error": "Only the signed-in company owner can save these details"}), status_code=403, mimetype="application/json", headers=cors)
 
     if not email or not business_name or not business_phone:
         return func.HttpResponse(
@@ -1723,6 +1736,8 @@ def client_business_details(req: func.HttpRequest) -> func.HttpResponse:
             if website_payload:
                 client.website_data = _merge_website_data(client.website_data, website_payload)
             db.commit()
+            from services.outreach_agents import queue_agent
+            queue_agent(db, client)
             profile_payload = _normalize_business_profile(website_data) or {
                 "businessName": business_name,
                 "businessPhone": business_phone,
@@ -1758,6 +1773,8 @@ def client_business_details(req: func.HttpRequest) -> func.HttpResponse:
         )
         db.add(client)
         db.commit()
+        from services.outreach_agents import queue_agent
+        queue_agent(db, client)
         profile_payload = _normalize_business_profile(website_data) or {
             "businessName": business_name,
             "businessPhone": business_phone,

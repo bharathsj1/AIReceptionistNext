@@ -576,6 +576,19 @@ class OutreachLead(Base):
     __table_args__ = (UniqueConstraint("campaign_id", "phone", name="uq_outreach_campaign_phone"),)
 
 
+class OutreachAgent(Base):
+    __tablename__ = "outreach_agents"
+    client_id = Column(Integer, ForeignKey("clients.id"), primary_key=True)
+    agent_id = Column(String, unique=True, nullable=True)
+    provider_name = Column(String, unique=True, nullable=False)
+    status = Column(String, nullable=False, default="pending")
+    source_hash = Column(String, nullable=True)
+    synced_hash = Column(String, nullable=True)
+    error = Column(Text, nullable=True)
+    retry_at = Column(DateTime, nullable=True)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
 class OutreachBrowserCall(Base):
     __tablename__ = "outreach_browser_calls"
     lead_id = Column(String, ForeignKey("outreach_leads.id"), primary_key=True)
