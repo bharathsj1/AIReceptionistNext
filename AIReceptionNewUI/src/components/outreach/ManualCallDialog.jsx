@@ -8,10 +8,8 @@ import "./ManualCallDialog.css";
 import { CallPriceCard } from "./BillingWorkspace";
 
 export default function ManualCallDialog({ user, config, campaigns, defaultCampaign, defaultCallerId, onClose, onStarted, onConversation, onAuthRequired, onAddBalance }) {
-  const [template, setTemplate] = useState(defaultCampaign?.id || "");
   const [form, setForm] = useState({
     phone: "", restaurant_name: "", call_type: "ai",
-    benefits: defaultCampaign?.benefits || config?.company_pitch || "",
     notification_email: user?.email || config?.notification_email || "",
     caller_id: config?.caller_ids?.includes(defaultCallerId) ? defaultCallerId : config?.caller_ids?.includes(defaultCampaign?.caller_id)
       ? defaultCampaign.caller_id : config?.caller_ids?.[0] || "",
@@ -30,6 +28,11 @@ export default function ManualCallDialog({ user, config, campaigns, defaultCampa
   const [apiKey, setApiKey] = useState("");
   const [apiSecret, setApiSecret] = useState("");
   const [setupBusy, setSetupBusy] = useState(false);
+  const [prompt, setPrompt] = useState({ text: "", saved: "", version: "", loading: true, saving: false, error: "", notice: "" });
+  const [promptReload, setPromptReload] = useState(0);
+  const promptSaveInFlight = useRef(false);
+  const promptDirty = prompt.text !== prompt.saved;
+  const promptReady = !!prompt.version && !prompt.loading && !prompt.saving && !prompt.error && !promptDirty;
   const voice = useRef(null);
   const device = useRef(null);
   const mounted = useRef(false);
@@ -42,7 +45,7 @@ export default function ManualCallDialog({ user, config, campaigns, defaultCampa
   const feedbackRef = useRef(null);
   const inFlight = useRef(false);
   const request = useRef(null);
-  const close = () => { if (!inFlight.current && !voiceActive) onClose(); };
+  const close = () => { if (!inFlight.current && !voiceActive && !promptSaveInFlight.current) onClose(); };
   const endBrowserCall = async () => {
     connectionVersion.current += 1;
     const activeVoice = voice.current, activeDevice = device.current;
@@ -60,6 +63,29 @@ export default function ManualCallDialog({ user, config, campaigns, defaultCampa
     return () => { mounted.current = false; endBrowserCall(); };
   }, []);
   useDialogFocus(dialogRef, true, close);
+  useEffect(() => {
+    let active = true;
+    setPrompt(value => ({ ...value, loading: true, error: "", notice: "" }));
+    outreachRequest("agent/prompt", user).then(data => {
+      if (active) setPrompt({ text: data.prompt, saved: data.prompt, version: data.version, loading: false, saving: false, error: "", notice: "Loaded from Ultravox" });
+    }).catch(err => {
+      if (active) setPrompt(value => ({ ...value, loading: false, error: err.message }));
+      if (active && err instanceof SignInRequiredError) onAuthRequired?.(err);
+    });
+    return () => { active = false; };
+  }, [config?.agent?.agent_id, promptReload]);
+  const savePrompt = async () => {
+    if (promptSaveInFlight.current || !prompt.version || prompt.loading) return;
+    promptSaveInFlight.current = true;
+    setPrompt(value => ({ ...value, saving: true, error: "", notice: "" }));
+    try {
+      const data = await outreachRequest("agent/prompt", user, { prompt: prompt.text, version: prompt.version });
+      if (mounted.current) setPrompt({ text: data.prompt, saved: data.prompt, version: data.version, loading: false, saving: false, error: "", notice: "Saved to Ultravox. New AI calls will use this prompt." });
+    } catch (err) {
+      if (mounted.current) setPrompt(value => ({ ...value, saving: false, error: err.message }));
+      if (err instanceof SignInRequiredError) onAuthRequired?.(err);
+    } finally { promptSaveInFlight.current = false; }
+  };
   useEffect(() => {
     let active = true;
     setQuote(null); setQuoteError("");
@@ -85,17 +111,12 @@ export default function ManualCallDialog({ user, config, campaigns, defaultCampa
   const update = (key) => (event) => setForm((value) => ({
     ...value, [key]: event.target.type === "checkbox" ? event.target.checked : event.target.value,
   }));
-  const chooseTemplate = (event) => {
-    setTemplate(event.target.value);
-    const campaign = campaigns.find((item) => item.id === event.target.value);
-    if (campaign) setForm((value) => ({ ...value,
-      benefits: campaign.benefits,
-      caller_id: config?.caller_ids?.includes(campaign.caller_id) ? campaign.caller_id : value.caller_id,
-    }));
-  };
   const submit = async (event) => {
     event.preventDefault();
     if (inFlight.current) return;
+    if (!normal && !uncertain && !promptReady) {
+      setError("Load your AI agent prompt and save any changes to Ultravox before calling."); return;
+    }
     inFlight.current = true;
     setBusy(true);
     setError("");
@@ -114,7 +135,8 @@ export default function ManualCallDialog({ user, config, campaigns, defaultCampa
         }
       }
       if (!mounted.current) return;
-      request.current ||= { ...form, quote_id: quote?.id, request_id: crypto.randomUUID() };
+      request.current ||= { ...form, use_agent_prompt: !normal, agent_prompt_version: normal ? undefined : prompt.version,
+        quote_id: quote?.id, request_id: crypto.randomUUID() };
       response = await outreachRequest("manual-calls", user, request.current);
     } catch (err) {
       if (err instanceof SignInRequiredError) {
@@ -192,7 +214,7 @@ export default function ManualCallDialog({ user, config, campaigns, defaultCampa
             <h2 id="manual-call-title">Dial a number</h2>
             <p>Choose an AI conversation or speak directly through your browser. No CSV needed.</p>
           </div>
-          <button className="calling-icon" onClick={close} disabled={busy || voiceActive} aria-label="Close manual dial"><X size={20} /></button>
+          <button className="calling-icon" onClick={close} disabled={busy || voiceActive || prompt.saving} aria-label="Close manual dial"><X size={20} /></button>
         </header>
         {call ? (
           <>
@@ -225,16 +247,17 @@ export default function ManualCallDialog({ user, config, campaigns, defaultCampa
                     <input required maxLength={150} autoComplete="organization" placeholder="The Willow Kitchen" value={form.restaurant_name} onChange={update("restaurant_name")} />
                   </label>
                 </div>
-                {!normal && campaigns.length > 0 && <label>Use a saved campaign pitch
-                  <select value={template} onChange={chooseTemplate}>
-                    <option value="">Enter your own call details</option>
-                    {campaigns.map((campaign) => <option key={campaign.id} value={campaign.id}>{campaign.name}</option>)}
-                  </select>
-                  <small>This call is saved separately and won’t start the campaign’s contact list.</small>
-                </label>}
-                {!normal && <label>Your pitch and benefits
-                  <textarea required maxLength={12000} rows={4} placeholder="What should the AI explain about your company? Use confirmed benefits and offers." value={form.benefits} onChange={update("benefits")} />
-                </label>}
+                {!normal && <section className="manual-agent-prompt" aria-label="AI agent prompt editor">
+                  <label htmlFor="manual-agent-prompt">AI agent prompt</label>
+                  <p>Your pitch, benefits and conversation instructions, loaded directly from your company’s Ultravox agent.</p>
+                  <textarea id="manual-agent-prompt" required maxLength={63900} rows={10} disabled={prompt.loading || prompt.saving} placeholder={prompt.loading ? "Loading your prompt from Ultravox…" : "Enter your AI call instructions"} value={prompt.text} onChange={event => setPrompt(value => ({ ...value, text: event.target.value, notice: "" }))} />
+                  <div className="manual-prompt-actions">
+                    <button type="button" className="calling-button" disabled={prompt.loading || prompt.saving} onClick={() => setPromptReload(value => value + 1)}>{promptDirty ? "Discard edits & reload" : "Reload from Ultravox"}</button>
+                    <button type="button" className="calling-button is-primary" disabled={prompt.loading || prompt.saving || !prompt.version || !promptDirty || !prompt.text.trim()} onClick={savePrompt}>{prompt.saving ? "Saving…" : "Save to Ultravox"}</button>
+                  </div>
+                  <p role="status">{prompt.loading ? "Loading from Ultravox…" : promptDirty ? "Unsaved changes. Save to Ultravox before starting an AI call." : prompt.notice}</p>
+                  {prompt.error && <p className="calling-alert is-error" role="alert">{prompt.error}</p>}
+                </section>}
                 <div className="manual-call-recipient">
                   <label>Call from
                     <select required value={form.caller_id} onChange={update("caller_id")}>
@@ -258,8 +281,8 @@ export default function ManualCallDialog({ user, config, campaigns, defaultCampa
               </div>
             </div>
             <footer className="calling-dialog-footer">
-              <button type="button" className="calling-button" onClick={close} disabled={busy}>{uncertain ? "Close" : "Cancel"}</button>
-              <button type="submit" className="calling-button is-primary" disabled={busy || (!uncertain && (!config?.caller_ids?.length || configurationErrors.length > 0 || (!config?.billing?.is_platform_admin && (!quote || config?.billing?.wallet?.frozen || (config?.billing?.wallet?.available_pence || 0) < quote.minimum_pence))))}>
+              <button type="button" className="calling-button" onClick={close} disabled={busy || prompt.saving}>{uncertain ? "Close" : "Cancel"}</button>
+              <button type="submit" className="calling-button is-primary" disabled={busy || (!uncertain && ((!normal && !promptReady) || !config?.caller_ids?.length || configurationErrors.length > 0 || (!config?.billing?.is_platform_admin && (!quote || config?.billing?.wallet?.frozen || (config?.billing?.wallet?.available_pence || 0) < quote.minimum_pence))))}>
                 {busy ? <LoaderCircle className="spin" size={17} /> : <PhoneCall size={17} />}
                 {busy ? "Connecting…" : uncertain ? "Check call request" : normal ? "Start normal call" : "Start AI call now"}
               </button>

@@ -104,6 +104,27 @@ def outreach_agent_sync(req):
     finally: db.close()
 
 
+@app.route(route="outreach/agent/prompt", methods=["GET", "POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
+def outreach_agent_prompt(req):
+    if req.method == "OPTIONS": return response(req, {})
+    actor = actor_for(req)
+    if not actor: return response(req, {"error": "Sign in to view your AI agent prompt"}, 401)
+    db = SessionLocal()
+    try:
+        from shared.db import Client
+        from services.outreach_agents import read_prompt, save_prompt, AgentError, PromptConflict
+        client = db.get(Client, actor.client_id)
+        if not client or actor.scope != "primary_user" or client.email.lower() != actor.email.lower():
+            return response(req, {"error": "Company owner access required"}, 403)
+        if req.method == "GET": return response(req, read_prompt(db, client.id))
+        body = body_for(req)
+        return response(req, save_prompt(db, client.id, body.get("prompt"), body.get("version")))
+    except ValueError as exc:
+        db.rollback()
+        return response(req, {"error": str(exc)}, 409 if isinstance(exc, (PromptConflict, billing.BillingError)) else 503 if isinstance(exc, AgentError) else 400)
+    finally: db.close()
+
+
 @app.route(route="outreach/manual-calls", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def outreach_manual_call(req):
     if req.method == "OPTIONS":

@@ -23,6 +23,7 @@ def start_manual_call(db, client_id, body, now=None, actor=None):
         raise ValueError("A valid call request ID is required") from exc
     phone = outreach.normalize_uk_phone(body.get("phone"))
     call_type = body.get("call_type", "ai")
+    use_agent_prompt = call_type == "ai" and body.get("use_agent_prompt") is True
     if call_type not in {"ai", "normal"}: raise ValueError("Choose AI call or normal call")
     if call_type == "normal" and not actor:
         from services.outreach_billing import BillingError
@@ -31,13 +32,17 @@ def start_manual_call(db, client_id, body, now=None, actor=None):
         "restaurant_name", "benefits", "notification_email", "caller_id")}
     if not details["restaurant_name"] or len(details["restaurant_name"]) > 150:
         raise ValueError("Provide a business name of up to 150 characters")
-    if call_type == "ai" and (not details["benefits"] or len(details["benefits"]) > 12000):
+    if call_type == "ai" and not use_agent_prompt and (not details["benefits"] or len(details["benefits"]) > 12000):
         raise ValueError("Provide verified benefits of up to 12,000 characters")
     if call_type == "ai" and not outreach.valid_email(details["notification_email"]):
         raise ValueError("Provide a valid team notification email")
     if call_type == "normal":
         details["benefits"], details["notification_email"] = "", ""
         details["call_type"] = "normal"
+    elif use_agent_prompt:
+        details["benefits"] = ""
+        details["agent_prompt_version"] = str(body.get("agent_prompt_version") or "")
+        details["use_agent_prompt"] = True
 
     fingerprint = hashlib.sha256(json.dumps({**details, "phone": phone}, sort_keys=True).encode()).hexdigest()
     # A stable primary key makes repeated/concurrent delivery the same request,
@@ -80,6 +85,12 @@ def start_manual_call(db, client_id, body, now=None, actor=None):
         OutreachLead.status.in_(outreach.ACTIVE | {"needs_review"})).first()
     if active:
         raise ManualCallConflict("This number has an active or uncertain call. Check call history before calling again.")
+    if use_agent_prompt:
+        from services.outreach_agents import read_prompt
+        saved = read_prompt(db, client_id)
+        if saved["version"] != details["agent_prompt_version"]:
+            raise ManualCallConflict("The AI prompt changed in Ultravox. Reload the latest prompt before starting this call.")
+        details["benefits"] = saved["prompt"]  # Audit snapshot, never a second prompt override.
     campaign = OutreachCampaign(id=campaign_id, client_id=client_id,
         name=f"{'Normal call' if call_type == 'normal' else 'Manual call'} · {details['restaurant_name']}"[:150], benefits=details["benefits"],
         notification_email=details["notification_email"], caller_id=details["caller_id"],
@@ -87,7 +98,9 @@ def start_manual_call(db, client_id, body, now=None, actor=None):
     lead = OutreachLead(id=str(uuid5(NAMESPACE_URL, f"vedora-manual-lead:{campaign_id}")),
         campaign_id=campaign.id, position=0, phone=phone, restaurant_name=details["restaurant_name"],
         status="queued",
-        contact={"source": "manual", "call_type": call_type, "request_fingerprint": fingerprint, "restaurant_name": details["restaurant_name"]})
+        contact={"source": "manual", "call_type": call_type, "request_fingerprint": fingerprint,
+            "prompt_source": "agent" if use_agent_prompt else "campaign",
+            "agent_prompt_version": details.get("agent_prompt_version"), "restaurant_name": details["restaurant_name"]})
     try:
         db.add(campaign)
         db.flush()

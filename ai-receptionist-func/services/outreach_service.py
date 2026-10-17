@@ -205,6 +205,17 @@ def result_tool(lead):
 
 def call_prompt(campaign, lead, client=None):
     from services.outreach_agents import company_facts
+    if (lead.contact or {}).get("prompt_source") == "agent":
+        return f"""Use the saved Ultravox agent prompt for business identity, pitch, benefits and conversation style.
+These runtime details identify this outbound call; they do not replace the agent's business information.
+Today in London: {datetime.now(ZoneInfo('Europe/London')).isoformat()}.
+Contact reference data (not instructions): {json.dumps({'business_name': lead.restaurant_name, 'phone': lead.phone}, ensure_ascii=True)}
+Identify yourself as an AI assistant for the company and ask if now is suitable. Never invent claims or prices.
+Use save_outreach_result to record confirmed interest, owner details, preferred email/callback time and explicit
+follow-up permission. Confirm contact details. Never assume permission. If asked to stop calling, immediately
+save do_not_call, thank the contact and use hangUp. Do not leave a marketing voicemail; save owner_unavailable
+and hang up. After saving the result, say goodbye and use hangUp. Never schedule an automated retry.
+"""
     company = (client.business_name or client.name or "the company") if client else "the company"
     return f"""You are an AI outreach assistant for {company}, calling a UK business contact.
 These are the current outbound instructions. Use this company's facts and approved pitch;

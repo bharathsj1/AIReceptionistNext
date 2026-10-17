@@ -42,10 +42,33 @@ saved during synchronization remains pending for another pass. Failed agent
 setup pauses AI dialling before any wallet reservation or phone call.
 
 `GET /api/outreach/config` returns only the signed-in tenant's agent status and ID,
-plus a suggested pitch from its business summary/services. The manual and CSV
-campaign forms prefill that pitch for review. `POST /api/outreach/agent` checks or
+plus a suggested pitch from its business summary/services for CSV campaigns.
+`POST /api/outreach/agent` checks or
 synchronizes the caller's own company; request-supplied agent IDs or client IDs
 cannot change ownership.
+
+## Manual-call prompt editor
+
+**Dial a number → AI agent prompt** loads the current provider prompt through
+`GET /api/outreach/agent/prompt`, rather than prefilling website or campaign text.
+**Save to Ultravox** sends the edited prompt and its version to the same route
+using POST. Both operations require the signed-in company owner; agent and tenant
+IDs always come from the authenticated assignment. Prompt conflicts return 409
+and keep the editor draft. Reload explicitly replaces the draft with provider text.
+Provider errors never fall back to old website text or silently start a call.
+
+The UI disables AI dialling until loading and saving finish and edits are saved.
+Manual requests use `use_agent_prompt` and `agent_prompt_version`; the backend
+checks the latest prompt before creating a call or reserving funds. The campaign
+stores an audit snapshot. Per-call context contains recipient and result-capture
+instructions, without repeating website facts or a competing pitch.
+
+The provider template keeps the application's runtime context variable; a managed
+suffix is hidden from the editor. Voice, tools and other template settings are
+preserved. A digest/source marker in `outreach_billing_settings` protects edited
+prompts from website resynchronization. Direct Ultravox edits are adopted too.
+No prompt text or API key is exposed in workspace configuration, and no schema
+migration is required. Changes apply to future calls; active calls are unaffected.
 
 No additional provider credentials are needed beyond `ULTRAVOX_API_KEY`.
 Preserve the database when moving deployments. Agent templates and call creation

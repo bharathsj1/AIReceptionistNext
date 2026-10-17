@@ -92,6 +92,33 @@ class ManualOutreachTests(unittest.TestCase):
         self.assertEqual(self.post.call_count, 1)
         self.assertEqual(self.client.calls.create.call_count, 1)
 
+    def test_agent_prompt_call_has_a_snapshot_without_stale_website_or_pitch_overrides(self):
+        body = {**self.body, "use_agent_prompt": True, "agent_prompt_version": "current-version", "benefits": "Obsolete website pitch"}
+        with patch("services.outreach_agents.read_prompt", return_value={"prompt": "Current Ultravox script", "version": "current-version"}) as read:
+            campaign, lead, created = manual.start_manual_call(self.db, 1, body, actor=ACTOR)
+            self.assertTrue(created)
+            self.assertEqual(campaign.benefits, "Current Ultravox script")
+            self.assertEqual(lead.contact["prompt_source"], "agent")
+            context = self.post.call_args.kwargs["json"]["templateContext"]["outreach_context"]
+            self.assertNotIn("Obsolete website pitch", context)
+            self.assertNotIn("Current Ultravox script", context)
+            self.assertIn("save_outreach_result", context)
+            self.assertIn("The Willow Kitchen", context)
+            self.assertIn("saved Ultravox agent prompt", context)
+            self.assertFalse(manual.start_manual_call(self.db, 1, body, actor=ACTOR)[2])
+            read.assert_called_once()
+        self.client.calls.create.assert_called_once()
+
+    def test_changed_agent_prompt_blocks_before_a_call_or_wallet_reservation(self):
+        body = {**self.body, "use_agent_prompt": True, "agent_prompt_version": "older-version"}
+        with patch("services.outreach_agents.read_prompt", return_value={"prompt": "Latest script", "version": "new-version"}), \
+                patch("services.outreach_billing.reserve_call") as reserve:
+            with self.assertRaisesRegex(manual.ManualCallConflict, "changed in Ultravox"):
+                manual.start_manual_call(self.db, 1, body, actor=ACTOR)
+            reserve.assert_not_called()
+        self.client.calls.create.assert_not_called(); self.post.assert_not_called()
+        self.assertEqual(self.db.query(OutreachCampaign).count(), 0)
+
     def test_manual_api_defaults_recipient_to_signed_in_manager(self):
         from dataclasses import replace
         actor = replace(ACTOR, email="manager@example.com", scope="client_user", role="manager", client_user_id="7")

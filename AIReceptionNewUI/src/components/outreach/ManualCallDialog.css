@@ -48,6 +48,11 @@
 .manual-call-type small { font-weight: 400; }
 .manual-browser-setup { display: grid; gap: 14px; padding: 18px; border: 1px solid var(--call-line); border-radius: 12px; }
 .manual-voice-controls { display: flex; gap: 12px; }
+.manual-agent-prompt { display: grid; gap: 12px; min-width: 0; }
+.manual-agent-prompt > label { font-weight: 700; }
+.manual-agent-prompt > p { color: var(--call-muted); line-height: 1.65; margin: 0; }
+.manual-agent-prompt textarea { min-height: 280px; line-height: 1.7; }
+.manual-prompt-actions { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; }
 @media (max-width: 590px) { .manual-call-type { grid-template-columns: 1fr; } }
 
 

@@ -5,6 +5,7 @@ import os
 import types
 import unittest
 from datetime import datetime
+from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
 from unittest.mock import patch, Mock
@@ -187,3 +188,99 @@ class OutreachAgentTests(unittest.TestCase):
             self.assertNotIn("VedoraEats",prompt); self.assertNotIn("Other company facts",prompt)
             self.assertTrue(payload["toolOverrides"]["removeAll"])
             self.assertEqual(payload["toolOverrides"]["add"][0]["temporaryTool"]["modelToolName"],"save_outreach_result")
+
+    def test_prompt_reads_live_ultravox_text_and_adopts_external_edits(self):
+        agent_id = agents.sync_agent(self.db, 1)
+        self.remote[agent_id]["callTemplate"]["systemPrompt"] = "Latest provider-side offer"
+        payload = agents.read_prompt(self.db, 1)
+        self.assertEqual(payload["prompt"], "Latest provider-side offer")
+        self.assertEqual(payload["agent_id"], agent_id)
+        self.assertNotIn("Willow services", payload["prompt"])
+        self.assertEqual(agents.prompt_setting(self.db, 1).status, "custom")
+        self.assertNotIn("api", payload)
+
+    def test_prompt_save_round_trip_preserves_voice_tools_and_runtime_schema(self):
+        agent_id = agents.sync_agent(self.db, 3)
+        original = agents.read_prompt(self.db, 3)
+        saved = agents.save_prompt(self.db, 3, "Approved VedoraEats pitch", original["version"])
+        self.assertEqual(saved["prompt"], "Approved VedoraEats pitch")
+        self.assertEqual(agents.read_prompt(self.db, 3), saved)
+        self.assertNotEqual(original["version"], saved["version"])
+        template = self.remote[agent_id]["callTemplate"]
+        self.assertEqual(template["voice"], "existing-voice")
+        self.assertEqual(template["selectedTools"], [{"toolName": "old_booking_tool"}])
+        self.assertIn("{{{outreach_context}}}", template["systemPrompt"])
+        self.assertIn("outreach_context", template["contextSchema"]["required"])
+        self.assertEqual(agents.prompt_setting(self.db, 3).status, "custom")
+
+    def test_website_sync_and_force_sync_preserve_owner_prompt(self):
+        agent_id = agents.sync_agent(self.db, 1)
+        loaded = agents.read_prompt(self.db, 1)
+        agents.save_prompt(self.db, 1, "Owner's edited pitch", loaded["version"])
+        client = self.db.get(Client, 1)
+        client.website_data = json.dumps({"business_profile": {"business_summary": "New crawled facts"}})
+        self.db.commit(); agents.queue_agent(self.db, client)
+        agents.sync_agent(self.db, 1, force=True)
+        self.assertEqual(self.remote[agent_id]["callTemplate"]["systemPrompt"], "Owner's edited pitch" + agents.RUNTIME_SUFFIX)
+
+    def test_provider_edits_survive_profile_sync_without_loading_editor_first(self):
+        agent_id = agents.sync_agent(self.db, 1)
+        self.remote[agent_id]["callTemplate"]["systemPrompt"] = "Externally updated agent"
+        client = self.db.get(Client, 1); client.business_name = "New website name"; self.db.commit()
+        agents.sync_agent(self.db, 1)
+        self.assertEqual(agents.read_prompt(self.db, 1)["prompt"], "Externally updated agent")
+
+    def test_stale_editor_cannot_overwrite_newer_ultravox_prompt(self):
+        agent_id = agents.sync_agent(self.db, 1)
+        loaded = agents.read_prompt(self.db, 1)
+        self.remote[agent_id]["callTemplate"]["systemPrompt"] = "Newer upstream edit"
+        self.provider.reset_mock()
+        with self.assertRaises(agents.PromptConflict):
+            agents.save_prompt(self.db, 1, "Old editor draft", loaded["version"])
+        self.assertFalse(any(call.args[0] == "PATCH" for call in self.provider.call_args_list))
+        self.assertEqual(self.remote[agent_id]["callTemplate"]["systemPrompt"], "Newer upstream edit")
+
+    def test_lost_save_response_is_recovered_without_regenerating_website_prompt(self):
+        agent_id = agents.sync_agent(self.db, 1)
+        loaded = agents.read_prompt(self.db, 1)
+        original = self.provider.side_effect
+        def lost_save(method, url, **kwargs):
+            response = original(method, url, **kwargs)
+            if method == "PATCH": raise requests.Timeout("private provider detail")
+            return response
+        self.provider.side_effect = lost_save
+        with self.assertRaises(agents.AgentError): agents.save_prompt(self.db, 1, "Saved despite timeout", loaded["version"])
+        self.provider.side_effect = original
+        agents.sync_agent(self.db, 1, force=True)
+        self.assertEqual(agents.read_prompt(self.db, 1)["prompt"], "Saved despite timeout")
+
+    def test_runtime_context_addition_does_not_stale_the_visible_prompt_version(self):
+        agent_id = agents.sync_agent(self.db, 1)
+        self.remote[agent_id]["callTemplate"]["systemPrompt"] = "Provider custom pitch"
+        loaded = agents.read_prompt(self.db, 1)
+        agents.sync_agent(self.db, 1)
+        self.assertEqual(loaded, agents.read_prompt(self.db, 1))
+        self.assertIn("{{{outreach_context}}}", self.remote[agent_id]["callTemplate"]["systemPrompt"])
+
+    def test_prompt_endpoints_require_matching_signed_company_owner(self):
+        agents.sync_agent(self.db, 1)
+        req = func.HttpRequest("GET", "https://example.com/api/outreach/agent/prompt", params={}, body=b"")
+        for actor, expected in [(None, 401), (replace(ACTOR, scope="client_user"), 403), (replace(ACTOR, client_id=2), 403)]:
+            with patch.object(api, "actor_for", return_value=actor), patch.object(api, "SessionLocal", self.Session):
+                self.assertEqual(api.outreach_agent_prompt(req).status_code, expected)
+        with patch.object(api, "actor_for", return_value=ACTOR), patch.object(api, "SessionLocal", self.Session):
+            data = json.loads(api.outreach_agent_prompt(req).get_body())
+            save = func.HttpRequest("POST", req.url, params={}, body=json.dumps({"prompt": "Tenant one only", "version": data["version"], "client_id": 3, "agent_id": agents.ADMIN_AGENT_ID}).encode())
+            self.assertEqual(api.outreach_agent_prompt(save).status_code, 200)
+        self.assertEqual(agents.read_prompt(self.db, 1)["prompt"], "Tenant one only")
+        self.assertEqual(self.remote[agents.ADMIN_AGENT_ID]["callTemplate"]["systemPrompt"], "Previous prompt")
+
+    def test_invalid_prompts_never_mutate_provider_and_bad_legacy_assignment_is_rejected(self):
+        agents.sync_agent(self.db, 1)
+        loaded = agents.read_prompt(self.db, 1)
+        for prompt in [None, " ", "a" * 63901, "bad\x00prompt"]:
+            with self.assertRaises(ValueError): agents.save_prompt(self.db, 1, prompt, loaded["version"])
+        self.db.get(OutreachAgent, 1).agent_id = agents.ADMIN_AGENT_ID; self.db.commit()
+        self.provider.reset_mock()
+        with self.assertRaises(agents.AgentError): agents.read_prompt(self.db, 1)
+        self.provider.assert_not_called()
