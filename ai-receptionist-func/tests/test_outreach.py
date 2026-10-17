@@ -267,7 +267,8 @@ class OutreachTests(unittest.TestCase):
             self.assertEqual(payload["firstSpeakerSettings"], {"user": {}})
             self.assertIn("AI assistant", payload["templateContext"]["outreach_context"])
             self.assertEqual(lead.status, "queued-provider")
-            self.assertEqual(payload["retentionPolicy"], "CALL_RETENTION_POLICY_RETAIN")
+            # Explicit retention overrides require an upgraded Ultravox plan.
+            self.assertNotIn("retentionPolicy", payload)
             events = self.db.query(OutreachCallEvent).filter_by(lead_id=lead.id).order_by(OutreachCallEvent.id).all()
             self.assertEqual([event.event for event in events], ["preparing", "voice_session_created", "call_accepted"])
 

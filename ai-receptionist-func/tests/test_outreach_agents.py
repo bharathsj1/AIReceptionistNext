@@ -181,6 +181,7 @@ class OutreachAgentTests(unittest.TestCase):
             self.assertTrue(post.call_args.args[0].endswith(f"/agents/{agent_id}/calls"))
             payload=post.call_args.kwargs["json"]
             self.assertNotIn("systemPrompt",payload)
+            self.assertNotIn("retentionPolicy",payload)
             prompt=payload["templateContext"]["outreach_context"]
             self.assertIn("Willow services",prompt); self.assertIn("Approved pitch",prompt)
             self.assertNotIn("VedoraEats",prompt); self.assertNotIn("Other company facts",prompt)

@@ -29,6 +29,11 @@ agent assignments are not reused for another company.
    and connects its media stream to Ultravox. Normal browser calls bypass agents
    and Ultravox entirely.
 
+Call requests use the account's default retention settings. Explicit retention
+overrides are omitted because Ultravox rejects them on plans without that feature.
+The existing transcript synchronization continues to save available conversations
+to the application's database.
+
 The account API key stays on the backend. Provider lookup and mutation use a
 per-client database lease. A deterministic agent name allows a lost creation
 response to be recovered by lookup before another POST. Changed business facts

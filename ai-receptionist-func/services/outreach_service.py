@@ -274,7 +274,6 @@ def launch_call(db, campaign, lead):
         from shared.db import Client
         payload = {"templateContext": {"outreach_context": call_prompt(campaign, lead, db.get(Client, campaign.client_id))}, "medium": {"twilio": {}},
                    "firstSpeakerSettings": {"user": {}}, "maxDuration": f"{charge.max_duration_seconds}s", "joinTimeout": "120s",
-                   "retentionPolicy": "CALL_RETENTION_POLICY_RETAIN",
                    "toolOverrides": {"removeAll": True, "add": [result_tool(lead), {"toolName": "hangUp"}]},
                    "metadata": {"outreachCampaignId": campaign.id, "outreachLeadId": lead.id, "outreachClientId": str(campaign.client_id)}}
         if campaign.voice:
