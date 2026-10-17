@@ -96,7 +96,7 @@ def prepare(db, campaign, lead):
 
 
 def voice_twiml(db, values):
-    from services.outreach_service import caller_numbers, twilio_client
+    from services.outreach_service import caller_numbers
     from shared.db import OutreachSuppression, OutreachCallCharge
     lead = db.get(OutreachLead, values.get("LeadId"))
     row = db.get(OutreachBrowserCall, lead.id) if lead else None
@@ -113,20 +113,16 @@ def voice_twiml(db, values):
             OutreachBrowserCall.expires_at > datetime.utcnow()).update({"status": "dialing", "parent_sid": parent}, synchronize_session=False):
         raise ValueError("This browser call has already been used or expired")
     db.commit()
-    # Hard cap the billable browser leg before issuing any destination Dial.
-    try:
-        twilio_client().calls(parent).update(time_limit=charge.max_duration_seconds)
-    except Exception:
-        db.refresh(row)
-        row.child_duration, row.status = 0, "failed"
-        lead.error = "Twilio could not apply the call budget limit; no destination was dialled"
-        db.commit()
-        raise ValueError(lead.error) from None
+    # Dial must be the first verb: answerOnBridge keeps the browser leg ringing
+    # until the contact answers. Dial's timeLimit caps the connected conversation;
+    # its action (and fallback below) hangs up the browser leg when Dial ends.
+    # A REST timeLimit update here races the still-ringing browser leg and fails.
     response = VoiceResponse()
     dial = response.dial(caller_id=campaign.caller_id, answer_on_bridge=True, timeout=30,
         time_limit=charge.max_duration_seconds, action=f"{get_public_api_base()}/api/outreach/browser/finish", method="POST")
     dial.number(lead.phone, status_callback=f"{get_public_api_base()}/api/outreach/leads/{lead.id}/status",
         status_callback_event="initiated ringing answered completed", status_callback_method="POST")
+    response.hangup()
     return str(response)
 
 
@@ -153,9 +149,22 @@ def parent_status(db, values):
         billing.settle_call(db, row.lead_id, row.child_duration or 0)
 
 
+def terminal_duration(call):
+    from services.outreach_service import TERMINAL
+    if call.status not in TERMINAL:
+        return None
+    if str(call.duration).isdigit() and 0 <= int(call.duration) <= 86400:
+        return int(call.duration)
+    # Twilio may omit duration when a call was never answered. A completed call
+    # with a missing duration still needs reconciliation before releasing funds.
+    if call.status != "completed" and call.duration in (None, ""):
+        return 0
+    return None
+
+
 def reconcile(db, row, now=None):
     from services.outreach_service import apply_call_status, twilio_client, TERMINAL
-    from services.outreach_history import log_event
+    from services.outreach_history import ensure_conversation, log_event
     now = now or datetime.utcnow()
     lead = db.get(OutreachLead, row.lead_id)
     campaign = db.get(OutreachCampaign, lead.campaign_id)
@@ -169,22 +178,34 @@ def reconcile(db, row, now=None):
             db.commit()
     if row.parent_sid and row.parent_duration is None:
         parent = twilio_client().calls(row.parent_sid).fetch()
-        if parent.from_ != "client:" + identity(lead.id): raise ValueError("Browser provider identity mismatch")
-        if parent.status in TERMINAL and str(parent.duration).isdigit():
-            row.parent_duration = int(parent.duration); db.commit()
-    if row.parent_duration is not None and row.child_duration is None and row.parent_sid:
+        if parent._from != "client:" + identity(lead.id): raise ValueError("Browser provider identity mismatch")
+        duration = terminal_duration(parent)
+        if duration is not None:
+            row.parent_duration = duration; db.commit()
+    if row.parent_duration is not None and row.parent_sid and (
+            row.child_duration is None or (lead.status not in TERMINAL and lead.twilio_call_sid)):
         children = twilio_client().calls.list(parent_call_sid=row.parent_sid, limit=2)
-        matches = [child for child in children if child.to == lead.phone and child.from_ == campaign.caller_id]
+        matches = [child for child in children if child.to == lead.phone and child._from == campaign.caller_id]
         if len(matches) == 1:
             child = matches[0]
-            if child.status in TERMINAL and str(child.duration).isdigit():
-                apply_call_status(db, lead, child.sid, child.status, duration=int(child.duration))
+            duration = terminal_duration(child)
+            if duration is not None:
+                apply_call_status(db, lead, child.sid, child.status, duration=duration)
         elif not children:
             row.child_duration = 0
-            lead.status, lead.ended_at = "failed", now
-            lead.error = lead.error or "Browser call ended before the contact was connected"
             db.commit()
     if row.parent_duration is not None and row.child_duration is not None:
+        # Also repair legacy pre-Dial failures that recorded both zero durations
+        # and completed the campaign while leaving the lead Preparing forever.
+        if lead.status not in TERMINAL:
+            if lead.twilio_call_sid or row.child_duration:
+                return  # A destination result is still uncertain; keep the guard.
+            lead.status, lead.ended_at = "failed", now
+            lead.error = lead.error or "Browser call ended before the contact was connected"
+            log_event(db, lead, "failed", lead.error)
+        conversation = ensure_conversation(db, lead)
+        conversation.duration_seconds = row.child_duration
+        db.commit()
         billing.settle_call(db, lead.id, row.child_duration)
         row.status, campaign.status = "finished", "completed"
         db.commit()
@@ -201,7 +222,10 @@ def stop(db, actor, lead_id):
         db.query(OutreachBrowserCall).filter_by(lead_id=lead.id, status="waiting", parent_sid=None).update(
             {"expires_at": datetime.utcnow()}, synchronize_session=False)
         db.commit(); db.refresh(row)
+    # Recover an already-ended call first. Updating a terminal call can fail and
+    # must not prevent its terminal status and wallet hold from being reconciled.
+    reconcile(db, row)
     if row.parent_sid and row.parent_duration is None:
         twilio_client().calls(row.parent_sid).update(status="completed")
-    reconcile(db, row)
+        reconcile(db, row)
     return {"ok": True}

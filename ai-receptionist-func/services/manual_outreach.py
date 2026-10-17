@@ -64,6 +64,17 @@ def start_manual_call(db, client_id, body, now=None, actor=None):
         raise ValueError("Select an active caller ID belonging to your account")
     if db.get(OutreachSuppression, (client_id, phone)):
         raise ManualCallConflict("This number has opted out of outreach and cannot be called")
+    # A lost browser callback must not block this number forever. Reconcile only
+    # this tenant's saved attempts; a provider failure leaves the guard in place.
+    browser_attempts = db.query(OutreachBrowserCall).join(OutreachLead).join(OutreachCampaign).filter(
+        OutreachCampaign.client_id == client_id, OutreachLead.phone == phone,
+        OutreachLead.status.in_(outreach.ACTIVE | {"needs_review"})).all()
+    for attempt in browser_attempts:
+        try:
+            browser_calling.reconcile(db, attempt, now)
+        except Exception:
+            db.rollback()
+            outreach.logger.warning("Browser attempt %s could not be reconciled before manual call", attempt.lead_id)
     active = db.query(OutreachLead).join(OutreachCampaign).filter(
         OutreachCampaign.client_id == client_id, OutreachLead.phone == phone,
         OutreachLead.status.in_(outreach.ACTIVE | {"needs_review"})).first()

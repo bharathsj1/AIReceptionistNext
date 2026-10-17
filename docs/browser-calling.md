@@ -44,9 +44,11 @@ with `OUTREACH_TWILIO_BROWSER_COST_PER_MINUTE` and
 the combined charge is rounded up to a penny. AI pricing remains 2× the combined
 Twilio and Ultravox cost. The UI quotes the selected call type before dialling.
 
-Wallet funds are reserved before issuing a browser token. The browser leg receives
-a provider-enforced duration cap before any destination Dial is returned; the
-destination Dial is capped too. Calls use the balance-covered whole-minute limit,
+Wallet funds are reserved before issuing a browser token. The first TwiML verb is
+`Dial` with `answerOnBridge`, a 30-second ring timeout and a provider-enforced
+`timeLimit`. The browser leg stays ringing until the destination answers. When
+the destination call ends, the action response hangs up the browser leg; a fallback
+`Hangup` follows `Dial`. Calls use the balance-covered whole-minute limit,
 up to ten minutes. Settlement waits for both trusted leg durations and is idempotent.
 Unused reservations are released after reconciliation, including expired attempts
 that never connect a microphone. The sole platform admin remains wallet-exempt.
@@ -54,7 +56,9 @@ The existing test-payment guard still prevents Stripe test funds paying real usa
 
 Closing an active call requires hang-up first. Mute and hang-up use the Voice SDK;
 hang-up and connection failures also request server-side termination. A background
-worker recovers missing callbacks from Twilio. Provider timeouts remain uncertain
+worker recovers missing callbacks from Twilio, including attempts whose campaign
+was already completed. Manual requests reconcile stale browser attempts before
+checking for an active call. Provider timeouts remain uncertain
 attempts and are never automatically redialled.
 
 Provider references: [Voice SDK](https://www.twilio.com/docs/voice/sdks/javascript/get-started),

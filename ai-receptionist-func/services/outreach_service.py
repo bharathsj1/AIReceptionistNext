@@ -530,7 +530,7 @@ def process_outreach():
     now = datetime.utcnow()
     try:
         from services.outreach_payments import process_order
-        from shared.db import OutreachPaymentOrder, OutreachCallCharge
+        from shared.db import OutreachPaymentOrder, OutreachCallCharge, OutreachBrowserCall
         for payment in db.query(OutreachPaymentOrder).filter(or_(
             OutreachPaymentOrder.status.in_(["pending", "checkout_review", "checkout_open", "paid", "provisioning", "needs_review", "refund_pending", "release_pending"]),
             (OutreachPaymentOrder.kind == "number") & (OutreachPaymentOrder.status == "completed")
@@ -550,13 +550,17 @@ def process_outreach():
             lead = db.get(OutreachLead, charge.lead_id)
             try:
                 call = twilio_client().calls(lead.twilio_call_sid).fetch()
-                if call.from_ == db.get(OutreachCampaign, lead.campaign_id).caller_id and call.to == lead.phone and call.status in TERMINAL and str(call.duration).isdigit():
+                if call._from == db.get(OutreachCampaign, lead.campaign_id).caller_id and call.to == lead.phone and call.status in TERMINAL and str(call.duration).isdigit():
                     from services.outreach_billing import settle_call
                     settle_call(db, lead.id, int(call.duration))
             except Exception:
                 db.rollback()
         # Reconcile active calls even on paused campaigns, so pending summaries can be delivered.
-        campaigns = db.query(OutreachCampaign).filter(OutreachCampaign.status.in_(["running", "paused"])).limit(50).all()
+        unfinished_browser = db.query(OutreachLead.campaign_id).join(OutreachBrowserCall).filter(or_(
+            OutreachBrowserCall.status != "finished", OutreachLead.status.in_(ACTIVE | {"needs_review"})))
+        campaigns = db.query(OutreachCampaign).filter(or_(
+            OutreachCampaign.status.in_(["running", "paused"]),
+            OutreachCampaign.id.in_(unfinished_browser))).limit(50).all()
         for campaign in campaigns:
             claimed = db.query(OutreachCampaign).filter_by(id=campaign.id).filter(
                 or_(OutreachCampaign.locked_until.is_(None), OutreachCampaign.locked_until < now)).update(

@@ -15,11 +15,13 @@ import azure.functions as func
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from twilio.request_validator import RequestValidator
+from twilio.rest.api.v2010.account.call import CallInstance
+from xml.etree import ElementTree
 
 from endpoint_imports import function_app_module
 from services import browser_calling as browser, manual_outreach as manual, outreach_service as calls
 from services import outreach_billing as billing, outreach_pricing as pricing
-from services.outreach_history import call_payload
+from services.outreach_history import call_payload, ensure_conversation
 from shared.db import Base, Client, PhoneNumber, OutreachBillingSetting, OutreachBrowserCall, OutreachCallCharge, OutreachWallet, OutreachCampaign
 from test_outreach import SETTINGS, ACTOR
 REAL_CALL_PRICE = pricing.call_price
@@ -83,9 +85,14 @@ class BrowserCallingTests(unittest.TestCase):
         xml = browser.voice_twiml(self.db, {**self.values(lead), "To": "+14165550123"})
         self.assertIn(DEST, xml); self.assertNotIn("+14165550123", xml)
         self.assertIn("<Dial", xml); self.assertNotIn("Stream", xml)
-        self.provider.calls(PARENT).update.assert_called_once_with(time_limit=600)
+        verbs = list(ElementTree.fromstring(xml))
+        self.assertEqual([verb.tag for verb in verbs], ["Dial", "Hangup"])
+        self.assertEqual(verbs[0].attrib["answerOnBridge"], "true")
+        self.assertEqual(verbs[0].attrib["timeLimit"], "600")
+        self.assertEqual(verbs[0].attrib["timeout"], "30")
+        self.assertEqual(verbs[0].attrib["action"], "https://example.com/api/outreach/browser/finish")
         with self.assertRaises(ValueError): browser.voice_twiml(self.db, self.values(lead))
-        self.provider.calls(PARENT).update.assert_called_once()
+        self.provider.calls.assert_not_called()
 
     def test_wrong_identity_cannot_dial_or_retrieve_other_initiators_token(self):
         _, lead, _ = self.start()
@@ -180,13 +187,23 @@ class BrowserCallingTests(unittest.TestCase):
         self.assertLessEqual(decoded["exp"] - decoded["nbf"], 120)
         with self.assertRaises(billing.BillingError): browser.connection_payload(self.db, replace(ACTOR, client_id=2), lead)
 
-    def test_budget_limit_failure_never_returns_destination_dial(self):
-        _, lead, _ = self.start()
-        self.provider.calls(PARENT).update.side_effect = RuntimeError("private provider detail")
-        with self.assertRaisesRegex(ValueError, "no destination was dialled"):
-            browser.voice_twiml(self.db, self.values(lead))
-        self.assertEqual(self.db.get(OutreachBrowserCall, lead.id).child_duration, 0)
-        self.assertEqual(self.db.get(OutreachCallCharge, lead.id).status, "reserved")
+    def test_legacy_budget_failure_is_terminal_even_if_campaign_was_completed(self):
+        campaign, lead, _ = self.start()
+        row = self.db.get(OutreachBrowserCall, lead.id)
+        row.status, row.parent_sid = "finished", PARENT
+        row.parent_duration, row.child_duration = 0, 0
+        campaign.status = "completed"
+        lead.error = "Twilio could not apply the call budget limit; no destination was dialled"
+        self.db.commit()
+        with patch.object(calls, "SessionLocal", self.Session):
+            calls.process_outreach()
+        self.db.expire_all()
+        self.assertEqual(lead.status, "failed")
+        self.assertIsNotNone(lead.ended_at)
+        self.assertEqual(call_payload(lead, campaign, ensure_conversation(self.db, lead))["duration_seconds"], 0)
+        self.assertEqual(self.db.get(OutreachWallet, 1).reserved_pence, 0)
+        self.assertEqual(self.db.get(OutreachWallet, 1).balance_pence, 1000)
+        self.provider.calls.assert_not_called()
 
     def test_browser_setup_is_admin_only_and_reuses_existing_key_in_encrypted_storage(self):
         self.db.delete(self.db.get(OutreachBillingSetting, "twilio_browser_voice")); self.db.commit()
@@ -206,9 +223,77 @@ class BrowserCallingTests(unittest.TestCase):
     def test_parent_reconciliation_recovers_missing_child_and_parent_callbacks(self):
         campaign, lead, _ = self.start()
         browser.voice_twiml(self.db, self.values(lead))
-        self.provider.calls(PARENT).fetch.return_value = types.SimpleNamespace(from_="client:" + browser.identity(lead.id), status="completed", duration="130")
-        self.provider.calls.list.return_value = [types.SimpleNamespace(sid=CHILD, to=DEST, from_=CALLER, status="completed", duration="65")]
+        self.provider.calls(PARENT).fetch.return_value = self.provider_call(PARENT, "client:" + browser.identity(lead.id), "", "completed", "130")
+        self.provider.calls.list.return_value = [self.provider_call(CHILD, CALLER, DEST, "completed", "65")]
         browser.reconcile(self.db, self.db.get(OutreachBrowserCall, lead.id))
         self.assertEqual(lead.status, "completed")
         self.assertEqual(campaign.status, "completed")
         self.assertEqual(self.db.get(OutreachCallCharge, lead.id).charged_pence, 10)
+
+    def provider_call(self, sid, source, destination, status, duration):
+        # Real SDK response objects expose _from, while create/list arguments use
+        # from_. Fake objects with from_ previously hid a production failure.
+        return CallInstance(Mock(), {"sid": sid, "from": source, "to": destination,
+            "status": status, "duration": duration}, SETTINGS["TWILIO_ACCOUNT_SID"])
+
+    def test_new_request_recovers_ended_parent_without_destination_and_allows_retry(self):
+        _, old, _ = self.start()
+        browser.voice_twiml(self.db, self.values(old))
+        self.provider.calls(PARENT).fetch.return_value = self.provider_call(PARENT,
+            "client:" + browser.identity(old.id), "", "no-answer", None)
+        self.provider.calls.list.return_value = []
+        _, new, created = self.start()
+        self.assertTrue(created)
+        self.assertNotEqual(new.id, old.id)
+        self.assertEqual(old.status, "failed")
+        self.assertEqual(self.db.get(OutreachCallCharge, old.id).charged_pence, 0)
+        self.provider.calls(PARENT).update.assert_not_called()
+        self.http.assert_not_called()
+
+    def test_active_uncertain_and_wrong_identity_remain_blocked(self):
+        _, lead, _ = self.start()
+        browser.voice_twiml(self.db, self.values(lead))
+        for source, status, duration in [("client:" + browser.identity(lead.id), "in-progress", None),
+                                        ("client:" + browser.identity(lead.id), "completed", None),
+                                        ("client:other", "completed", "0")]:
+            self.provider.calls(PARENT).fetch.return_value = self.provider_call(PARENT, source, "", status, duration)
+            with self.assertRaisesRegex(manual.ManualCallConflict, "active or uncertain"):
+                self.start()
+            self.assertEqual(lead.status, "preparing")
+        self.provider.calls(PARENT).fetch.side_effect = RuntimeError("provider unavailable")
+        with self.assertRaisesRegex(manual.ManualCallConflict, "active or uncertain"):
+            self.start()
+        self.assertEqual(self.db.get(OutreachCallCharge, lead.id).status, "reserved")
+
+    def test_stop_already_terminal_parent_is_idempotent_and_does_not_update_provider(self):
+        _, lead, _ = self.start()
+        browser.voice_twiml(self.db, self.values(lead))
+        self.provider.calls(PARENT).fetch.return_value = self.provider_call(PARENT,
+            "client:" + browser.identity(lead.id), "", "completed", "70")
+        self.provider.calls.list.return_value = [self.provider_call(CHILD, CALLER, DEST, "completed", "65")]
+        browser.stop(self.db, ACTOR, lead.id)
+        browser.stop(self.db, ACTOR, lead.id)
+        self.assertEqual(lead.status, "completed")
+        self.assertEqual(self.db.get(OutreachCallCharge, lead.id).charged_pence, 10)
+        self.provider.calls(PARENT).update.assert_not_called()
+
+    def test_destination_that_is_still_active_never_releases_hold(self):
+        _, lead, _ = self.start()
+        browser.voice_twiml(self.db, self.values(lead))
+        self.provider.calls(PARENT).fetch.return_value = self.provider_call(PARENT,
+            "client:" + browser.identity(lead.id), "", "completed", "70")
+        self.provider.calls.list.return_value = [self.provider_call(CHILD, CALLER, DEST, "in-progress", None)]
+        browser.reconcile(self.db, self.db.get(OutreachBrowserCall, lead.id))
+        self.assertEqual(lead.status, "preparing")
+        self.assertEqual(self.db.get(OutreachCallCharge, lead.id).status, "reserved")
+
+    def test_no_answer_child_with_missing_duration_is_recorded_without_charge(self):
+        _, lead, _ = self.start()
+        browser.voice_twiml(self.db, self.values(lead))
+        self.provider.calls(PARENT).fetch.return_value = self.provider_call(PARENT,
+            "client:" + browser.identity(lead.id), "", "no-answer", None)
+        self.provider.calls.list.return_value = [self.provider_call(CHILD, CALLER, DEST, "no-answer", "")]
+        browser.reconcile(self.db, self.db.get(OutreachBrowserCall, lead.id))
+        self.assertEqual(lead.status, "no-answer")
+        self.assertEqual(lead.twilio_call_sid, CHILD)
+        self.assertEqual(self.db.get(OutreachCallCharge, lead.id).charged_pence, 0)

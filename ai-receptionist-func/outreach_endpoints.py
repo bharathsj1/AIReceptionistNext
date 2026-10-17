@@ -271,7 +271,7 @@ def outreach_review(req):
             if not sid.startswith("CA") or len(sid) != 34:
                 raise ValueError("Provide a valid Twilio Call SID")
             call = twilio_client().calls(sid).fetch()
-            if call.to != lead.phone or call.from_ != campaign.caller_id:
+            if call.to != lead.phone or call._from != campaign.caller_id:
                 raise ValueError("Provider call numbers do not match this contact")
             if not call.date_created or abs((call.date_created.replace(tzinfo=None) - lead.started_at).total_seconds()) > 300:
                 raise ValueError("Call timestamp does not match this attempt")
